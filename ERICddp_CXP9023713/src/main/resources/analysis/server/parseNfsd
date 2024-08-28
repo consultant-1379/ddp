@@ -1,0 +1,248 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use DataStore;
+use Instr;
+
+our $DEBUG = 0;
+
+our %TABLE_COLS = (
+    'nfsd_v3ops' => ["null_op","getattr","setattr","lookup","access","readlink","read_op","write_op","create_op",
+                     "mkdir","symlink","mknod","remove","rmdir","rename_op","link","readdir","readdirplus",
+                     "fsstat","fsinfo","pathconf","commit_op"],
+    'nfsd_th'    => ["allbusy","t10", "t20", "t30", "t40", "t50", "t60", "t70", "t80", "t90", "t100"]
+    );
+
+
+sub deltaCounters {
+    my ($r_data) = @_;
+
+    my %prevSample = ();
+    foreach my $r_sample ( @{$r_data} ) {
+        foreach my $dataType ( 'v3ops', 'th' ) {
+            if ( exists $r_sample->{$dataType} ) {
+                my $r_prev = $prevSample{$dataType};
+                if ( $r_prev ) {
+                    my $r_curr = $r_sample->{$dataType};
+                    my $r_delta = [];
+                    for ( my $index = 0; $index <= $#{$r_curr}; $index++ ) {
+                        my $delta = $r_curr->[$index] - $r_prev->[$index];
+                        if ( $delta < 0 ) {
+                            # Assume restart
+                            $delta = $r_curr->[$index];
+                        }
+                        push @{$r_delta}, $delta;
+                    }
+                    $r_sample->{$dataType} = $r_delta;
+                    $prevSample{$dataType} = $r_curr;
+                } else {
+                    $prevSample{$dataType} = $r_sample->{$dataType};
+                    delete $r_sample->{$dataType};
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("deltaCounters: r_data", $r_data); }
+}
+
+sub readData
+{
+    my ($inputFile) = @_;
+
+    open DATA, $inputFile or die "Cannot open $inputFile";
+    my @data = ();
+    my $r_CurrData;
+    while ( my $line = <DATA> ) {
+        if ( $DEBUG > 9 ) { print "readData: line=$line"; }
+
+        if ( $line =~ /^(\d{6,6}:\d{2,2}:\d{2,2})$/ ) {
+            my $time = $1;
+            if ( $DEBUG > 6 ) { print "readData: time=$time\n"; }
+            $r_CurrData = {
+                'time' => $time
+            };
+            push @data, $r_CurrData;
+        } elsif ( $line =~ /proc3 \d+ (.*)/ ) {
+            my $counterStr = $1;
+            # Counters seem to be in the same order as output by nfsstat
+            # Server nfs v3:
+            # null         getattr      setattr      lookup       access       readlink
+            # 10633     0% 61106444 17% 1003631   0% 70812424 20% 15899007  4% 31568     0%
+            # read         write        create       mkdir        symlink      mknod
+            # 62146687 17% 110143633 31% 4620871   1% 16900     0% 3372377   0% 0         0%
+            # remove       rmdir        rename       link         readdir      readdirplus
+            # 4129194   1% 14837     0% 37970     0% 2909      0% 2690930   0% 6401277   1%
+            # fsstat       fsinfo       pathconf     commit
+            # 67029     0% 1576      0% 0         0% 4597881   1%
+            my @counters = split(/ /, $counterStr);
+            $r_CurrData->{'v3ops'} = \@counters;
+        }    }
+    close DATA;
+
+    if ( $DEBUG > 5 ) { print Dumper("readData: data", \@data ); }
+    return \@data;
+}
+
+sub parsePoolStats($) {
+    my ($inputFile) = @_;
+
+    open DATA, $inputFile or die "Cannot open $inputFile";
+    my @data = ();
+    my $sampleTime = 0;
+    while ( my $line = <DATA> ) {
+        if ( $DEBUG > 9 ) { print "parsePoolStats: line=$line"; }
+
+        if ( $line =~ /^(\d{6,6}:\d{2,2}:\d{2,2})$/ ) {
+            my $time = $1;
+            if ( $DEBUG > 6 ) { print "parsePoolStats: time=$time\n"; }
+            $sampleTime = parseTime( $time, $StatsTime::TIME_DDMMYY_HM );
+        } elsif ( $line =~ /^0\s+(.*)/ ) {
+            my $counterStr = $1;
+            my @counters = split(/ /, $counterStr);
+            push @data, {
+                'time' => $sampleTime,
+                'packets-arrived' => $counters[0],
+                'sockets-enqueued' => $counters[1],
+                'threads-woken' => $counters[2],
+                'threads-timedout' => $counters[3]
+            };
+        }
+    }
+    close DATA;
+
+    if ( $DEBUG > 5 ) { print Dumper("parsePoolStats: data", \@data ); }
+    return \@data;
+}
+
+
+sub writeBcp
+{
+    my ($siteId, $serverId,$r_data,$key) = @_;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = $tmpDir . "/$key.$serverId.bcp";
+
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+
+    foreach my $r_sample ( @{$r_data} ) {
+        if ( exists $r_sample->{$key} ) {
+            my $timestamp = formatTime( parseTime( $r_sample->{'time'}, $StatsTime::TIME_DDMMYY_HM ),
+                                        $StatsTime::TIME_SQL );
+            my $line = $timestamp . "," . $siteId . "," . $serverId . "," . join(",", @{$r_sample->{$key}}) . "\n";
+            print BCP $line;
+        }
+    }
+
+    close BCP;
+
+    return $bcpFileName;
+}
+
+sub storeData($$$$) {
+    my ($site,$server,$r_data, $r_poolStats) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    # nfsd_v3ops
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    my $from = formatTime( parseTime( $r_data->[0]->{'time'}, $StatsTime::TIME_DDMMYY_HM ),
+                           $StatsTime::TIME_SQL );
+    my $to   = formatTime( parseTime( $r_data->[$#{$r_data}]->{'time'}, $StatsTime::TIME_DDMMYY_HM ),
+                           $StatsTime::TIME_SQL );
+    my $key = "v3ops";
+    my $bcpFileName = writeBcp($siteId, $serverId,$r_data,$key);
+    my $tableName = "nfsd_" . $key;
+    dbDo($dbh, sprintf("DELETE FROM %s WHERE siteid = %d AND serverid = %d AND time BETWEEN '%s' AND '%s'",
+                       $tableName, $siteId, $serverId, $from,$to))
+        or die "Failed to delete from nfsserver_v3ops";
+    dbDo( $dbh,
+          sprintf( "LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' (time,siteid,serverid,%s)",
+                   $bcpFileName, $tableName, join(",", @{$TABLE_COLS{$tableName}}) )
+      )
+        or die "Failed to load into  nfsserver_v3ops";
+
+    # nfsd_pool
+    if ( defined $r_poolStats ) {
+        my %tableModel = (
+            'name' => 'nfsd_pool',
+            'keycol' => [
+                { 'name' => 'serverid', 'reftable' => 'servers' }
+            ]
+        );
+
+        my %commonProps = (
+            'site' => $site,
+            'siteid' => $siteId,
+            'server' => $server,
+            'serverid' => $serverId
+        );
+
+        my %columnMap = (
+            'packets-arrived' => 'packets_arrived',
+            'sockets-enqueued' => 'sockets_enqueued',
+            'threads-woken' => 'threads_woken',
+            'threads-timedout' => 'threads_timedout',
+        );
+
+        DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                     \%tableModel,
+                                     undef,
+                                     undef,
+                                     \%commonProps,
+                                     \%columnMap,
+                                     [ { 'samples' => $r_poolStats, 'properties' => {} } ] );
+    }
+
+    $dbh->disconnect;
+}
+
+
+sub main() {
+    my ($inputFile,$site,$server,$poolStatsFile);
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "poolstats=s" => \$poolStatsFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+
+    my $r_data = readData($inputFile);
+    if ( $#{$r_data} < 0 ) {
+        print "WARN: No data present in $inputFile\n";
+        exit 1;
+    }
+    deltaCounters($r_data);
+
+    my $r_poolStats = undef;
+    if ( defined $poolStatsFile ) {
+        $r_poolStats = parsePoolStats($poolStatsFile);
+        deltaSamples( $r_poolStats, [ 'packets-arrived', 'sockets-enqueued', 'threads-woken', 'threads-timedout' ] );
+        shift @{$r_poolStats}; # Drop first sample
+        if ( $DEBUG > 5 ) { print Dumper("main: r_poolStats", $r_poolStats); }
+    }
+
+    if ( $#{$r_data} > -1 ) {
+        storeData($site,$server,$r_data, $r_poolStats);
+    }
+}
+
+main();
+

@@ -1,0 +1,36 @@
+#!/bin/bash
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN}; cd .. ; pwd)
+
+DATA_DIR=$1
+OUTPUT_DIR=$2
+SITE=$3
+SQL_DATE=$4
+
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="TSts"
+. ${ANALYSIS_BIN}/common/functions.sh
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+
+SRC_EVENTS_FILE="${DATA_DIR}/OSS/all.events"
+if [ -d ${TMP_DIR}/events ] ; then
+    SRC_EVENTS_FILE="${TMP_DIR}/events/0c1A"
+fi
+
+cat ${SRC_EVENTS_FILE} | ${ANALYSIS_BIN}/events/filterEvents -p "PA_ARNE" > ${TMP_DIR}/pa_arne.txt
+run ${ANALYSIS_BIN}/arne/parseImports --events ${TMP_DIR}/pa_arne.txt --imports ${DATA_DIR}/OSS/arne_imports.txt --site ${SITE} --date ${SQL_DATE} --logdir ${TMP_DIR}/lvlog
+
+if [ ! -d ${OUTPUT_DIR}/arne ] ; then
+    mkdir ${OUTPUT_DIR}/arne
+fi
+
+DASH_DATE=`echo ${SQL_DATE} | sed 's/^20\([0-9]\{2,2\}\)-\([0-9]\{2,2\}\)-\([0-9]\{2,2\}\)$/\3-\2-\1/g'`
+${ANALYSIS_BIN}/server/plotHeap ${DATA_DIR}/instr.txt ARNEServer ${DASH_DATE} ${OUTPUT_DIR}/arne/arne_heap.jpg 1,0.5
+${ANALYSIS_BIN}/server/plotHeap ${DATA_DIR}/instr.txt MAF ${DASH_DATE} ${OUTPUT_DIR}/arne/maf_heap.jpg 1,0.5
+
+

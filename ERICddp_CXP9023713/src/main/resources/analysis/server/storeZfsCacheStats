@@ -1,0 +1,95 @@
+#!/usr/bin/env perl
+# This script parses the ZFS cache data as collected by kstat via the instr2
+# utility. 
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $server;
+our $site;
+our $DEBUG = 0;
+our $bcpFile;
+
+sub main {
+    my ($zfsInstrCfg, $zfsInstrData);
+    my $result = GetOptions("cfg=s" => \$zfsInstrCfg,
+        "data=s" => \$zfsInstrData,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $r_data = parseData($zfsInstrCfg, $zfsInstrData);
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    ($serverId > -1) or die "Failed to get serverid for $site - $server";
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my $doLoad = 1;
+    if ( defined $bcpFile ) {
+        $doLoad = 0;
+    } else {
+        $bcpFile = $tmpDir . "/zfs_stats.bcp";
+    }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    # ZFS Cache data consists of:
+    #   zfs:0:arcstats:size - the size of the cache
+    #   zfs:0:arcstats:hits - number of cache hits
+    #   zfs:0:arcstats:misses - number of cache misses.
+    # We store the cache size in MB so we need to divide by (1024 * 1024) to convert from bytes
+    # We store the percentage hit rate for the cache over the time period, but we are given absolute
+    # values so we need to calculate the delta between this and the previous period, and then
+    # sum the hist and misses and then work out the percentage of hits:
+    #   hitratio = (hits / (hits + misses)) * 100
+    my @zfsData = @{$r_data->{'kstat-zfs-metrics'}};
+    my %lastVals;
+    my $startTime;
+    my $endTime;
+    # ts == timesample
+    foreach my $ts (@zfsData) {
+        # explicitly set a hash
+        my %ts = %{$ts};
+        if (! %lastVals ) {
+            # Use the first entry to set up the initial datapoints
+            %lastVals = %ts;
+            $startTime = instr2mysqlTime($ts{'timestamp'});
+            next;
+        }
+        my $time = instr2mysqlTime($ts{'timestamp'});
+        $endTime = $time;
+        my $hits = $ts{'zfs:0:arcstats:hits'} - $lastVals{'zfs:0:arcstats:hits'};
+        my $misses = $ts{'zfs:0:arcstats:misses'} - $lastVals{'zfs:0:arcstats:misses'};
+        my $hitratio = 100;
+	if ( $misses > 0 ) { 
+	    $hitratio = ($hits / ($hits + $misses)) * 100;
+	}
+        my $size = $ts{'zfs:0:arcstats:size'} / (1024 * 1024);
+        printf BULK_INSERT "%s\t%d\t%d\t%d\n",$time,$serverId,$size,$hitratio;
+        %lastVals = %ts;
+    }
+    close BULK_INSERT;
+    # only store if we've actually seen more than one data point
+    if (defined($startTime) && defined($endTime)) {
+        my $sql = "DELETE FROM zfs_cache WHERE serverid = " . $serverId .
+        " AND time BETWEEN '" . $startTime . "' AND '" . $endTime . "'";
+        if ($DEBUG > 10) { print $sql . "\n"; }
+        if ($doLoad == 1) {
+            dbDo($dbh,$sql);
+            dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE zfs_cache");
+        }
+    }
+    $dbh->disconnect;
+}
+
+main;

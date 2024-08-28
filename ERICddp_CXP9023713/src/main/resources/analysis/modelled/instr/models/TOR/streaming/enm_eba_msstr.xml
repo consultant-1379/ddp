@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <services>
+   <service name="ebastreamterminator"/>
+  </services>
+
+  <table name="enm_eba_msstr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.gsmeba.handler:name=stream_in_server@3Events,type=StatisticsHandler$">
+      <metric source="Count" target="events3" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.gsmeba.handler:name=stream_in_server@3Bytes_processed,type=StatisticsHandler$">
+      <metric source="Count" target="MbytesProcessed3" scale="1048576" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.gsmeba.handler:name=stream_in_server@3Dropped_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="droppedConnections3" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.gsmeba.handler:name=stream_in_server@3Active_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="activeConnections3"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.gsmeba.handler:name=stream_in_server@3Created_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="createdConnections3"  delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

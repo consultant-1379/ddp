@@ -1,0 +1,307 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use HTML::Parser;
+
+use StatsTime;
+use StatsDB;
+use DataStore;
+use EnmServiceGroup;
+
+our $DEBUG = 0;
+
+# Srv PID Acc M CPU SS Req Conn Child Slot Client VHost Request
+
+our $SRV = 0; # Child Server number - generation
+our $PID = 1; # OS process ID
+our $ACC = 2; # Number of accesses this connection / this child / this slot
+our $M   = 3; # Mode of operation
+our $CPU = 4; # CPU usage, number of seconds
+our $SS  = 5; # Seconds since beginning of most recent request
+our $REQ = 6; # Milliseconds required to process most recent request
+our $CONN = 7; # Kilobytes transferred this connection
+our $CHILD = 8; # Megabytes transferred this child
+our $SLOT = 9;  # Total megabytes transferred this slot
+our $CLIENT = 10;
+our $VHOST = 11;
+our $REQUEST = 12;
+
+# "<b><code>_</code></b>" Waiting for Connection,
+# "<b><code>S</code></b>" Starting up,
+# "<b><code>R</code></b>" Reading Request,<br />
+# "<b><code>W</code></b>" Sending Reply,
+# "<b><code>K</code></b>" Keepalive (read),
+# "<b><code>D</code></b>" DNS Lookup,<br />
+# "<b><code>C</code></b>" Closing connection,
+# "<b><code>L</code></b>" Logging,
+# "<b><code>G</code></b>" Gracefully finishing,<br />
+# "<b><code>I</code></b>" Idle cleanup of worker,
+# "<b><code>.</code></b>" Open slot with no current process</p>
+
+our %STATE_MAP = (
+    'K' => 'keepalive',
+    'W' => 'sendreply',
+    '_' => 'waitingconn'
+    );
+
+our $FIND_TABLE = 1;
+our $FIND_TR = 2;
+our $FIND_TD = 3;
+our $FIND_TD_TEXT = 4;
+our $DONE = 5;
+
+our $state = 0;
+our $skip_header = 1;
+
+my $r_rows = undef;
+my $r_row = undef;
+my $td_text = undef;
+
+sub element_text {
+    if ( $state == $FIND_TD_TEXT ) {
+        $td_text = $td_text . shift;
+    }
+}
+
+sub element_start {
+    my ( $tag ) = @_;
+
+    my $in_state = $state;
+
+    if ( $state == $FIND_TABLE && $tag eq 'table' ) {
+        $state = $FIND_TR;
+        $skip_header = 1;
+    } elsif ( $state == $FIND_TR && $tag eq 'tr' ) {
+        if ( $skip_header ) {
+            $skip_header = 0;
+        } else {
+            $r_row = [];
+            push @{$r_rows}, $r_row;
+            $state = $FIND_TD;
+        }
+    } elsif ( $state == $FIND_TD && $tag eq 'td' ) {
+        $state = $FIND_TD_TEXT;
+        $td_text = '';
+    }
+
+    if ( $DEBUG > 8 && ($in_state != $state) ) { print "element_start: tag=$tag state change $in_state->$state\n"; }
+}
+
+sub element_end {
+    my ( $tag ) = @_;
+
+    my $in_state = $state;
+
+    if ( $tag eq 'table' ) {
+        $state = $DONE;
+    } elsif ( $state != $DONE ) {
+        if ( $tag eq 'tr' ) {
+            $state = $FIND_TR;
+        } elsif ( $tag eq 'td' && $state == $FIND_TD_TEXT ) {
+            chomp($td_text);
+            push @{$r_row}, $td_text;
+            $state = $FIND_TD;
+        }
+    }
+
+    if ( $DEBUG > 8 && ($in_state != $state) ) { print "element_end: tag=$tag state change $in_state->$state\n"; }
+}
+
+sub parseStatus($) {
+    my ($file) = @_;
+
+    my @results = ();
+    my $r_block = undef;
+    open INPUT, $file or die "Failed to open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseStats: line=$line"; }
+        if ( $line =~ /^(\d{6}:\d{2}:\d{2})$/ ) {
+            my $time = parseTime($1, $StatsTime::TIME_DDMMYY_HM);
+            my $timestamp = formatTime( $time, $StatsTime::TIME_SQL );
+            $r_block = [];
+            push @results, { 'time' => $time, 'timestamp' => $timestamp, 'status_lines' => $r_block };
+        } else {
+            push @{$r_block}, $line;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 7 ) { print Dumper("parseStatus: samples", \@results); }
+    return \@results;
+}
+
+sub processData($) {
+    my ($r_data) = @_;
+
+    foreach my $r_sample ( @{$r_data} ) {
+        if ( $DEBUG > 5 ) { print "r_sample timestamp=", $r_sample->{'timestamp'}; }
+
+        $state = $FIND_TABLE;
+        $r_rows = [];
+        # Create parser object
+        my $parser = HTML::Parser->new( api_version => 3,
+                                        start_h => [\&element_start, "tagname, attr"],
+                                        end_h   => [\&element_end,   "tagname"],
+                                        text_h => [ \&element_text, "dtext" ],
+                                        marked_sections => 1
+                                    );
+        foreach my $line ( @{$r_sample->{'status_lines'}} ) {
+            $parser->parse($line);
+        }
+        $parser->eof;
+
+        if ( $DEBUG > 6 ) { print Dumper("r_rows", $r_rows); }
+        my %slotStates = ();
+        my $slotIndex = 0;
+        foreach my $r_slot ( @{$r_rows} ) {
+            # Ignore slots where we don't have an OS-PID
+            if ( $r_slot->[$PID] ne '-' ) {
+                $slotStates{$r_slot->[$M]}++;
+                if ( $r_slot->[$M] ne '_' && $r_slot->[$M] ne '.' ) {
+                    if ( $r_slot->[$VHOST] =~ /^httpd-(\d+)-internal$/ ) {
+                        $r_sample->{'internal'}++;
+                    } else {
+                        $r_sample->{'external'}++;
+                    }
+                }
+            }
+        }
+        while ( my ($from,$to) = each %STATE_MAP ) {
+            my $value = delete $slotStates{$from};
+            if ( ! defined $value ) {
+                $value = 0;
+            }
+            $r_sample->{$to} = $value;
+        }
+        my $other = 0;
+        while ( my ($state,$count) = each %slotStates ) {
+            $other += $count;
+        }
+        $r_sample->{'other'} = $other;
+    }
+
+}
+
+sub storeData($$$$) {
+    my ($site,$server,$r_samples, $r_serverInfo) = @_;
+
+    my %tableModel = (
+        'name' => 'enm_apache_slots',
+        'keycol' => [
+            { 'name' => 'serverid', 'reftable' => 'servers' },
+        ]
+    );
+    my %columnMap = ();
+    foreach my $col ( 'keepalive', 'sendreply', 'waitingconn', 'other', 'internal', 'external' ) {
+        $columnMap{$col} = $col;
+    }
+    my %propertyValues = (
+        'site' => $site,
+        'server' => $r_serverInfo->{'hostname'},
+        'serverid' => $r_serverInfo->{'id'},
+    );
+    my %dataSet = (
+        'properties' => {},
+        'samples' => $r_samples
+        );
+    DataStore::storePeriodicData($DataStore::FIFTEEN_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 "httpd",
+                                 \%propertyValues,
+                                 \%columnMap,
+                                 [ \%dataSet ]);
+}
+
+sub getHttpdInstances($) {
+    my ($props) = @_;
+
+    open INPUT, $props or die "Failed to open props file $props";
+    my @ipAddresses = ();
+    my @instances = ();
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^httpd=(\S+)/ ) {
+            @ipAddresses = split(",", $1);
+        } elsif ( $line =~ /^httpd_instances=(\S+)/ ) {
+            @instances = split(",", $1);
+        }
+    }
+    close INPUT;
+
+    if ( $#ipAddresses < 0 || $#instances < 0 ||
+         ($#ipAddresses != $#instances ) ) {
+        die "Could not get httpd instances from global.properties";
+    }
+
+    my %instanceToIP = ();
+    for ( my $index = 0; $index <= $#ipAddresses ; $index++ ) {
+        $instanceToIP{$instances[$index]} = $ipAddresses[$index];
+    }
+    return \%instanceToIP;
+}
+
+sub getServer($$$$) {
+    my ($site, $date, $file, $globalProp) = @_;
+
+    my ($instance) = $file =~ /\/server_status\.(\S+)$/;
+    my $r_instanceToIP = getHttpdInstances($globalProp);
+    my $instanceIP = $r_instanceToIP->{$instance};
+    defined $instanceIP or die "Cound not get IP address for $instance";
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_serverMap = enmGetServiceGroupInstances($site,$date,"httpd");
+    my $serverIdsStr = join(",", values %{$r_serverMap});
+    if ( $serverIdsStr eq "" ) {
+        return undef;
+    }
+
+    my $query = <<EOQ;
+SELECT
+ servers.id AS id,
+ servers.hostname AS hostname
+FROM
+ sites, servers, network_interfaces, network_interface_ip
+WHERE
+ network_interface_ip.date = '$date' AND
+ network_interface_ip.ipaddress = '$instanceIP' AND
+ network_interface_ip.ifid = network_interfaces.id AND
+ network_interfaces.serverid = servers.id AND
+ servers.siteid = sites.id AND sites.name = '$site' AND
+ servers.id IN ( $serverIdsStr )
+EOQ
+    my $r_rows = dbSelectAllHash( $dbh, $query );
+    $#{$r_rows} == 0 or die "Cannot find server with ip address $instanceIP";
+    return $r_rows->[0];
+}
+
+sub main() {
+    my ($file,$site,$date,$globalProps);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "input=s" => \$file,
+        "props=s" => \$globalProps,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_data = parseStatus($file);
+    processData($r_data);
+    my $r_server = getServer($site,$date,$file,$globalProps);
+    if ( defined $r_server ) {
+        storeData($site,$date, $r_data, $r_server);
+    } else {
+        print "WARN: No httpd instances found";
+    }
+}
+
+main();

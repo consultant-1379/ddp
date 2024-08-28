@@ -1,0 +1,172 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($data,$dashDate);
+    my $datasets = "PCI-MethodCount";
+    my @datasets;
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "data=s" => \$data,
+        "datasets=s" => \$datasets,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Pull the datasets into an array
+    # In this case, they are Java Util Map objects 
+    foreach my $dataset (split(/\,/, $datasets)) {
+        push(@datasets, $dataset);
+    }
+
+    if ($DEBUG > 4) { print Dumper @datasets; }
+
+    # Store the datasets via getIdMap
+    my $r_datasets = getIdMap($dbh, "jmx_names", "id", "name", \@datasets);
+    my $cnt = 0;
+    my %metrics;
+    my @datasetids;
+
+    # Parse the files for each dataset, if they exist
+    PARSE_FILES: foreach my $dataset (@datasets) {
+        push(@datasetids, $r_datasets->{$dataset});
+        if (-e $data) {
+            processData($data, $sqlDate, $siteid, $dataset, $r_datasets, \%dataForStorage, \%metrics, \$cnt);
+        } else {
+            print "WARNING: No PCI instr file - expected file " . $data . " does not exist.\n";
+            next PARSE_FILES;
+        }
+    }
+
+    # Store the Node FDNs via getIdMap
+    my $r_metricsMap = getIdMap($dbh, "jmx_metric_names", "id", "name", [keys(%metrics)]);
+
+    if ($DEBUG > 7) { print Dumper %dataForStorage; }
+
+    # Store the data
+    storeDataset($sqlDate, $siteid, \@datasetids, \%dataForStorage, $r_metricsMap, \$cnt);
+
+    return 0;
+}
+
+sub processData() {
+    my ($data , $sqlDate, $siteid, $dataset, $r_datasets, $r_dataForStorage, $r_metrics, $r_cnt) = @_;
+    my $dbh = connect_db();
+
+    if ($DEBUG > 4) { print "processData called with " . $data . "...\n"; }
+
+    open DATA, $data or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+        if ($line =~ /^\s*$/ || $line !~ /^\d{2}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}\.\d+ $dataset/) {
+            next LINE;
+        } else {
+            ###
+            #
+            # Note: IWD: 3/155 19-CNA 403 8129: Parsing details as follows:
+            # =====
+            # - This data is of the usual instr form in terms of the timestamp.
+            # - The JMX data is stored in a Java Util Map means that it appears as a list of key (function name) and value (actual value) pairs.
+            # - The overall dataset is enclosed in curly brackets, with individual key/value pairs being comma separated.
+            #     e.g. 19-10-11 01:51:16.911 PCI-MethodCount {getPCIConflictList=1, addConflictsIfNotAlreadyPresent=1, performPCICheckInValidMode=87, validatePCIAgainstNeighbours=3316, validatePCIAgainstNeighbourNeighbours=3316, findEUtranCellsForSelectedMO=1}
+            # - We retrieve the data via backreferences.
+            # - There is no set list of fields, but it should lie between 10 and 20 key/value pairs.
+            # - Stored in normalized form with a stats and metrics names table.
+            #
+            ###
+            # Get the data via backreferences
+            my ($timestamp, $dataset, $data) = $line =~ /(\d{2}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}\.\d+) (\S+) \{(.*)\}/;
+            if ($data eq '') {
+                next LINE;
+            } else {
+                # Break out the metrics
+                foreach my $record (split(/, /, $data)) {
+                    my ($metric, $value) = split(/\=/, $record);
+                    # Collect the metric names for the jmx_metric_names table later
+                    $r_metrics->{$metric} = 1;
+                    # Put the data in the data hashp
+                    $r_dataForStorage->{$$r_cnt}->{'time'} = instr2mysqlTime($timestamp);
+                    $r_dataForStorage->{$$r_cnt}->{'datasetid'} = $r_datasets->{$dataset};
+                    $r_dataForStorage->{$$r_cnt}->{'metric'} = $metric;
+                    $r_dataForStorage->{$$r_cnt}->{'value'} = $value;
+                }
+            }
+            $$r_cnt++;
+        }
+    }
+    close(DATA);
+
+    if ($DEBUG > 4) { print Dumper $r_dataForStorage; }
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $r_datasetids, $r_dataForStorage, $r_metricsMap, $r_cnt) = @_;
+    my $dbh = connect_db();
+    my $table = "pci_jmx_stats";
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/pci_jmx_stats." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    for (my $index = 0; $index < $$r_cnt; $index++) {
+        print BULK_INSERT $r_dataForStorage->{$index}->{'time'} . "|" . $siteid . "|" . $r_dataForStorage->{$index}->{'datasetid'} . "|" . $r_metricsMap->{$r_dataForStorage->{$index}->{'metric'}} . "|" . $r_dataForStorage->{$index}->{'value'} . "\n";
+    }
+    close BULK_INSERT;
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM pci_jmx_stats WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid . " AND datasetid IN (";
+    foreach my $datasetid (@$r_datasetids) {
+        $rerunDelete .= $datasetid . ",";
+    }
+    $rerunDelete =~ s/\,$/)/; # Remove the final comma
+   
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data pci_jmx_stats for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE pci_jmx_stats FIELDS TERMINATED BY '|'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into pci_jmx_stats with statement " . $sqlInsert . "\n";
+    $dbh->disconnect;
+
+    return 0;
+}

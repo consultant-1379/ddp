@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ ylabel="seconds"
+ timespan="day"
+>
+ <title value="CheckPoint Duration"/>
+ <queries>
+  <query timecol="start" multiseries="servers.hostname">
+   <dbtables main="enm_neo4j_chkpnts">
+     <reference table="sites" condition="enm_neo4j_chkpnts.siteid = sites.id"/>
+     <reference table="servers" condition="enm_neo4j_chkpnts.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="TIME_TO_SEC( TIMEDIFF(enm_neo4j_chkpnts.end, enm_neo4j_chkpnts.start) )" label="Duration"/>
+  </query>
+ </queries>
+ <size width="990" height="400"/>
+</modelledgraph>

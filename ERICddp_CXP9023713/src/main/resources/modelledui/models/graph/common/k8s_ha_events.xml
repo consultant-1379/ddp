@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+ ylabel="Container ID"
+>
+  <title value="K8S HA Events"/>
+  <queries>
+    <query timecol="time" multiseries="k8s_ha.type">
+      <dbtables main="k8s_ha">
+        <reference table="sites" condition="k8s_ha.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="k8s_ha.containerid" label="Container ID"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

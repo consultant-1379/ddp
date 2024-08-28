@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+######################################################################
+#       Description ---------   parseOmbsBackupInstr -----------
+#       This script parses the OMBS LOG file for DDP
+#       and store data to Db
+#       @author - Shraddha Jain (xshajin)
+#       usage  parseOMBSBackup --logfile ${LogFile} --site ${SITE} --server ${HOSTNAME} [--type Netan]
+######################################################################
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use POSIX qw(strftime);
+use Date::Parse;
+use StatsDB;
+use strict;
+use warnings;
+use StatsTime;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $serverId = "";
+our $dbh = "";
+our @allOmbsBackupTimes = ();
+our $ombsDbTable = "ombs_backup_metrics";
+
+sub main {
+    my ($site, $server, $ombsBackupLogFile);
+    my $type = "";
+    my $result = GetOptions(
+        "logfile=s" => \$ombsBackupLogFile,
+        "site=s"    => \$site,
+        "server=s"  => \$server,
+        "type=s"    => \$type,
+        "debug=s"   => \$DEBUG
+        );
+    ( -r $ombsBackupLogFile ) or die "Cannot read log file $ombsBackupLogFile";
+
+    my $startTime;
+    if( $DEBUG > 1 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    parseOmbsBackupData($ombsBackupLogFile, $type);
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    loadDb();
+    $dbh->disconnect();
+    if( $DEBUG > 1 ){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+########## SUB ROUTINES #################
+
+sub parseOmbsBackupData {
+    my ($logFile, $type) = @_;
+    open ombsBackupLOG, "<$logFile" or die "Can't open file to read $logFile\n";
+    while( my $line = <ombsBackupLOG>){
+        my $backupTimeStamp;
+        if ( ( $type eq "Netan" ) && ( ($backupTimeStamp) = $line =~ /^(\d+\/\d+\/\d+ \d+:\d+:\d+).*NetAnServer successfully prepared for Backup\./) ){
+            $backupTimeStamp =~ s/\//-/g;
+            push @allOmbsBackupTimes, $backupTimeStamp;
+            if ( $DEBUG > 2 ) {print "Parsed line: $line\n";}
+        } elsif ( ($backupTimeStamp) = $line =~ /^(\d+\.\d+\.\d+\_\d+:\d+:\d+).*ENIQ Server successfully prepared for Backup/ ){
+            my  $ombsBackupDateTime = convertDateToSqlFormat($backupTimeStamp);
+            push @allOmbsBackupTimes, $ombsBackupDateTime;
+            if ( $DEBUG > 2 ) {print "Parsed line: $line\n";}
+        }
+    }
+    my $noOfBackups = @allOmbsBackupTimes;
+    if ( $noOfBackups < 1 ) {
+        print "No OMBS backup logging available.\n";
+        exit 1;
+    }
+    if ( $DEBUG > 3 ) {print Dumper(@allOmbsBackupTimes)};
+}
+
+sub loadDb {
+    my $bcpFile = createBCP();
+    my $loadDataQuery = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $ombsDbTable";
+    removeOldData();
+    if ( $DEBUG > 5 ) { print "SQL query for inserting data: $loadDataQuery \n" };
+    dbDo($dbh, $loadDataQuery) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+sub createBCP {
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "${tmpDir}/${ombsDbTable}_metrics.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    foreach my $backupDate (@allOmbsBackupTimes) {
+        printf BCP "%s\t%s\t%s\n", $siteId, $serverId, $backupDate;
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($firstBackupDateTime, $lastBackupDateTime) = getBackupStartEndTime();
+    my $deleteSql = "
+        DELETE
+        FROM
+         $ombsDbTable
+        WHERE
+         siteid = $siteId  AND
+         serverid= $serverId AND
+         successful_backup_time BETWEEN '$firstBackupDateTime' AND '$lastBackupDateTime'
+        ";
+    if ( $DEBUG > 4 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub getBackupStartEndTime {
+    my $firstBackupDateTime = $allOmbsBackupTimes[0];
+    my $lastBackupDateTime = $allOmbsBackupTimes[-1];
+    return ($firstBackupDateTime, $lastBackupDateTime);
+}
+
+main();

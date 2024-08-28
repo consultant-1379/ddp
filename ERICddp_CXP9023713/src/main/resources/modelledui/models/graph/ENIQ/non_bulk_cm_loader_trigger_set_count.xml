@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Count"
+>
+  <title value="Non Bulk CM Loader Set Count"/>
+  <queries>
+    <query timecol="day" >
+      <dbtables main="eniq_stats_adaptor_totals">
+        <reference table="sites" condition="eniq_stats_adaptor_totals.siteid = sites.id"/>
+        <reference table="eniq_stats_source" condition="eniq_stats_adaptor_totals.sourceid = eniq_stats_source.id"/>
+        <reference table="eniq_stats_types" condition="eniq_stats_adaptor_totals.typeid = eniq_stats_types.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="name"/>
+      <where>sites.name = '%s' AND eniq_stats_source.name NOT LIKE '%s'</where>
+      <column db="COUNT(DISTINCT eniq_stats_source.name, eniq_stats_types.name)" label="Non_Bulk_CM_Loader_Set"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>
+
+

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^f5instr@f5tcpstats$"
+>
+
+  <table name="eo_f5_tcp_stats"/>
+
+  <metricgroups>
+    <metricgroup name="^F5tcpstats-tcp$">
+      <metric source="connects" target="connects" delta="true" filteridle="true"/>
+      <metric source="connFails" target="connFails" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

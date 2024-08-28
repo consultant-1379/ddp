@@ -1,0 +1,167 @@
+#!/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($inFile,
+	$site,$date);
+    my $result = GetOptions("input=s"  => \$inFile,
+			    "site=s" => \$site,
+			    "date=s" => \$date,
+			    "debug=s" => \$DEBUG
+			    );
+    
+    
+    ($result == 1) or die "Invalid args"; 
+
+    my $r_nodes = load($inFile);
+    store($r_nodes,$site,$date);
+}
+
+sub store
+{
+    my ($r_nodes,$site,$date) = @_;
+
+    my %neTypes = ();
+
+    my %neVers = ();
+    foreach my $ne ( keys %{$r_nodes} )
+    {
+	my $r_node = $r_nodes->{$ne};
+	if ( $DEBUG > 6 ) { print Dumper("store: $ne", $r_node); }
+
+	my $sourceType = trim_str($r_node->{'stype'});
+	my $nodeVersion = trim_str($r_node->{'ver'}); 
+	my $managedElementType = trim_str($r_node->{'mtype'}); 
+	if ( ! $managedElementType )
+	{
+	    $managedElementType = 'UNKNOWN';
+	}
+
+	if ( $DEBUG > 4 ) { print "store: $ne $sourceType:$nodeVersion:$managedElementType\n"; }
+	
+	$neVers{$nodeVersion} = 1;
+
+	$neTypes{$managedElementType}->{$nodeVersion}->{'count'}++;
+	if ( $r_node->{'conn'} eq 'true' )
+	{
+	    $neTypes{$managedElementType}->{$nodeVersion}->{'connected'}++;
+	}
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("store neTypes", \%neTypes); }
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) 
+    {
+	print "ERROR: Could not find siteid for $site\n";
+	return;
+    }
+
+    $dbh->do("DELETE FROM onrm_ne_counts WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my @neVerList = keys %neVers;
+    my $r_neVerIdMap = getIdMap($dbh, "node_ver", "id", "name", \@neVerList );
+
+    my @meTypeList = keys %neTypes;
+    my $r_meTypeIdMap = getIdMap($dbh, "me_types", "id", "name", \@meTypeList );
+
+    foreach my $managedElementType ( keys %neTypes )
+    {
+	my $meTypeId = $r_meTypeIdMap->{$managedElementType};
+	foreach my $nodeVersion ( keys %{$neTypes{$managedElementType}} )
+	{
+	    my $sqlStr = sprintf("INSERT INTO onrm_ne_counts (date,siteid,me_typeid,node_verid,count,connected) VALUES (\'%s\',%d,%d,%d,%d,%d)",
+			  $date,$siteId,$meTypeId,
+			  $r_neVerIdMap->{$nodeVersion},
+			  $neTypes{$managedElementType}->{$nodeVersion}->{'count'},
+			  $neTypes{$managedElementType}->{$nodeVersion}->{'connected'}
+			  );
+	if ( $DEBUG > 2 ) { print "store: $sqlStr\n"; }	    
+	$dbh->do($sqlStr) or die "Failed to insert $managedElementType $nodeVersion " . $dbh->errstr;
+	}
+    }
+
+    $dbh->disconnect;
+}
+
+sub load
+{
+    my ($inFile) = @_;
+
+    my %nodes = ();
+
+    open INPUT, $inFile or die "Failed to open $inFile";
+    my @lines = <INPUT>;
+    close INPUT;
+
+    my $index = 0;
+    while ( $index <= $#lines )
+    {
+	if ( $lines[$index] =~ /^SubNetwork/ )
+	{
+	    my $ne = $lines[$index];
+	    chop $ne;
+	    $index++;
+
+	    my %attribs = ();
+	    while ( $lines[$index] =~ /^\s+\[\d+/ )
+	    {
+		my ($name,$value) = $lines[$index] =~ /^\s+\[\d+\]\s+(\S+).*\s*:\s+(.*)/;
+		if ( $DEBUG > 8 ) { print "load: name=$name value=$value\n"; }
+		$attribs{$name} = $value;
+		$index++;
+	    }
+
+	    foreach my $attribName ( keys %attribs )
+	    {
+		if ( $attribName eq "connectionStatus" )
+		{
+		    $nodes{$ne}->{'conn'} = $attribs{$attribName};
+		}
+		elsif ( $attribName eq "nodeVersion" )
+		{
+		    $nodes{$ne}->{'ver'} = $attribs{$attribName};
+		}
+		elsif ( $attribName eq "managedElementType" )
+		{
+		    $nodes{$ne}->{'mtype'} = $attribs{$attribName};
+		}
+		elsif ( $attribName eq "sourceType" ) 
+		{
+		    $nodes{$ne}->{'stype'} = $attribs{$attribName};
+		}
+	    }
+	}
+	else
+	{
+	    $index++;
+	}
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("load: nodes", \%nodes); }
+    
+    return \%nodes;
+}
+	
+sub trim_str
+{
+    my ($out) = @_;
+    
+    $out =~ s/\"//g; 
+    $out =~ s/ *$//; 
+    $out =~ s/^ *//; 
+    
+    return $out;
+}

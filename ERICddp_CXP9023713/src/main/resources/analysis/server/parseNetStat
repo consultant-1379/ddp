@@ -1,0 +1,187 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use DBI;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+our $MAX_VALUE = 4294967295;
+our $MAX_STEP =  100000000;
+
+main();
+
+sub main
+{
+    my ($result,$netstatFile,$site,$host);
+    $result = GetOptions(
+			 "netstat=s" => \$netstatFile,
+			 "site=s" => \$site,
+			 "host=s" => \$host,
+			 "debug=s" => \$DEBUG
+			 );
+
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+    ( -r $netstatFile ) or printUsageAndExit("Could not read from netstat File\n");
+
+    my $r_samples = processFile($netstatFile);
+    deltaData($r_samples);
+    storeData($site,$host,$r_samples);
+}
+
+sub processFile
+{
+    my ($netstatFile) = @_;
+
+    my @samples = ();
+
+    my $inSection = 0;
+    open NETSTAT, "$netstatFile" or die "Cannot open $netstatFile";
+    my $r_CurrSample;
+    while ( my $line = <NETSTAT> )
+    {
+	if ( $inSection == 0 ) {
+	    if ( $line =~ /^([\d:]+)$/ ) {
+		$r_CurrSample = {
+		    'timestamp' => $1,
+		    'stats' => {}
+		};
+		push @samples, $r_CurrSample;
+		$inSection = 1;
+	    }
+	} else {
+	    if ( $line =~ /^(\S+)\s+\d+\s+\S+\s+\S+\s+(\d+)\s+\d+\s+(\d+)/ ) {
+		my ($interface,$inPkts,$outPkts) = ($1,$2,$3);
+		if ( $interface ne 'lo0' ) {
+		    $r_CurrSample->{'stats'}->{$interface} = {
+			'in' => $inPkts,
+			'out' => $outPkts
+		    };
+		}
+	    } elsif ( $line =~ /^\s?$/ ) {
+		$inSection = 0;
+	    }
+	}
+    }
+    close NETSTAT;
+    if ( $DEBUG ) { print Dumper("processFile samples",\@samples); }
+
+    return \@samples;
+}
+
+sub deltaData 
+{
+    my ($r_samples) = @_;
+
+    my $index = 0;
+    while ( $index < $#{$r_samples} ) {	
+	foreach my $interface ( keys %{$r_samples->[$index]->{'stats'}} ) {	    
+	    my $thisStat = $r_samples->[$index]->{'stats'}->{$interface};
+	    my $nextStat = $r_samples->[$index+1]->{'stats'}->{$interface};
+	    my $inDelta = delta( $thisStat->{'in'}, $nextStat->{'in'} );
+	    my $outDelta = delta( $thisStat->{'out'}, $nextStat->{'out'} );
+
+	    my $duration = StatsTime::parseTime( $r_samples->[$index+1]->{'timestamp'}, $StatsTime::TIME_DDMMYY_HM ) -
+		StatsTime::parseTime( $r_samples->[$index]->{'timestamp'}, $StatsTime::TIME_DDMMYY_HM );
+	    
+	    $thisStat->{'inrate'} = int( ($inDelta / $duration) + 0.5 );
+	    $thisStat->{'outrate'} = int( ($outDelta / $duration) + 0.5 );
+	}
+	
+	$index++;
+    }
+    pop @{$r_samples};
+}
+
+sub storeData
+{
+    my ($site,$host, $r_samples) = @_;
+
+    if ( $#{$r_samples} == - 1 ) {
+	return;
+    }
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId($dbh,$siteId,$host);
+	
+    my %ifNames = ();
+    foreach my $r_sample ( @{$r_samples} ) {
+	foreach my $ifName ( keys %{$r_sample->{'stats'}} ) {
+	    $ifNames{$ifName}++;
+	}
+    }
+    my @ifList = keys %ifNames;    
+    my $r_ifMap = getIdMap($dbh,"network_interfaces","id","name",\@ifList,$serverId,"serverid");
+
+    #
+    # Delete any previous data
+    #
+    my $firstTime = formatTime(parseTime($r_samples->[0]->{'timestamp'},
+					 $StatsTime::TIME_DDMMYY_HM),
+			       $StatsTime::TIME_SQL);
+    my $lastTime = formatTime(parseTime($r_samples->[$#{$r_samples}]->{'timestamp'},
+					$StatsTime::TIME_DDMMYY_HM),
+			      $StatsTime::TIME_SQL);
+    foreach my $ifName ( @ifList ) { 
+	dbDo($dbh,sprintf("DELETE FROM network_interface_stats WHERE ifid = %d AND time BETWEEN '$firstTime' AND '$lastTime'",
+			  $r_ifMap->{$ifName})) or die "Failed to remove old data";
+    }
+
+    #
+    # Insert data
+    # 
+    foreach my $r_sample ( @{$r_samples} ) {
+	my $ts = formatTime(parseTime($r_sample->{'timestamp'},
+				      $StatsTime::TIME_DDMMYY_HM),
+			    $StatsTime::TIME_SQL);
+	foreach my $ifName ( keys %{$r_sample->{'stats'}} ) {
+	    dbDo($dbh,sprintf("INSERT INTO network_interface_stats (time,ifid,inpkts,outpkts) VALUES ('%s',%d,%d,%d)",
+			      $ts, $r_ifMap->{$ifName}, 
+			      $r_sample->{'stats'}->{$ifName}->{'inrate'}, 
+			      $r_sample->{'stats'}->{$ifName}->{'outrate'})
+		 ) or die "Failed to insert data";
+	}
+    }
+
+    $dbh->disconnect;
+}
+
+
+
+sub printUsageAndExit
+{
+    my ($errMsg) = @_;    
+    print "$errMsg\n";
+
+    print "Usage: parseNetStat --netstat netstatFile --total totalFile [ --delta dataFile ]";
+    exit;
+}
+
+sub delta
+{
+    my ($old, $new) = @_;
+    my $theDelta = 0;
+
+    if ( $new >= $old )
+    {
+	$theDelta = $new - $old;
+    }
+    else
+    {			
+	if ( ($MAX_VALUE - $old) < $MAX_STEP )
+	{	    
+	    $theDelta = ($MAX_VALUE  - $old) + $new;
+	}
+	else
+	{
+	    $theDelta = $new;
+	}
+    }
+    
+    return $theDelta;
+}
+

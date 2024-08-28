@@ -1,0 +1,24 @@
+#!/usr/bin/env perl
+
+while ( $line = <STDIN> )
+{
+    if ( $line =~ /^(\S+)\s+(\S+)\s+(\d+)MB\s+(\d+)MB\s+(\d+)MB\s+(\d+)/ )
+    #if ( $line =~ /^(\S+)\s+(\S+)\s+(\S+)/ )
+    {
+	$_ = $line;
+	($dbname,$segType,$size,$free,$used,$percent) =
+	    /^(\S+)\s+(\S+)\s+(\d+)MB\s+(\d+)MB\s+(\d+)MB\s+(\d+)%$/;
+	$dbinfo{$dbname}->{$segType} = {
+	    size => $size,
+	    used => $used
+	    };
+    }
+}
+
+foreach $dbname ( sort keys %dbinfo )
+{
+    printf " <tr> <td>%s<\/td> <td>%d<\/td> <td>%d<\/td> <td>%d<\/td> <td>%d<\/td> <\/tr>\n",
+    $dbname, $dbinfo{$dbname}->{system}->{size}, $dbinfo{$dbname}->{system}->{used},
+    $dbinfo{$dbname}->{logsegment}->{size}, $dbinfo{$dbname}->{logsegment}->{used};
+}
+

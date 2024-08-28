@@ -1,0 +1,708 @@
+#!/bin/bash
+
+getEnmVersion() {
+    local ENM_VER_FILE_PATH=${DATADIR}/TOR/sw_inventory/ENM_version
+    # The below regular expressions find and return certain pieces of the Version file, which is of the form
+    # " ENM Release info      : ENM 15.9 (ISO Version: 1.6.21) No AOM Number and RSTATE information found for Product: ENM and drop: 15.9"
+    # In the above example $TOR_DROP=15.9  ISO_VER=1.6.21 TOR_VER=15.9 (ISO Version: 1.6.21)
+    # The \K escape sequence resets the beginning of the match to the current position. i.e. it only returns the part of the match after the \K
+    local VERSION_INFO=""
+    if [ -r ${DATADIR}/TOR/sw_inventory/enm_version ];  then
+        VERSION_INFO=$(cat ${DATADIR}/TOR/sw_inventory/enm_version)
+    elif [ -f ${ENM_VER_FILE_PATH} ] ; then
+        VERSION_INFO=$( grep  "ENM Version info " ${ENM_VER_FILE_PATH} )
+    fi
+    if [ -z "${VERSION_INFO}" ] && [ -r ${DATADIR}/CLOUD_NATIVE ] ; then
+        ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/enm_version <<EOF
+SELECT CONCAT(swim.commercialName, ' ', swim.semanticVersion, ' ', swim.pnumber, ' ', swim.revision)
+FROM swim
+JOIN sites ON swim.siteid = sites.id
+WHERE
+ sites.name = '${SITE}' AND
+ swim.date = '${SQL_DATE}'
+EOF
+        if [ -s ${TMP_DIR}/enm_version ] ; then
+            TOR_VER=$(cat ${TMP_DIR}/enm_version | sed 's/^ENM //')
+        fi
+    else
+        local TOR_DROP=$( echo "${VERSION_INFO}" | grep -Po "ENM\s\K\d+\.\d+" )
+        ISO_VER=$( echo "${VERSION_INFO}" | grep -Po "ISO Version:\s\K\d+\.\d+\.\d+" )
+        local ISO_NAME=$( echo "${VERSION_INFO}" | grep -Po "\)\s\K\S+\s\d+\s\d+\s\S+" )
+        if [[ ! -z "${ISO_NAME}" ]] ; then
+            TOR_VER="${TOR_DROP} ${ISO_VER} ${ISO_NAME}"
+        else
+            TOR_VER="${TOR_DROP} ${ISO_VER}"
+        fi
+    fi
+
+    # Make sure we always have a value for ENM_VER, otherwise the data will not be visible
+    # in the site_index page
+    if [ -z  "${TOR_VER}" ] ; then
+        TOR_VER="NA"
+    fi
+}
+
+parseFLS() {
+    local FLS_DIR=$1
+
+    log "FLS"
+
+    local JSON_FILE=${ANALYSIS_BIN}/TOR/pm/FileCollectionCategory.json
+    if [ -r ${FLS_DIR}/FileCollectionCategory.json ] ; then
+        JSON_FILE=${FLS_DIR}/FileCollectionCategory.json
+    fi
+
+    local DATE_ARG=""
+    if [ -r ${FLS_DIR}/from_time ] ; then
+        DATE_ARG="--date ${SQL_DATE}"
+    fi
+
+    run ${ANALYSIS_BIN}/TOR/pm/parseFLS --site ${SITE} --dir ${FLS_DIR} \
+        --json ${JSON_FILE} --incr ${INCR_DIR}/fls ${DATE_ARG}
+}
+
+processInit() {
+    # Here we need to figure out/store all the server types/servicegroups
+    # so when parseInstrDump runs, all the server ids exist
+
+    # Extract tor servers tarballs first
+    if [ -d ${DATADIR}/tor_servers ] ; then
+        for SERVER in $(ls ${DATADIR}/tor_servers) ; do
+            TARDIR=${DATADIR}/tor_servers/${SERVER}
+            REMOTEHOSTNAME=`echo ${SERVER} | awk -F_ '{ print $1 }'`
+            TARFILE=${TARDIR}/DDC_Data_${DATE}.tar.gz
+            if [ -f "${TARFILE}" ] ; then
+                cd ${TARDIR}
+                tar -xzf ${TARFILE}
+                if [ $? -ne 0 ] ; then
+                    log "ERROR: could not extract ${TARFILE}"
+                else
+                    rm -f ${TARFILE}
+                fi
+            fi
+        done
+    fi
+
+    if [ -r ${DATADIR}/TOR/global.properties ] ; then
+        egrep '^ENM_on_Cloud=TRUE' ${DATADIR}/TOR/global.properties > /dev/null
+        if [ $? -eq 0 ] ; then
+            touch ${DATADIR}/TOR/CLOUD_DEPLOYMENT
+        fi
+    fi
+
+    # Now parse the model and update the tor_server_type
+    if [ -s  ${DATADIR}/TOR/sw_inventory/LITP2_deployment_description ] ; then
+        run ${ANALYSIS_BIN}/TOR/cluster/storeCluster --model ${DATADIR}/TOR/sw_inventory/LITP2_deployment_description \
+            --dir ${DATADIR}/tor_servers --ipmap ${TMP_DIR}/ipmap.txt \
+            --incr ${INCR_DIR}/cluster.incr \
+            --date ${DATE} --site ${SITE} \
+            --prefix "/data/tmp/incr/${SITE}/${DATE}/FS_PREFIX.txt"
+    fi
+
+    if [ -d ${DATADIR}/tor_servers ] ; then
+        DIR_COUNT=$(ls ${DATADIR}/tor_servers | wc -l | awk '{print $1}')
+        if [ ${DIR_COUNT} -gt 0 ] ; then
+            # Store the SG names for each server
+            log "Store Service Groups"
+            run ${ANALYSIS_BIN}/TOR/cluster/storeServiceGroups --dir ${DATADIR}/tor_servers --date ${SQL_DATE} --site ${SITE}
+        fi
+    fi
+
+    # In Cloud deployments, the serviceregistry VMs don't have DDC installed but we need to
+    # register the serviceregistry VMs as servers for splitLog to recognise the servers so
+    # we look specific for consul info. This needs to run after storeServiceGroups as storeServiceGroups
+    # clears the enm_servicegroup_instances table
+    if [ -d ${DATADIR}/TOR/consul ] ; then
+        run ${ANALYSIS_BIN}/TOR/cluster/parseConsul --indir ${DATADIR}/TOR/consul --date ${SQL_DATE} --site ${SITE}
+    fi
+
+    # If it's not cENM, then disable the parsing of the metrics from node_exporter (we'll use the uses from sar)
+    if [ -d ${DATADIR}/remote_writer ] && [ ! -r ${DATADIR}/CLOUD_NATIVE ] ; then
+        /bin/cp ${ANALYSIS_BIN}/modelled/instr/disabled_penm.json ${TMP_DIR}/disabled_models.json
+    fi
+}
+
+processFull() {
+    getEnmVersion
+
+    HOSTNAME=$(${ANALYSIS_BIN}/server/getHostname ${DATADIR}/server)
+
+    run ${ANALYSIS_BIN}/sql/setAppVer --app tor --site ${SITE} --date ${SQL_DATE} --sw "${TOR_VER}"
+
+    if [ ! -d ${ANALYSIS_OUTPUT} ] ; then
+        mkdir ${ANALYSIS_OUTPUT}
+    fi
+
+    # We want the context mapping in place so that the Apache log analysis can use it
+    if [ -d ${DATADIR}/TOR/httpd ] ; then
+        MANAGER_INFO_FILE=$(find ${DATADIR}/TOR/httpd -name 'manager_info.*' | head -1)
+        if [ ! -z "${MANAGER_INFO_FILE}" ] ; then
+            run ${ANALYSIS_BIN}/TOR/misc/parseModCluster --input ${MANAGER_INFO_FILE} --site ${SITE} --date ${SQL_DATE}
+        fi
+    fi
+
+
+    # Extract the service mapping for each VM
+    ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/vm_svc.out <<EOF
+SELECT servers.hostname, enm_servicegroup_names.name
+FROM sites, servers, enm_servicegroup_names, enm_servicegroup_instances
+WHERE
+ enm_servicegroup_instances.siteid = sites.id AND sites.name = '${SITE}' AND
+ enm_servicegroup_instances.date = '${SQL_DATE}' AND
+ enm_servicegroup_instances.serverid = servers.id AND
+ enm_servicegroup_instances.serviceid = enm_servicegroup_names.id
+ORDER BY servers.hostname
+EOF
+
+    CLUSTERED_DATA_DIR=${DATADIR}/TOR/clustered_data
+
+    # Process the Clustered ENM logs
+    if [ -r ${CLUSTERED_DATA_DIR}/elasticsearch/elasticsearch.log.gz ] ; then
+        log "Analyse Clustered ENM logs"
+        if [ ! -d ${ANALYSIS_OUTPUT}/enmlogs ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/enmlogs
+            cat > ${ANALYSIS_OUTPUT}/enmlogs/README <<EOF
+## Elasticsearch Logs Provided by DDP:
+--------------------------------------
+DDP has parsing limits per server for Elasticsearch data and if those limits are exceeded then the
+Elasticsearch data is no longer parsed from that time till the end of the given day for that
+server. This can lead to incomplete "*.csv.gz files" (since they will be missing data for the
+servers that exceeded the limits) and those files are noted by the term "partial" in the filename.
+For more info check the "Logs" analysis section of DDP web site for the given deployment.
+EOF
+        fi
+
+        # Some of the modules output to cm dir
+        if [ ! -d ${ANALYSIS_OUTPUT}/cm ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/cm
+        fi
+
+        ISO_ARG=""
+        if [ ! -z "${ISO_VER}" ] ; then
+            ISO_ARG="--iso \"${ISO_VER}\""
+        fi
+        # Run split log in parallel with the processEnmServers
+        NOFILE=$(ulimit -n)
+        run ${ANALYSIS_BIN}/elasticsearch/splitLog --indir ${CLUSTERED_DATA_DIR}/elasticsearch \
+            --analysisOut ${ANALYSIS_OUTPUT}/enmlogs \
+            --site ${SITE} --date ${SQL_DATE} \
+            --maxfiles ${NOFILE} \
+            --datadir ${DATADIR} \
+            --handlerdir ${ANALYSIS_BIN}/elasticsearch/handlers \
+            --handlerdir ${ANALYSIS_BIN}/TOR/elasticsearch/handlers \
+            ${ISO_ARG} \
+            --incr ${INCR_DIR}/splitLog.inc &
+
+        # If parallel has been disabled then wait here for splitLog to finish
+        if [ ${PARALLEL_COUNT} -eq 1 ] ; then
+            wait
+        fi
+    fi
+
+    if [ -r ${CLUSTERED_DATA_DIR}/elasticsearch/eventdata.log.gz ] ; then
+        log "Analyse Event Data logs"
+        run ${ANALYSIS_BIN}/modelled/events/parseEventData --model ${ANALYSIS_BIN}/modelled/events/models \
+            --indir ${CLUSTERED_DATA_DIR}/elasticsearch --date ${SQL_DATE} --site ${SITE} &
+        if [ ${PARALLEL_COUNT} -eq 1 ] ; then
+            wait
+        fi
+    fi
+
+    # Process Elasticsearch index health status
+    if [ -r ${CLUSTERED_DATA_DIR}/elasticsearch/ES_indices.log ] ; then
+        log "Parsing ES_indices.log"
+        run ${ANALYSIS_BIN}/TOR/elasticsearch/parseESIndicesLog --log ${CLUSTERED_DATA_DIR}/elasticsearch/ES_indices.log --date ${SQL_DATE} --site ${SITE}
+    fi
+
+    if [ -r ${CLUSTERED_DATA_DIR}/eshistory/es_history_indices.log ] ; then
+        log "Parsing es_history_indices.log"
+        run ${ANALYSIS_BIN}/TOR/elasticsearch/parseEShistoryIndicesLog --log ${CLUSTERED_DATA_DIR}/eshistory/es_history_indices.log --date ${SQL_DATE} --site ${SITE}
+    fi
+
+    # Process Backup (BUR) data
+    BACKUP_DIR=${DATADIR}/bur/opt/ericsson/itpf/bur/log/bos
+    if [ -r ${BACKUP_DIR} ] ; then
+        run ${ANALYSIS_BIN}/TOR/bur/parseburLog --site ${SITE} --date ${SQL_DATE} --dir ${BACKUP_DIR}
+    fi
+
+    BACKUP_THROUGHPUT_FILE="${DATADIR}/bur/measurement_backup_FilesystemThroughput.data"
+    if [ -r "${BACKUP_THROUGHPUT_FILE}" ] && [ ! -z "${HOSTNAME}" ] ; then
+        log "Parsing throughput details for ${HOSTNAME}"
+        run ${ANALYSIS_BIN}/TOR/bur/parseBurThroughput --throughput_file ${BACKUP_THROUGHPUT_FILE} --server ${HOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Process Restore (BUR) data
+    RESTORE_LOG_DIR=${DATADIR}/bur/opt/ericsson/itpf/bur/log/ros
+    if [ -r ${RESTORE_LOG_DIR} ] ; then
+        run ${ANALYSIS_BIN}/TOR/bur/parseRestoreLog --site ${SITE} --date ${SQL_DATE} --dir ${RESTORE_LOG_DIR}
+    fi
+
+    RESTORE_THROUGHPUT_FILE="${DATADIR}/bur/measurement_restore_FilesystemThroughput.data"
+    if [ -r "${RESTORE_THROUGHPUT_FILE}" ] && [ ! -z "${HOSTNAME}" ] ; then
+        log "Parsing throughput details for ${HOSTNAME}"
+        run ${ANALYSIS_BIN}/TOR/bur/parseRestoreThroughput --throughput_file ${RESTORE_THROUGHPUT_FILE} --server ${HOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Process JBOSS subsystem logging levels
+    SUBSYS_LOGGING_LEVEL_FILE="${DATADIR}/TOR/jboss/logging_standalone.properties"
+    if [ -r "${SUBSYS_LOGGING_LEVEL_FILE}" ] ; then
+        run ${ANALYSIS_BIN}/TOR/common/parseJbossLoggingLevels --logfile ${SUBSYS_LOGGING_LEVEL_FILE} --site ${SITE} --server ${HOSTNAME}
+    fi
+
+    #
+    # First lets figure out what the dps_provider is
+    #
+    # Newer versions of ddc tell us when it's cloud native => neo4j
+    if [ -r ${DATADIR}/CLOUD_NATIVE ] ; then
+        DPS_PROVIDER=neo4j
+    elif [ -s ${DATADIR}/TOR/global.properties ] ; then
+       DPS_PROVIDER=$(egrep '^dps_persistence_provider=' ${DATADIR}/TOR/global.properties | awk -F '=' '{print $2}')
+        if [ -z "${DPS_PROVIDER}" ] ; then
+            DPS_PROVIDER=versant
+        fi
+    else
+        # Assuming here that the reason we don't have global.properties is that this is cENM => neo4j
+        # This is for older versions of ddc that don't create the CLOUD_NATIVE file
+        DPS_PROVIDER=neo4j
+    fi
+    # Process Versant data
+    if [ -d ${CLUSTERED_DATA_DIR}/versant ] && [ "${DPS_PROVIDER}" = "versant" ] ; then
+        log "Analysing Versant Logs"
+        run ${ANALYSIS_BIN}/TOR/versant/parseVersant --versantLogsDirectory ${CLUSTERED_DATA_DIR}/versant --date ${SQL_DATE} --site ${SITE}
+
+        if [ -d ${CLUSTERED_DATA_DIR}/versant/mo ] ; then
+            log "Analysing Network Elements"
+            run ${ANALYSIS_BIN}/TOR/versant/parseMOs --dir ${CLUSTERED_DATA_DIR}/versant/mo --date ${SQL_DATE} --site ${SITE} \
+                --nodes ${TMP_DIR}/nodes.json
+
+            if [ -r ${CLUSTERED_DATA_DIR}/versant/mo/ns_OSS_NE_DEF.Pt_NetworkElement ] ; then
+                run ${ANALYSIS_BIN}/TOR/cm/storeNetworkElements --site ${SITE} --nefile ${CLUSTERED_DATA_DIR}/versant/mo/ns_OSS_NE_DEF.Pt_NetworkElement
+            fi
+        fi
+
+        if [ -r ${CLUSTERED_DATA_DIR}/versant/dps_integration.ls_la ] ; then
+            log "Versant Crash Info"
+            run ${ANALYSIS_BIN}/TOR/versant/parseVersantCrashStats --ls ${CLUSTERED_DATA_DIR}/versant/dps_integration.ls_la --site ${SITE} --date ${SQL_DATE}
+        fi
+    fi
+
+    # Process neo4j data
+    if [ -d ${CLUSTERED_DATA_DIR}/neo4j ]  && [ "${DPS_PROVIDER}" = "neo4j" ] ; then
+        if [ -d ${CLUSTERED_DATA_DIR}/neo4j/mo ] ; then
+            log "Analysing Network Elements"
+            run ${ANALYSIS_BIN}/TOR/versant/parseMOs --neo4j --dir ${CLUSTERED_DATA_DIR}/neo4j/mo --date ${SQL_DATE} --site ${SITE} \
+                --nodes ${TMP_DIR}/nodes.json
+
+            if [ -r ${CLUSTERED_DATA_DIR}/neo4j/mo/OSS_NE_DEF:NetworkElement ] ; then
+                run ${ANALYSIS_BIN}/TOR/cm/storeNetworkElements --site ${SITE} --neo4j --nefile ${CLUSTERED_DATA_DIR}/neo4j/mo/OSS_NE_DEF:NetworkElement
+            fi
+        fi
+        if [ -r ${CLUSTERED_DATA_DIR}/neo4j/mo.counts ] ; then
+            run ${ANALYSIS_BIN}/TOR/neo4j/parseMoCounts --input ${CLUSTERED_DATA_DIR}/neo4j/mo.counts \
+                --date ${SQL_DATE} --site ${SITE}
+        fi
+    fi
+
+    WORKFLOWS_LOG_FILE=${DATADIR}/TOR/workflows.log
+    if [ -r ${WORKFLOWS_LOG_FILE} ] ; then
+        log "Analysing Workflows Log"
+        if [ ! -d ${ANALYSIS_OUTPUT}/workflows ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/workflows
+        fi
+        run ${ANALYSIS_BIN}/TOR/parseWorkflowLogs --logFile ${WORKFLOWS_LOG_FILE} --analysisOut \
+            ${ANALYSIS_OUTPUT}/workflows --site ${SITE} --incr ${INCR_DIR}/parseWorkflowLogs
+    fi
+
+    # Process the tor_servers data
+    if [ -d ${DATADIR}/tor_servers ] ; then
+        log "Analysing TOR Servers"
+        SERVER_DIR_LIST=$(ls ${DATADIR}/tor_servers)
+        /usr/bin/parallel -j ${PARALLEL_COUNT} ${ANALYSIS_BIN}/TOR/processEnmServer -s ${SITE} -d ${DASH_DATE} -i ${DATADIR} \
+                          -o ${ANALYSIS_OUTPUT} -u ${UTC_OFFSET} -t FULL -r -- ${SERVER_DIR_LIST}
+    fi
+
+    # For now, collect the resource usage statistics for vENM (ENM on Cloud) deployments
+    # alone. Based on the performance of the below script we may collect these stats
+    # for physical ENM deployments as well in the future
+    if [ -f ${DATADIR}/TOR/CLOUD_DEPLOYMENT ]  || [ -d ${DATADIR}/TOR/consul ] ; then
+        run ${ANALYSIS_BIN}/TOR/parseResUsageStats --site ${SITE} --date ${SQL_DATE} \
+                --analysisOut ${ANALYSIS_OUTPUT}/resource_usage
+
+        # The resource usage analysis for the last 'N' days needs to be generated only
+        # after first generating the daily resource usage stats by 'parseResUsageStats'
+        run ${ANALYSIS_BIN}/TOR/parseResUsgLastNDays --site ${SITE} --date ${SQL_DATE} \
+                --analysisOut ${ANALYSIS_OUTPUT}/resource_usage
+    fi
+
+    if [ -r ${DATADIR}/TOR/dumps ] ; then
+        log "Dump Files"
+        run ${ANALYSIS_BIN}/TOR/parseDumpLogs --logdir ${DATADIR} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    if [ -r ${DATADIR}/TOR/litp/mco_puppet_status.log ] ; then
+        log "Analysing mco_puppet_status.log"
+        ${ANALYSIS_BIN}/TOR/puppet/parsePuppetStatusLog --site ${SITE} --file ${DATADIR}/TOR/litp/mco_puppet_status.log --date ${SQL_DATE}
+    fi
+
+    if [ -r ${DATADIR}/server/messages ] ; then
+        log "Analysing messages file for puppet information"
+        ${ANALYSIS_BIN}/TOR/puppet/parsePuppetMessages --site ${SITE} --file ${DATADIR}/server/messages --date ${SQL_DATE}
+    fi
+
+    ENM_INST_LOG=${DATADIR}/TOR/sw_inventory/enminst.log
+    if [ -r ${ENM_INST_LOG} ] ; then
+        egrep '.*upgrade_enm.sh|Post upgrade|System successfully upgraded|Upgrade has been started|RH7 uplift completed successfully' ${ENM_INST_LOG} > /dev/null
+        if [ $? -eq 0 ] ; then
+            if [ ! -d ${ANALYSIS_OUTPUT}/enm_upgrade ] ; then
+                mkdir ${ANALYSIS_OUTPUT}/enm_upgrade
+            fi
+            METRICS_ARG=""
+            if [ -r ${DATADIR}/TOR/metrics.log ] ; then
+                METRICS_ARG="--metrics ${DATADIR}/TOR/metrics.log"
+            fi
+            RHFLAG_ARG=""
+            egrep '.*upgrade_enm.sh|Post upgrade|execute_post_upgrade_steps.*System successfully upgraded' ${ENM_INST_LOG} > /dev/null
+            if [ $? -eq 0 ] ; then
+                RHFLAG_ARG="--rhflag RH6"
+            else
+                RHFLAG_ARG="--rhflag RH6toRH7"
+            fi
+            run ${ANALYSIS_BIN}/TOR/parseUpgrade --log ${ENM_INST_LOG} --history ${DATADIR}/TOR/sw_inventory/enm-history \
+                 --site ${SITE} --outdir ${ANALYSIS_OUTPUT}/enm_upgrade ${METRICS_ARG} $RHFLAG_ARG
+        fi
+    fi
+
+    DPS_EVENT_LOG=${DATADIR}/TOR/clustered_data/jms/dps.events
+    CM_NETYPE_SG_DIR=${DATADIR}/TOR/clustered_data/Netype_SG_Mapping
+    if [ -r ${DPS_EVENT_LOG} ] ; then
+        if [ ! -d ${ANALYSIS_OUTPUT}/cm ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/cm
+        fi
+
+        CM_SG_ARG=""
+        if [ -d ${CM_NETYPE_SG_DIR} ] ; then
+            CM_SG_ARG="--servicegrp ${CM_NETYPE_SG_DIR}"
+        fi
+
+        run ${ANALYSIS_BIN}/TOR/cm/parseCmFunction --site ${SITE} --events ${DPS_EVENT_LOG} \
+            --outdir ${ANALYSIS_OUTPUT}/cm ${CM_SG_ARG}
+
+        if [ ! -d ${ANALYSIS_OUTPUT}/fm ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/fm
+        fi
+        run ${ANALYSIS_BIN}/TOR/fm/parseFmFunction --events ${DPS_EVENT_LOG} --outdir ${ANALYSIS_OUTPUT}/fm
+    fi
+
+    JMS_INPUT_DIR=${DATADIR}/TOR/clustered_data/jms
+    if [ -r ${JMS_INPUT_DIR}/list-all-consumers-as-json ] ; then
+        JMS_OUTPUT_DIR=${ANALYSIS_OUTPUT}/jms
+        if [ ! -d ${JMS_OUTPUT_DIR} ] ; then
+            mkdir ${JMS_OUTPUT_DIR}
+        fi
+        if [ -r ${DATADIR}/TOR/consul/members.txt ]; then
+           run ${ANALYSIS_BIN}/TOR/jms/jmsConfigCloudIpmap --membersFile ${DATADIR}/TOR/consul/members.txt --ipmap ${TMP_DIR}/ipmap.txt
+        fi
+        run ${ANALYSIS_BIN}/TOR/jms/parseJmsConfig --jmsdir ${JMS_INPUT_DIR} \
+            --ipmap ${TMP_DIR}/ipmap.txt \
+            --utcoff ${UTC_OFFSET} \
+            --output ${JMS_OUTPUT_DIR}/config.json
+    fi
+
+    for DB in versant neo4j ; do
+        OPEN_ALARM_LOG=${DATADIR}/TOR/clustered_data/${DB}/OpenAlarmCount.txt
+        if [ -r ${OPEN_ALARM_LOG} ] && [ "${DPS_PROVIDER}" = "${DB}" ] ; then
+            run ${ANALYSIS_BIN}/TOR/fm/parseOpenAlarms --site ${SITE} --input ${OPEN_ALARM_LOG}
+        fi
+    done
+
+    POSTGRES_INPUT_DIR=${DATADIR}/TOR/clustered_data/postgres
+    if [ -s ${POSTGRES_INPUT_DIR}/postgres.pg_stat_database ] && [ ! -r ${DATADIR}/CLOUD_NATIVE ] ; then
+        log "Postgres Stats"
+        run ${ANALYSIS_BIN}/TOR/postgres/parseStats --dbfileinput ${POSTGRES_INPUT_DIR}/postgres.pg_stat_database --dbsizeinput ${POSTGRES_INPUT_DIR}/dbsize.txt --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    if [ "$(cat ${DATADIR}/TOR/tor_server_type)" = "monitoring" ] && [ -s ${POSTGRES_INPUT_DIR}/esmon_postgres.pg_stat_database ] ; then
+        ESMON_VM=$(cat ${DATADIR}/server/hostname | awk '{print $2}' | awk -F\. '{print $1}')
+        log "Esmon Postgres Stats"
+        run ${ANALYSIS_BIN}/TOR/postgres/parseStats --dbfileinput ${POSTGRES_INPUT_DIR}/esmon_postgres.pg_stat_database --site ${SITE} --date ${SQL_DATE} --server ${ESMON_VM}
+    fi
+
+    FLS_DIR=${DATADIR}/TOR/clustered_data/fls
+    if [ -d ${FLS_DIR} ] ; then
+        parseFLS ${FLS_DIR}
+    fi
+
+    ULSA_DIR=${DATADIR}/TOR/clustered_data/ulsa
+    if [ -d ${ULSA_DIR} ] ; then
+        log "ULSA"
+        run ${ANALYSIS_BIN}/TOR/pm/parseULSA --site ${SITE} --dir ${ULSA_DIR} --incr ${INCR_DIR}/ulsa
+    fi
+
+    if [ -r ${DATADIR}/server/cron.log ] ; then
+        grep --silent '/opt/ericsson/ddc/bin/ddcDataUpload' ${DATADIR}/server/cron.log
+        if [ $? -eq 0 ] ; then
+            touch ${DATADIR}/TOR/OLD_DDCUPLOAD_PATH
+        fi
+    fi
+
+    lsofFileList=$(find ${DATADIR} -type f -name lsof.txt)
+    for file in $lsofFileList ; do
+        run ${ANALYSIS_BIN}/TOR/parseLsof --input ${file} --output ${file}_formatted
+    done
+
+    # This needs to be done after we've processed all the servers so that
+    # parseIfConfig has stored the IP address which we need
+    if [ -d ${CLUSTERED_DATA_DIR}/neo4j ]  && [ "${DPS_PROVIDER}" = "neo4j" ] ; then
+        DEBUG_LOGS=$(find ${CLUSTERED_DATA_DIR}/neo4j -type f -name 'debug.*')
+        if [ ! -z "${DEBUG_LOGS}" ] ; then
+            run ${ANALYSIS_BIN}/TOR/neo4j/parseDebug --indir ${CLUSTERED_DATA_DIR}/neo4j --site ${SITE} \
+                --date ${SQL_DATE}
+        fi
+    fi
+
+    NEO4J_CO_FILE=${DATADIR}/TOR/clustered_data/neo4j/cluster_overview.log
+    if [ -r ${NEO4J_CO_FILE} ] ; then
+        run ${ANALYSIS_BIN}/TOR/neo4j/parseLeader --cluster_overview ${NEO4J_CO_FILE} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    driverList=$(ls -d ${DATADIR}/TOR/clustered_data/asr* | xargs -n 1 basename)
+    for driver in $driverList ; do
+        ASR_DRIVER_CFG=${DATADIR}/TOR/clustered_data/${driver}/e2e_${driver}-driver.xml
+        if [ -r ${ASR_DRIVER_CFG} ] ; then
+            if [ ${driver} == "asr" ] ; then
+                for asr in asrl asrn; do
+                    run ${ANALYSIS_BIN}/modelled/instr/parseModeledInstr \
+                        --model ${ANALYSIS_BIN}/modelled/instr/models/TOR/streaming/enm_str_${asr}.xml \
+                        --cfg ${ASR_DRIVER_CFG} \
+                        --data ${DATADIR}/TOR/clustered_data/${driver}/instr.txt \
+                        --incr ${INCR_DIR}/parseModeledInstr.${asr}_driver.incr \
+                        --site ${SITE} \
+                        --date ${SQL_DATE}
+                done
+            else
+                run ${ANALYSIS_BIN}/modelled/instr/parseModeledInstr \
+                    --model ${ANALYSIS_BIN}/modelled/instr/models/TOR/streaming/enm_str_${driver}.xml \
+                    --cfg ${ASR_DRIVER_CFG} \
+                    --data ${DATADIR}/TOR/clustered_data/${driver}/instr.txt \
+                    --incr ${INCR_DIR}/parseModeledInstr.${driver}_driver.incr \
+                    --site ${SITE} \
+                    --date ${SQL_DATE}
+            fi
+        fi
+    done
+
+    FMNBI_EVENTS=${DATADIR}/TOR/clustered_data/fmnbi/events.txt
+    if [ -r ${FMNBI_EVENTS} ] ; then
+        if [ ! -d ${ANALYSIS_OUTPUT}/fm ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/fm
+        fi
+        run ${ANALYSIS_BIN}/fm/getAlarmStats --events ${FMNBI_EVENTS} --nodes ${TMP_DIR}/nodes.json \
+            --site ${SITE} --sqldate ${SQL_DATE} \
+            --outputdir ${ANALYSIS_OUTPUT}/fm \
+            --tzoffset "${UTC_OFFSET}" \
+            --incr ${INCR_DIR}/getAlarmStats.incr
+    fi
+
+    ILO_LOG_FILE=${DATADIR}/server/ILO_info.log
+    if [ -s ${ILO_LOG_FILE} ] ; then
+        log "Health Check for ILO logs"
+        run ${ANALYSIS_BIN}/TOR/parseIloLogs --logfile ${ILO_LOG_FILE} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    EsmonFile=$(find ${DATADIR} -type f -name alertDefinitions.csv)
+    if [ ! -z "${EsmonFile}" ] && [ -s ${EsmonFile} ] ; then
+        run ${ANALYSIS_BIN}/TOR/parseEsmonAlertDef --logfile ${EsmonFile} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    HTTPD_DIR=${DATADIR}/TOR/httpd
+    if [ -d ${HTTPD_DIR} ] && [ -r ${DATADIR}/TOR/global.properties ] ; then
+        STATUS_FILE_LIST=$(find ${HTTPD_DIR} -name 'server_status.*')
+        for STATUS_FILE in ${STATUS_FILE_LIST} ; do
+            run ${ANALYSIS_BIN}/TOR/misc/parseHttpdServerStatus --input ${STATUS_FILE} \
+                --site ${SITE} --date ${SQL_DATE} --props ${DATADIR}/TOR/global.properties
+        done
+    fi
+
+    if [ -d ${CLUSTERED_DATA_DIR}/${DPS_PROVIDER}/pmic ] ; then
+        log "PMIC Subscriptions from ${DPS_PROVIDER}"
+
+        if [ ! -d ${ANALYSIS_OUTPUT}/pm ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/pm
+        fi
+        run ${ANALYSIS_BIN}/TOR/pm/parseSubscriptions --dpsprov ${DPS_PROVIDER} --dir ${CLUSTERED_DATA_DIR}/${DPS_PROVIDER} \
+            --site ${SITE} --date ${SQL_DATE} --content ${ANALYSIS_OUTPUT}/pm/subscription_content.zip
+    fi
+
+    local ENM_DEPLOYMENT_TYPE_ARG=""
+    if [ -s ${DATADIR}/TOR/enm_deployment_type ] ; then
+        local ENM_DEPLOYMENT_TYPE=$(cat ${DATADIR}/TOR/enm_deployment_type)
+    elif [ -r ${DATADIR}/TOR/global.properties ] ; then
+        local ENM_DEPLOYMENT_TYPE=$(egrep '^enm_deployment_type=' ${DATADIR}/TOR/global.properties | awk -F= '{print $2}')
+    elif [ -r ${DATADIR}/TOR/enm.properties ] ; then
+        local ENM_DEPLOYMENT_TYPE=$(egrep '^enm_deployment_type=' ${DATADIR}/TOR/enm.properties | awk -F= '{print $2}')
+    fi
+    if [ ! -z "${ENM_DEPLOYMENT_TYPE}" ] ; then
+        ENM_DEPLOYMENT_TYPE_ARG="--type ${ENM_DEPLOYMENT_TYPE}"
+    fi
+    run ${ANALYSIS_BIN}/TOR/misc/storeEnmInfo --site ${SITE} --date ${SQL_DATE} ${ENM_DEPLOYMENT_TYPE_ARG}
+
+    log "Wait for splitLog to complete"
+    wait
+    log "splitLog done, processing logs"
+
+    local ARCHIVE_TYPE="UNKNOWN"
+    if [ -r ${DATADIR}/ARCHIVE_TYPE ] ; then
+        ARCHIVE_TYPE=$(cat ${DATADIR}/ARCHIVE_TYPE)
+    fi
+    if [ "${ARCHIVE_TYPE}" = "STOP" ] ; then
+        local DIM_ARGS=""
+        KDV_FILE=${DATADIR}/TOR/clustered_data/capacity/keyDimensioningValues.json
+        if [ -s ${KDV_FILE} ] && [ ! -z "$ENM_DEPLOYMENT_TYPE_ARG" ] ; then
+            DIM_ARGS="--dimvalues ${KDV_FILE} ${ENM_DEPLOYMENT_TYPE_ARG}"
+        fi
+        run ${ANALYSIS_BIN}/TOR/misc/storeCapacity --site ${SITE} --date ${SQL_DATE} \
+            --config ${ANALYSIS_BIN}/TOR/misc/enm_capacity.json \
+            ${DIM_ARGS}
+    fi
+}
+
+processDelta() {
+    getEnmVersion
+
+    ENMLOG_DIR=${INCR_DIR}/logs
+    CLUSTERED_DATA_DIR=${DATADIR}/TOR/clustered_data
+
+    # Process the Clustered ENM logs
+    LMS_HOSTNAME=$(${ANALYSIS_BIN}/server/getHostname ${DATADIR}/server)
+    if [ $? -ne 0 ] || [ -z "${LMS_HOSTNAME}" ] ; then
+        LMS_HOSTNAME=ddcmaster
+    fi
+
+    ISO_ARG=""
+    if [ ! -z "${ISO_VER}" ] ; then
+        ISO_ARG="--iso \"${ISO_VER}\""
+    fi
+    local DELTA_ES_DIR=${DATADIR}/delta/elasticsearch
+    local CLUSTERED_ES_DIR=${CLUSTERED_DATA_DIR}/elasticsearch
+    if [ -d ${DELTA_ES_DIR} ] && [ -d ${CLUSTERED_ES_DIR} ] ; then
+        local FILE_LIST=$(find ${DELTA_ES_DIR} -type f -name 'elasticsearch*')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            mv -f ${FILE_LIST} ${CLUSTERED_ES_DIR}
+            NOFILE=$(ulimit -n)
+            run ${ANALYSIS_BIN}/elasticsearch/splitLog --indir ${CLUSTERED_ES_DIR} \
+                --analysisOut ${ANALYSIS_OUTPUT}/enmlogs \
+                --site ${SITE} --date ${SQL_DATE} \
+                --maxfiles ${NOFILE} \
+                --datadir ${DATADIR} \
+                --handlerdir ${ANALYSIS_BIN}/elasticsearch/handlers \
+                --handlerdir ${ANALYSIS_BIN}/TOR/elasticsearch/handlers \
+                ${ISO_ARG} \
+                --incr ${INCR_DIR}/splitLog.inc &
+        fi
+
+        local FILE_LIST=$(find ${DELTA_ES_DIR} -type f -name 'eventdata.*')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            mv -f ${FILE_LIST} ${CLUSTERED_ES_DIR}
+            run ${ANALYSIS_BIN}/modelled/events/parseEventData --model ${ANALYSIS_BIN}/modelled/events/models \
+                --indir ${CLUSTERED_ES_DIR} --date ${SQL_DATE} --site ${SITE} &
+        fi
+    fi
+
+    local DELTA_FLS_DIR=${DATADIR}/delta/fls
+    if [ -d ${DELTA_FLS_DIR} ] ; then
+        local FILE_LIST=$(find ${DELTA_FLS_DIR} -type f -name 'fls.*.gz')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            mv -f ${FILE_LIST} ${CLUSTERED_DATA_DIR}/fls
+            parseFLS ${CLUSTERED_DATA_DIR}/fls
+        fi
+    fi
+
+    local DELTA_ULSA_DIR=${DATADIR}/delta/ulsa
+    if [ -d ${DELTA_ULSA_DIR} ] ; then
+        local FILE_LIST=$(find ${DELTA_ULSA_DIR} -type f -name 'ulsa.*.gz')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            mv -f ${FILE_LIST} ${CLUSTERED_DATA_DIR}/ulsa
+            run ${ANALYSIS_BIN}/TOR/pm/parseULSA --site ${SITE} --dir ${CLUSTERED_DATA_DIR}/ulsa --incr ${INCR_DIR}/ulsa &
+        fi
+    fi
+
+    # Extract the service mapping for each VM
+    ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/vm_svc.out <<EOF
+SELECT servers.hostname, enm_servicegroup_names.name
+FROM sites, servers, enm_servicegroup_names, enm_servicegroup_instances
+WHERE
+ enm_servicegroup_instances.siteid = sites.id AND sites.name = '${SITE}' AND
+ enm_servicegroup_instances.date = '${SQL_DATE}' AND
+ enm_servicegroup_instances.serverid = servers.id AND
+ enm_servicegroup_instances.serviceid = enm_servicegroup_names.id
+ORDER BY servers.hostname
+EOF
+
+    if [ -d ${DATADIR}/tor_servers ] ; then
+        log "Analysing TOR Servers"
+        DELTA_DIR_LIST=$(ls ${DATADIR}/delta)
+        declare -a SERVER_DIR_LIST
+        for DELTA_DIR in ${DELTA_DIR_LIST} ; do
+            if [ -d ${DATADIR}/tor_servers/${DELTA_DIR}_TOR ] ; then
+                SERVER_DIR_LIST+=(${DELTA_DIR}_TOR)
+                find ${DATADIR}/delta/${DELTA_DIR} -name 'sar.*' -exec mv {} ${DATADIR}/tor_servers/${DELTA_DIR}_TOR/${DATE}/server/ \;
+                find ${DATADIR}/delta/${DELTA_DIR} -name 'instr.txt.*' -exec mv {} ${DATADIR}/tor_servers/${DELTA_DIR}_TOR/${DATE}/ \;
+            fi
+        done
+
+        /usr/bin/parallel -j ${PARALLEL_COUNT} ${ANALYSIS_BIN}/TOR/processEnmServer -s ${SITE} -d ${DASH_DATE} -i ${DATADIR} \
+                          -o ${ANALYSIS_OUTPUT} -u ${UTC_OFFSET} -t DELTA -r -- ${SERVER_DIR_LIST[@]}
+    fi
+
+    # Wait for splitLog/parseFLS to complete
+    wait
+}
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 date site statsroot <FULL|DELTA>"
+    exit 1
+fi
+
+DASH_DATE=${1}
+SITE=$2
+STATS_ROOT=$3
+
+ANALYSIS_TYPE=FULL
+if [ ! -z "$4" ] ; then
+    ANALYSIS_TYPE=$4
+fi
+
+DATE=`echo ${1} | sed 's/-//g'`
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+
+# If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+
+ANALYSIS_OUTPUT=${STATS_ROOT}/${SITE}/analysis/${DATE}
+DATADIR=${STATS_ROOT}/${SITE}/data/${DATE}
+
+# Get UTC offset in '+HH:MM' (or '-HH:MM') format for the timezone of MS
+if [ -z "${SITE_TZ}" ] && [ -f ${DATADIR}/TOR/tz.txt ] ; then
+    TZTEXT_FILE=${DATADIR}/TOR/tz.txt
+    UTC_OFFSET=`cat ${TZTEXT_FILE} | sed 's/^.*::\([+-][0-9][0-9]\)\([0-9][0-9]\).*$/\1:\2/'`
+    TIMEZONE=`cat ${TZTEXT_FILE} | awk -F:: '{print $1}'`
+    export SITE_TZ="${TIMEZONE}"
+    log "TIMEZONE '${TIMEZONE}' UTC_OFFSET '${UTC_OFFSET}'"
+fi
+
+log "Start TOR: Analysis Type = ${ANALYSIS_TYPE}"
+if [ "${ANALYSIS_TYPE}" = "DELTA" ] ; then
+    processDelta
+elif [ "${ANALYSIS_TYPE}" = "INIT" ] ; then
+    processInit
+else
+    processFull
+fi
+log "End TOR"

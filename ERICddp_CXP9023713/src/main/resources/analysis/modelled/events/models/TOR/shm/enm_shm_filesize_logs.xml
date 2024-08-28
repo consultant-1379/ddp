@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_shm_filesize_logs">
+  <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="shmcoreservice"/>
+    <service name="shmservice"/>
+    <service name="consshm"/>
+  </services>
+
+  <events>
+      <!-- SHM.SMRS_SOFTWAREPACKAGE_FILE_SIZE {"_Thread":"EJB async - 16","fileSize":242568,"neType":"SGSN-MME"} -->
+      <event name="SHM.SMRS_SOFTWAREPACKAGE_FILE_SIZE">
+        <metric source="neType" target="netypeid"/>
+        <metric source="fileSize" target="fileSize"/>
+        <property name="jobType" xsi:type="fixedproperty" value="softwarePackage"/>
+      </event>
+
+      <!--  SHM.SMRS_BACKUP_FILE_SIZE {"component":"","_Thread":"Thread-147 (HornetQ-client-global-threads-1839865410)","fileSize":1065,"neType":"SGSN-MME"} -->
+      <event name="SHM.SMRS_BACKUP_FILE_SIZE">
+        <metric source="neType" target="netypeid"/>
+        <metric source="fileSize" target="fileSize"/>
+        <metric source="component" target="component"/>
+        <property name="jobType" xsi:type="fixedproperty" value="Backup"/>
+      </event>
+
+  </events>
+</modelledevents>
+

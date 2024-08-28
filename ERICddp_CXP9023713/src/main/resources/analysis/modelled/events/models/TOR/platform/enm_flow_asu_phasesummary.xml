@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_flow_asu_phasesummary">
+  </table>
+  <services>
+    <service name="flowautomation"/>
+  </services>
+  <events>
+    <!-- FLOW.ASU.PHASESUMMARY {"FlowId":"com.ericsson.oss.services.shm.asu.flow","FlowVersion":"1.35.1","Phase":"activation","PhaseResult":"FAILED","TimeTaken":45000,"ActivitiesSelected":["Upgrade"," RadioNode: Pre-Upgrade Script"],"NodesParticipated":1,"FlowExecutionName":"ASU_074108","NodesSuccess":0,"_Thread":"pool-8-thread-1501","NodesFailed":1} -->
+    <!-- FLOW.ASU.PHASESUMMARY {"FlowId":"com.ericsson.oss.services.shm.asu.flow","FlowVersion":"1.35.1","Phase":"preparation","PhaseResult":"SUCCESS","TimeTaken":57000,"ActivitiesSelected":["Upgrade"],"NodesParticipated":1,"FlowExecutionName":"ASU_074108","NodesSuccess":1,"_Thread":"pool-8-thread-1498","NodesFailed":0} -->
+    <event name="FLOW.ASU.PHASESUMMARY">
+      <metric source="FlowExecutionName" target="flowExecutionName"/>
+      <metric source="Phase" target="phase"/>
+      <metric source="NodesParticipated" target="nodesParticipated"/>
+      <metric source="NodesSuccess" target="nodesSuccess"/>
+      <metric source="NodesFailed" target="nodesFailed"/>
+      <metric source="NodesCancelled" target="nodesCancelled"/>
+      <metric source="TimeTaken" target="timeTaken" scale="1000"/>
+      <metric source="ActivitiesSelected" target="activitiesSelected"/>
+      <metric source="NodesCompletedwithwarnings" target="nodesCompletedwithwarnings"/>
+      <property name="eventName" xsi:type="fixedproperty" value="ASU"/>
+    </event>
+    <!--  FLOW.ORUSU.PHASESUMMARY {\"FlowId\":\"com.ericsson.oss.services.oran.su.flow\",\"FlowVersion\":\"1.4.1\",\"Phase\":\"Preparation\",\"TimeTaken\":12000,\"NodesParticipated\":1,\"FlowExecutionName\":\"ASU-ORU-TAF-FLOW-1598956658691\",\"NodesSuccess\":1,\"_Thread\":\"pool-11-thread-2307\",\"NodesFailed\":0} -->
+    <event name="FLOW.ORUSU.PHASESUMMARY">
+      <metric source="FlowExecutionName" target="flowExecutionName"/>
+      <metric source="Phase" target="phase"/>
+      <metric source="NodesParticipated" target="nodesParticipated"/>
+      <metric source="NodesSuccess" target="nodesSuccess"/>
+      <metric source="NodesFailed" target="nodesFailed"/>
+      <metric source="TimeTaken" target="timeTaken" scale="1000"/>
+      <property name="eventName" xsi:type="fixedproperty" value="ORAN"/>
+    </event>
+  </events>
+</modelledevents>

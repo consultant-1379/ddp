@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fm_alarmoverload_protection">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="fmalarmprocessing"/>
+  </services>
+
+  <events>
+<!-- ALARM_OVERLOAD_PROTECTION {\"OVERLOAD\":\"ON\",\"_Thread\":\"Thread-307 (HornetQ-client-global-threads-439533331)\"} -->
+      <event name="ALARM_OVERLOAD_PROTECTION">
+        <metric source="OVERLOAD" target="overload"/>
+        <metric source="host" target="serverid"/>
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+>
+  <presetagg type="SUM" interval="Per Minute" />
+  <title value="Overall Files Collected For Ethernet 15min"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_mspmip_instr">
+        <reference table="sites" condition="enm_mspmip_instr.siteid=sites.id"/>
+        <reference table="servers" condition="enm_mspmip_instr.serverid=servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where> sites.name = '%s' </where>
+      <column db="noOfCollectedEthernetFiles15min" label="Overall Files Collected For Ethernet 15min"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

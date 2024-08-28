@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_node_realignment">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <events>
+    <!--NCM_AGENT.NODE_REALIGNMENT {\"duration\":5256,\"jobId\":10,\"node\":\"CORE01ML6691-02\",\"_Thread\":\"VBJ ThreadPool Worker id=2 se=iiop_tp scm=iiop_tp orb=549dc3e9\",\"ncmNodeId\":1,\"status\":\"SUCCESS\",\"info\":\"\"-->
+    <event name="NCM_AGENT.NODE_REALIGNMENT">
+      <metric source="host" target="serverid"/>
+      <metric source="duration" target="duration"/>
+      <metric source="jobId" target="jobId"/>
+      <metric source="node" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="ncmNodeId" target="ncmNodeId"/>
+      <metric source="status" target="status"/>
+      <metric source="info" target="info"/>
+    </event>
+  </events>
+</modelledevents>
+

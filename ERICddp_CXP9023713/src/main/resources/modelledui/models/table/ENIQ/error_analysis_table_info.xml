@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="sim_error">
+    <reference table="sites" condition="sim_error.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND sim_error.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <order columnid="time" direction="DESC"/>
+
+  <column db="sim_error.time" label="Time" id="time"/>
+  <column db="sim_error.error_reason" label="Error"/>
+  <column db="sim_error.class_name" label="Class"/>
+  <column db="sim_error.exception" label="Exception"/>
+</modelledtable>

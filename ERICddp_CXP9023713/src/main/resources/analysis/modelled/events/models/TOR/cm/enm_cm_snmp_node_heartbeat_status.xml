@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_cm_snmp_node_heartbeat_status">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="mssnmpcm"/>
+  </services>
+
+  <events>
+    <!--2021-10-20T04:36:54.100+01:00@svc-9-mssnmpcm@JBOSS@[com.ericsson.oss.itpf.EVENT_DATA_LOGGER] SNMP.HEARTBEAT_STATUS_LOG {"previousHBStatus":"UNKNOWN","networkElement":"CORE23MLTN001","syncRequest":"no","currentHBStatus":"IN_SERVICE","_Thread":"Thread-28 (HornetQ-client-global-threads-792284628)","neType":"MINI-LINK-Indoor"}-->
+    <event name="SNMP.HEARTBEAT_STATUS_LOG">
+      <metric source="host" target="serverid"/>
+      <metric source="networkElement" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="neType" target="netypeid"/>
+      <metric source="syncRequest" target="syncRequest"/>
+      <metric source="previousHBStatus" target="previousHBStatus"/>
+      <metric source="currentHBStatus" target="currentHBStatus"/>
+    </event>
+  </events>
+</modelledevents>

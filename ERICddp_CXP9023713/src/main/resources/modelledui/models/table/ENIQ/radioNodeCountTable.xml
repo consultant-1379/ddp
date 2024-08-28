@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_radio_node_count_details">
+    <reference table="sites" condition="eniq_radio_node_count_details.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_radio_node_count_details.date = '%date%'</where>
+  <column db="eniq_radio_node_count_details.technology" label="Technology\Node Type"/>
+  <column db="eniq_radio_node_count_details.g1Count" label="RadioNode DU(G1)"/>
+  <column db="eniq_radio_node_count_details.g2Count" label="RadioNode BaseBand(G2)"/>
+  <column db="eniq_radio_node_count_details.mixedCount" label="RadioNode Mixed"/>
+  <column db="eniq_radio_node_count_details.totalCount" label="Total"/>
+
+</modelledtable>
+

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_aim_node_training_status">
+   <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+      <service name="imlifecycleservice"/>
+  </services>
+
+  <events>
+      <!--  2019-12-26 12:32:08,291 INFO  [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] AIM.NODE_TRAINING_STATUS {"TOTAL":1923,"NE_TYPE":"RadioNode","_Thread":"EJB default - 114","TRAINING":99} -->
+      <event name="AIM.NODE_TRAINING_STATUS">
+        <metric source="TOTAL" target="total"/>
+        <metric source="NE_TYPE" target="netypeid" />
+        <metric source="TRAINING" target="training"/>
+      </event>
+  </events>
+</modelledevents>
+

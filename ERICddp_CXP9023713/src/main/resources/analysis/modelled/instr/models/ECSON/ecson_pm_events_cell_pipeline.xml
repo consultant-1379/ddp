@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_pm_events_cell_pipeline">
+
+  <table name="ecson_pm_events_cell_pipeline">
+    <keycol name="eventtypeId" reftable="ecson_pm_eventtypes"/>
+    <keycol name="typeid" reftable="event_type_names"/>
+  </table>
+
+  <services>
+    <service name="eric-prometheus-pushgateway"/>
+  </services>
+
+  <metricgroups>
+    <multi>eventtypeId</multi>
+    <multi>typeid</multi>
+
+    <metricgroup name="^number:(\S+):(\S+)$">
+      <metric source="number_of_events_in_pipeline" target="events" delta="true" filteridle="true"/>
+      <property name="eventtypeId" xsi:type="multilabelproperty" label="event_type" index="1"/>
+      <property name="typeid" xsi:type="multilabelproperty" label="type" index="2"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

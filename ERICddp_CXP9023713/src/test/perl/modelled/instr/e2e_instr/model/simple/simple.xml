@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="@simple">
+
+  <table name="simple">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="simplemg">
+      <metric source="simple_source" target="simple_target"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

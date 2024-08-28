@@ -1,0 +1,320 @@
+#!/usr/bin/env perl
+######################################################################
+#       Description ---------   parseJM -----------     
+#       This script parses the Job Manager dbaudit.txt log file. 
+#       Parses 
+#         JM DB Status, Size
+#         JM Job Complexity
+#          
+#       @author - Muhammad-Zeeshan Khan - emuhkha       Rev A   
+#        usage  parseJM -log /var/tmp/jm_dbAudit.txt -site LMI_atrcus0 -date 2009-01-01 -host atrcus0
+######################################################################
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use strict;
+use warnings;
+#------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Main Flow
+our $jmlog="";
+our $sqldate="";
+our $site="";
+our $DEBUG=-1;
+
+our $numSchedJobs=0;
+our $numCompleteJobs=0;
+our $numTerminatedJobs=0;
+our $numFailedJobs=0;
+our $num_complex=0;
+my %jobSupervisor_Map = ();
+my %jobComplex_Map = ();
+my %users = ();
+
+
+sub main()
+{
+    my $result = GetOptions(
+        "log=s"  => \$jmlog,
+        "site=s" => \$site,
+        "date=s" => \$sqldate,
+        "debug=s" => \$DEBUG
+        );
+
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    if ( ! $jmlog || ! $site || ! $sqldate )
+    {
+        print "Job Manager Audit Log, Site Name, Date, & host name are mandatory options";
+        exit 1;
+    }
+    readJMLog();
+    store();
+}
+
+sub readJMLog() 
+{
+    open JM_READ, "<$jmlog" or die "Can't open file to read $jmlog\n";
+    my $jobComplex=0;
+    my $jobSupervisor=0;
+    my $failedSupervisorLines = 0;
+    my $totalSupervisorLines = 0;
+    while( my $line = <JM_READ>) {
+        if ( $DEBUG > 9 ) { print "readJMLog: jobComplex=$jobComplex jobSupervisor=$jobSupervisor line=$line"; }
+
+        if ( $line =~ /^Number_Of_.*:/ )
+        {
+            my($tmp, $num) = split(":", $line);
+            $numSchedJobs=$num  if $line =~ /^(Number_Of_Scheduled_Jobs): (\d+)/;
+            $numCompleteJobs=$num if $line =~ /^(Number_Of_Completed_Jobs): (\d+)/;
+            $numTerminatedJobs=$num  if $line =~ /^(Number_Of_Terminated_Jobs): (\d+)/;
+            $numFailedJobs=$num if $line =~ /^(Number_Of_Failed_Jobs): (\d+)/;
+        }
+        elsif ($line =~ /^JobCategoryId\s+JobName\s+ActivityName.*/)
+        {
+            $jobComplex=1;
+            $jobSupervisor=0;
+        }
+        elsif ($line =~ /^JobId\s+JobCategoryId\s+JobName\s+Status/ )
+        {
+            $jobSupervisor=1;
+            $jobComplex=0;
+        } elsif ( $jobComplex == 1  && $line =~ /^\d+/)
+        {
+            my ($jc_JobCategoryId, $jc_JobName, $jc_ActivityName, $jc_ScriptName,$jc_Owner, $jc_CreatedTime) = split /\s+/, $line;
+            if ( $DEBUG > 6 ) { print "parseJM: jc_JobCategoryId=$jc_JobCategoryId jc_JobName=$jc_JobName jc_ActivityName=$jc_ActivityName jc_ScriptName=$jc_ScriptName, jc_Owner=$jc_Owner jc_CreatedTime=$jc_CreatedTime\n"; }
+
+            if ( $jc_Owner =~ /\w+/ )
+            {
+                $users{$jc_Owner} = $jc_Owner;  
+            }
+            addJobComplexity($jc_JobCategoryId, $jc_JobName, $jc_ActivityName, $jc_ScriptName,$jc_Owner, $jc_CreatedTime);
+            $num_complex++;
+            if ( $DEBUG == 2 ) { print "$jc_JobCategoryId, $jc_JobName, $jc_ActivityName, $jc_ScriptName,$jc_Owner, $jc_CreatedTime\n"; }
+        }
+        elsif ( $jobSupervisor == 1 && $line =~ /^\d+/)
+        {
+            $totalSupervisorLines++;
+            my ($js_JobID, $js_JobCategoryId, $js_JobName, $js_Status, $js_Frequency, $js_Owner, $js_ScheduleTime, $js_StartTime, $js_StopTime) = split /\s+/, $line;
+            if ( ! defined $js_StopTime ) {
+                if ( $DEBUG > 0 ) { print "parseJM: Failed to parse $line"; }
+                $failedSupervisorLines++;
+                next;
+            }
+
+            if ( $js_Owner =~ /\w+/ )
+            {
+                $users{$js_Owner} = $js_Owner;
+            }
+            addJobSupervisor($js_JobID, $js_JobCategoryId, $js_JobName, $js_Status, $js_Frequency, $js_Owner, $js_ScheduleTime, $js_StartTime, $js_StopTime);
+            if ( $DEBUG == 2 ) { print "$js_JobID, $js_JobCategoryId, $js_JobName, $js_Status, $js_Frequency, $js_Owner, $js_ScheduleTime, $js_StartTime, $js_StopTime\n"; }
+        }
+    }
+    close JM_READ;
+
+    if ( $failedSupervisorLines > 0 ) { 
+	print "WARN: Failed to parse $failedSupervisorLines of $totalSupervisorLines JobSupervisor lines  in $jmlog\n";
+    }
+}
+
+
+sub addJobComplexity
+{
+    my ($jc_JobCategoryId, $jc_JobName, $jc_ActivityName, $jc_ScriptName,$jc_Owner, $jc_CreatedTime) = @_;
+    if ($jc_CreatedTime =~ /-/) {
+        $jc_CreatedTime="NULL";
+    } else 
+    {
+        $jc_CreatedTime = convertToSqlFormat($jc_CreatedTime);
+    }
+    my $r_complex_data = {
+        "cat_id" => $jc_JobCategoryId,
+        "job_name" => $jc_JobName,
+        "activity" => $jc_ActivityName,
+        "script" => $jc_ScriptName,
+        "user" => $jc_Owner,
+        "created_time" => $jc_CreatedTime
+    };           
+    if ( ! exists $main::jobComplex_Map->{$num_complex} )
+    {
+        $main::jobComplex_Map->{$num_complex} = [];
+    }
+    push @{$main::jobComplex_Map->{$num_complex}}, $r_complex_data;
+}
+sub addJobSupervisor
+{
+    my ($JobId, $JobCatId, $job_Name, $stat, $freq, $user, $schedTime, $start_time, $stop_time) = @_;
+    if ($schedTime =~ /-/) {
+        $schedTime="NULL";
+    } else 
+    {
+        $schedTime = convertToSqlFormat($schedTime);
+    }
+    if ($start_time =~ /-/) {
+        $start_time="NULL";
+    }
+    else
+    {
+        $start_time= convertToSqlFormat($start_time);
+    }
+    if ($stop_time =~ /-/) {
+        $stop_time="NULL";
+    }
+    else
+    {
+        $stop_time= convertToSqlFormat($stop_time);
+    }
+    
+    my $r_supervisor_data = {
+        "category_id" => $JobCatId,
+        "job_name" => $job_Name,
+        "status" => $stat,
+        "frequency" => $freq,
+        "user" => $user,
+        "scheduled_time" => $schedTime,
+        "start_time" => $start_time,
+        "stop_time" => $stop_time
+    };             
+    if ( ! exists $main::jobSupervisor_Map->{$JobId} )
+    {
+        $main::jobSupervisor_Map->{$JobId} = [];
+    }
+    push @{$main::jobSupervisor_Map->{$JobId}}, $r_supervisor_data;
+}
+
+sub getTimeCondition
+{
+    my ($time) = @_;
+    if ( $time eq "NULL" ) {
+	return "IS NULL";
+    } else { 
+	return "= \'$time\'";
+    }
+}
+
+sub store()
+{
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site); 
+    my @_users = keys %users;
+    my $r_users = getIdMap($dbh, "oss_users", "id", "name", \@_users );
+    
+    # Populating job_mgr_jobs table
+    dbDo($dbh,"DELETE FROM job_mgr_jobs WHERE date=\'$sqldate\' AND siteid=$siteId");
+    dbDo($dbh,"INSERT INTO job_mgr_jobs (date,siteid,sched_jobs,completed_jobs,terminated_jobs,failed_jobs) VALUES (\'$sqldate\',$siteId,$numSchedJobs,$numCompleteJobs,$numTerminatedJobs,$numFailedJobs)");
+    
+    # Populating job_mgr_supervisor_data table
+    dbDo($dbh,"DELETE FROM job_mgr_supervisor WHERE date=\'$sqldate\' AND siteid=$siteId");
+    foreach my $job_id ( sort keys %{ $main::jobSupervisor_Map} )
+    {
+        my $r_supervisor_data = $main::jobSupervisor_Map->{$job_id};
+        foreach my $r_SupervisorInfo ( @{$r_supervisor_data} )
+        {
+            my $cat = $r_SupervisorInfo->{"category_id"};
+            my $job = $r_SupervisorInfo->{"job_name"};
+            my $status = $r_SupervisorInfo->{"status"};
+            my $freq = $r_SupervisorInfo->{"frequency"};
+            my $user = $r_users->{$r_SupervisorInfo->{"user"}};
+            my $schedTime = $r_SupervisorInfo->{"scheduled_time"};
+            my $startTime = $r_SupervisorInfo->{"start_time"};
+            my $stopTime = $r_SupervisorInfo->{"stop_time"};
+            
+	    my $r_rows = dbSelectAllArr($dbh, 
+					"SELECT id FROM job_mgr_supervisor_data WHERE jobid=$job_id AND jobcatgid=$cat AND " .
+					"jobname=\'$job\' AND status=\'$status\' AND frequency=\'$freq\' AND userid=$user AND " .
+					"jobschedtime " . getTimeCondition($schedTime) . " AND " .
+					"jobstarttime " . getTimeCondition($startTime) . " AND " .
+					"jobstoptime " . getTimeCondition($stopTime));
+
+	    my $superId;
+	    if ( $#{$r_rows} > -1 ) {
+		$superId = $r_rows->[0]->[0];
+	    } else {
+		dbDo( $dbh,
+		      sprintf("INSERT INTO job_mgr_supervisor_data (jobid,jobcatgid,jobname,status,frequency,userid, jobschedtime, jobstarttime, jobstoptime) VALUES (%d, %d, %s, %s, %s, %d,%s, %s, %s)",
+			      $job_id,
+			      $cat,
+			      $dbh->quote($job),
+			      $dbh->quote($status),
+			      $dbh->quote($freq),
+			      $user,
+			      $dbh->quote($schedTime),
+			      $dbh->quote($startTime),
+			      $dbh->quote($stopTime))
+		    ) or die "Failed to insert";
+
+		$superId = $dbh->last_insert_id(undef,undef,"job_mgr_supervisor_data","id");
+	    }
+	    dbDo($dbh, "INSERT INTO job_mgr_supervisor (date, jobsuperid, siteid) VALUES (\'$sqldate\', $superId, $siteId)")
+		or die "Failed to insert";
+        }
+    }
+
+    my %scripts = ();
+    foreach my $_id ( sort keys %{$main::jobComplex_Map} ) {
+        my $_r_complex_data = $main::jobComplex_Map->{$_id};
+        foreach my $_r_ComplexInfo ( @{$_r_complex_data} ) {
+	    $scripts{$_r_ComplexInfo->{"script"}}++;
+	}
+    }
+    my @scriptNames = keys %scripts;
+    my $r_scriptIdMap = getIdMap($dbh, "job_mgr_scriptnames", "id", "name", \@scriptNames );
+    
+    # Populating job_mgr_complexity & job_mgr_complexity_data tables
+    dbDo($dbh, "DELETE FROM job_mgr_complexity where date=\'$sqldate\' AND siteid=$siteId");
+    foreach my $id ( sort keys %{$main::jobComplex_Map} )
+    {
+        my $r_complex_data = $main::jobComplex_Map->{$id};
+        foreach my $r_ComplexInfo ( @{$r_complex_data} )
+        {
+            my $cat = $r_ComplexInfo->{"cat_id"};
+            my $job = $r_ComplexInfo->{"job_name"};
+            my $act = $r_ComplexInfo->{"activity"};
+            my $scrid = $r_scriptIdMap->{$r_ComplexInfo->{"script"}};
+            my $usr = $r_users->{$r_ComplexInfo->{"user"}};
+            my $tym = $r_ComplexInfo->{"created_time"};
+	    my $r_rows = dbSelectAllArr($dbh, 
+					"SELECT id FROM job_mgr_complexity_data WHERE jobcatgid=$cat AND jobname=\'$job\' AND " .
+					"activityname=\'$act\' AND scriptid=$scrid AND userid=$usr AND " .
+					"createdtime " . getTimeCondition($tym));
+	    my $complexId;
+	    if ( $#{$r_rows} > -1 ) {
+		$complexId = $r_rows->[0]->[0];
+	    } else {
+		my $tymStr;
+		if ( $tym eq "NULL" ) {
+		    $tymStr = "NULL";
+		} else {
+		    $tymStr = "'" . $tym . "'";
+		}
+		
+		dbDo($dbh,sprintf("INSERT INTO job_mgr_complexity_data (jobcatgid,jobname,activityname,scriptid,userid,createdtime) VALUES (%d, %s, %s, %d, %d, %s)",
+                                  $cat,
+                                  $dbh->quote($job),
+                                  $dbh->quote($act),
+                                  $scrid,
+                                  $usr,
+                                  $tymStr)
+                    ) or die "Failed to insert $cat,$job,$act,$usr,$tym";
+		$complexId = $dbh->last_insert_id(undef,undef,"job_mgr_complexity","id");
+	    }
+	    dbDo($dbh, "INSERT INTO job_mgr_complexity (date, jobcomplexid, siteid) VALUES (\'$sqldate\', $complexId, $siteId)")
+		or die "Failed to insert $sqldate,$complexId,$siteId";
+	}
+    }
+    $dbh->disconnect;
+}
+
+sub convertToSqlFormat()
+{
+    my $date = shift;
+    if ($date =~ /^(\d{4,4})(\d{2,2})(\d{2,2})(\d{2,2})(\d{2,2})(\d{2,2})$/ ) {
+        return $1 . "-" . $2 . "-" . $3 . " " . $4 . ":" . $5 . ":" . $6;
+    }
+    return "";
+}
+
+main();

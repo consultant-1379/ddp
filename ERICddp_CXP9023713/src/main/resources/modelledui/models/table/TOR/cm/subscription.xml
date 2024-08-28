@@ -1,0 +1,24 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_subscriptions_nbi">
+    <reference table="sites" condition="enm_cm_subscriptions_nbi.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_subscriptions_nbi.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_subscriptions_nbi.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(successfulPostSubscriptions)" label="Number of Successful Subscription requests"/>
+  <column db="SUM(failedPostSubscriptions)" label="Number of Failed Subscription requests"/>
+  <column db="SUM(successfulSubscriptionViews)" label="Number of Successful Subscription Views"/>
+  <column db="SUM(failedSubscriptionViews)" label="Number of Failed Subscription Views"/>
+  <column db="SUM(successfulSubscriptionDeletion)" label="Number of Successful Subscription Deletions"/>
+  <column db="SUM(failedSubscriptionDeletion)" label="Number of Failed Subscription Deletions"/>
+  <column db="SUM(successfulViewAllSubscriptions)" label="Number of Successful View All Subscriptions"/>
+  <column db="SUM(failedViewAllSubscriptions)" label="Number of Failed View All Subscriptions"/>
+</modelledtable>

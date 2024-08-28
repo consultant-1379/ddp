@@ -1,0 +1,167 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($date,$site);
+    my $result = GetOptions(
+			    "date=s" => \$date,
+			    "site=s" => \$site,
+			    "debug=s" => \$DEBUG,
+			    );
+
+    my @lines = <STDIN>;
+    if ( $lines[0] =~ /^DATABASE/ )
+    {
+	parse_sysusage(\@lines);
+    }
+    else
+    {
+	parse_spaceused(\@lines,$date,$site);
+    }
+}
+
+sub parse_sysusage
+{
+    my ($r_lines) = @_;
+    
+    foreach my $line ( @{$r_lines} )
+    {
+	my ( $dbname, $used, $total ) = $line =~ /^(\S+)\s+(\d+)\.\d+\s+(\d+)/;
+	if ( $dbname )
+	{
+	    printf " <tr> <td>%s<\/td> <td>%d<\/td> <td>%d<\/td> <\/tr>\n",
+	    $dbname, $total, $used;
+	}
+    }
+}
+
+
+sub parse_spaceused
+{
+    my ($r_lines,$date,$site) = @_;
+
+    my %dbInfo = ();
+    my $i = 0;
+    while ( $i <= $#{$r_lines} )
+    {
+	# Skip header in old format
+	if ( $r_lines->[$i] =~ /^ database_name/ )
+	{
+	    $i += 2;
+	}
+
+	my $dbLine = $r_lines->[$i];
+	if ( $DEBUG > 5 ) { print "dbLine=$dbLine"; }
+	my ($name, $sizenum,$sizemod) = $dbLine =~ /^\s+(\S+)\s+([\d\.]+)\s+(\S+)/;
+	if ( $DEBUG > 4 ) { print "name=$name sizenum=$sizenum sizemod=$sizemod\n"; }
+	$i++;
+
+	# Skip header in old format
+	if ( $r_lines->[$i] =~ /^ reserved/ )
+	{
+	    $i += 2;
+	}
+
+	my $spaceLine = $r_lines->[$i];
+	if ( $DEBUG > 5 ) { print "spaceLine=$spaceLine"; }
+	my ($resnum,$resmod,$datanum,$datamod,$indexnum,$indexmod,$unusednum,$unusedmod) =
+	    $spaceLine =~ /^\s+(\d+) (\S+)\s+(\d+) (\S+)\s+(\d+) (\S+)\s+(\d+) (\S+)\s+/;
+	if ( $DEBUG > 4 ) { print "resnum=$resnum resmod=$resmod\n"; }
+	$i += 2;
+
+	
+	my $logSize = 0;
+	if ( $r_lines->[$i] =~ /^ syslogs/ )
+	{
+	    if ( $DEBUG > 4 ) { print "syslogs line = $r_lines->[$i]"; }
+	    
+# syslogs         8388608         8348334         40245           29
+#(return status = 0)
+	    my ($total_pages) = $r_lines->[$i] =~ /^\s+\S+\s+(\d+)/;
+	    $logSize = int ( ($total_pages * 2048) / (1024 * 1024));
+
+	    if ( $DEBUG > 4 ) { print "logSize=$logSize total_pages=$total_pages\n"; }
+
+
+	    $i+= 2;
+	}
+
+	my $size = toMB($sizenum,$sizemod);
+	my $reserved = toMB($resnum,$resmod);
+	my $data = toMB($datanum,$datamod);
+	my $index = toMB($indexnum,$indexmod);
+	my $unused = toMB($unusednum,$unusedmod);
+
+	$dbInfo{$name} = {
+	    'size' => $size,
+	    'data' => $data,
+	    'index' => $index,
+	    'log'   => $logSize
+	    };
+
+	printf " <tr> <td>%s<\/td> <td>%.0f<\/td> <td>%.0f<\/td> <td>%.0f<\/td> <\/tr>\n",
+	$name, $size, ($data+$index), ($size - ($data+$index+$logSize));
+    }
+
+    if ( $site )
+    {
+	storeDbInfo($date,$site,\%dbInfo);
+    }
+}
+       
+sub toMB
+{
+    my ($num,$mod) = @_;
+
+    if ( $DEBUG > 5 ) { print "toMB num=$num mod=$mod\n"; }
+
+    if ( $mod eq "KB" )
+    {
+	return $num / 1024;
+    }
+    else
+    {
+	return $num;
+    }
+}
+
+sub storeDbInfo
+{
+    my ($date,$site,$r_dbInfo) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    # Remove any existing row
+    $dbh->do("DELETE FROM sybase_dbspace WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my @dbNames = keys %{$r_dbInfo};
+    my $r_dbIdMap = getIdMap($dbh,"sybase_dbnames", "id", "name", \@dbNames );
+
+    foreach my $db ( keys %{$r_dbInfo} )
+    {
+	my $datasize = $r_dbInfo->{$db}->{'size'} - $r_dbInfo->{$db}->{'log'};
+	my $datafree = $datasize - ($r_dbInfo->{$db}->{'data'} - $r_dbInfo->{$db}->{'index'});
+	if ( $datafree < 0 ) 
+	{
+	    $datafree = 0;
+	}
+	my $sql = sprintf("INSERT INTO sybase_dbspace (date,siteid,dbid,dbsize,datasize,datafree,logsize,logfree) VALUES (\'%s\',%d,%d,%d,%d,%d,%d,%d)",
+			  $date,$siteId,$r_dbIdMap->{$db}, $r_dbInfo->{$db}->{'size'}, $datasize, $datafree, $r_dbInfo->{$db}->{'log'}, 0 );
+	    if ( $DEBUG > 2 ) { print "storeDbInfo: $sql\n"; }	    
+	    $dbh->do($sql) or die "Failed to insert $db " . $dbh->errstr;
+    }
+
+    $dbh->disconnect;
+}

@@ -1,0 +1,116 @@
+#!/usr/bin/env perl
+
+use Time::Local;
+
+%taskMap =
+    (
+     "End Installation" => "Installation",
+     "Installation" => "Installation",
+     "of Installation" => "Installation",
+     "of Installation on" => "Installation",
+     "Installation on" => "Installation",
+     "installation on" => "Installation",
+     "Installation of" => "Installation",
+     "End installation on" => "Installation",
+     "to Install on" => "Installation",
+     "upgrade" => "Upgrade",
+     "Upgrade" => "Upgrade",
+     "to upgrade" => "Upgrade",
+     "Upgrade on" => "Upgrade",
+     "Complete Upgrade" => "Upgrade",
+     "Complete Upgrade on" => "Upgrade",
+     "Confirm" => "Confirm",
+     "to Confirm" => "Confirm",
+     "ConfirmUpgradeTask" => "Confirm",
+     "Confirmed Upgrade" => "Confirm",
+     "Confirmed Upgrade on" => "Confirm",
+     "ConfirmUpgrade" => "Confirm"
+ );
+
+
+open EQH_EVENTS, ">$ARGV[1]" or die "Cannot open $ARGV[1]";
+open EVENT_LOG, $ARGV[0] or die "Cannot open $ARGV[0]";
+while ( $line = <EVENT_LOG> )
+{
+    if ( $line =~ /Upgrade/ )
+    {
+	$_ = $line;
+	($year,$month,$day,$hour,$min,$sec,$rest) =
+	    /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2}) (.*)/;
+
+	if ( $month == 0 || $day == 0 )
+	{
+	    #print "Bad time  $month, $day, ", $line;
+	    next;
+	}
+	if ( $year < 100 )
+	{
+	    $time = timelocal($sec, $min, $hour, $day, $month - 1, $year + 2000);
+	}
+	else
+	{
+	    $time = timelocal($sec, $min, $hour, $day, $month - 1, $year);
+	}
+	
+	if ( $rest =~ /ninstall/ or $rest =~ /Revert/ or $rest =~ /Restore/ )
+	{
+	    next;
+	}
+	elsif ( $rest =~ /JOB_START\" \"com.ericsson.nms.cif.sm.EventLevelEnum/ )
+	{
+	    $state = "Start";
+	    $_ = $rest;
+	    ($task) = /EventLevelEnum@[0-9a-f]+([A-Za-z]+)/;
+	    $rns = "UNKNOWN";
+	    $me = "UNKNOWN";
+	}	
+	elsif ( $rest =~ /^\"Failed to upgrade NE \"/ )
+	{
+	    $state = "Failed";
+	    $task = "Upgrade";
+	    $rns = "UNKNOWN";
+	    $me = "UNKNOWN";
+	}
+	elsif ( $rest =~ /\"State transition/ )
+	{
+	    $_ = $rest;
+	    ($state,$task,$rns,$me) = /Awaiting confirm ([A-Za-z]+) ([^\"]*?) NE.SubNetwork=[^,]+,SubNetwork=([^,]+),MeContext=([^, \"]+)/;	    
+	}
+	else
+	{	    
+	    $_ = $rest;
+	    ($state,$task,$rns,$me) = /\"\s?([A-Za-z]+) ([^\"]*?) NE.SubNetwork=[^,]+,SubNetwork=([^,]+),MeContext=([^, \"]+)/;	    
+	}
+
+	if ( $task )
+	{
+	    if ( $state eq "Started" )
+	    {
+		$state = "Start";
+	    }
+
+	    $mappedTask = $taskMap{$task};
+	    if ( $mappedTask )
+	    {
+		print EQH_EVENTS $time, "::", $state, "::", $mappedTask, "::", $rns, "::", $me, "\n";
+	    }
+	    else
+	    {
+		print "No map, :", $task, ":\n";
+		print ":$state:$rns:$me:\n";
+		print ":$rest:";\
+		next;
+	    }
+
+	}
+	else
+	{
+	    print "Bask task, ", $line;
+	    print ":$rest:";
+	    next;
+	}
+    }
+}
+close EVENT_LOG;
+close EQH_EVENTS;
+

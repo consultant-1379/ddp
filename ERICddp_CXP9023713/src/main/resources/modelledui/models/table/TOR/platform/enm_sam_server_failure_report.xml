@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_sam_server_failure_report">
+    <reference table="sites" condition="enm_sam_server_failure_report.siteId = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_sam_server_failure_report.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Timestamp" formatter="ddpFormatTime"/>
+  <column db="members" label="VM List"/>
+  <column db="reason" label="Failure Reason"/>
+  <column db="count" label="Count"/>
+  <column db="notifiedLCM" label="Notify LCM"/>
+
+</modelledtable>

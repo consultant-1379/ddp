@@ -1,0 +1,92 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseDumpLogs
+# Author  : Sourav Pujara (xoupuj)
+# Purpose : The purpose of this script is to parse the dump log files
+#           with timestamp ls -l /ericsson/enm/dumps
+#           and store them under database.
+# Usage   : ${ANALYSIS_BIN}/TOR/parseDumpLogs --logdir
+#           ${DATADIR} --site ${SITE} --date ${DATE}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseLogs($$$) {
+    my $logFile = shift;
+    my $site = shift;
+    my $date = shift;
+    my %dumpStats = ();
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $bcpFileName = "$tmpDir/dumpLogs.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+    open (LOG, $logFile) or die "Failed to open the file $logFile";
+    my @month = ("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec");
+    my ($yyyy,$mm,$dd) = split('-',$date);
+    while (my $logLine = <LOG>) {
+        if ($DEBUG > 9) { print "parseLogs: Logline=$logLine"; }
+        if ($logLine =~ /.*$month[$mm-1]\s$dd.*(\d\d:\d\d)\s*(core.*|.*hprof)/) {
+            my $timestamp = $date . ' ' . $1 . ':00' ;
+            my $filename = $2;
+            my $type = "Core";
+            $type = "Heap"    if ($filename =~ /\.hprof/);
+            print BCP "$timestamp\t$siteId\t$type\t$filename\n";
+        } elsif($logLine =~ /.*$date\s(\d\d:\d\d:\d\d).*\s(core.*|.*hprof)/) {
+            my $timestamp = $date . ' ' . $1;
+            my $filename = $2;
+            my $type = "Core";
+            $type = "Heap"    if ($filename =~ /\.hprof/);
+            print BCP "$timestamp\t$siteId\t$type\t$filename\n";
+
+        } elsif($logLine =~ /.*$date\s(\d\d:\d\d:\d\d).*\s(dps_integration_dump.*)/) {
+            my $timestamp = $date . ' ' . $1;
+            my $filename = $2;
+            my $type = "Versant";
+            print BCP "$timestamp\t$siteId\t$type\t$filename\n";
+        } elsif($logLine =~ /.*$date\s(\d\d:\d\d:\d\d).*\s(hs_err.*)/) {
+            my $timestamp = $date . ' ' . $1;
+            my $filename = $2;
+            my $type = "Heap";
+            print BCP "$timestamp\t$siteId\t$type\t$filename\n";
+        }
+    }
+    close LOG;
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM enm_dumploginfo WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'"
+            ) or die "Failed to delete from enm_dumploginfo".$dbh->errstr."\n";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_dumploginfo" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_dumploginfo table";
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ( $logDir, $site, $date);
+    my $result = GetOptions(
+        "logdir=s" => \$logDir,
+        "date=s"   => \$date,
+        "site=s"   => \$site,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    my $logFile = $logDir ."/TOR/dumps";
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", $logFile); }
+    parseLogs($logFile,$site,$date);
+}
+
+main();

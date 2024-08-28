@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_com_ecim_delta_syncs" timecol="endtime">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="comecimmscm"/>
+    <service name="mscmapg"/>
+    <service name="mscmip"/>
+  </services>
+
+  <events>
+    <event name="DELTA_NOTIFICATIONS">
+      <metric source="host" target="serverid"/>
+      <metric source="DELETE" target="n_mo_deleted"/>
+      <metric source="CREATE" target="n_mo_created"/>
+      <metric source="MODIFY" target="n_mo_updated"/>
+      <metric source="Start_Time" target="starttime"/>
+      <metric source="Network_Element" target="neid" filtervalue="^[^=,]+$"/>
+    </event>
+  </events>
+</modelledevents>

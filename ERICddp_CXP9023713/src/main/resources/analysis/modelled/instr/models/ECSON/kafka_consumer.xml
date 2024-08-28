@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@kafka_consumer">
+
+  <table name="kafka_consumer">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="topicid" reftable="kafka_topic_names"/>
+    <keycol name="clientid" reftable="kafka_client_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>topicid</multi>
+    <multi>clientid</multi>
+
+    <metricgroup name="^kafka_consumer:(\S+):(\S+)$">
+      <metric source="kafka_consumer_consumer_fetch_manager_metrics_records_consumed_total" target="records_consumed" delta="true" filteridle="true"/>
+      <metric source="kafka_consumer_consumer_fetch_manager_metrics_fetch_size_avg" target="fetch_size"/>
+      <property name="topicid" xsi:type="multilabelproperty" label="topic" index="1"/>
+      <property name="clientid" xsi:type="multilabelproperty" label="client_id" index="2"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

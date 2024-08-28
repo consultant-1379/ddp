@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_frequency_manager">
+
+  <table name="ecson_frequency_manager">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <services>
+    <service name="eric-son-frequency-layer-manager"/>
+  </services>
+
+  <metricgroups>
+      <!--    <metricgroup name="^com_ericsson_oss_services_sonom_flm_metrics:(\S+):(\S+)$"> -->
+      <metricgroup name="com_ericsson_oss_services_sonom_flm_metrics">
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_alg_execution_count" target="alg_execution_count" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_alg_execution_time_in_millis_count" target="alg_execution_time" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_kpi_calculation_time_in_millis_count" target="kpi_calculation_time" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_kpi_on_demand_calculation_requests_count" target="kpi_on_demand_calculation_requests" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_kpi_on_demand_calculation_time_in_millis_count" target="kpi_on_demand_calculation_time" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_configuration_get_requests_count" target="configuration_get_request" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_configuration_get_time_in_millis_count" target="configuration_get_time" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_configuration_update_requests_count" target="configuration_update_requests" delta="true" filteridle="true"/>
+      <metric source="com_ericsson_oss_services_sonom_flm_metrics_flm_configuration_update_time_in_millis_count" target="configuration_update_time" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>
+

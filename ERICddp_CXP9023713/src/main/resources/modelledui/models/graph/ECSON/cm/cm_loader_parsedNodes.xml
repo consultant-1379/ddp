@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="Nodes Parsed"/>
+ <queries>
+  <query timecol="time" multiseries="ne_types.name">
+   <dbtables main="ecson_cm_loader_er">
+    <reference table="sites" condition="ecson_cm_loader_er.siteid = sites.id"/>
+    <reference table="ne_types" condition="ecson_cm_loader_er.netypeid = ne_types.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="ecson_cm_loader_er.numberParsedNodes" label="Parsed Nodes"/>
+  </query>
+ </queries>
+ <size width="630" height="400"/>
+</modelledgraph>

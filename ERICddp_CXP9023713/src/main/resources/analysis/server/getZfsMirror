@@ -1,0 +1,48 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($statusFile);
+    my $result = GetOptions(
+			    "status=s"  => \$statusFile,
+			    "debug=s" => \$DEBUG,			 
+			    );
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    open STATUS, $statusFile or die "Cannot open $statusFile";
+    my @statusLines = <STATUS>;
+    close STATUS;
+
+    my @disks = ();
+
+    my $state = 0;
+    for ( my $i = 0; $i <= $#statusLines; $i++ )
+    {
+	if ( $DEBUG > 5 ) { print "state=$state statusLines[$i] = $statusLines[$i]"; }
+
+	if ( $statusLines[$i] =~ /\s+mirror/ )
+	{
+	    $state = 1;
+	}
+	elsif ( $state == 1 )
+	{
+	    if ( $statusLines[$i] =~ /^\s+c(\S+)/ )
+	    {
+		my $disk = "c" . $1;
+		if ( $DEBUG > 4 ) { print "disk=$disk\n"; }
+		push @disks, $disk;
+	    }
+	    $state = 0;
+	}
+    }
+
+    print join( " ", @disks ), "\n";
+}

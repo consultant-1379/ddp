@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_ebsl_inst_stats">
+      <reference table="sites" condition="enm_ebsl_inst_stats.siteid = sites.id"/>
+      <reference table="servers" condition="enm_ebsl_inst_stats.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="Session Aggregation Indexes" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Session Aggregation Indexes"/>
+      <column db="indexSizeOfNRUplinkThroughputCounters" label="Index_Size_Of_Nr_Uplink_Throughput_Counters"/>
+      <column db="indexSizeOfNRDownlinkNonVoiceThroughputCounters" label="Index_Size_Of_Nr_Downlink_Non_Voice_Throughput_Counters"/>
+      <column db="indexSizeOfNRDownlinkVoiceThroughputCounters" label="Index_Size_Of_Nr_Downlink_Voice_Throughput_Counters"/>
+    </graph>
+    <graph name="Number Of Suspect Cells Per Rop" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Suspect Cells Per Rop"/>
+      <column db="numberOfSuspectCellsPerRop" label="Number_Of_Suspect_Cells_Per_Rop"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="session">
+      <member>Session Aggregation Indexes</member>
+    </group>
+    <group name="suspect">
+      <member>Number Of Suspect Cells Per Rop</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

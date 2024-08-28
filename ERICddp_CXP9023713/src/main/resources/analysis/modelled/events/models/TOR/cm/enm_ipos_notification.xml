@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_ipos_notification">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="comecimmscm"/>
+  </services>
+
+  <events>
+      <event name="IPOS_CM_NOTIF_METRICS">
+        <metric source="host" target="serverid"/>
+        <metric source="RateIPOS_1" target="rateIpos_1"/>
+        <metric source="UseIPOS_1" target="useIpos_1"/>
+      </event>
+  </events>
+</modelledevents>
+

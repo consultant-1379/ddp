@@ -1,0 +1,123 @@
+#!/usr/bin/env perl
+
+# PA2 Notifications timestamp now includes date
+
+use Time::Local;
+use Getopt::Long;
+use strict;
+
+our $DEBUG=0;
+my ($input,$output,$interval,$preparsed);
+my $result = GetOptions("input=s"  => \$input,
+			"output=s"  => \$output,
+			"interval=s" => \$interval, 
+			"preparsed" => \$preparsed,
+			"debug" => \$DEBUG,
+			);
+($result == 1) or die "Invalid args"; 
+
+
+my $currYear = -1;
+my $currMonth = -1;
+my $currDay = -1;
+my $currHour = 0;
+my $currMin = 0;
+my $currSec = 0;
+
+my $currSecInDay = 0;
+
+my $eventsInInterval = 0;
+
+open INPUT, $input or die "Cannot open $input";
+open OUTPUT, ">$output" or die "Cannot open $output";
+
+while ( my $line = <INPUT> )
+{
+    my ($day, $month, $year, $hour, $min,$sec,$count);
+    if ( $preparsed == 0 ) {
+	($day, $month, $year, $hour, $min,$sec) = $line =~ /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+)/o;
+    } else {
+	($day, $month, $year, $hour, $min,$sec,$count) = $line =~ /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+) (\d+)/o;
+    }
+    if ( ! $month ) 
+    {
+	print "Could not parse: $line";
+	next;
+    }
+
+    if ( $year > 2000 )
+    {
+	$year -= 2000;
+    }
+    
+    my $secInDay = ($hour * 3600) + ($min * 60) + $sec;
+	
+    if ( $currYear == -1 )
+    {
+	$currYear = $year;
+	$currMonth = $month;
+	$currDay = $day;
+    }
+	 
+    # If we are in the current interval then just step the counter
+    if ( ($secInDay - $currSecInDay) < $interval   )
+    {
+	if ( $preparsed == 0 ) {
+	    $eventsInInterval++;
+	} else {
+	    $eventsInInterval += $count;
+	}
+    }
+    else
+    {
+	printf OUTPUT "%02d-%02d-%02d:%02d:%02d:%02d $eventsInInterval\n", $currDay,$currMonth,$currYear,$currHour,$currMin,$currSec;
+
+	$currSecInDay += $interval;
+	&setCurrTime;
+	
+	# If the event is outside the next interval, then we need to print
+	# a zero line to indicate that there are no events in the
+	# next interval
+	# then we need to print a zero line just before the time of this event
+	if ( ($secInDay - $currSecInDay) >= $interval )
+	{
+	    printf OUTPUT "%02d-%02d-%02d:%02d:%02d:%02d 0\n", $currDay,$currMonth,$currYear,$currHour,$currMin,$currSec;
+	    
+	    $currSecInDay += $interval;
+	    &setCurrTime;
+	    
+	    if ( ($secInDay - $currSecInDay) >= $interval )
+	    {
+		while ( ($secInDay - $currSecInDay) > $interval )
+		{
+		    $currSecInDay += $interval;
+		    &setCurrTime;
+		}
+		printf  OUTPUT "%02d-%02d-%02d:%02d:%02d:%02d 0\n", $currDay,$currMonth,$currYear,$currHour,$currMin,$currSec;
+		    
+		$currSecInDay += $interval;
+		&setCurrTime;
+	    }
+	}
+
+	if ( $preparsed == 0 ) { 
+	    $eventsInInterval = 1;
+	} else {
+	    $eventsInInterval = $count;
+	}
+    }
+}
+
+if ( $eventsInInterval > 0 )
+{
+    printf OUTPUT "%02d-%02d-%02d:%02d:%02d:%02d $eventsInInterval\n", $currDay,$currMonth,$currYear,$currHour,$currMin,$currSec;
+}
+
+close INPUT;
+close OUTPUT;
+
+sub setCurrTime {
+    $currHour = int ($currSecInDay / 3600);
+    $currMin = int (($currSecInDay % 3600) / 60);
+    $currSec = $currSecInDay % 60;
+}

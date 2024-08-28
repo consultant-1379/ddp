@@ -1,0 +1,105 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseVersantCrashStats
+# Author  : Shweta Bhole (xshwbho)
+# Purpose : The purpose of this script is to parse the VBB files names
+#           with timestamp from ls-la.log from DB nodes (present in
+#           output directory (TOR/versant/dps_integration)
+#           and store them under database.
+# Usage   : ${ANALYSIS_BIN}/TOR/versant/parseVersantCrashStats --ls lsFile
+#           --site ${SITE} --date ${DATE}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use File::Basename;
+use StatsDB;
+use EnmCluster;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseLogs($) {
+    my $logFile = shift;
+    my %crashstats = ();
+
+    foreach my $log (@{$logFile}) {
+        open (LOG, $log) or die "Failed to open the file $log";
+        while (my $logLine = <LOG>) {
+            if ($DEBUG > 9) { print "parseLogs: Logline=$logLine"; }
+            if ($logLine =~ /(\d{4}-\d{2}-\d{2} .*\d{2}:\d{2}:\d{2}) (.*vbb)/) {
+                $crashstats{$2} = $1;
+
+                if ( $DEBUG > 8 ) {
+                    print "parseCrashLogs: Crash_Check_Logline=$logLine\t";
+                }
+            }
+        }
+        close LOG;
+    }
+    return (\%crashstats);
+}
+
+sub storeVBBCrashInfo($$$) {
+    my $crashstats      = shift;
+    my $site            = shift;
+    my $date            = shift;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    dbDo( $dbh, "DELETE FROM enm_versantcrashinfo WHERE siteid = $siteId AND date BETWEEN '$date 00:00:00' AND '$date 23:59:59'" )
+        or die "Failed to delete from enm_versantcrashinfo";
+
+    foreach my $vbbFile (keys %{$crashstats}) {
+        dbDo( $dbh, "INSERT INTO enm_versantcrashinfo (date,siteid,filename) VALUES ('$crashstats->{$vbbFile}',$siteId,'$vbbFile')")
+            or die "Failed to insert data";
+    }
+
+    if( keys %{$crashstats} ) {
+        # Get Versant crash health-check 'Type' -> 'ID' mapping
+        my @crashCheckTypes = "Crash Check";
+        my $checkType2IdMap = getIdMap($dbh, "enm_versant_health_check_types", "id", "check_type", \@crashCheckTypes);
+        if ( $DEBUG > 4 ) { print Dumper( "storeVBBCrashInfo: checkType2IdMap", $checkType2IdMap ); }
+        my $crashCheckId = $checkType2IdMap->{'Crash Check'};
+
+        # Get DB crash-check status 'Type' -> 'ID' mapping
+        my @crashStatusTypes = "DB Crashed";
+        my $statusType2IdMap = getIdMap($dbh, "enm_versant_health_status_types", "id", "status_type", \@crashStatusTypes );
+        if ( $DEBUG > 4 ) { print Dumper( "storeVBBCrashInfo: statusType2IdMap", $statusType2IdMap ); }
+        my $crashStatusId = $statusType2IdMap->{'DB Crashed'};
+
+        # Add the Versant crash health-check related data to database
+        # Delete the old stats from 'enm_versant_health_checks' table for the given date
+        dbDo( $dbh, "DELETE FROM enm_versant_health_checks WHERE siteid = $siteId AND checkid = $crashCheckId AND time = '$date 00:00:00'")
+            or die "Failed to remove old data from 'enm_versant_health_checks' table";
+
+        # Populate the 'enm_versant_health_checks' DB table with the new Versant health-check related data
+        dbDo( $dbh, "INSERT INTO enm_versant_health_checks (siteid,time,checkid,statusid) VALUES ($siteId,'$date 00:00:00',$crashCheckId,$crashStatusId)")
+            or die "Failed to insert data";
+
+    }
+    $dbh->disconnect();
+}
+
+sub main() {
+
+    my ( $lsFile, $site, $date);
+    my $result = GetOptions(
+        "ls=s" => \$lsFile,
+        "date=s"   => \$date,
+        "site=s"   => \$site,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    my @fileDataset = ( $lsFile );
+    my $crashstats = parseLogs(\@fileDataset);
+    storeVBBCrashInfo($crashstats, $site, $date);
+}
+
+main();

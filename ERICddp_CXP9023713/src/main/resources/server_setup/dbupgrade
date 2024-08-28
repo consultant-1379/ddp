@@ -1,0 +1,251 @@
+#!/bin/bash
+
+dumpSchema()
+{
+    MY_DB=$1
+    FILE=$2
+
+    mysqldump --no-data ${MY_DB} > ${FILE}
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: dumpSchema failed"
+        exit 1
+    fi
+}
+
+createTestDB()
+{
+    MY_DB=$1
+
+    mysql -v -v -v <<EOF 2>&1 >> ${LOG_DIR}/create_testdb.log
+DROP DATABASE IF EXISTS ${MY_DB};
+CREATE DATABASE ${MY_DB};
+EOF
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to create ${MY_DB}"
+        exit 1
+    fi
+}
+
+dropTestDB()
+{
+    MY_DB=$1
+
+    mysql -v -v -v <<EOF 2>&1 >> ${LOG_DIR}/drop_testdb.log
+DROP DATABASE ${MY_DB};
+EOF
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to drop ${MY_DB}"
+        exit 1
+    fi
+}
+
+testDbDDL()
+{
+    DB_DDL=$1
+    SAVE_SCHEMA=$2
+
+    createTestDB db_schtest
+
+    mysql -v -v -v -v -v db_schtest < ${DB_DDL} 2>&1 > ${LOG_DIR}/testdb_ddl.log
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to load db_schtest"
+        exit 1
+    fi
+
+    if [ ! -z "${SAVE_SCHEMA}" ] ; then
+        dumpSchema db_schtest ${SAVE_SCHEMA}
+    fi
+
+    dropTestDB db_schtest
+}
+
+testMigrate()
+{
+    BASE_SCHEMA=$1
+    MIGRATE_SQL=$2
+    MIGRATED_SCHEMA=$3
+
+    createTestDB db_schtest
+
+    mysql db_schtest < ${BASE_SCHEMA} 2>&1 > ${LOG_DIR}/mig_load_base.log
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to load db_schtest with ${BASE_SCHEMA}"
+        exit 1
+    fi
+
+    mysql -v -v -v -v --show-warnings db_schtest < ${MIGRATE_SQL} 2>&1 > ${LOG_DIR}/mig_load_migrate.log
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to update db_schtest with ${MIGRATE_SQL}"
+        exit 1
+    fi
+
+    if [ ! -z "${MIGRATED_SCHEMA}" ] ; then
+        dumpSchema db_schtest ${MIGRATED_SCHEMA}
+    fi
+
+    dropTestDB db_schtest
+}
+
+extractMigSql()
+{
+    MIGRATE_SQL=$1
+    MIGRATE_FROM_TO_SQL=$2
+
+    # If we're on a snapshot version then get the number of lines
+    # in the migrate.sql in the FROM DDP dir
+    echo "${FROM_VERSION}" | grep --silent SNAPSHOT
+    if [ $? -eq 0 ] ; then
+        FROM_MIGRATE_SQL=$(echo ${MIGRATE_SQL} | sed "s/${TO_VERSION}/${FROM_VERSION}/")
+        MIGRATE_START_LINE_NUM=$(wc -l ${FROM_MIGRATE_SQL} | awk '{print $1}')
+    else
+        # Get start line
+        LINE=`egrep -n "END ${FROM_VERSION}" ${MIGRATE_SQL}`
+        if [ $? -ne 0 ] ; then
+            echo "Could not find \"${FROM_VERSION}\" in ${MIGRATE_SQL}"
+            exit 1
+        fi
+        MIGRATE_START_LINE_NUM=`echo "${LINE}" | awk -F: '{print $1}'`
+    fi
+
+    # If we're upgrading to a snapshot version, then the end is the end
+    # of the migrate.sql
+    echo "${TO_VERSION}" | grep --silent SNAPSHOT
+    if [ $? -eq 0 ] ; then
+        MIGRATE_END_LINE_NUM=$(wc -l ${MIGRATE_SQL}  | awk '{print $1}')
+    else
+        # Get end line
+        LINE=`egrep -n "END ${TO_VERSION}" ${MIGRATE_SQL}`
+        if [ $? -ne 0 ] ; then
+            echo "Could not find \"${TO_VERSION}\" in ${MIGRATE_SQL}"
+            exit 1
+        fi
+        MIGRATE_END_LINE_NUM=`echo "${LINE}" | awk -F: '{print $1}'`
+    fi
+
+    # To get the end line we need to add one to the (end-start)
+    NUM_LINES=$(expr ${MIGRATE_END_LINE_NUM} - ${MIGRATE_START_LINE_NUM} + 1)
+
+    tail --lines +${MIGRATE_START_LINE_NUM} ${MIGRATE_SQL} | head --lines ${NUM_LINES} > ${MIGRATE_FROM_TO_SQL}
+    NUM_VALID_LINES=`egrep -v '^--|^$' ${MIGRATE_FROM_TO_SQL} | wc -l | awk '{print $0}'`
+    if [ ${NUM_VALID_LINES} -eq 0 ] ; then
+        echo "No changes found between lines ${MIGRATE_START_LINE_NUM} and ${MIGRATE_END_LINE_NUM} in ${MIGRATE_SQL}"
+        echo "No upgrade required"
+        exit 0
+    fi
+}
+
+diffSchema()
+{
+    LOADED_SCHEMA=$1
+    MIGRATED_SCHEMA=$2
+
+    for SCHEMA in $LOADED_SCHEMA $MIGRATED_SCHEMA ; do
+        # Strip out
+        #  - the AUTO_INCREMENT values
+        #  - dynamically created columns (e.g. for EBA), also means
+        #    we have to remove "," from the end of line
+        # The TO_DAYS stuff is to deal with a database that's being created during a restore
+        cat $SCHEMA | sed 's/auto_increment/AUTO_INCREMENT/g' | \
+            sed 's/AUTO_INCREMENT=[0-9]* //' | \
+            grep -v 'PARTITION `*[PQ][0-9]*' | \
+            sed 's/( TO_DAYS( *\([^ )]*\) *))/(to_days(`\1`))/' | \
+            grep -v 'DDP_AUTO_GEN' | \
+            sed 's/,$//' | \
+            sed 's/ COMMENT .*//' | \
+            grep -v 'Dump completed' ${FILTER_SERVER_ID} > $SCHEMA.filtered
+
+	if [ -d /data/tmp/migrate_serverid ] && [ "${DB}" = "statsdb" ] ; then
+	    mv $SCHEMA.filtered $SCHEMA.filtered.migrate
+	    cat $SCHEMA.filtered.migrate | ${DDP_DIR}/sql/migrate_serverid/filterServerIdCols ${DB_DDL} > $SCHEMA.filtered
+	fi
+    done
+
+    diff $LOADED_SCHEMA.filtered $MIGRATED_SCHEMA.filtered 2>&1 > ${LOG_DIR}/diffSchema.log
+    if [ $? -ne 0 ] ; then
+        echo "ERROR Schema from Loading statdb.dll ${LOADED_SCHEMA} differs from migrating current schema, ${MIGRATED_SCHEMA}"
+        exit 1
+    fi
+}
+
+# SNAPSHOT_NAME and the -h option are legacy and
+# can be removed once all the DDP servers have been
+# upgraded to versions where the upgrade script
+# doesn't use the options
+
+while getopts  "m:d:f:t:r:s:l:b:a:h:" flag
+do
+    case "$flag" in
+        m) MIGRATE_SQL="$OPTARG";;
+        d) DB_DDL="$OPTARG";;
+        f) FROM_VERSION="${OPTARG}";;
+        t) TO_VERSION="${OPTARG}";;
+        r) DDP_ROOT="${OPTARG}";;
+        s) DB="${OPTARG}";;
+        l) LOG_DIR="${OPTARG}";;
+        b) BACKUP_DIR="${OPTARG}";;
+        a) ACTION="${OPTARG}";;
+        h) SNAPSHOT_NAME="${OPTARG}";;
+
+        *) printf "Usage: %s -m migrate.sql -d statddb.dll -f fromVersion -t toVersion -l logdir -a [verify|apply]\n" $0
+           exit 1;;
+    esac
+done
+
+if [ -z "${MIGRATE_SQL}" ] || [ -z "${DB_DDL}" ] || [ -z "${FROM_VERSION}" ] || [ -z "${TO_VERSION}" ] || [ -z "${LOG_DIR}" ] || [ -z "${DB}" ] ; then
+    printf "Usage: %s -s db -m migrate.sql -d db.dll -f fromVersion -t toVersion -a [verify|apply]\n" $0
+    exit 1;
+fi
+
+MY_DIR=$(dirname $0)
+DDP_DIR=$(dirname $MY_DIR)
+
+# If we're upgrading from an "older" DDP version, then
+# the upgrade script doesn't know about the action and
+# expects the dbupgrade to be a single step
+if [ -z "${ACTION}" ] ; then
+    ACTION="all"
+fi
+
+
+MIGRATE_FROM_TO_SQL=${LOG_DIR}/migrate.sql
+if [ "${ACTION}" = "verify" ] || [ "${ACTION}" = "all" ] ; then
+    echo "Extracting steps from ${MIGRATE_SQL}"
+    extractMigSql ${MIGRATE_SQL} ${MIGRATE_FROM_TO_SQL}
+
+    # extractMigSql will do an exit 0 if there are no changes
+    # So if we change here, then it means there are changes required
+    # and we need to validate those changes
+    echo "Validate db.dll"
+    LOADED_SCHEMA=${LOG_DIR}/db_${TO_VERSION}_loaded.sql
+    testDbDDL ${DB_DDL} ${LOADED_SCHEMA}
+
+    echo "Check that migrating from current schema matches db.ddl"
+    CURRENT_SCHEMA=${LOG_DIR}/db_${FROM_VERSION}_current.sql
+    dumpSchema ${DB} ${CURRENT_SCHEMA}
+    MIGRATED_SCHEMA=${LOG_DIR}/db_${TO_VERSION}_migrated.sql
+    testMigrate ${CURRENT_SCHEMA} ${MIGRATE_FROM_TO_SQL} ${MIGRATED_SCHEMA}
+    diffSchema ${LOADED_SCHEMA} ${MIGRATED_SCHEMA}
+
+    # If we get this far then there are changes to apply and those changes
+    # are valid
+
+    # If we're called by the two-step aware version of the upgrade script
+    # then exit here
+    if [ "${ACTION}" = "verify" ] ; then
+        exit 9
+    fi
+fi
+
+if [ "${ACTION}" = "apply" ] || [ "${ACTION}" = "all" ] ; then
+    if [ ! -s ${MIGRATE_FROM_TO_SQL} ] ; then
+        echo "ERROR: Could not find ${MIGRATE_FROM_TO_SQL}"
+        exit 2
+    fi
+
+    # Do the migrate
+    mysql -v -v -v ${DB} < ${MIGRATE_FROM_TO_SQL} 2>&1 > ${LOG_DIR}/apply_migrate.log
+    if [ $? -ne 0 ] ; then
+        echo "ERROR Migrate failed"
+        exit 2
+    fi
+fi

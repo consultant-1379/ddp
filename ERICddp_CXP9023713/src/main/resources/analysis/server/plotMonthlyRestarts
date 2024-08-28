@@ -1,0 +1,49 @@
+#!/bin/sh
+
+#set -xv
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+SITE=$1
+
+STARTDATE=$2
+ENDDATE=$3
+
+FILE_BASE=$4
+
+if [ -z "${PERL5OPT}" ] ; then
+    PERL5OPT="-I${ANALYSIS_BIN}/common"
+    export PERL5OPT
+fi
+
+PLOTCMD=`${ANALYSIS_BIN}/server/formatMcRestarts --start $STARTDATE --end $ENDDATE --data ${FILE_BASE}_mc_data.txt --site ${SITE} | grep plot`
+cat > ${FILE_BASE}_cmd.txt <<EOF
+set terminal jpeg
+set xdata time
+set timefmt "%Y-%m-%d"
+set xrange [ "${STARTDATE}":"${ENDDATE}" ]
+set yrange [ 0: ]
+set format x "%d"
+set key left
+set style fill solid
+set key under
+set boxwidth 0.8 relative
+set title 'Process Restarts'
+set output"${FILE_BASE}_restarts.jpg"
+$PLOTCMD
+EOF
+
+if [ -r /opt/gnuplot/bin/gnuplot ] ; then
+    /opt/gnuplot/bin/gnuplot ${FILE_BASE}_cmd.txt
+else
+    /usr/bin/gnuplot ${FILE_BASE}_cmd.txt
+fi
+
+if [ $? -eq 0 ]; then
+  /bin/rm -f ${FILE_BASE}_mc_data.txt ${FILE_BASE}_cmd.txt
+fi
+
+
+
+

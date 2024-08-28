@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_session">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <events>
+    <!--[com.ericsson.oss.itpf.EVENT_DATA_LOGGER] NCM_AGENT.SESSION {\"_Thread\":\"VBJ ThreadPool Worker id=1 se=iiop_tp scm=iiop_tp orb=24e6c928\",\"id\":\"7bd33558\",\"status\":\"OPENED\"}-->
+    <!--[com.ericsson.oss.itpf.EVENT_DATA_LOGGER] NCM_AGENT.SESSION {\"_Thread\":\"VBJ ThreadPool Worker id=3 se=iiop_tp scm=iiop_tp orb=24e6c928\",\"id\":\"12389788\",\"status\":\"CLOSED\"}-->
+    <event name="NCM_AGENT.SESSION">
+      <metric source="host" target="serverid"/>
+      <metric source="id" target="id"/>
+      <metric source="status" target="status"/>
+    </event>
+  </events>
+</modelledevents>
+

@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" forcelegend="true">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_cm_site_energy_visualization_instr">
+      <reference table="sites" condition="enm_cm_site_energy_visualization_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_cm_site_energy_visualization_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="numberOfSuccessfulRequestsEF" type="sb" ylabel="Count">
+      <title value="Successful Requests"/>
+      <column db="numberOfSuccessfulRequestsEF" label="Successful Requests"/>
+    </graph>
+    <graph name="numberOfFailedRequestsEF" type="sb" ylabel="Count">
+      <title value="Failed Requests"/>
+      <column db="numberOfFailedRequestsEF" label="Failed Requests"/>
+    </graph>
+    <graph name="totalDataReadTimePerRequestEF" type="sb" ylabel="ms">
+      <title value="Total Data Read Time Per Request"/>
+      <column db="totalDataReadTimePerRequestEF" label="Total Data Read Time Per Request"/>
+    </graph>
+    <graph name="totalResponseTimePerRequestEF" type="sb" ylabel="ms">
+      <title value="Total Response Time Per Request"/>
+      <column db="totalResponseTimePerRequestEF" label="Total Response Time Per Request"/>
+    </graph>
+    <graph name="numberOfPmFileNotificationsReceived" type="sb" ylabel="Count">
+      <title value="Received File Notifications"/>
+      <column db="numberOfPmFileNotificationsReceived" label="Received File Notifications"/>
+    </graph>
+    <graph name="numberOfParsedPmFiles" type="sb" ylabel="Count">
+      <title value="Successful Files Parsed"/>
+      <column db="numberOfParsedPmFiles" label="Successful Files Parsed"/>
+    </graph>
+    <graph name="numberOfUnParsedPmFiles" type="sb" ylabel="">
+      <title value="Failed Files Parsed"/>
+      <column db="numberOfUnParsedPmFiles" label="Failed Files Parsed"/>
+    </graph>
+    <graph name="totalTimeTakenToParsePmFiles" type="sb" ylabel="ms">
+      <title value="File Parsing Time"/>
+      <column db="totalTimeTakenToParsePmFiles" label="File Parsing Time"/>
+    </graph>
+    <graph name="numberOfDbWriteOperationsER" type="sb" ylabel="Count">
+      <title value="Successful DB Write Operations"/>
+      <column db="numberOfDbWriteOperationsER" label="Successful DB Write Operations"/>
+    </graph>
+    <graph name="totalTimePerWriteOperation" type="sb" ylabel="ms">
+      <title value="Total Time Per DB Write Operation"/>
+      <column db="totalTimePerWriteOperation" label="Total Time Per DB Write Operation"/>
+    </graph>
+    <graph name="numberOfPmRecordsPerWriteOperation" type="sb" ylabel="Count">
+      <title value="Number Of PM Records Per DB Write Operation"/>
+      <column db="numberOfPmRecordsPerWriteOperation" label="Number Of PM Records Per DB Write Operation"/>
+    </graph>
+    <graph name="numberOfSuccessfulRequestsER" type="sb" ylabel="Count">
+      <title value="Successful Requests"/>
+      <column db="numberOfSuccessfulRequestsER" label="Successful Requests"/>
+    </graph>
+    <graph name="numberOfFailedRequestsER" type="sb" ylabel="Count">
+      <title value="Failed Requests"/>
+      <column db="numberOfFailedRequestsER" label="Failed Requests"/>
+    </graph>
+    <graph name="totalResponseTimePerRequestER" type="sb" ylabel="ms">
+      <title value="Response Time Per Request"/>
+      <column db="totalResponseTimePerRequestER" label="Response Time Per Request"/>
+    </graph>
+    <graph name="totalDataReadTimePerRequestER" type="sb" ylabel="ms">
+      <title value="Total Data DB Read Time Per Request"/>
+      <column db="totalDataReadTimePerRequestER" label="Total Data DB Read Time Per Request"/>
+    </graph>
+    <graph name="numberOfDbReadOperationsER" type="sb" ylabel="Count">
+      <title value="Successful DB Read Operations"/>
+      <column db="numberOfDbReadOperationsER" label="Successful DB Read Operations"/>
+    </graph>
+    <graph name="totalTimePerReadOperation" type="sb" ylabel="ms">
+      <title value="Total Time Per DB Read Operation"/>
+      <column db="totalTimePerReadOperation" label="Total Time Per DB Read Operation"/>
+    </graph>
+    <graph name="numberOfDbDeleteOperationsER" type="sb" ylabel="Count">
+      <title value="Successful DB Delete Operations"/>
+      <column db="numberOfDbDeleteOperationsER" label="Successful DB Delete Operations"/>
+    </graph>
+    <graph name="totalTimePerDeleteOperation" type="sb" ylabel="ms">
+      <title value="Total Time Per DB Delete Operation"/>
+      <column db="totalTimePerDeleteOperation" label="Total Time Per DB Delete Operation"/>
+    </graph>
+    <graph name="numberOfSuccessfulRequestsUS" type="sb" ylabel="Count">
+      <title value="Successful Requests"/>
+      <column db="numberOfSuccessfulRequestsUS" label="Successful Requests"/>
+    </graph>
+    <graph name="numberOfFailedRequestsUS" type="sb" ylabel="Count">
+      <title value="Failed Requests"/>
+      <column db="numberOfFailedRequestsUS" label="Failed Requests"/>
+    </graph>
+    <graph name="totalResponseTimePerRequestUS" type="sb" ylabel="ms">
+      <title value="Response Time Per Request"/>
+      <column db="totalResponseTimePerRequestUS" label="Response Time Per Request"/>
+    </graph>
+    <graph name="numberOfDbReadOperationsUS" type="sb" ylabel="Count">
+      <title value="Successful DB Read Operations"/>
+      <column db="numberOfDbReadOperationsUS" label="Successful DB Read Operations"/>
+    </graph>
+    <graph name="totalTimeTakenToReadSettingsPerUser" type="sb" ylabel="ms">
+      <title value="Total Time Per DB Read Operation"/>
+      <column db="totalTimeTakenToReadSettingsPerUser" label="Total Time Per DB Read Operation"/>
+    </graph>
+    <graph name="numberOfSuccessfulUpdates" type="sb" ylabel="Count">
+      <title value="Successful Updates"/>
+      <column db="numberOfSuccessfulUpdates" label="Successful Updates"/>
+    </graph>
+    <graph name="numberOfFailedUpdates" type="sb" ylabel="Count">
+      <title value="Failed Updates"/>
+      <column db="numberOfFailedUpdates" label="Failed Updates"/>
+    </graph>
+    <graph name="totalResponseTimePerUpdate" type="sb" ylabel="ms">
+      <title value="Response Time Per Updates"/>
+      <column db="totalResponseTimePerUpdate" label="Response Time Per Updates"/>
+    </graph>
+    <graph name="numberOfDbWriteOperationsUS" type="sb" ylabel="Count">
+      <title value="Successful DB Write Operations"/>
+      <column db="numberOfDbWriteOperationsUS" label="Successful DB Write Operations"/>
+    </graph>
+    <graph name="totalTimeTakenToWriteSettingsPerUser" type="sb" ylabel="ms">
+      <title value="Total Time Per DB Read Operation"/>
+      <column db="totalTimeTakenToWriteSettingsPerUser" label="Total Time Per DB Read Operation"/>
+    </graph>
+    <graph name="numberOfDbDeleteOperationsUS" type="sb" ylabel="Count">
+      <title value="Successful DB Delete Operations"/>
+      <column db="numberOfDbDeleteOperationsUS" label="Successful DB Delete Operations"/>
+    </graph>
+    <graph name="totalTimeTakenToDeleteSettingsPerUser" type="sb" ylabel="ms">
+      <title value="Total Time Per DB Delete Operation"/>
+      <column db="totalTimeTakenToDeleteSettingsPerUser" label="Total Time Per DB Delete Operation"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="energyFlowRequestsA">
+      <member>numberOfSuccessfulRequestsEF</member>
+      <member>numberOfFailedRequestsEF</member>
+    </group>
+    <group name="energyFlowRequestsB">
+      <member>totalDataReadTimePerRequestEF</member>
+      <member>totalResponseTimePerRequestEF</member>
+    </group>
+    <group name="pmStatsA">
+      <member>numberOfPmFileNotificationsReceived</member>
+      <member>numberOfParsedPmFiles</member>
+      <member>numberOfUnParsedPmFiles</member>
+      <member>totalTimeTakenToParsePmFiles</member>
+    </group>
+    <group name="pmStatsB">
+      <member>numberOfDbWriteOperationsER</member>
+      <member>totalTimePerWriteOperation</member>
+      <member>numberOfPmRecordsPerWriteOperation</member>
+    </group>
+    <group name="energyReportRequests">
+      <member>numberOfSuccessfulRequestsER</member>
+      <member>numberOfFailedRequestsER</member>
+      <member>totalResponseTimePerRequestER</member>
+      <member>totalDataReadTimePerRequestER</member>
+      <member>numberOfDbReadOperationsER</member>
+      <member>totalTimePerReadOperation</member>
+    </group>
+    <group name="energyReportHouse">
+      <member>numberOfDbDeleteOperationsER</member>
+      <member>totalTimePerDeleteOperation</member>
+    </group>
+    <group name="userSettingsRequests">
+      <member>numberOfSuccessfulRequestsUS</member>
+      <member>numberOfFailedRequestsUS</member>
+      <member>totalResponseTimePerRequestUS</member>
+      <member>numberOfDbReadOperationsUS</member>
+      <member>totalTimeTakenToReadSettingsPerUser</member>
+    </group>
+    <group name="userSettingsUpdates">
+      <member>numberOfSuccessfulUpdates</member>
+      <member>numberOfFailedUpdates</member>
+      <member>totalResponseTimePerUpdate</member>
+      <member>numberOfDbWriteOperationsUS</member>
+      <member>totalTimeTakenToWriteSettingsPerUser</member>
+    </group>
+    <group name="userSettingsHouse">
+      <member>numberOfDbDeleteOperationsUS</member>
+      <member>totalTimeTakenToDeleteSettingsPerUser</member>
+    </group>
+  </groups>
+</modelledgraphset>

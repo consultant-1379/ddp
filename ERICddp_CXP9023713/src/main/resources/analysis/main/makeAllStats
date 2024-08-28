@@ -1,0 +1,300 @@
+#!/bin/bash
+
+
+#set -xv
+if [ ! -r "$1" ]; then
+    echo "Usage: $0 configfile [min mod sec]"
+    exit 1
+fi
+
+CONFIG_FILE=$1
+
+. ${CONFIG_FILE}
+
+EXIT_FILE=/tmp/makeAllStats.exit
+
+COMPRESS_SUFFIX=".Z"
+DECOMPRESS_CMD="gzip -dc"
+MIN_SEC_SINCE_MODIFIED=60
+
+if [ -z "${MAX_JOBS}" ] ; then
+    MAX_JOBS=2
+fi
+NUM_PROCESSED=0
+LOG_DIR=/tmp/ms.$$
+if [ -f ${LOG_DIR} ] ; then
+    rm -rf ${LOG_DIR}
+fi
+mkdir ${LOG_DIR}
+
+[ -z "${FINAL_LOG_DIR}" ] && FINAL_LOG_DIR=/data/ddp/log
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+if [ ! -z "$3" ]; then
+    MIN_SEC_SINCE_MODIFIED=$3
+fi
+
+if [ -d /opt/csw ] ; then
+    export PATH=/opt/csw/gnu:/opt/csw/bin:$PATH
+elif [ -d /usr/local/bin ] ; then
+    export PATH=/usr/local/bin:$PATH
+fi
+
+archiveFile()
+{
+    DATA_FILE=$1
+    SITE_NAME=$2
+
+    if [ -d ${ARCHIVE_DIR} ] ; then
+        if [ ! -d ${ARCHIVE_DIR}/${SITE_NAME} ]; then
+            mkdir ${ARCHIVE_DIR}/${SITE_NAME}
+        fi
+
+      # we should have a vlid directory now
+        FILE=`basename ${DATA_FILE}`                                    
+        /bin/mv -f ${DATA_FILE} ${ARCHIVE_DIR}/${SITE_NAME}/${FILE}
+        if [ $? -ne 0 ] ; then
+            echo "ERROR: Could not archive ${DATA_FILE} to ${ARCHIVE_DIR}/${SITE_NAME}/${FILE}"
+        fi
+    else
+        echo "Archive dir ${ARCHIVE_DIR} doesn't exist"
+    fi
+}
+
+processFiles()
+{
+    # processFiles "$SITE_ID" "$SITE_NAME" "$SITE_TYPE" "$SITE_FTP_DIR" "${INCOMING_DATA_FILES}"
+    SITE_ID=$1
+    SITE_NAME=$2
+    SITE_TYPE=$3
+    SITE_FTP_DIR=$4
+    INCOMING_DATA_FILES=$5
+
+    FTP_ACCOUNT_NAME=`basename ${SITE_FTP_DIR}`
+
+    [ -z "${BASE_DATA_DIR}" ] && BASE_DATA_DIR="/data/stats"
+    SITE_DIR=${BASE_DATA_DIR}/${SITE_TYPE}/${SITE_NAME}
+    DATA_DIR=${BASE_DATA_DIR}/${SITE_TYPE}
+    echo "SITE DIR: $SITE_DIR"
+    [ ! -d ${SITE_DIR}/data/staging_area ] && mkdir -p ${SITE_DIR}/data/staging_area
+    cd ${SITE_DIR}/data/staging_area
+
+    for DATA_FILE in ${INCOMING_DATA_FILES}; do
+        SECS_SINCE_MODIFIED=`${ANALYSIS_BIN}/main/lastModified ${DATA_FILE}`
+        if [ $SECS_SINCE_MODIFIED -ge $MIN_SEC_SINCE_MODIFIED ]; then
+            #
+            # Wait until less then the max number of jobs are active
+            #
+            NUM_ACTIVE=`jobs | wc -l`
+            while [ ${NUM_ACTIVE} -ge ${MAX_JOBS} ] ; do
+                sleep 5
+                NUM_ACTIVE=`jobs | grep -c Running`
+                
+                if [ -r /tmp/debug_jobs ] ; then
+                    date
+                    jobs
+                    echo "NUM_ACTIVE=${NUM_ACTIVE}"
+                fi
+            done
+
+            if [ -r ${EXIT_FILE} ] ; then
+                echo "processFiles: Found exit file"
+                break;
+            fi
+
+            echo "Processing ${DATA_FILE}"
+
+            NUM_PROCESSED=`expr ${NUM_PROCESSED} + 1`
+            DATE=`echo ${DATA_FILE} | sed "s/^.*\/.*_Data_\([0-9]\{6\}\).*$/\1/g"`
+
+            #
+            # Record info about how long it's taking to process
+            # OSS_Data files
+            #
+            FILE_INFO=`ls -l --time-style "+%Y-%m-%d %H:%M:%S" ${DATA_FILE}`
+            FILE_SIZE=`echo ${FILE_INFO} | awk '{print $5}'`
+            FILE_TIME=`echo ${FILE_INFO} | awk '{print $6, $7}'`
+            BEGIN_PROC_TIME=`date "+%Y-%m-%d %H:%M:%S"`
+            FILE_SIZE_KB=`expr ${FILE_SIZE} / 1024`
+            SQL_DATE=`echo ${DATE} | sed 's/\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)/20\3-\2-\1/g'`
+
+            ERROR=""
+
+            #
+            # If the file does not match the exact expected file name throw an error.
+            # This will prevent 2 different files from being processed for the same date at the same time.
+            #
+            if [[ ! $DATA_FILE =~ ^.*\/DDC_Data_[0-9]{6}\.tar\.gz$ ]] ; then
+                [[ $DATA_FILE =~ ^.*\/(.*)$ ]]
+                FILE_NAME=${BASH_REMATCH[1]}
+                EXPECTED_FILE_NAME="DDC_Data_${DATE}.tar.gz"
+                ERROR="File name <b>${FILE_NAME}</b> does not match the expected file name <b>${EXPECTED_FILE_NAME}</b>, this file will not be processed."
+            fi
+
+	    #
+	    # If we already processed this file before, then log an error
+	    #
+	    ARCHIVE_FILE=$(basename ${DATA_FILE})
+	    ARCHIVE_FILE="${ARCHIVE_DIR}/${SITE_NAME}/${ARCHIVE_FILE}" 
+	    if [ -r ${ARCHIVE_FILE} ] ; then
+		ARCHIVE_FILE_INFO=$(ls -l --time-style "+%Y-%m-%d %H:%M:%S" ${ARCHIVE_FILE})
+		ARCHIVE_FILE_SIZE=$(echo ${ARCHIVE_FILE_INFO} | awk '{print $5}')
+		ARCHIVE_FILE_TIME=$(echo ${ARCHIVE_FILE_INFO} | awk '{print $6, $7}')
+		if [ ${ARCHIVE_FILE_SIZE} -eq ${FILE_SIZE} ] ; then
+		    ERROR="Already processed at ${ARCHIVE_FILE_TIME}, this file will not be processed"
+		fi
+	    fi
+
+	    #
+	    # Decompress
+	    # 
+	    if [ -z "${ERROR}" ] ; then
+		DECOMPRESSED_DATE_FILE=`echo ${DATA_FILE} | sed 's/^\(.*\)\.tar\..*$/\1\.tar/g'`
+		$DECOMPRESS_CMD ${DATA_FILE} > ${DECOMPRESSED_DATE_FILE}
+		if [ $? -ne 0 ]; then
+		    ERROR="Failed to decompress ${DATA_FILE}"
+		fi
+	    fi
+
+	    #
+	    # Untar
+	    #
+	    if [ -z "${ERROR}" ] ; then
+                tar xf $DECOMPRESSED_DATE_FILE
+		if [ $? -ne 0 ]; then		
+		    ERROR="Failed to untar ${DATA_FILE}"
+		fi
+	    fi
+
+	    #
+	    # Check account via ddp.txt
+	    #
+	    if [ -z "${ERROR}" ] ; then
+                archiveFile ${DATA_FILE} ${SITE_NAME}
+                
+		SLASH_DATE=`echo ${DATE} | sed 's/\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)/\1-\2-\3/g'`
+		
+                if [ -r ${DATE}/ddp.txt ] ; then
+                    DATA_FILE_DDP_ACCOUNT=`cat ${DATE}/ddp.txt`
+                    if [ "${DATA_FILE_DDP_ACCOUNT}" != ${FTP_ACCOUNT_NAME} ] ; then
+			ERROR="ERROR: ddp.txt content, ${DATA_FILE_DDP_ACCOUNT}, does not match FTP account name ${FTP_ACCOUNT_NAME}, file will not be processed"
+			rm -rf ${DATE}		
+		    fi
+                fi
+	    fi
+
+	    #
+	    # Process extracted data
+	    #
+	    if [ -z "${ERROR}" ] ; then
+		if [ -d ../${DATE} ] ; then
+		    rm -rf ../${DATE}
+		fi
+                mv -f ${DATE} ../${DATE}
+                    
+                #make dirs for logging
+                PROCESSED_LOG_DIRECTORY="$FINAL_LOG_DIR/`date +%F`"
+                if [ ! -d $PROCESSED_LOG_DIRECTORY ] ; then
+                    mkdir -p $PROCESSED_LOG_DIRECTORY
+                fi
+                
+                #Execute Makestats, sending output to both original logging structure, and to $PROCESSED_LOG_DIRECTORY
+                ${ANALYSIS_BIN}/main/makeStats ${SLASH_DATE} ${SITE_NAME} ${DATA_DIR} ${SITE_TYPE} 2>&1 | \
+                    tee -a $PROCESSED_LOG_DIRECTORY/${SITE_NAME}.${NUM_PROCESSED}.log \
+                    > ${LOG_DIR}/makeStats.${NUM_PROCESSED} & 
+	    fi
+
+	    if [ -z "${ERROR}" ] ; then
+		ERROR="NULL"
+	    else
+		ERROR="'${ERROR}'"
+	    fi
+
+            cat > ${LOG_DIR}/ddp_makestats.${NUM_PROCESSED} <<EOF
+INSERT INTO ddp_makestats 
+ (siteid,filesize,filedate,uploaded,beginproc,endproc,error) 
+ VALUES 
+ ( 
+   ${SITE_ID}, ${FILE_SIZE_KB}, '${SQL_DATE}',
+   '${FILE_TIME}', '${BEGIN_PROC_TIME}', END_PROC_TIME, ${ERROR}
+ );
+EOF
+		
+            if [ -r ${DATA_FILE} ] ; then
+                /bin/rm -f ${DATA_FILE}
+            fi
+
+            if [ -r ${DECOMPRESSED_DATE_FILE} ] ; then
+                rm -f ${DECOMPRESSED_DATE_FILE} 
+            fi
+        else
+            echo "Modified $SECS_SINCE_MODIFIED secs ago, ignoring"
+        fi
+    done
+}
+
+#
+# Keep scanning the file ftp dir looking for files until 
+# - We scan all directories and find no files to scan
+# or
+# - We find an exit file
+#
+# This approach ensures that we doing end up where we are 
+# waiting for a very long time with only one makeStats running
+KEEPGOING=1
+while [ ${KEEPGOING} -eq 1 ] ; do    
+    # Set KEEPGOING to 0, we'll set it to 1 if we find a file
+    KEEPGOING=0 
+
+    for SITEDATA in $(${ANALYSIS_BIN}/main/getSiteList) ; do
+	SITE_ID=`echo $SITEDATA | cut -d: -f1`
+	SITE_NAME=`echo $SITEDATA | cut -d: -f2`
+	SITE_TYPE=`echo $SITEDATA | cut -d: -f3 | tr "[:upper:]" "[:lower:]"`
+	SITE_FTP_DIR=`echo $SITEDATA | cut -d: -f4`
+
+	INCOMING_DATA_FILES=`find ${SITE_FTP_DIR} -name "*_Data_*.tar.*" | sort`
+	
+	if [ ! -z "${INCOMING_DATA_FILES}" ]; then
+            echo "${SITE_NAME}"
+            processFiles "$SITE_ID" "$SITE_NAME" "$SITE_TYPE" "$SITE_FTP_DIR" "${INCOMING_DATA_FILES}"
+	    KEEPGOING=1
+	fi
+
+	if [ -r ${EXIT_FILE} ] ; then
+            echo "Found exit file"
+	    KEEPGOING=0
+            break
+	fi
+    done
+done
+
+wait
+
+#Tidy up and collate log files
+#for DATE_DIR in `find ${FINAL_LOG_DIR} -type f -name "*.[0-9]*.log" | xargs -L1 dirname | sort | uniq` ; do
+#       for SITE_NAME in `find $DATE_DIR  -type f -name "*.[0-9]*.log" | xargs -L1 basename | awk -F'.' '{print $1}' | sort | uniq` ; do
+#               find $DATE_DIR/ -type f -name "$SITE_NAME.[0-9]*.log" | sort -n | xargs cat >> $DATE_DIR/$SITE_NAME.log
+#               rm $DATE_DIR/$SITE_NAME.[0-9]*.log
+#       done
+#done
+
+echo "use ${ADMINDB};" > ${LOG_DIR}/ddp_makestats_all.sql
+for LOG in `find ${LOG_DIR} -name 'ddp_makestats.*'` ; do
+    PROC_NUM=`echo $LOG | sed 's/.*\.\([0-9]*\)$/\1/'`
+
+    END_PROC_TIME="NULL"
+    if [ -r ${LOG_DIR}/makeStats.${PROC_NUM} ] ; then
+	cat ${LOG_DIR}/makeStats.${PROC_NUM}
+
+	END_PROC_TIME=`ls -l --time-style "+%Y-%m-%d %H:%M:%S" ${LOG_DIR}/makeStats.${PROC_NUM} | awk '{print $6, $7}'`
+	END_PROC_TIME="'${END_PROC_TIME}'"
+    fi
+    
+    cat ${LOG_DIR}/ddp_makestats.${PROC_NUM} | sed "s/END_PROC_TIME/${END_PROC_TIME}/" >> ${LOG_DIR}/ddp_makestats_all.sql
+done
+${ANALYSIS_BIN}/sql/runSql ${LOG_DIR}/ddp_makestats_all.sql
+
+rm -rf ${LOG_DIR}
+

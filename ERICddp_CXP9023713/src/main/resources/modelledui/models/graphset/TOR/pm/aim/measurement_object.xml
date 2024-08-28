@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" forcelegend="true">
+
+  <query timecol="time" multiseries="ne_types.name">
+    <dbtables main="enm_aim_measurement_training">
+      <reference table="sites" condition="enm_aim_measurement_training.siteid = sites.id"/>
+      <reference table="ne_types" condition="enm_aim_measurement_training.netypeid = ne_types.id"/>
+      <reference table="mo_names" condition="enm_aim_measurement_training.motypeid = mo_names.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="nodetype"/>
+    <param name="measurementType"/>
+    <where>sites.name = '%s' AND ne_types.name = '%s' AND mo_names.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="Training" type="tsc" ylabel="Training%">
+      <title value="Measurement Objects Training"/>
+      <column db="measurementObjectsTraining"/>
+    </graph>
+
+    <graph name="Count" type="tsc" ylabel="Count">
+      <title value="Measurement Objects Count"/>
+      <column db="measurementObjectsCount"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="training">
+      <member>Training</member>
+      <member>Count</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

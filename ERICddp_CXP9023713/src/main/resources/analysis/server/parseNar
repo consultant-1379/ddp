@@ -1,0 +1,781 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use NameTable;
+use StatsTime;
+use DBI;
+
+use XML::Simple qw(:strict);
+
+our $DEBUG = 0;
+our $CLI = "/opt/Navisphere/bin/naviseccli";
+
+our $FENCING_LUN_SIZE = 1048576 * 100;
+
+our %DATA_MAP = (
+    'sp' => {
+        'object' => 's',
+        'id' => 'sysid,sp',
+        'stats_table' => 'emc_sp_stats',
+        'cols' => {
+            'Utilization (%)' => 'utilization',
+            'Read Bandwidth (MB/s)' => 'readbw',
+            'Read Throughput (IO/s)' => 'readiops',
+            'Write Bandwidth (MB/s)' => 'writebw',
+            'Write Throughput (IO/s)' => 'writeiops',
+            'SP Cache Dirty Pages (%)' => 'spc_dirty',
+            'SP Cache MBs Flushed (MB/s)' => 'spc_flushbw',
+            'CPU0 Utilization (%)' => 'cpu0_util',
+            'CPU1 Utilization (%)' => 'cpu1_util',
+            'CPU2 Utilization (%)' => 'cpu2_util',
+            'CPU3 Utilization (%)' => 'cpu3_util'
+        }
+    },
+    'lun' => {
+        'object' => 'l',
+        'id' => 'lunid',
+        'id_table' => 'emc_lun',
+        'stats_table' => 'emc_lun_stats',
+        'cols' => {
+            'Utilization (%)' => 'utilization',
+            'Utilization-Nonoptimal (%)' => 'utilnonopt',
+            'Queue Length' => 'qlen',
+            'Average Busy Queue Length' => 'qlenbusy',
+            'Response Time (ms)' => 'resptime',
+            'Service Time (ms)' => 'servtime',
+            'Read Bandwidth (MB/s)' => 'readbw',
+            'Read Throughput (IO/s)' => 'readiops',
+            'Write Bandwidth (MB/s)' => 'writebw',
+            'Write Throughput (IO/s)' => 'writeiops',
+            'SP Cache Read Hits/s' => 'spc_read_hit',
+            'SP Cache Read Misses/s' => 'spc_read_miss',
+            'SP Cache Write Hits/s' => 'spc_write_hit',
+            'SP Cache Write Misses/s' => 'spc_write_miss',
+            'SP Cache Forced Flushes/s' => 'spc_forced_flush',
+            'SP Cache Write Rehit/s' => 'spc_write_rehit',
+            'Full Stripe Writes/s' => 'fsw',
+            'Disk Crossings/s' => 'disk_crossings'
+        },
+        'sysid' => 1
+    },
+    'lun_iosize' => {
+        'object' => 'l',
+        'id' => 'lunid',
+        'id_table' => 'emc_lun',
+        'stats_table' => 'emc_lun_iosize',
+        'cols' => {
+            'Read 512B' => 'read_512',
+            'Read 1KB' => 'read_1k',
+            'Read 2KB' => 'read_2k',
+            'Read 4KB' => 'read_4k',
+            'Read 8KB' => 'read_8k',
+            'Read 16KB' => 'read_16k',
+            'Read 32KB' => 'read_32k',
+            'Read 64KB' => 'read_64k',
+            'Read 16KB' => 'read_16k',
+            'Read 32KB' => 'read_32k',
+            'Read 64KB' => 'read_64k',
+            'Read 128KB' => 'read_128k',
+            'Read 256KB' => 'read_256k',
+            'Read 512KB' => 'read_512k',
+            'Write 512B' => 'write_512',
+            'Write 1KB' => 'write_1k',
+            'Write 2KB' => 'write_2k',
+            'Write 4KB' => 'write_4k',
+            'Write 8KB' => 'write_8k',
+            'Write 16KB' => 'write_16k',
+            'Write 32KB' => 'write_32k',
+            'Write 64KB' => 'write_64k',
+            'Write 16KB' => 'write_16k',
+            'Write 32KB' => 'write_32k',
+            'Write 64KB' => 'write_64k',
+            'Write 128KB' => 'write_128k',
+            'Write 256KB' => 'write_256k',
+            'Write 512KB' => 'write_512k'
+        }
+    },
+    'rg' => {
+        'object' => 'rg',
+        'id' => 'rgid',
+        'id_table' => 'emc_rg',
+        'stats_table' => 'emc_rg_stats',
+        'cols' => {
+            'Utilization (%)' => 'utilization',
+            'Queue Length' => 'qlen',
+            'Average Busy Queue Length' => 'qlenbusy',
+            'Response Time (ms)' => 'resptime',
+            'Service Time (ms)' => 'servtime',
+            'Read Bandwidth (MB/s)' => 'readbw',
+            'Read Throughput (IO/s)' => 'readiops',
+            'Write Bandwidth (MB/s)' => 'writebw',
+            'Write Throughput (IO/s)' => 'writeiops',
+            'Average Seek Distance (GB)' => 'avgseekdist'
+        }
+    }
+    );
+
+sub decryptNaz($) {
+    my ($inputDir) = @_;
+
+    my $nazURL = $ENV{'NAZ_URL'};
+    if ( ! defined $nazURL ) {
+        return;
+    }
+
+    my $CURL = "/usr/bin/curl";
+    if ( ! -e $CURL ) {
+        return;
+    }
+
+    my %narFiles = ();
+    opendir(DIR, $inputDir) || die "can't opendir $inputDir: $!";
+    my @allFiles = readdir(DIR);
+    closedir DIR;
+
+    my @filesToDecrypt = ();
+    foreach my $file ( @allFiles ) {
+        if ( $DEBUG > 5 ) { print "decryptNaz: file=$file\n"; }
+        if ( $file =~ /^(\S+)\.naz$/ ) {
+            my $baseName = $1;
+            my ($sys,$sp,$date,$hour,$min,$sec) = $baseName =~ /^([^_]+)_([^_]+)_([^_]+)_(\d{2,2})-(\d{2,2})-(\d{2,2})/;
+            if ( $DEBUG > 5 ) { print "decryptNaz: sys,sp,date,hour,min,sec = $sys,$sp,$date,$hour,$min,$sec\n"; }
+            if ( $sp eq "SPA" ) {
+                my $nazFile = $inputDir . "/" . $file;
+                my $narFile = $inputDir . "/" . $baseName . ".nar";
+                if ( ! -e $narFile ) {
+                    if ( -e $CURL ) {
+                        my $cmd = "$CURL  -s -S --max-time 180 -o $inputDir/$baseName.nar -F \"file=\@$nazFile\" $nazURL";
+                        if ( $DEBUG > 0 ) { print "decryptNaz: cmd=$cmd\n"; }
+                        system($cmd);
+                    }
+                }
+            }
+        }
+    }
+}
+
+sub registerSysForSite($$$) {
+    my ($dbh,$r_narFiles,$siteId) = @_;
+
+    my @sysList = keys %{$r_narFiles};
+    my $r_sysToId = getIdMap($dbh, "emc_sys", "id", "name", \@sysList );
+
+    # Need to check that the systems has been registered from this site
+    foreach my $sys ( @sysList ) {
+        my $sysId = $r_sysToId->{$sys};
+        foreach my $r_fileInfo ( @{$r_narFiles->{$sys}} ) {
+            my ($date) = $r_fileInfo->{'date'} =~ /^(\S+)/;
+            my $r_rows = dbSelectAllArr($dbh, "SELECT COUNT(*) FROM emc_site WHERE sysid = $sysId AND siteid = $siteId AND filedate = '$date'");
+            if ( $r_rows->[0]->[0] == 0 ) {
+                dbDo($dbh, sprintf("INSERT INTO emc_site (sysid,siteid,filedate) VALUES (%d,%d,'%s')",
+                                   $sysId, $siteId, $date))
+                    or die "Cannot insert site reference";
+            }
+        }
+    }
+}
+
+sub getIdMaps($$$) {
+    my ($dbh,$r_config,$sysid) = @_;
+
+    my %idMap = (
+        'sp' => {
+            'SP A' => "$sysid,A",
+            'SP B' => "$sysid,B"
+        },
+        'rg' => {},
+        'lun'  => {},
+        'pool' => {}
+        );
+
+    my %trimmedLunNames = ();
+    foreach my $lunName ( sort keys %{$r_config->{'luns'}} ) {
+        my $trimmedLunName = $lunName;
+        $trimmedLunName =~ s/\s+\[.*//;
+        $trimmedLunNames{$lunName} = $trimmedLunName;
+    }
+    my @trimmedLunNameList = values %trimmedLunNames;
+    my $r_allLunIds = getIdMap($dbh,$DATA_MAP{'lun'}->{'id_table'},"id","name", \@trimmedLunNameList, $sysid, "sysid");
+    # Populate the idMap for the LUNs, used for RAID Group LUNs
+    foreach my $lunName ( sort keys %{$r_config->{'luns'}} ) {
+        $idMap{'lun'}->{$lunName} = $r_allLunIds->{$trimmedLunNames{$lunName}};
+    }
+    $idMap{'lun_iosize'} = $idMap{'lun'};
+
+    my @poolNames = sort keys %{$r_config->{'pools'}};
+    my $r_allPoolIds = getIdMap($dbh,"emc_pool","id","name", \@poolNames, $sysid, "sysid");
+    foreach my $poolName ( @poolNames ) {
+        $idMap{'pool'}->{$poolName} = $r_allPoolIds->{$poolName};
+    }
+
+    my %classicRaidGroups = ();
+    foreach my $lunName ( keys %{$r_config->{'luns'}} ) {
+        my $r_lunInfo = $r_config->{'luns'}->{$lunName};
+        # Populate the idMap for the MetaLUNs
+        if ( $r_lunInfo->{'type'} eq 'MetaLUN' ) {
+            $idMap{'metalun'}->{$lunName} = $idMap{'lun'}->{$lunName};
+            $idMap{'metalun_iosize'}->{$lunName} = $idMap{'lun'}->{$lunName};
+            delete $idMap{'lun'}->{$lunName};
+        } elsif ( $r_lunInfo->{'type'} eq 'RAID Group' ) {
+            $classicRaidGroups{$r_lunInfo->{'name'}} = 1;
+        } elsif ( $r_lunInfo->{'type'} eq 'Pool' ) { # Populate the idMap for the Pool LUNs
+            $idMap{'poollun'}->{$lunName} = $idMap{'lun'}->{$lunName};
+            $idMap{'poollun_iosize'}->{$lunName} = $idMap{'lun'}->{$lunName};
+            delete $idMap{'lun'}->{$lunName};
+        }
+    }
+    my @allRgNames = sort keys %classicRaidGroups;
+    foreach my $poolName ( @poolNames ) {
+        foreach my $prgName ( @{$r_config->{'pools'}->{$poolName}->{'prgs'}} ) {
+            push @allRgNames, $prgName;
+        }
+    }
+    my $r_allRgIds = getIdMap($dbh,$DATA_MAP{'rg'}->{'id_table'},"id","name", \@allRgNames, $sysid, "sysid");
+
+    foreach my $classicRaidGroup ( sort keys %classicRaidGroups ) {
+        $idMap{'rg'}->{$classicRaidGroup} = $r_allRgIds->{$classicRaidGroup};
+    }
+    foreach my $poolName ( @poolNames ) {
+        foreach my $prgName ( @{$r_config->{'pools'}->{$poolName}->{'prgs'}} ) {
+            $idMap{'privaterg'}->{$prgName} = $r_allRgIds->{$prgName};
+        }
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("getIdMaps: idMap",\%idMap); }
+
+    return \%idMap;
+}
+
+sub processDataType($$$$$$) {
+    my ($dataType,$r_idMap,$r_fileInfo,$dbh,$tmpDir,$sysId) = @_;
+
+    if ( $DEBUG > 4 ) { print "processDataType: dataType=$dataType\n"; }
+    my $hasDataForType = 0;
+    if ( exists $r_idMap->{$dataType} ) {
+        my @typeIds = keys %{$r_idMap->{$dataType}};
+        if ( $#typeIds != -1 ) {
+            $hasDataForType = 1;
+        }
+    }
+
+    if ( ! $hasDataForType ) {
+        if ( $DEBUG > 0 ) { print "No instances of $dataType found\n"; }
+        return;
+    }
+
+    #
+    # Convert nar to csv
+    #
+    my $timestamp = $r_fileInfo->{'date'};
+    $timestamp =~ s/ //;
+    my $csvFile = sprintf "%s/%s.%d-%s.csv", $tmpDir,$DATA_MAP{$dataType}->{'object'},$sysId,$timestamp;
+    if ( ! -r $csvFile ) {
+        my $cmd = sprintf("%s analyzer -messner -archivedump -data %s -object %s -out %s",
+                          $CLI, $r_fileInfo->{'file'}, $DATA_MAP{$dataType}->{'object'},
+                          $csvFile);
+        system($cmd);
+    }
+
+    #
+    # Parse CSV header line to get the index of each column
+    #
+    open INPUT, $csvFile or die "Cannot open CSV file $csvFile";
+    my $header = <INPUT>;
+    chop $header;
+    my @colHeaders = split(",", $header);
+    my @colIndexs = ();
+    my @dbCols = ();
+    my $r_colMap = $DATA_MAP{$dataType}->{'cols'};
+    for ( my $index = 0; $index <= $#colHeaders; $index++ ) {
+        if ( exists $r_colMap->{$colHeaders[$index]} ) {
+            push @colIndexs, $index;
+            push @dbCols, $r_colMap->{$colHeaders[$index]};
+        }
+    }
+
+    my $storeSysId = 0;
+    if ( exists $DATA_MAP{$dataType}->{'sysid'} && $DATA_MAP{$dataType}->{'sysid'} == 1 ) {
+        $storeSysId = 1;
+    }
+
+    #
+    # Read each line, get the "object id" and write the stats cols
+    # to the bcp file
+    #
+    my $bcpFileName = $tmpDir . "/$dataType.$sysId-$timestamp.bcp";
+    open OUTPUT, ">$bcpFileName" or die "Failed to open bcp file $bcpFileName";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "processNars: line=$line"; }
+        chop $line;
+        my @cols = split(",", $line);
+        my @outCols = ();
+
+        my $objName = $cols[0];
+        if ( $dataType =~ /^metalun/ ) {
+            $objName = "ML " . $objName;
+        } elsif ( $dataType =~ /^poollun/ ) {
+            $objName = getLunName($objName);
+        }
+
+        # We'll only store the row if the id is in the idMap
+        if ( exists $r_idMap->{$dataType}->{$objName} ) {
+            push @outCols, $r_idMap->{$dataType}->{$objName};
+            my ($mm,$dd,$year,$time) = $cols[1] =~ /^(\d{2,2})\/(\d{2,2})\/(\d{4,4}) (.*)/;
+            push @outCols, sprintf("%04d-%02d-%02d %s", $year, $mm, $dd, $time);
+
+            if ( $storeSysId ) {
+                push @outCols, $sysId;
+            }
+
+            foreach my $colIndex ( @colIndexs ) {
+                push @outCols, $cols[$colIndex];
+            }
+
+            print OUTPUT join(",", @outCols) . "\n";
+        } else {
+            if ( $DEBUG > 9 ) { print "processDataType: skipping $cols[1] $objName\n"; }
+        }
+    }
+    close OUTPUT;
+
+    # Special handling for the iosize data types are we only store the one row per LUN per NAR
+    if ( $dataType =~ /_iosize/ ) {
+        storeIoSize($dbh,$bcpFileName,$DATA_MAP{$dataType}->{'stats_table'},$DATA_MAP{$dataType}->{'id'},\@dbCols);
+    } else {
+        my @indexCols = ( $DATA_MAP{$dataType}->{'id'}, 'time' );
+        if ( $storeSysId ) {
+            push @indexCols, 'sysid';
+        }
+        dbDo( $dbh,
+              sprintf( "LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' (%s,%s)",
+                       $bcpFileName, $DATA_MAP{$dataType}->{'stats_table'},
+                       join(",", @indexCols),
+                       join(",", @dbCols) ) )
+            or die "Failed to load into " . $DATA_MAP{$dataType}->{'stats_table'};
+    }
+}
+
+sub storeMappings($$$$$) {
+    my ($date,$dbh,$r_config,$r_idMap,$sysid) = @_;
+
+    #
+    # Store the lun to RG mapping, if not already stored
+    #
+    my $r_rows = dbSelectAllArr($dbh, "SELECT COUNT(*) FROM emc_lun_rg WHERE sysid = $sysid AND filedate = '$date'");
+    if ( $r_rows->[0]->[0] == 0 ) {
+        foreach my $lunName ( keys %{$r_config->{'luns'}} ) {
+            my $lunId = $r_idMap->{'lun'}->{$lunName};
+            my $rgName = $r_config->{'luns'}->{$lunName}->{'name'};
+            if ( $DEBUG > 5 ) { printf("storeMappings: lunName=%s lunId=%s found rg=%s\n",$lunName,$lunId,$rgName);  }
+
+            my $rgId = $r_idMap->{'rg'}->{$rgName};
+
+            if ( defined $lunId && defined $rgId ) {
+                dbDo($dbh, sprintf("INSERT INTO emc_lun_rg (sysid,lunid,filedate,rgId) VALUES (%d,%d,'%s',%d)",
+                                   $sysid, $lunId, $date, $rgId) )
+                    or die "Cannot insert disk mapping";
+            }
+        }
+    }
+
+
+
+    #
+    # Store lun to pool mapping and rg to pool mapping, if not already stored
+    #
+    $r_rows = dbSelectAllArr($dbh, "SELECT COUNT(*) FROM emc_pool_rg WHERE sysid = $sysid AND filedate = '$date'");
+    if ( $r_rows->[0]->[0] == 0 ) {
+        foreach my $poolName ( keys %{$r_config->{'pools'}} ) {
+            my $poolId = $r_idMap->{'pool'}->{$poolName};
+            my $r_pool = $r_config->{'pools'}->{$poolName};
+
+            foreach my $prgName ( @{$r_pool->{'prgs'}} ) {
+                my $rgId = $r_idMap->{'privaterg'}->{$prgName};
+                if ( defined $rgId && defined $poolId ) {
+                    dbDo($dbh, sprintf("INSERT INTO emc_pool_rg (sysid,poolid,filedate,rgid) VALUES (%d,%d,'%s',%d)",
+                                       $sysid, $poolId, $date, $rgId) )
+                        or die "Cannot insert pool/rg mapping";
+                }
+            }
+        }
+    }
+}
+
+sub processNars($$$$) {
+    my ($dbh,$sys,$r_fileInfoList,$siteId) = @_;
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $r_rows = dbSelectAllArr($dbh, "SELECT id FROM emc_sys WHERE name = '$sys'");
+    my $sysid = $r_rows->[0]->[0];
+
+    foreach my $r_fileInfo ( @{$r_fileInfoList} ) {
+        if ( $DEBUG > 4 ) { print "processNars: file=" . $r_fileInfo->{'file'} . "\n"; }
+
+        # Get the LUNs & RG names
+        my $r_config = getConfig($r_fileInfo->{'file'},$tmpDir);
+        my $r_idMap = getIdMaps($dbh,$r_config,$sysid);
+
+        foreach my $dataType ( sort keys %DATA_MAP ) {
+            processDataType($dataType,$r_idMap,$r_fileInfo,$dbh,$tmpDir,$sysid);
+        }
+
+        my ($date) = $r_fileInfo->{'date'} =~ /^(\S+)/;
+        storeMappings($date,$dbh,$r_config,$r_idMap,$sysid);
+
+        dbDo( $dbh, sprintf("INSERT INTO emc_nar (sysid,time) VALUES (%d,'%s')", $sysid, $r_fileInfo->{'date'}) )
+            or die "Failed to update emc_nar";
+
+
+    }
+}
+
+sub storeIoSize($$$$) {
+    my ($dbh, $bcpFileName,$table,$idCol,$r_statCols) = @_;
+
+    if ( $DEBUG > 5 ) { print "storeIoSize: bcpFileName=$bcpFileName table=$table\n"; }
+
+    my $createSql = "CREATE TEMPORARY TABLE tmp.io_size ( $idCol SMALLINT UNSIGNED NOT NULL, time DATETIME NOT NULL";
+    foreach my $statCol ( @{$r_statCols} ) {
+        $createSql .= ", $statCol SMALLINT UNSIGNED NOT NULL";
+    }
+    $createSql .= ", INDEX idx1($idCol) )";
+    dbDo($dbh, $createSql ) or die "Failed to create tmp table";
+    dbDo( $dbh,
+          sprintf( "LOAD DATA LOCAL INFILE '%s' INTO TABLE tmp.io_size FIELDS TERMINATED BY ',' ($idCol,time,%s)", $bcpFileName, join(",", @{$r_statCols}) )
+        ) or die "Failed to load into tmp table";
+
+    my $insertSql = "INSERT INTO $table SELECT $idCol, MIN(time)";
+    foreach my $statCol ( @{$r_statCols} ) {
+        $insertSql .= ", ROUND(AVG($statCol),0)";
+    }
+    $insertSql .= " FROM tmp.io_size GROUP BY $idCol";
+    dbDo($dbh, $insertSql) or die "Failed to select from tmp table and insert into $table";
+
+    dbDo($dbh, "DROP TABLE tmp.io_size");
+}
+
+
+sub removeProcessed($$) {
+    my ($dbh,$r_narFiles) = @_;
+
+    my @sysList = keys %{$r_narFiles};
+    my $r_sysToId = getIdMap($dbh, "emc_sys", "id", "name", \@sysList );
+
+    foreach my $sys ( @sysList ) {
+        my $r_inList = $r_narFiles->{$sys};
+        my @outList = ();
+        foreach my $r_fileInfo ( @{$r_inList} ) {
+            my $r_rows = dbSelectAllArr($dbh,
+                                        sprintf("SELECT COUNT(*) FROM emc_nar WHERE sysid = %d AND time = '%s'",
+                                                $r_sysToId->{$sys}, $r_fileInfo->{'date'}));
+            if ( $r_rows->[0]->[0] == 0 ) {
+                push @outList , $r_fileInfo;
+            }
+        }
+
+        if ( $#outList >= 0 ) {
+            $r_narFiles->{$sys} = \@outList;
+        } else {
+            delete $r_narFiles->{$sys};
+        }
+    }
+}
+
+sub getXml($$$) {
+    my ($narFile,$tmpDir,$type) = @_;
+
+    my $outXmlFile = $tmpDir . "/nar_" . $type . ".xml";
+    my $cmd = sprintf("%s analyzer -messner -archivedump -%s %s -out %s -overwrite y -xml", $CLI, $type, $narFile,$outXmlFile);
+    if ( $DEBUG > 3 ) { print "getXml: cmd=$cmd\n"; }
+    system($cmd);
+    my $r_xml = XMLin($outXmlFile, ForceArray => [], KeyAttr => []);
+
+    return $r_xml;
+}
+
+sub getLunName($) {
+    my ($lunName) = @_;
+
+    # Stop the flood of distinct LUN names from Openstack
+    if ( $lunName =~ /^volume-\S+ \[(\d+)/ ) {
+        $lunName = "volume-UUID-" . $1;
+    }
+
+    return $lunName;
+}
+
+# Returns hash of any LUN > 100MB (i.e. remove the fencing LUNs) where the value is the RG containing the LUN
+#
+sub getConfig($) {
+    my ($narFile,$tmpDir) = @_;
+
+    my $r_config = getXml($narFile,$tmpDir,"config");
+    if ( $DEBUG > 9 ) { print Dumper("getLunRg: config", $r_config); }
+    my %lunCfg = ();
+    my %pools = ();
+    foreach my $object ( @{$r_config->{'archivefile'}->{'object'}} ) {
+        if ( $object->{'type'} =~ /LUN$/ ) {
+            my $lunName = getLunName($object->{'name'});
+            my $r_lunCfg = { 'type' => $object->{'type'} };
+            foreach my $property ( @{$object->{'configuration'}->{'value'}} ) {
+                if ( $property->{'type'} eq 'LUN Capacity' && $property->{'metric'} eq 'Blocks' ) {
+                    $r_lunCfg->{'size'} = $property->{'content'} * 512;
+                } elsif ( $property->{'type'} eq 'Consumed Size' && $property->{'metric'} eq 'Blocks' ) {
+                    $r_lunCfg->{'consize'} = $property->{'content'} * 512;
+                }
+            }
+            $lunCfg{$lunName} = $r_lunCfg;
+        } elsif ( $object->{'type'} eq 'Pool' ) {
+            my $r_pool = {
+                'luns' => {},
+                'prgs' => [],
+                'numdisks' => 0
+            };
+            $pools{$object->{'name'}} = $r_pool;
+            foreach my $property ( @{$object->{'configuration'}->{'value'}} ) {
+                if ( $property->{'type'} eq 'Total Capacity' ) {
+                    $r_pool->{'size'} = $property->{'content'} * 512;
+                } elsif ( $property->{'type'} eq 'Consumed Capacity' ) {
+                    $r_pool->{'used'} = $property->{'content'} * 512;
+                } elsif ( $property->{'type'} eq 'RAID Type' ) {
+                    $r_pool->{'raid'} = $property->{'content'};
+                }
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("getConfig: lunCfg", \%lunCfg); }
+
+    my $r_rel = getXml($narFile,$tmpDir,"rel");
+    if ( $DEBUG > 9 ) { print Dumper("getConfig: rel", $r_rel); }
+    my %lunRG = ();
+
+    foreach my $object ( @{$r_rel->{'archivefile'}->{'object'}->{'object'}} ) {
+        if ( $object->{'type'} eq 'RAID Group' || $object->{'type'} eq 'Pool' ) {
+            my $r_pool = undef;
+            if ( $object->{'type'} eq 'Pool' ) {
+                $r_pool = $pools{$object->{'name'}};
+            }
+
+            foreach my $relObj ( @{$object->{'object'}} ) {
+                if ( $relObj->{'type'} =~ /LUN$/ ) {
+                    my $lunName = getLunName($relObj->{'name'});
+                    my $r_lunCfg = $lunCfg{$lunName};
+                    defined $r_lunCfg || die "Could not find lunCfg for " . $lunName . " " . $relObj->{'name'};
+
+                    if ( $r_lunCfg->{'size'} > $FENCING_LUN_SIZE ||
+                         (exists $r_lunCfg->{'consize'} && $r_lunCfg->{'consize'} > $FENCING_LUN_SIZE) ) {
+                        my $r_lun = { 'type' => $object->{'type'},  'name' => $object->{'name'} };
+                        $lunRG{$lunName} = $r_lun;
+                        if ( defined $r_pool ) {
+                            $r_pool->{'luns'}->{$lunName} = $r_lun;
+                        }
+                    } else {
+                        if ( $DEBUG > 3 ) { print "getConfig: discarding lun $lunName\n"; }
+                    }
+                } elsif ( defined $r_pool && $relObj->{'type'} eq 'Private RAID Group' ) {
+                    push @{$r_pool->{'prgs'}}, $relObj->{'name'};
+                } elsif ( defined $r_pool && $relObj->{'type'} eq 'Disk' ) {
+                    $r_pool->{'numdisks'}++;
+                }
+            }
+        } elsif ( $object->{'type'} eq 'SP' ) {
+            foreach my $relObj ( @{$object->{'object'}} ) {
+                if ( $relObj->{'type'} eq 'MetaLUN' ) {
+                    my $lunName = $relObj->{'name'};
+                    $lunRG{"ML " . $lunName} = { 'type' => 'MetaLUN', 'name' => 'MetaLUN' };
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("getConfig: lunRG", \%lunRG);
+        print Dumper("getConfig: pool", \%pools);
+    }
+
+
+    return { 'luns' => \%lunRG, 'pools' => \%pools };
+}
+
+sub doUpdate($$$) {
+    my ($dbh,$doUpdate,$sql) = @_;
+
+    if ( $doUpdate == 1 ) {
+        dbDo($dbh,$sql) or die "Failed to do $sql";
+    } else {
+        print "Not executing $sql\n";
+    }
+}
+
+sub fixLunNames($) {
+    my ($fixNames) = @_;
+
+     my $doUpdate = 0;
+    if ( $fixNames eq 'test' ) {
+        $doUpdate = 0;
+    } elsif ( $fixNames eq 'fix' ) {
+        $doUpdate = 1;
+    }
+    else
+    {
+        die "Invalid value for fixnames $fixNames";
+    }
+
+    my %usingTables = (
+        'emc_lun_stats' => 'lunid',
+        'emc_lun_iosize'  => 'lunid',
+        'emc_lun_disks' => 'lunid',
+        'emc_lun_rg' => 'lunid',
+        'emc_pool_lun' => 'lunid'
+        );
+
+    my $exitFile = "/tmp/parseNar.exit";
+
+    my $dbh = connect_db();
+    my $r_sysIdRows = dbSelectAllArr($dbh,"SELECT DISTINCT(sysid) FROM emc_lun");
+    foreach my $r_sysIdRow ( @{$r_sysIdRows} ) {
+        my $sysId = $r_sysIdRow->[0];
+        my $r_sysName = dbSelectAllArr($dbh,"SELECT name FROM emc_sys WHERE id = $sysId");
+        print "Checking " . $r_sysName->[0]->[0] . "\n";
+
+        my $r_allLunIds = getIdMap($dbh,"emc_lun","id","name", [], $sysId, "sysid");
+        my %toBeMapped = ();
+        my $mappingRequired = 0;
+        while ( my ($name,$id) = each %{$r_allLunIds} ) {
+            if ( $name =~ /^volume-\S+ \[(\d+)/ ) {
+                $mappingRequired = 1;
+                my $mapTo = sprintf("volume-UUID-%d", $1);
+                if ( ! exists $toBeMapped{$mapTo} ) {
+                    $toBeMapped{$mapTo} = {};
+                }
+                $toBeMapped{$mapTo}->{$name} = $id;
+            }
+        }
+
+        if ( $mappingRequired ) {
+            print " Remapping required\n";
+            while ( my ($mapTo,$r_instances) = each %toBeMapped ) {
+                my $mapToId = $r_allLunIds->{$mapTo};
+                my @names = keys %{$r_instances};
+                print "  Mapping to $mapTo require for " . ($#names + 1) . " LUNs\n";
+                if ( ! defined $mapToId ) {
+                    my $firstInstanceName = shift @names;
+                    $mapToId = $r_instances->{$firstInstanceName};
+                    print "   Replacing $firstInstanceName ($mapToId)\n";
+                    doUpdate($dbh,$doUpdate,"UPDATE emc_lun SET name = '$mapTo' WHERE id = $mapToId");
+                }
+                foreach my $name ( @names ) {
+                    my $mapFromId = $r_instances->{$name};
+                    print "   Updating $name ($mapFromId)\n";
+                    while ( my ($table,$column) = each %usingTables ) {
+                        print "    Updating $table.$column\n";
+                        doUpdate($dbh,$doUpdate,"UPDATE $table SET $column = $mapToId WHERE $column = $mapFromId");
+                    }
+                    doUpdate($dbh,$doUpdate,"DELETE FROM emc_lun WHERE id = $mapFromId");
+                }
+
+                if ( -r $exitFile ) {
+                    print "Found exit file\n";
+                    unlink($exitFile);
+                    exit 0;
+                }
+            }
+        }
+    }
+
+    if ( $doUpdate ) { NameTable::compact($dbh,"emc_lun","id", "name",\%usingTables, $exitFile ); }
+}
+
+sub main
+{
+    my ($inputDir,$site,$fixNames);
+    my $result = GetOptions(
+        "dir=s" => \$inputDir,
+        "site=s" => \$site,
+        "fixnames=s" => \$fixNames,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+
+    if ( defined $fixNames ) {
+        fixLunNames($fixNames);
+        return 0;
+    }
+
+    # Add MetaLUN to DATA_MAP
+    my %metaLunParam = %{$DATA_MAP{'lun'}};
+    $metaLunParam{'object'} = "ml";
+    $DATA_MAP{'metalun'} = \%metaLunParam;
+
+    my %mlIoSizeParam = %{$DATA_MAP{'lun_iosize'}};
+    $mlIoSizeParam{'object'} = "ml";
+    $DATA_MAP{'metalun_iosize'} = \%mlIoSizeParam;
+
+    # Add Pool LUNs to DATA_MAP
+    # Note: the iosize histograms are not supported for pool luns
+    my %poolLunParam = %{$DATA_MAP{'lun'}};
+    $poolLunParam{'object'} = "plu";
+    $DATA_MAP{'poollun'} = \%poolLunParam;
+
+    # Add Private RG to DATA_MAP
+    my %privateRg = %{$DATA_MAP{'rg'}};
+    $privateRg{'object'} = 'prg';
+    $DATA_MAP{'privaterg'} = \%privateRg;
+
+
+
+    if ( $DEBUG > 1 ) { print Dumper("main: DATA_MAP", \%DATA_MAP); }
+
+    decryptNaz($inputDir);
+
+    my %narFiles = ();
+    opendir(DIR, $inputDir) || die "can't opendir $inputDir: $!";
+    my @allFiles = readdir(DIR);
+    closedir DIR;
+    foreach my $file ( @allFiles ) {
+        if ( $DEBUG > 5 ) { print "main: file=$file\n"; }
+        if ( $file =~ /^\S+\.nar$/ ) {
+            my ($sys,$sp,$date,$hour,$min,$sec) = $file =~ /^([^_]+)_([^_]+)_([^_]+)_(\d{2,2})-(\d{2,2})-(\d{2,2})/;
+            if ( $DEBUG > 5 ) { print "main: sys,sp,date,hour,min,sec = $sys,$sp,$date,$hour,$min,$sec\n"; }
+            if ( $sp eq "SPA" ) {
+                if ( ! exists $narFiles{$sys} ) {
+                    $narFiles{$sys} = [];
+                }
+                my $r_fileInfo = {
+                    'file' => $inputDir . "/" . $file,
+                    'date' => "$date $hour:$min:$sec"
+                };
+                push @{$narFiles{$sys}}, $r_fileInfo;
+            }
+        }
+    }
+    if ( $DEBUG > 1 ) { print Dumper("main: narFiles", \%narFiles); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    registerSysForSite($dbh,\%narFiles,$siteId);
+
+    removeProcessed($dbh,\%narFiles);
+    foreach my $sys ( keys %narFiles ) {
+        processNars($dbh,$sys,$narFiles{$sys},$siteId);
+    }
+
+    $dbh->disconnect;
+}
+
+main();
+

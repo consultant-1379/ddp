@@ -1,0 +1,1029 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use File::Basename;
+use Archive::Zip;
+use IO::Uncompress::Unzip;
+use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
+use IO::File;
+use JSON;
+
+use StatsDB;
+use StatsTime;
+use StatsCommon;
+use Instr;
+
+use File::Basename;
+use lib dirname($0);
+use EMC;
+
+our $DEBUG = 0;
+our $AGG_INTERVAL = 60;
+
+our @FS_COLS = (
+    'readbytes', 'reads', 'writebytes', 'writes', 'clientreadbytes', 'clientreads',
+    'clientwritebytes', 'clientwrites', 'clientreadtime', 'clientwritetime'
+);
+
+my @NFS_V4_COLS = (
+    'calls', 'failures', 'totaltime'
+);
+
+sub storeFS($$$) {
+    my ($dbh, $sysId, $r_fsSamples) = @_;
+
+    if ( ! %{$r_fsSamples} ) {
+        if ( $DEBUG > 0 ) { print "storeFS: No data\n"; }
+        return;
+    }
+
+    my %columnMap = (
+        'clientreadbytes' => 'clientreadkb',
+        'clientreads' => 'clientreads',
+        'clientwritebytes' => 'clientwritekb',
+        'clientwrites' => 'clientwrites',
+        'clientread_srvt' => 'clientread_srvt',
+        'clientwrite_srvt' => 'clientwrite_srvt',
+        'reads' => 'readiops',
+        'readbytes' => 'readkb',
+        'writes' => 'writeiops',
+        'writebytes' => 'writekb'
+    );
+    my %scale = (
+        'clientreadbytes' => 1024,
+        'clientwritebytes' => 1024,
+        'readbytes' => 1024,
+        'writebytes' => 1024
+    );
+
+    my @fsNames = keys %{$r_fsSamples};
+    my $r_fsIdMap = getIdMap($dbh, 'emc_filesystem', 'id', 'name', \@fsNames, $sysId, 'sysid');
+    my @dataSets = ();
+    while ( my ($fs,$r_samples) = each %{$r_fsSamples} ) {
+        instrScaleSamples($r_samples, \%scale);
+        my %properties = (
+            'sysid' => $sysId,
+            'fsid' => $r_fsIdMap->{$fs}
+        );
+        my %propertyOptions = (
+            'time' => { 'usetimestamp' => 1 }
+        );
+        push @dataSets, {
+            'samples' => $r_samples,
+            'properties' => \%properties,
+            'property_options' => \%propertyOptions
+        };
+    }
+    instrStoreDataSets(
+        $dbh,
+        'emc_filesystem_stats',
+        undef,
+        \@dataSets,
+        \%columnMap,
+        0
+    );
+}
+
+sub storeNfsV4($$$) {
+    my ($dbh, $sysId, $r_opSamples) = @_;
+
+    if ( ! %{$r_opSamples} ) {
+        if ( $DEBUG > 0 ) { print "storeNfsV4: No data\n"; }
+        return;
+    }
+
+    if ( $DEBUG > 10 ) { print Dumper("storeNfsV4: r_opSamples", $r_opSamples); }
+    my %columnMap = (
+        'calls_a' => 'calls_a',
+        'failures_a' => 'failures_a',
+        'srvt_a' => 'srvt_a',
+        'calls_b' => 'calls_b',
+        'failures_b' => 'failures_b',
+        'srvt_b' => 'srvt_b'
+    );
+
+    my @dataSets = ();
+    while ( my ($op,$r_samples) = each %{$r_opSamples} ) {
+        my %properties = (
+            'sysid' => $sysId,
+            'op' => $op
+        );
+        my %propertyOptions = (
+            'time' => { 'usetimestamp' => 1 }
+        );
+        push @dataSets, {
+            'samples' => $r_samples,
+            'properties' => \%properties,
+            'property_options' => \%propertyOptions
+        };
+    }
+    instrStoreDataSets(
+        $dbh,
+        'emc_nfsv4_ops',
+        undef,
+        \@dataSets,
+        \%columnMap,
+        0
+    );
+
+}
+
+sub storeStats($$$$$$) {
+    my ($dbh, $sysId, $r_spSamples, $r_lunSamples, $r_fsSamples, $r_nfsV4Samples) = @_;
+
+    my @spColumns = ( 'time', 'sp', 'utilization',
+                    'readbw', 'readiops', 'writebw', 'writeiops',
+                    'spc_dirty', 'spc_flushbw', 'spc_read_hr', 'spc_write_hr' );
+    my $spBcpFile = getBcpFileName('emc_sp_stats');
+    open BCP, ">$spBcpFile" or die "Failed to open $spBcpFile";
+    foreach my $r_spSample ( @{$r_spSamples} ) {
+        my @bcpRow = ($sysId);
+        foreach my $column ( @spColumns ) {
+            my $value = $r_spSample->{$column};
+            if ( ! defined $value ) {
+                $value = '\N';
+            }
+            push @bcpRow, $value;
+        }
+        print BCP join("\t", @bcpRow), "\n";
+    }
+    close BCP;
+
+    my $spColsStr = join(",", @spColumns);
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$spBcpFile' INTO TABLE emc_sp_stats (sysid, $spColsStr)")
+        or die "Failed to load $spBcpFile into emc_sp_stats";
+
+    if ( !defined $r_lunSamples ) {
+        return;
+    }
+
+
+    # All LUNs should have already been registered by parseEmcArrayConfig
+    my $r_lunIds = getIdMap($dbh,"emc_lun","id","name", [], $sysId, "sysid");
+    my @lunColumns = ( 'time', 'utilization', 'qlen', 'resptime',
+                       'servtime', 'readbw', 'readiops', 'writebw', 'writeiops' );
+    my $lunBcpFile = getBcpFileName('emc_lun_stats');
+    open BCP, ">$lunBcpFile" or die "Failed to open $lunBcpFile";
+    while ( my ($lunName,$r_lunStats) = each %{$r_lunSamples} ) {
+        my $lunId = $r_lunIds->{$lunName};
+        if ( ! defined $lunId ) {
+            print "WARN: No lunId found for $lunName";
+            next;
+        }
+        if ( $DEBUG > 5 ) { print "storeStats: processing lun $lunName\n"; }
+        foreach my $r_lunSample ( @{$r_lunStats} ) {
+            my @bcpRow = ( $sysId, $lunId );
+            foreach my $column ( @lunColumns ) {
+                my $value = $r_lunSample->{$column};
+                if ( ! defined $value ) {
+                    $value = '\N';
+                }
+                push @bcpRow, $value;
+            }
+            if ( $DEBUG > 8 ) { print Dumper("storeStats: lunSample, bcpRow", $r_lunSample, \@bcpRow); }
+            print BCP join("\t", @bcpRow), "\n";
+        }
+    }
+    close BCP;
+
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$lunBcpFile' INTO TABLE emc_lun_stats (sysid, lunid, time, utilization, qlen, resptime, servtime, readbw, readiops, writebw, writeiops)")
+        or die "Failed to load $lunBcpFile into emc_lun_stats";
+
+    storeFS($dbh, $sysId, $r_fsSamples);
+    storeNfsV4($dbh, $sysId, $r_nfsV4Samples);
+}
+
+
+sub readArchiveSampleTable($$$$$) {
+    my ($archiveDbh, $table, $r_columns, $r_sampleBuckets, $instColumn) = @_;
+
+    my %stats = ();
+
+    my @selectColumns = ( 'sample' );
+    if ( defined $instColumn ) {
+        push @selectColumns, $instColumn;
+    }
+
+    foreach my $sp ( 'a', 'b' ) {
+        foreach my $column ( @{$r_columns} ) {
+            push @selectColumns, 'sp' . $sp . '_' . $column;
+        }
+    }
+    my $query = sprintf("SELECT %s FROM %s", join(",", @selectColumns), $table);
+
+    if ( $DEBUG > 3 ) { print "readArchiveSampleTable: query=$query\n"; }
+    foreach my $r_row ( @{$archiveDbh->selectall_arrayref( $query, { Slice => {} })} ) {
+        if ( $DEBUG > 8 ) { print Dumper("readArchiveSampleTable: r_row", $r_row); }
+        my $sampleBucket = $r_sampleBuckets->{$r_row->{'sample'}};
+        if ( ! defined $sampleBucket ) {
+            next;
+        }
+
+        my $r_statsSample = undef;
+        if ( defined $instColumn ) {
+            $r_statsSample = $stats{$r_row->{$instColumn}}->{$sampleBucket};
+        } else {
+            $r_statsSample = $stats{$sampleBucket};
+        }
+        if ( ! defined $r_statsSample ) {
+            $r_statsSample = { 'raw_samples' => 0 };
+            foreach my $sp ( 'a', 'b' ) {
+            foreach my $col ( @{$r_columns} ) {
+                    $r_statsSample->{$sp}->{$col} = 0;
+                }
+            }
+            if ( defined $instColumn ) {
+                $stats{$r_row->{$instColumn}}->{$sampleBucket} = $r_statsSample;
+            } else {
+                $stats{$sampleBucket} = $r_statsSample;
+            }
+        }
+
+        $r_statsSample->{'raw_samples'}++;
+        foreach my $sp ( 'a', 'b' ) {
+            foreach my $col ( @{$r_columns} ) {
+                # The value may be undefine if the SP is dead
+                my $value = $r_row->{'sp' . $sp . '_' . $col};
+                if ( defined $value ) {
+                    $r_statsSample->{$sp}->{$col} += $value;
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 10 ) { print Dumper("readArchiveSampleTable: $table", \%stats); }
+    return \%stats;
+}
+
+sub processDbFs($$) {
+    my ($archiveDbh, $r_sampleBuckets) = @_;
+
+    my $r_fsStats = readArchiveSampleTable(
+        $archiveDbh,
+        'sample_10_storage_filesystem',
+        \@FS_COLS,
+        $r_sampleBuckets,
+        'storage_filesystem'
+    );
+
+    # r_fsStats has the stats keyed by the fs "id", we want to map this so the key is the fs name
+    my %idToFsId = ();
+    foreach my $r_row ( @{$archiveDbh->selectall_arrayref( "SELECT id, friendly_id FROM object_storage_filesystem", { Slice => {} } )} ) {
+        if ( defined $r_row->{'friendly_id'} ) {
+            $idToFsId{$r_row->{'id'}} = $r_row->{'friendly_id'};
+        }
+    }
+    my %fidToName = ();
+    foreach my $r_row ( @{$archiveDbh->selectall_arrayref( "SELECT id, _name FROM config_filesystem", { Slice => {} } )} ) {
+        $fidToName{$r_row->{'id'}} = $r_row->{'_name'};
+    }
+
+    foreach my $id ( keys %{$r_fsStats} ) {
+        my $r_fsStat = delete $r_fsStats->{$id};
+        my $fid = $idToFsId{$id};
+        if ( defined $fid ) {
+            my $fsName = $fidToName{$fid};
+            if ( defined $fsName ) {
+                $r_fsStats->{$fsName} = $r_fsStat;
+            } else {
+                print "WARN: Could not get name for filesystem $fid\n";
+            }
+        } else {
+            print "WARN: Could not get friendly id for filesystem with id $id\n";
+        }
+    }
+
+    return $r_fsStats;
+}
+
+sub processDbNfsV4($$) {
+    my ($archiveDbh, $r_sampleBuckets) = @_;
+
+    my $r_nfsV4Stats = readArchiveSampleTable(
+        $archiveDbh,
+        'sample_10_nfs_v4_op',
+        \@NFS_V4_COLS,
+        $r_sampleBuckets,
+        'nfs_v4_op'
+    );
+    foreach my $r_row ( @{$archiveDbh->selectall_arrayref( "SELECT id, internal_id FROM object_nfs_v4_op", { Slice => {} } )} ) {
+        my $r_opStat = delete $r_nfsV4Stats->{$r_row->{'id'}};
+        if ( defined $r_opStat ) {
+            $r_nfsV4Stats->{$r_row->{'internal_id'}} = $r_opStat;
+        }
+    }
+
+    return $r_nfsV4Stats;
+}
+
+sub processDb($) {
+    my ($dbFile) = @_;
+
+    my $archiveDbh = DBI->connect("dbi:SQLite:dbname=$dbFile","","");
+
+    my %sampleBuckets = ();
+    my $base_timestamp = $archiveDbh->selectall_arrayref("SELECT timestamp FROM base_timestamp")->[0]->[0];
+    if ( $DEBUG > 4 ) { print "processDb: base_timestamp=$base_timestamp(" . formatTime($base_timestamp, $StatsTime::TIME_SQL, $StatsTime::TZ_GMT) . ")\n"; }
+
+    #
+    # 10 second samples are aggregated into the next minute, i.e.
+    # the samples @ 00:00:10, 00:00:20, .., 00:00:50, 00:01:00 are
+    # aggregated into 00:01:00
+    # Each archive has 1 hour of data
+    my $bucket = $base_timestamp + $AGG_INTERVAL;
+    my $rawPerBucket = $AGG_INTERVAL / 10;
+    my $rawInBucket = 0;
+    for ( my $sampleIndex = 1; $sampleIndex < 360; $sampleIndex++ ) {
+        if ( $rawInBucket == $rawPerBucket ) {
+            $bucket += $AGG_INTERVAL;
+            $rawInBucket = 0;
+        }
+        $sampleBuckets{$sampleIndex} = $bucket;
+        $rawInBucket++;
+    }
+
+    my @spCols = (
+        'blockcache_global_summary_flushedblocks',
+        'blockcache_global_summary_cleanpages',
+        'blockcache_global_summary_dirtypages',
+        'blockcache_global_summary_readhits',
+        'blockcache_global_summary_readmisses',
+        'blockcache_global_summary_writehits',
+        'blockcache_global_summary_writemisses',
+        'cpu_summary_busyticks',
+        'cpu_summary_idleticks',
+        'cpu_summary_waitticks'
+    );
+    my $r_spStats = readArchiveSampleTable(
+        $archiveDbh,
+        'sample_10',
+        \@spCols,
+        \%sampleBuckets,
+        undef
+    );
+
+    my @lunCols = (
+        'busytime', 'currentiocount', 'idletime', 'readblocks', 'reads', 'totaliotime', 'readiotime',
+        'writeiotime', 'writeblocks', 'writes', 'others'
+    );
+    my $r_lunStats = readArchiveSampleTable(
+        $archiveDbh,
+        'sample_10_storage_lun',
+        \@lunCols,
+        \%sampleBuckets,
+        'storage_lun'
+    );
+
+    my $r_fsStats = processDbFs($archiveDbh, \%sampleBuckets);
+    my $r_nfsV4Stats = processDbNfsV4($archiveDbh, \%sampleBuckets);
+
+    while ( my ($storage_lun, $r_stats) = each %{$r_lunStats} ) {
+        if ( $DEBUG > 6 ) { print "processDb: processing storage_lun $storage_lun\n"; }
+        while ( my ($sampleBucket, $r_lunSample) = each %{$r_stats} ) {
+            if ( $DEBUG > 7 ) { print Dumper("processDb: processing $sampleBucket r_lunSample", $r_lunSample); }
+            my $r_spSample = $r_spStats->{$sampleBucket};
+            defined $r_spSample or die "Could not get spSample for $sampleBucket";
+
+            foreach my $lunCol ( @lunCols ) {
+                foreach my $sp ( 'a', 'b' ) {
+                    my $value = $r_lunSample->{$sp}->{$lunCol};
+                    $r_spSample->{$sp}->{$lunCol} += $value;
+                    $r_lunSample->{'total'}->{$lunCol} += $value;
+                }
+            }
+        }
+    }
+    if ( $DEBUG > 6 ) { print Dumper("processDb: spStats", $r_spStats); }
+
+    my %lunIdToIndex = ();
+    foreach my $r_row ( @{$archiveDbh->selectall_arrayref( "SELECT id, friendly_id FROM object_storage_lun", { Slice => {} } )} ) {
+        # Some LUNs have a NULL for the friendly_id
+        if ( defined $r_row->{'friendly_id'} ) {
+            $lunIdToIndex{$r_row->{'friendly_id'}} = $r_row->{'id'};
+        } else {
+            if ( $DEBUG ) { print "processDb: NULL friendly_id for id $r_row->{'id'}\n"; }
+        }
+    }
+
+    my %lunIndexToName = ();
+    foreach my $r_row ( @{$archiveDbh->selectall_arrayref( "SELECT id, _name, _pool FROM config_lun", { Slice => {} } )} ) {
+        my $lunIndex = $lunIdToIndex{$r_row->{'id'}};
+        $lunIndexToName{$lunIndex} = $r_row->{'_name'},
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("processDb: lunIndexToName", \%lunIndexToName); }
+
+    return {
+        'sp' => $r_spStats,
+        'lun' => $r_lunStats,
+        'lun_names' => \%lunIndexToName,
+        'fs' => $r_fsStats,
+        'nfsv4' => $r_nfsV4Stats
+    };
+}
+
+sub calUtilization($$$) {
+    my ($r_sample, $busyKey, $idleKey) = @_;
+
+    my $utilization = undef;
+    # If an SP is dead, the busy and idle may be all zeros
+    if ( ($r_sample->{$busyKey}  + $r_sample->{$idleKey}) > 0 ) {
+        $utilization = ($r_sample->{$busyKey} * 100) / ($r_sample->{$busyKey}  + $r_sample->{$idleKey});
+    }
+    return $utilization;
+}
+
+sub calQueueLength($$$$) {
+    my ($r_sample, $busyKey, $idleKey, $raw_samples) = @_;
+
+    my $qLength = undef;
+    # If an SP is dead, the busy and idle may be all zeros
+    if ( ($r_sample->{$busyKey}  + $r_sample->{$idleKey}) > 0 ) {
+        $qLength =  ($r_sample->{$busyKey} / ($r_sample->{$busyKey} + $r_sample->{$idleKey})) *
+            ($r_sample->{'currentiocount'} / $raw_samples);
+    }
+    return $qLength;
+}
+
+sub calResponseTime($) {
+    my ($r_sample) = @_;
+
+    my $iop = $r_sample->{'reads'} + $r_sample->{'writes'};
+    if ( $iop == 0 ) {
+        return undef;
+    }
+
+    my $responseTime = 0;
+    foreach my $type ( 'read', 'write' ) {
+        my $op = $r_sample->{$type . 's'};
+        if ( $op > 0 ) {
+            $responseTime +=
+                ($op / $iop) * ($r_sample->{$type . 'iotime'} / $op);
+        }
+    }
+
+    return $responseTime / 1000;
+}
+
+sub calServiceTime($) {
+    my ($r_sample) = @_;
+
+    my $serviceTime = $r_sample->{'busytime'} /
+        ($r_sample->{'reads'} + $r_sample->{'writes'});
+
+    return $serviceTime / 1000;
+}
+
+sub calRespSrvTimes($$) {
+    my ($r_sample, $qLength) = @_;
+
+    my $iop = $r_sample->{'reads'} + $r_sample->{'writes'};
+    if ( $iop == 0 ) {
+        return ( '\N', '\N' );
+    }
+
+    my $responseTime = 0;
+    foreach my $type ( 'read', 'write' ) {
+        my $op = $r_sample->{$type . 's'};
+        if ( $op > 0 ) {
+            $responseTime +=
+                ($op / $iop) * ($r_sample->{$type . 'iotime'} / $op);
+        }
+    }
+
+    my $serviceTime = $qLength * $responseTime;
+
+    return ($responseTime, $serviceTime);
+}
+
+sub calReadWrite($) {
+    my ($r_sample) = @_;
+
+    #my $sampleInterval = $r_sample->{'raw_samples'} * 10;
+    my $sampleInterval = 60;
+
+    my $readBW = $r_sample->{"readblocks"} / (2048 * $sampleInterval);
+    my $readIOPS = $r_sample->{"reads"} / $sampleInterval;
+    my $writeBW = $r_sample->{"writeblocks"} / (2048 * $sampleInterval);
+    my $writeIOPS = $r_sample->{"writes"} / $sampleInterval;
+
+    return ($readBW, $readIOPS, $writeBW, $writeIOPS);
+}
+
+sub getMax($$) {
+    my ($a,$b) = @_;
+
+    if ( defined $a && defined $b ) {
+        if ( $a > $b ) {
+            return ($a, 'a');
+        } else {
+            return ($b, 'b');
+        }
+    } elsif ( defined $a ) {
+        return ($a, 'a');
+    } else {
+        return ($b, 'b');
+    }
+}
+
+sub calCacheHr($) {
+    my ($r_sample) = @_;
+
+    my %results = ();
+    foreach my $rw ( 'read', 'write' ) {
+        my $hitsKey = 'blockcache_global_summary_' . $rw . 'hits';
+        my $missesKey = 'blockcache_global_summary_' . $rw . 'misses';
+        if ( exists $r_sample->{$hitsKey} && exists $r_sample->{$missesKey} ) {
+            my $total = $r_sample->{$hitsKey} + $r_sample->{$missesKey};
+            if ( $total > 0 ) {
+                $results{$rw} = ($r_sample->{$hitsKey} / $total) * 100;
+            }
+        }
+    }
+    if ( $DEBUG > 8 ) { print Dumper("calCacheHr: results", \%results); }
+    return ($results{'read'}, $results{'write'});
+}
+
+sub getFsSpSample($$$) {
+    my ($r_spRows, $sampleBucket, $timestamp) = @_;
+
+    my $r_row = $r_spRows->{$sampleBucket};
+    if ( ! defined $r_row ) {
+        $r_row = {};
+        foreach my $sp ( 'a', 'b' ) {
+            my %spSample = (
+                'time' => $sampleBucket,
+                'timestamp' => $timestamp
+            );
+            foreach my $col ( @FS_COLS ) {
+                $spSample{$col} = 0;
+            }
+            $r_row->{$sp} = \%spSample;
+        }
+        $r_spRows->{$sampleBucket} = $r_row;
+    }
+
+    return $r_row;
+}
+
+sub calculateFS($$) {
+    my ($r_data, $r_sampleTimestamps) = @_;
+
+    if ( $DEBUG > 10 ) { print Dumper("calculateFS: r_data", $r_data); }
+    my %fsStats = ();
+    my %spTotals = ();
+
+    while ( my ($fs, $r_fsSamples) = each %{$r_data} ) {
+        my $totalClientOps = 0;
+        my @rows = ();
+        foreach my $sampleBucket ( sort { $a<=>$b  } keys %{$r_fsSamples} ) {
+            my $r_sample = $r_fsSamples->{$sampleBucket};
+            my $timestamp = $r_sampleTimestamps->{$sampleBucket};
+            my %row = (
+                'time' => $sampleBucket,
+                'timestamp' => $timestamp
+            );
+            my $r_spSample = getFsSpSample(\%spTotals, $sampleBucket, $timestamp);
+
+            foreach my $col ( @FS_COLS ) {
+                my $value = 0;
+                foreach my $sp ( 'a', 'b' ) {
+                    my $spValue = $r_sample->{$sp}->{$col};
+                    if ( defined $spValue ) {
+                        $value += $spValue;
+                        $r_spSample->{$sp}->{$col} += $spValue;
+                    }
+                }
+                $row{$col} = $value;
+            }
+            push @rows, \%row;
+            $totalClientOps += $row{'clientreads'} + $row{'clientwrites'};
+        }
+
+        if ( $totalClientOps > 1000 ) {
+            $fsStats{$fs} = \@rows;
+        }
+    }
+
+    # Create pseudo filesystems for the two SPs
+    my %spRows = (
+        'a' => [],
+        'b' => []
+    );
+    foreach my $sampleBucket ( sort { $a<=>$b } keys %spTotals ) {
+        push @{$spRows{'a'}}, $spTotals{$sampleBucket}->{'a'};
+        push @{$spRows{'b'}}, $spTotals{$sampleBucket}->{'b'};
+    }
+    $fsStats{'SP A'} = $spRows{'a'};
+    $fsStats{'SP B'} = $spRows{'b'};
+
+    # Convert the metrics to per second rates
+    while ( my ($fs, $r_rows) = each %fsStats ) {
+        foreach my $r_row ( @{$r_rows} ) {
+            foreach my $type ( 'read', 'write' ) {
+                my $ops = $r_row->{'client' . $type . 's'};
+                if ($ops > 0 ) {
+                    $r_row->{'client' . $type . "_srvt"} = $r_row->{'client' . $type . 'time'} / $ops;
+                }
+            }
+        }
+        my $r_rowsRated = instrRateSamples($r_rows, \@FS_COLS);
+        $fsStats{$fs} = $r_rowsRated;
+    }
+
+    if ( $DEBUG > 6 ) { print Dumper("calculateFS: fsStats", \%fsStats); }
+
+    return \%fsStats;
+}
+
+sub calculateNFSv4($$) {
+    my ($r_data, $r_sampleTimestamps) = @_;
+
+    my %nfsV4Stats = ();
+    while ( my ($op, $r_fsSamples) = each %{$r_data} ) {
+        my $totalCalls = 0;
+        my @rows = ();
+        foreach my $sampleBucket ( sort { $a<=>$b  } keys %{$r_fsSamples} ) {
+            my $r_sample = $r_fsSamples->{$sampleBucket};
+            my $timestamp = $r_sampleTimestamps->{$sampleBucket};
+            my %row = (
+                'time' => $sampleBucket,
+                'timestamp' => $timestamp
+            );
+            foreach my $col ( @NFS_V4_COLS ) {
+                foreach my $sp ( 'a', 'b' ) {
+                    my $spValue = $r_sample->{$sp}->{$col};
+                    if ( ! defined $spValue ) {
+                        $spValue = 0;
+                    }
+                    $row{$col . '_' . $sp} = $spValue;
+                }
+            }
+            foreach my $sp ( 'a', 'b' ) {
+                my $calls = $row{'calls_' . $sp};
+                if (  $calls > 0 ) {
+                    $row{'srvt_' . $sp} = $row{'totaltime_'. $sp} / $calls;
+                }
+            }
+
+            push @rows, \%row;
+            $totalCalls += $row{'calls_a'} + $row{'calls_b'};
+        }
+
+        if ( $totalCalls > 1000 ) {
+            my ($opName) = $op =~ /^v4(\S+)/;
+            $nfsV4Stats{$opName} = \@rows;
+        }
+    }
+
+    if ( $DEBUG > 9 ) { print Dumper("calculateNFSv4: nfsV4Stats", \%nfsV4Stats); }
+    return \%nfsV4Stats;
+}
+
+sub calculateStats($) {
+    my ($r_stats) = @_;
+
+    my %sampleTimestamps = ();
+
+    my @spStats = ();
+    while ( my ($sampleBucket,$r_sample) = each %{$r_stats->{'sp'}} ) {
+        my $timestamp = formatSiteTime($sampleBucket, $StatsTime::TIME_SQL);
+        $sampleTimestamps{$sampleBucket} = $timestamp;
+        if ( $DEBUG > 8 ) { print Dumper("calculateStats: r_sample", $r_sample); }
+
+        foreach my $sp ( 'a', 'b' ) {
+            # Stats may not be availabe if the SP is dead
+            if ( (! defined $r_sample->{$sp}->{'cpu_summary_busyticks'}) ||
+                 (($r_sample->{$sp}->{'cpu_summary_busyticks'} + $r_sample->{$sp}->{'cpu_summary_idleticks'}) == 0) ) {
+                next;
+            }
+
+            my $utilization = calUtilization($r_sample->{$sp}, 'cpu_summary_busyticks', 'cpu_summary_idleticks');
+
+            my ($readBW, $readIOPS, $writeBW, $writeIOPS) = calReadWrite($r_sample->{$sp});
+
+            my $dirty = $r_sample->{$sp}->{'blockcache_global_summary_dirtypages'} * 100 /
+                ($r_sample->{$sp}->{'blockcache_global_summary_dirtypages'} + $r_sample->{$sp}->{'blockcache_global_summary_cleanpages'});
+            my $flushbw = $r_sample->{$sp}->{'blockcache_global_summary_flushedblocks'} / (2048 * 60);
+
+            my ($cache_read_hr,$cache_write_hr) = calCacheHr($r_sample->{$sp});
+
+            my %row = (
+                'time' => $timestamp,
+                'sp' => uc($sp),
+                'utilization' => $utilization,
+                'readbw' => $readBW,
+                'readiops' => $readIOPS,
+                'writebw' => $writeBW,
+                'writeiops' => $writeIOPS,
+                'spc_dirty' => $dirty,
+                'spc_flushbw' => $flushbw,
+                'spc_read_hr' => $cache_read_hr,
+                'spc_write_hr' => $cache_write_hr
+                );
+            if ( $DEBUG > 7 ) { print Dumper("storeStats: spStats row", \%row); }
+            push @spStats, \%row;
+        }
+    }
+
+    my %lunStats = ();
+    while ( my ($storage_lun, $r_lunSamples) = each %{$r_stats->{'lun'}} ) {
+        my $lunName = $r_stats->{'lun_names'}->{$storage_lun};
+        if ( ! defined $lunName ) {
+            if ( $DEBUG ) { print "WARN: Failed to map storage_lun=$storage_lun\n" };
+            next;
+        }
+        my @stats = ();
+        if ( $DEBUG > 6 ) { print "storeStats: processing storage_lun $storage_lun lunName=$lunName\n"; }
+        foreach my $sampleBucket ( sort { $a<=>$b  } keys %{$r_lunSamples} ) {
+            my $r_sample = $r_lunSamples->{$sampleBucket};
+            my $timestamp = $sampleTimestamps{$sampleBucket};
+            if ( $DEBUG > 7 ) { print Dumper("storeStats: processing $sampleBucket($timestamp) r_sample", $r_sample); }
+            my ($utilization, $max) = getMax(
+                calUtilization($r_sample->{'a'}, 'busytime', 'idletime'),
+                calUtilization($r_sample->{'b'}, 'busytime', 'idletime')
+                );
+            my $responseTime = calResponseTime($r_sample->{$max});
+            my ($qLength, $serviceTime) = undef;
+            if ( defined $responseTime ) {
+                $qLength = calQueueLength(
+                    $r_sample->{'a'},
+                    'busytime', 'idletime',
+                    $r_sample->{'raw_samples'}) +
+                    calQueueLength(
+                        $r_sample->{'b'},
+                        'busytime', 'idletime',
+                        $r_sample->{'raw_samples'});
+                $serviceTime = calServiceTime($r_sample->{$max});
+            }
+
+            my ($readBW, $readIOPS, $writeBW, $writeIOPS) = calReadWrite($r_sample->{'total'});
+
+            my %row = (
+                'time' => $timestamp,
+                'utilization' => $utilization,
+                'qlen' => $qLength,
+                'resptime' => $responseTime,
+                'servtime' => $serviceTime,
+                'readbw' => $readBW,
+                'readiops' => $readIOPS,
+                'writebw' => $writeBW,
+                'writeiops' => $writeIOPS
+                );
+            if ( $DEBUG > 8 ) { print Dumper("storeStats: row", \%row); }
+            push @stats, \%row;
+        }
+
+        $lunStats{$lunName} = \@stats;
+    }
+
+    my $r_fsStats = calculateFS($r_stats->{'fs'}, \%sampleTimestamps);
+    my $r_nfsV4Stats = calculateNFSv4($r_stats->{'nfsv4'}, \%sampleTimestamps);
+    return ( \@spStats, \%lunStats, $r_fsStats, $r_nfsV4Stats );
+}
+
+sub processArchives($$$) {
+    my ($dbh, $sysid, $r_fileInfoList) = @_;
+
+    foreach my $r_fileInfo ( @{$r_fileInfoList} ) {
+        if ( $DEBUG > 4 ) { print "processArchives: file=" . $r_fileInfo->{'file'} . "\n"; }
+
+        my $zip = Archive::Zip->new($r_fileInfo->{'file'});
+        foreach my $member ($zip->members) {
+            my $dbFile = dirname($r_fileInfo->{'file'}) . '/db.sqlite';
+            if ( $DEBUG > 4 ) { printf("fileName=%s %s\n", $member->fileName(), $member->externalFileName()); }
+            if ( $member->fileName() =~ /.gz$/ ) {
+                my $z = new IO::Uncompress::Unzip $r_fileInfo->{'file'};
+                gunzip $z => $dbFile;
+            } else {
+                $member->extractToFileNamed($dbFile);
+            }
+            my $r_stats = processDb($dbFile);
+            my ($r_spStats,$r_lunStats, $r_fsStats, $r_nfsV4Stats) = calculateStats($r_stats);
+            storeStats($dbh, $sysid, $r_spStats, $r_lunStats, $r_fsStats, $r_nfsV4Stats);
+            unlink($dbFile);
+        }
+        dbDo( $dbh, sprintf("INSERT INTO emc_nar (sysid,time) VALUES (%d,'%s')", $sysid, $r_fileInfo->{'date'}) )
+            or die "Failed to update emc_archive";
+    }
+}
+
+sub removeProcessed($$) {
+    my ($dbh,$r_archiveFiles) = @_;
+
+    my @sysList = keys %{$r_archiveFiles};
+    my $r_sysToId = getIdMap($dbh, "emc_sys", "id", "name", \@sysList );
+
+    foreach my $sys ( @sysList ) {
+        my $r_inList = $r_archiveFiles->{$sys};
+        my @outList = ();
+        foreach my $r_fileInfo ( @{$r_inList} ) {
+            my $r_rows = dbSelectAllArr($dbh,
+                                        sprintf("SELECT COUNT(*) FROM emc_nar WHERE sysid = %d AND time = '%s'",
+                                                $r_sysToId->{$sys}, $r_fileInfo->{'date'}));
+            if ( $r_rows->[0]->[0] == 0 ) {
+                push @outList , $r_fileInfo;
+            }
+        }
+
+        if ( $#outList >= 0 ) {
+            $r_archiveFiles->{$sys} = \@outList;
+        } else {
+            delete $r_archiveFiles->{$sys};
+        }
+    }
+}
+
+sub getProcessedSample($$$$) {
+    my ($r_samplesByT, $sp, $t, $r_spStats) = @_;
+
+    my $r_processedSample = $r_samplesByT->{$sp}->{$t};
+    if ( ! defined $r_processedSample ) {
+        if ( $DEBUG > 7 ) { print "getProcessedSample: creating sample for $sp @ $t\n"; }
+        $r_processedSample = {
+            'time' => formatSiteTime($t, $StatsTime::TIME_SQL),
+            'timestamp' => $t,
+            'sp' => uc($sp)
+        };
+        $r_samplesByT->{$sp}->{$t} = $r_processedSample;
+        push @{$r_spStats}, $r_processedSample;
+    }
+
+    return $r_processedSample;
+}
+
+sub processMetrics($$$$$) {
+    my ($dbh, $sysId, $date, $r_metricFiles, $processedIndex) = @_;
+
+    my %METRIC_MAP = (
+        'sp.*.cpu.summary.utilization' => 'utilization'
+    );
+
+    my @spStats = ();
+    foreach my $r_metricFileInfo ( @{$r_metricFiles} ) {
+        if ( $DEBUG > 3 ) { print Dumper("processMetrics: Processing", $r_metricFileInfo); }
+
+        if ( $r_metricFileInfo->{'index'} > $processedIndex ) {
+            my $fileName = $r_metricFileInfo->{'file'};
+            if ( $DEBUG ) { print "processMetrics: processing $fileName\n"; }
+            open INPUT, $fileName or die "Cannot open $fileName";
+            my $json_str = <INPUT>;
+            close INPUT;
+
+            my $r_data = decode_json($json_str);
+            if ( $DEBUG > 8 ) { print Dumper("processMetrics: r_data", $r_data); }
+
+            my %samplesByT = ( 'a' => {}, 'b' => {} );
+            foreach my $r_rawSample ( @{$r_data->{'sp.*.cpu.summary.utilization'}} ) {
+                foreach my $sp ( 'a', 'b' ) {
+                    my $r_processedSample = getProcessedSample(\%samplesByT, $sp, $r_rawSample->{'_t'}, \@spStats);
+                    $r_processedSample->{'utilization'} = $r_rawSample->{'sp' . $sp}
+                }
+            }
+            if ( $DEBUG > 8 ) { print Dumper("processMetrics: spStats from raw", \@spStats); }
+
+            foreach my $cacheMetric ( 'readHitsRate', 'readMissesRate', 'writeHitsRate', 'writeMissesRate' ) {
+                foreach my $r_rawSample ( @{$r_data->{'sp.*.blockCache.global.summary.' . $cacheMetric}} ) {
+                    foreach my $sp ( 'a', 'b' ) {
+                        my $r_processedSample = getProcessedSample(\%samplesByT, $sp, $r_rawSample->{'_t'}, \@spStats);
+                        $r_processedSample->{$cacheMetric} = $r_rawSample->{'sp' . $sp};
+                    }
+                }
+            }
+
+            foreach my $sp ( 'a', 'b' ) {
+                while ( my ($timestamp, $r_processedSample) = each %{$samplesByT{$sp}} ) {
+                    foreach my $rw ( 'read', 'write' ) {
+                        if ( exists $r_processedSample->{$rw . 'HitsRate'} && exists $r_processedSample->{$rw . 'MissesRate'} ) {
+                            my $total = $r_processedSample->{$rw . 'HitsRate'} + $r_processedSample->{$rw . 'MissesRate'};
+                            if ( $total > 0 ) {
+                                $r_processedSample->{'spc_' . $rw . '_hr'} = ($r_processedSample->{$rw . 'HitsRate'} / $total * 100);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    my @sortedSpStats = sort { $a->{'timestamp'} <=> $b->{'timestamp'} } @spStats;
+
+    if ( $DEBUG > 7 ) { print Dumper("processMetrics: sortedSpStats", \@sortedSpStats); }
+
+    if ( $processedIndex == 0 ) {
+        # This is the first file so we might be re-processing data
+        # so delete any old data
+        dbDo($dbh, "DELETE FROM emc_sp_stats WHERE sysid = $sysId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'") or die "Failed to delete from emc_sp_stats";
+    }
+
+    storeStats($dbh, $sysId, \@sortedSpStats, undef, undef, undef);
+}
+
+sub getFiles($$$) {
+    my ($inputDir, $r_archiveFiles, $r_metricFiles) = @_;
+
+    opendir(DIR, $inputDir) || die "can't opendir $inputDir: $!";
+    my @allFiles = readdir(DIR);
+    closedir DIR;
+
+    foreach my $file ( @allFiles ) {
+        if ( $DEBUG > 5 ) { print "main: file=$file\n"; }
+        if ( $file =~ /^\S+\.zip$/ ) {
+            my ($sys,$timestamp) = $file =~ /^([^_]+)_(.*)\.zip$/;
+            if ( $DEBUG > 5 ) { print "main: sys,timestamp"; }
+            if ( ! exists $r_archiveFiles->{$sys} ) {
+                $r_archiveFiles->{$sys} = [];
+            }
+            my $r_fileInfo = {
+                'file' => $inputDir . "/" . $file,
+                'date' => formatTime( parseTime($timestamp . ".000", $StatsTime::TIME_ELASTICSEARCH_MSEC),
+                                      $StatsTime::TIME_SQL )
+            };
+            push @{$r_archiveFiles->{$sys}}, $r_fileInfo;
+        } elsif ( $file =~ /^(\S+)_metric_data_(\d+)\.json$/ ) {
+            my ($sys, $index) = ($1, $2);
+            if ( ! exists $r_metricFiles->{$sys} ) {
+                $r_metricFiles->{$sys} = [];
+            }
+            my $r_fileInfo = {
+                'file' => $inputDir . "/" . $file,
+                'index' => $index
+            };
+            push @{$r_metricFiles->{$sys}}, $r_fileInfo;
+        }
+    }
+    if ( $DEBUG > 1 ) {
+        print Dumper("getFiles: archiveFiles", $r_archiveFiles);
+        print Dumper("getFiles: metricsFiles", $r_metricFiles);
+    }
+}
+
+sub main() {
+    my ($inputDir,$site,$incrFile,$date);
+    my $result = GetOptions(
+        "dir=s" => \$inputDir,
+        "site=s" => \$site,
+        "incr=s" => \$incrFile,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG,
+        );
+
+    ( ($result == 1) &&(defined $date) && (defined $inputDir) && (defined $site) ) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+    setInstr_Debug($DEBUG);
+
+    my %archiveFiles = ();
+    my %metricsFiles = ();
+    getFiles($inputDir, \%archiveFiles, \%metricsFiles);
+
+    my %allSys = ();
+    foreach my $sys ( keys %archiveFiles ) {
+        $allSys{$sys} = 1;
+    }
+    foreach my $sys ( keys %metricsFiles ) {
+        $allSys{$sys} = 1;
+    }
+    my @sysList = keys %allSys;
+
+    if ( $#sysList == -1 ) {
+        print "WARN: No files found\n";
+        return 0;
+    }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_sysToIds = EMC::registerSysForSite($dbh, $siteId, $date, \@sysList);
+
+    if ( %archiveFiles ) {
+        removeProcessed($dbh, \%archiveFiles);
+        foreach my $sys ( keys %archiveFiles ) {
+            processArchives($dbh, $r_sysToIds->{$sys}, $archiveFiles{$sys});
+            exit 1;
+        }
+    } elsif ( %metricsFiles ) {
+        my $r_incr = incrRead($incrFile);
+        while ( my ($sys, $r_metricFiles) = each %metricsFiles ) {
+            my $processedIndex = $r_incr->{'metrics'}->{$sys}->{'processed'};
+            if ( ! defined $processedIndex ) {
+                $processedIndex = 0;
+            }
+            processMetrics($dbh, $r_sysToIds->{$sys}, $date, $r_metricFiles, $processedIndex);
+            $r_incr->{'metrics'}->{$sys}->{'processed'} =
+                $r_metricFiles->[$#{$r_metricFiles}]->{'index'};
+        }
+        incrWrite($incrFile,$r_incr);
+    }
+    $dbh->disconnect;
+}
+
+main();
+

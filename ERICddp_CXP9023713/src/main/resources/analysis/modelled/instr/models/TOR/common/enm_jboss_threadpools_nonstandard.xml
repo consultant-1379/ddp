@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-jmx@threadpooljmx_\S+">
+
+  <table name="enm_jboss_threadpools_nonstandard">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="threadpoolid" reftable="enm_sg_specific_threadpool_names"/>
+  </table>
+
+  <services>
+    <service name="sso"/>
+    <service name="securityservice"/>
+  </services>
+
+  <metricgroups>
+    <multi>threadpoolid</multi>
+
+    <metricgroup name="^%1%-threadpool-io-(\S+)$">
+      <metric source="busy-task-thread-count" target="busytaskThreadcount" filteridle="true"/>
+      <metric source="queue-size" target="queueSize" filteridle="true"/>
+      <property name="threadpoolid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

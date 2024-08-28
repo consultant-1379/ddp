@@ -1,0 +1,141 @@
+#!/bin/bash
+
+create() {
+    deleteExistingSnap
+    setSnapCommand
+
+    if [ "${DB_ENIGNE}" = "MyISAM" ] ; then
+    /usr/bin/mysql --defaults-file=${CNF_FILE} --batch -vvv <<EOF
+FLUSH TABLES WITH READ LOCK;
+SHOW MASTER STATUS;
+system ${SNAP_COMMAND}
+UNLOCK TABLES;
+EOF
+    else
+        /usr/bin/mysql --defaults-file=${CNF_FILE} --batch --skip-column-names ${DATABASE} > /tmp/tables.txt <<EOF
+SHOW TABLES
+EOF
+        TABLE_LIST=$(cat /tmp/tables.txt | tr "\n" "," | sed 's/,$//')
+    /usr/bin/mysql --defaults-file=${CNF_FILE} --batch -vvv ${DATABASE} <<EOF
+FLUSH TABLES ${TABLE_LIST} FOR EXPORT;
+SHOW MASTER STATUS;
+system ${SNAP_COMMAND}
+UNLOCK TABLES;
+EOF
+    fi
+
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: MySQL Session Failed"
+        exit 1
+    fi
+
+
+    LV_PATH=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_path ${DB_FS})
+    LVG=$(echo $LV_PATH | awk -F/ '{print $3}')
+    SNAPSHOT_VOLUME="/dev/${LVG}/${SNAPSHOT}"
+
+    LV_ATTR=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_attr ${SNAPSHOT_VOLUME} | awk '{print $1}' | egrep '^s')
+    if [ -z "${LV_ATTR}" ] ; then
+        echo "ERROR: Cannot get state of snapshot"
+        exit 1
+    fi
+}
+
+delete() {
+    LV_PATH=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_path ${DB_FS})
+    LVG=$(echo $LV_PATH | awk -F/ '{print $3}')
+    SNAPSHOT_VOLUME="/dev/${LVG}/${SNAPSHOT}"
+
+    LV_ATTR=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_attr ${SNAPSHOT_VOLUME} | awk '{print $1}' | egrep '^s')
+    if [ ! -z "${LV_ATTR}" ] ; then
+        echo "Removing $SNAPSHOT_VOLUME"
+
+        # Is it mounted
+        if [ -d /tmp/snapmount-${SNAPSHOT} ] ; then
+            umount /tmp/snapmount-${SNAPSHOT}
+            if [ $? -ne 0 ] ; then
+                echo "ERROR: Unmount failed"
+                exit 1
+            fi
+            rmdir /tmp/snapmount-${SNAPSHOT}
+        fi
+
+        /usr/sbin/lvremove --force ${SNAPSHOT_VOLUME}
+    fi
+}
+
+mountsnap() {
+    LV_PATH=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_path ${DB_FS})
+    LVG=$(echo $LV_PATH | awk -F/ '{print $3}')
+    SNAPSHOT_VOLUME="/dev/${LVG}/${SNAPSHOT}"
+    MNT_DIR=/tmp/snapmount-${SNAPSHOT}
+    mkdir ${MNT_DIR}
+    mount -o ro,nouuid ${SNAPSHOT_VOLUME} ${MNT_DIR}
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Mount Failed"
+        exit 1
+    fi
+    echo "DIR=${MNT_DIR}"
+}
+
+
+setSnapCommand() {
+    LV_PATH=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_path ${DB_FS})
+    VOLUME_SIZE=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_size --units m ${LV_PATH} | awk '{print $1}')
+    SNAP_SIZE=$(echo ${VOLUME_SIZE} | awk -v snapfraction=${SNAP_FRACTION} '{printf "%d\n", $1/snapfraction}')
+    SNAP_COMMAND="/usr/sbin/lvcreate  --size ${SNAP_SIZE}M --snapshot --name ${SNAPSHOT} ${LV_PATH}"
+}
+
+deleteExistingSnap() {
+    # For now we're only going to allow one snapshot at a time so remove any existing snapshot
+    LV_PATH=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_path ${DB_FS} | awk '{print $1}')
+    LV_NAME=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_name ${DB_FS} | awk '{print $1}')
+
+    LVG=$(echo $LV_PATH | awk -F/ '{print $3}')
+    SNAPSHOT_LIST=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_path,lv_attr,origin | awk '{if ($2 ~ /^s/) {print $0} }' | egrep "^ */dev/${LVG}/.* *${LV_NAME}" | awk '{print $1}')
+    for SNAPSHOT_VOLUME in ${SNAPSHOT_LIST} ; do
+        # Double check this is a snapshot
+        LV_ATTR=$(/usr/sbin/lvs --noheadings --nosuffix --options lv_attr ${SNAPSHOT_VOLUME} | awk '{print $1}' | egrep '^s')
+        if [ ! -z "${LV_ATTR}" ] ; then
+            echo "Removing $SNAPSHOT_VOLUME"
+            /usr/sbin/lvremove --force ${SNAPSHOT_VOLUME}
+        fi
+    done
+}
+
+SNAP_FRACTION=10
+CNF_FILE=/etc/my.cnf
+DB_ENIGNE="MyISAM"
+DATABASE=statsdb
+while getopts a:s:f:p:c:d: OPT ; do
+    case $OPT in
+        a) ACTION="${OPTARG}";;
+        s) SNAPSHOT="${OPTARG}";;
+        f) DB_FS="${OPTARG}";;
+        p) SNAP_FRACTION="${OPTARG}";;
+        d) DB_ENIGNE="${OPTARG}";;
+        c) CNF_FILE="${OPTARG}";;
+    esac
+done
+
+if [ -z "${ACTION}" ] || [ -z "${SNAPSHOT}" ] ; then
+    echo "Usage: $0 -a <create|delete|mount> -s <snapshotname>"
+    exit 1
+fi
+
+if [ -z "${DB_FS}" ] ; then
+    DB_FS=$(df -k /data/db | tail -1 | awk '{print $1}')
+fi
+
+if [ "${ACTION}" = "create" ] ; then
+    create
+elif [ "${ACTION}" = "delete" ] ; then
+    delete
+elif [ "${ACTION}" = "mount" ] ; then
+    mountsnap
+else
+    echo "ERROR: Unknown action ${ACTION}"
+    exit 1
+fi
+
+exit 0

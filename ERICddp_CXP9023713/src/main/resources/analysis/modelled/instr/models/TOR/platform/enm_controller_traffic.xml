@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@enm_ingress_controller_traffic">
+
+  <table name="enm_ingress_controller_traffic">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="active">
+      <metric source="nginx_ingress_controller_nginx_process_connections" target="clientConnActive">
+        <labelfilter name="state" value="^active"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="reading">
+      <metric source="nginx_ingress_controller_nginx_process_connections" target="clientConnRead">
+        <labelfilter name="state" value="^reading"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="writing">
+      <metric source="nginx_ingress_controller_nginx_process_connections" target="clientConnWrite">
+        <labelfilter name="state" value="^writing"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="waiting">
+      <metric source="nginx_ingress_controller_nginx_process_connections" target="clientConnWait">
+        <labelfilter name="state" value="^waiting"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="nginx_ingress_controller_nginx_process">
+      <metric source="nginx_ingress_controller_nginx_process_connections_total" target="totalConnection" delta="true" filteridle="true">
+        <labelfilter name="state" value="accepted"/>
+      </metric>
+      <metric source="nginx_ingress_controller_nginx_process_read_bytes_total" target="bytesRead" delta="true" filteridle="true"/>
+      <metric source="nginx_ingress_controller_nginx_process_write_bytes_total" target="bytesWrite" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

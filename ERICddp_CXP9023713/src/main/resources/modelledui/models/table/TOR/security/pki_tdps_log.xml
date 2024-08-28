@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main=" enm_ra_tdps_logs">
+    <reference table="sites" condition=" enm_ra_tdps_logs.siteid = sites.id"/>
+    <reference table="servers" condition=" enm_ra_tdps_logs.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ra_tdps_logs.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="servers.hostname" label="PKI RA Instance"/>
+  <column db="operation_type" label="Type of Operation"/>
+  <column db="Certificate_Status" label="Certificate Status"/>
+  <column db="IssuerName" label="Issuer Name"/>
+  <column db="SerialNo" label="Serial Number"/>
+  <column db="timestamp" label="Time Stamp"/>
+
+</modelledtable>

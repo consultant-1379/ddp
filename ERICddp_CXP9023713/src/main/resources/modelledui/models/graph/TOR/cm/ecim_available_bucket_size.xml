@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Available Bucket Size"
+ timespan="day"
+>
+  <title value="Available Bucket Size Per Instance"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="enm_dynamic_flow_control">
+        <reference table="sites" condition="enm_dynamic_flow_control.siteid = sites.id"/>
+        <reference table="servers" condition="enm_dynamic_flow_control.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where> sites.name = '%s'</where>
+      <column db="value" label="Available Bucket Size"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Active Sites"
+ timespan="day"
+>
+  <presetagg type="COUNT" interval="Daily" />
+  <title value="Active Sites"/>
+  <queries>
+    <query timecol="DATE(beginproc)">
+      <dbtables main="ddpadmin.ddp_makestats"/>
+
+      <where></where>
+      <column db="DISTINCT(siteid)" label="Count"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

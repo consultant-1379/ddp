@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_fmsnmp_heartbeat">
+    <reference table="sites" condition="enm_fmsnmp_heartbeat.siteid = sites.id"/>
+    <reference table="servers" condition="enm_fmsnmp_heartbeat.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_fmsnmp_heartbeat.neid = enm_ne.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_fmsnmp_heartbeat.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_ne.name" label="Node Name"/>
+  <column db="operationType" label="Operation Type"/>
+  <column db="heartbeatMode" label="Heartbeat Mode"/>
+  <column db="timeout" label="Timeout"/>
+  <column db="intervalValue" label="Interval"/>
+  <column db="result" label="Result"/>
+
+</modelledtable>

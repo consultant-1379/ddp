@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="ms"
+ timespan="day"
+>
+  <title value="Energy Flow Tasks Per Request (%s)">
+    <param name="hostname"/>
+  </title>
+
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_cm_energy_flow_tasks">
+        <reference table="sites" condition="enm_cm_energy_flow_tasks.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_energy_flow_tasks.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND task = 'FM_DATA_READ'</where>
+      <column db="totalTimeTaken" label="FM_DATA_READ"/>
+    </query>
+
+    <query timecol="time">
+      <dbtables main="enm_cm_energy_flow_tasks">
+        <reference table="sites" condition="enm_cm_energy_flow_tasks.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_energy_flow_tasks.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND task = 'CONFIG_DATA_READ'</where>
+      <column db="totalTimeTaken" label="CONFIG_DATA_READ"/>
+    </query>
+
+    <query timecol="time">
+      <dbtables main="enm_cm_energy_flow_tasks">
+        <reference table="sites" condition="enm_cm_energy_flow_tasks.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_energy_flow_tasks.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND task = 'LIVE_DATA_READ'</where>
+      <column db="totalTimeTaken" label="LIVE_DATA_READ"/>
+    </query>
+
+    <query timecol="time">
+      <dbtables main="enm_cm_energy_flow_tasks">
+        <reference table="sites" condition="enm_cm_energy_flow_tasks.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_energy_flow_tasks.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND task = 'ENERGY_FLOW_VALIDATION'</where>
+      <column db="totalTimeTaken" label="ENERGY_FLOW_VALIDATION"/>
+    </query>
+
+    <query timecol="time">
+      <dbtables main="enm_cm_energy_flow_tasks">
+        <reference table="sites" condition="enm_cm_energy_flow_tasks.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_energy_flow_tasks.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND task = 'ENERGY_FLOW_BUILD'</where>
+      <column db="totalTimeTaken" label="ENERGY_FLOW_BUILD"/>
+    </query>
+
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

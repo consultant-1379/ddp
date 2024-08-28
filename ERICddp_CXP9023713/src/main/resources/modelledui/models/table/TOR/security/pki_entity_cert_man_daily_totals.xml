@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_spsserv_endentity_instr">
+    <reference table="sites" condition="enm_spsserv_endentity_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_spsserv_endentity_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_spsserv_endentity_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(generateMethodInvocations)" label="No. of Success Requests (GENERATE)"/>
+  <column db="SUM(generateMethodFailures)" label="No. of Failed Requests (GENERATE)"/>
+  <column db="ROUND(AVG(generateExecutionTimeTotalMillis),0)" label="Average Time Per Request in ms (GENERATE)"/>
+  <column db="SUM(renewMethodInvocations)" label="No. of Success Requests (RENEW)"/>
+  <column db="SUM(renewMethodFailures)" label="No. of Failed Requests (RENEW)"/>
+  <column db="ROUND(AVG(renewExecutionTimeTotalMillis),0)" label="Average Time Per Request in ms (RENEW)"/>
+  <column db="SUM(rekeyMethodInvocations)" label="No. of Success Requests (REKEY)"/>
+  <column db="SUM(rekeyMethodFailures)" label="No. of Failed Requests (REKEY)"/>
+  <column db="ROUND(AVG(rekeyExecutionTimeTotalMillis),0)" label="Average Time Per Request in ms (REKEY)"/>
+  <column db="SUM(deleteMethodInvocations)" label="No. of Success Requests (DELETE)"/>
+  <column db="SUM(deleteMethodFailures)" label="No. of Failed Requests (DELETE)"/>
+  <column db="ROUND(AVG(deleteExecutionTimeTotalMillis),0)" label="Average Time Per Request in ms (DELETE)"/>
+
+</modelledtable>

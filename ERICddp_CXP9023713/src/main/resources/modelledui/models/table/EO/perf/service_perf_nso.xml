@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_perf_service_stats">
+    <reference table="sites" condition="eo_perf_service_stats.siteid = sites.id"/>
+    <reference table="eo_perf_service_names" condition="eo_perf_service_stats.serviceid = eo_perf_service_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_perf_service_names.name LIKE 'NSO%' AND eo_perf_service_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="eo_perf_service_names.name"/>
+  </groupby>
+
+  <column db="eo_perf_service_stats.serviceid" id="serviceid" label="serviceid" visible="false"/>
+  <column db="eo_perf_service_names.name" label="Service-Method"/>
+  <column db="SUM(eo_perf_service_stats.count)" label="Total Executions"/>
+  <column db="TIME_FORMAT(SEC_TO_TIME(SUM(eo_perf_service_stats.total/1000)), '%H:%i:%s')" label="Total Duration (hh:mm:ss)"/>
+  <column db="ROUND(SUM(eo_perf_service_stats.total)/SUM(eo_perf_service_stats.count))" label="Average Duration (msec)"/>
+  <column db="MAX(eo_perf_service_stats.max)" label="Max Duration (msec)"/>
+  <column db="MIN(eo_perf_service_stats.min)" label="Min Duration (msec)"/>
+
+  <ctxmenu keycol="serviceid" targettype="url" multiselect="true">
+    <item id="perfNso" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

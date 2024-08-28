@@ -1,0 +1,151 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($dataDir,$dashDate);
+    my $datasets = "EHIP,EHMS,EHM";
+    my @datasets;
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "data=s" => \$dataDir,
+        "datasets=s" => \$datasets,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Pull the datasets into an array
+    foreach my $dataset (split(/\,/, $datasets)) {
+        push(@datasets, uc($dataset));
+    }
+
+    if ($DEBUG > 4) { print Dumper @datasets; }
+
+    # Store the datasets via getIdMap
+    my $r_datasets = getIdMap($dbh, "eam_datasets", "id", "name", \@datasets);
+    my $cnt = 0;
+    my %nodeFDNs;
+    my @datasetids;
+    
+    # Parse the files for each dataset, if they exist
+    PARSE_FILES: foreach my $dataset (@datasets) {
+        my $datasetid = $r_datasets->{$dataset};
+        my $file = $dataDir . "/nms_eam_" . lc($dataset) . "/" . lc($dataset) . "_alarm_times_instr.log";
+        if ($DEBUG > 4) { print "Feed file: " . $file . "\n"; }
+
+        if (-e $file) {
+            processData($file, $sqlDate, $siteid, $datasetid, \%dataForStorage, \%nodeFDNs, \$cnt);
+            push(@datasetids, $datasetid);
+        } else {
+            print "WARNING: No alarms file for '" . uc($dataset) . "' - expected file " . $file . " does not exist.\n";
+            next PARSE_FILES;
+        }
+    }
+
+    # Store the Node FDNs via getIdMap
+    my $r_nodeFDNsMap = getIdMap($dbh, "eam_node_fdn_names", "id", "name", [keys(%nodeFDNs)]);
+
+    if ($DEBUG > 7) { print Dumper %dataForStorage; }
+
+    # Store the data
+    storeDataset($sqlDate, $siteid, \@datasetids, \%dataForStorage, $r_nodeFDNsMap, \$cnt);
+
+    return 0;
+}
+
+sub processData() {
+    my ($file , $sqlDate, $siteid, $datasetid, $r_dataForStorage, $r_nodeFDNs, $r_cnt) = @_;
+    my $dbh = connect_db();
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+        if ($line =~ /^\s*$/ || $line !~ /^.*,.*,.*,.*$/) {
+            next LINE;
+        } else {
+            # Get the data via backreferences
+            my ($nodeFDN, $alarmNumber, $timeReceived, $timeForwarded) = $line =~ /^(\S+), *(\S+), *(\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}), *(\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2})$/;
+	    if ( defined $nodeFDN ) { 
+		$r_dataForStorage->{$$r_cnt}->{'datasetid'} = $datasetid;
+		$r_dataForStorage->{$$r_cnt}->{'node_fdn'} = $nodeFDN;
+		$r_dataForStorage->{$$r_cnt}->{'alarm_number'} = $alarmNumber;
+		$r_dataForStorage->{$$r_cnt}->{'time_received'} = $timeReceived;
+		$r_dataForStorage->{$$r_cnt}->{'time_forwarded'} = $timeForwarded;
+		$r_nodeFDNs->{$nodeFDN} = 1;
+		$$r_cnt++;
+	    }
+        }
+    }
+    close(DATA);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $r_datasetids, $r_dataForStorage, $r_nodeFDNsMap, $r_cnt) = @_;
+    my $dbh = connect_db();
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/eam_alarm_details." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    for (my $index = 0; $index < $$r_cnt; $index++) {
+        print BULK_INSERT $sqlDate . "|" . $siteid . "|" . $r_dataForStorage->{$index}->{'datasetid'} . "|" . $r_nodeFDNsMap->{$r_dataForStorage->{$index}->{'node_fdn'}} . "|" . $r_dataForStorage->{$index}->{'alarm_number'} . "|" . $r_dataForStorage->{$index}->{'time_received'} . "|" . $r_dataForStorage->{$index}->{'time_forwarded'} . "\n";
+    }
+    close BULK_INSERT;
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM eam_alarm_details WHERE date = '" . $sqlDate . "' AND siteid = " . $siteid . " AND datasetid IN (";
+    foreach my $datasetid (@$r_datasetids) {
+        print "DATASET ID: " . $datasetid . "\n";
+        $rerunDelete .= $datasetid . ",";
+    }
+    $rerunDelete =~ s/\,$/)/; # Remove the final comma
+   
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data eam_alarm_details for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE eam_alarm_details FIELDS TERMINATED BY '|'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into eam_alarm_details with statement " . $sqlInsert . "\n";
+    $dbh->disconnect;
+
+    return 0;
+}

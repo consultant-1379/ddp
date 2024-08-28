@@ -1,0 +1,117 @@
+#!/usr/bin/perl
+
+use Data::Dumper;
+use DBI;
+use Getopt::Long;
+use StatsDB;
+use StatsTime;
+use strict;
+use warnings;
+
+our $DEBUG = 0;
+our $dbh;
+our $siteId;
+our $serverId;
+our $date;
+our $diskHarderrorTable="disk_harderror_details";
+
+sub main {
+    my ($harderrorDetailsLogFile,$site,$server);
+    my $result = GetOptions(
+        "logfile=s" => \$harderrorDetailsLogFile,
+        "site=s"  => \$site,
+        "server=s"  => \$server,
+        "debug=s" => \$DEBUG
+        );
+
+    ($result == 1) or die "Invalid arguments. Usage: parseDiskErrorDetails --logfile <harderrorDetailsLogFile>
+        --site <site> --server <server> [ --debug <0-5> ]";
+    ( -r $harderrorDetailsLogFile ) or die "Cannot read log file $harderrorDetailsLogFile";
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG >= 0) {
+        $startTime=getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    $serverId = getServerId($dbh,$siteId,$server);
+    my $r_parsedDiskErrorStats = parseDiskErrorDetailsLog($harderrorDetailsLogFile);
+    my $bcpFile = createBcpFile($r_parsedDiskErrorStats);
+    removeOldData();
+    loadDb($bcpFile);
+    unlink($bcpFile);
+    if($DEBUG >= 0) {
+        $endTime=getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$startTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseDiskErrorDetailsLog {
+    my $logFile = shift;
+    my ($disk, $harderror_count);
+    my @r_data=();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    $date=(split /[_.]/,$logFile)[-2];
+    while (my $line = <FILE>){
+        if ( $DEBUG >= 1) { print "Logfile:$logFile\nLine being parsed:$line"; }
+        if(($disk,$harderror_count)= (split /\s+/,$line)[0,6]){
+            my %r_dataForLine = (
+                date => "$date",
+                disk => "$disk",
+                harderror_count => "$harderror_count"
+            );
+            push (@r_data, \%r_dataForLine);
+        }
+    }
+    if ($DEBUG >= 1) { print Dumper ("Parsed Data", \@r_data); }
+    return (\@r_data);
+}
+
+sub createBcpFile {
+    my $parsed_diskerror_data = shift;
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $diskerrorDetailsBcpFile = "${tmpDir}/diskerror_details.bcp";
+    open BCP, ">$diskerrorDetailsBcpFile" or die "Cannot open BCPFile";
+    for my $diskerror_data_element ( @$parsed_diskerror_data ) {
+        printf BCP "%s|%d|%d|%s|%s\n",
+            $diskerror_data_element->{date},
+            $siteId,
+            $serverId,
+            $diskerror_data_element->{disk},
+            $diskerror_data_element->{harderror_count};
+    }
+    close BCP;
+    if ($DEBUG >= 2) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $diskerrorDetailsBcpFile");
+    }
+    return $diskerrorDetailsBcpFile;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $diskHarderrorTable WHERE siteid = $siteId AND serverid= $serverId AND date = '$date' ";
+    if ($DEBUG >= 3) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql\n";
+    }
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $diskHarderrorTable FIELDS TERMINATED BY \'|\'";
+    if ($DEBUG >= 4) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql\n";
+    }
+    dbDo($dbh,$loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();
+

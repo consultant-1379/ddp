@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_frequency_manager">
+  <reference table="sites" condition="ecson_frequency_manager.siteid = sites.id"/>
+  <reference table="servers" condition="ecson_frequency_manager.serverid  = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_frequency_manager.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Servers" id="serverNames"/>
+ <column db="SUM(ecson_frequency_manager.alg_execution_count)" label="ALG Execution"/>
+ <column db="SUM(ecson_frequency_manager.alg_execution_time)" label="ALG Execution Time (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_frequency_manager.kpi_calculation_time)" label="KPI Calculation Time (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_frequency_manager.kpi_on_demand_calculation_requests)" label="KPI on demand Calculation Requests"/>
+ <column db="SUM(ecson_frequency_manager.kpi_on_demand_calculation_time)" label="KPI ON Demand Calculation Time (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_frequency_manager.configuration_get_request)" label="Configuration GET Requests"/>
+ <column db="SUM(ecson_frequency_manager.configuration_get_time)" label="Configuration GET Request Time (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_frequency_manager.configuration_update_requests)" label="Configuration Update Requests"/>
+ <column db="SUM(ecson_frequency_manager.configuration_update_time)" label="Configuration UPDATE Time (hh:mm:ss)" formatter="ddpFormatMSec"/>
+
+</modelledtable>

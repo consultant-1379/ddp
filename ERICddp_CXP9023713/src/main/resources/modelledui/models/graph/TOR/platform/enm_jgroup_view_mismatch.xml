@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="sb"
+  timespan="day"
+  ylabel="Mismatches"
+>
+  <title value="JGroup View Mismatches" />
+  <queries>
+    <query timecol="time" multiseries="enm_jgroup_clusternames.name">
+      <dbtables main="enm_jgroup_view_mismatch">
+        <reference table="sites" condition="enm_jgroup_view_mismatch.siteid = sites.id" />
+        <reference table="enm_jgroup_clusternames"
+          condition="enm_jgroup_view_mismatch.clusterid = enm_jgroup_clusternames.id" />
+      </dbtables>
+      <param name="site" />
+      <param name="cid" />
+      <where>sites.name = '%s' AND enm_jgroup_clusternames.id IN (%s)</where>
+      <column db="enm_jgroup_view_mismatch.viewCount" label="View Mismatches" />
+    </query>
+  </queries>
+  <size width="800" height="300" />
+</modelledgraph>

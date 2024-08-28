@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_str_fwd">
+    <reference table="sites" condition="enm_str_fwd.siteid = sites.id"/>
+    <reference table="servers" condition="enm_str_fwd.serverid  = servers.id"/>
+    <reference table="enm_str_jvm_names" condition="enm_str_fwd.jvmid = enm_str_jvm_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverids"/>
+  <where>sites.name = '%site%' AND enm_str_fwd.serverid IN ( %serverids% ) AND enm_str_fwd.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+    <column db="enm_str_jvm_names.jvm_name"/>
+  </groupby>
+
+  <column db="IFNULL(servers.hostname,'Totals')" label="Host"/>
+  <column db="0" label="id" id="id" visible="false"/>
+  <column db="enm_str_jvm_names.jvm_name" label="JVM"/>
+  <column db="SUM(eventsIn)" label="Events In (ASR-L)"/>
+  <column db="SUM(eventsOut)" label="Events Out (ASR-L)"/>
+  <column db="SUM((CAST(eventsIn AS SIGNED) - CAST(eventsOut AS SIGNED)))" label="Delta (ASR-L)"/>
+  <column db="SUM(eventsIn_asrn)" label="Events In (ASR-N)"/>
+  <column db="SUM(eventsOut_asrn)" label="Events Out (ASR-N)"/>
+  <column db="SUM((CAST(eventsIn_asrn AS SIGNED) - CAST(eventsOut_asrn AS SIGNED)))" label="Delta (ASR-N)"/>
+
+  <ctxmenu keycol="id" targettype="url">
+    <item id="plotAll-L" label="Plot All ASR-L Instances"/>
+    <item id="plotInd-L" label="Plot Individual ASR-L Instances"/>
+    <item id="plotAll-N" label="Plot All ASR-N Instances"/>
+    <item id="plotInd-N" label="Plot Individual ASR-N Instances"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+
+</modelledtable>
+

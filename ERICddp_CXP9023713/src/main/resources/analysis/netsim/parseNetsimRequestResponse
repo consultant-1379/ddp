@@ -1,0 +1,193 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use Instr;
+
+our $DEBUG = 0;
+
+sub parseFiles($$$) {
+    my ($inputDir, $type, $dbColMaps) = @_;
+    my $search_text;
+    if ( ! defined $type ) {
+        die "Failed to get Request/Response type";
+    }
+    if ( $type eq 'Request') {
+        $search_text = 'NetsimRequestsCntr';
+    } elsif ( $type eq 'Response' ) {
+        $search_text = 'NetsimResponseCntr';
+    }
+    if ( ! defined $search_text ) {
+        die "No input Files to process";
+    }
+    opendir DIR, $inputDir or die "Cannot open input dir $inputDir";
+    my @inputFiles = sort grep {/^$search_text/} readdir(DIR);
+    closedir(DIR);
+    if ( $DEBUG > 0 ) { print Dumper("parseFiles: inputFiles", \@inputFiles); }
+
+    my @samples = ();
+    foreach my $inputFile ( @inputFiles ) {
+        $inputFile =~ /^$search_text\_(\d{4})(\d{2})(\d{2})_/;
+        my $year = $1;
+        my $month = $2;
+        my $day = $3;
+        if ( ! defined $year ) {
+            die "Failed to get date from $inputFile";
+        }
+        my $date = sprintf("%04d-%02d-%02d", $year, $month, $day);
+
+        open INPUT, $inputDir . "/" . $inputFile or die "Cannot open $inputFile";
+        my $r_columnMap = undef;
+
+        while ( my $line = <INPUT> ) {
+            if ( $DEBUG > 9 ) { print "parseFiles: line=$line"; }
+            if ( defined $r_columnMap ) {
+                if ( $line =~ /^(\d{2,2}:\d{2,2}),([\d,]+)$/ ) {
+                    my ($hhmm, $colsStr) = ($1, $2);
+                    my $timestamp = $date . " " . $hhmm . ":00";
+                    my $time = parseTime( $timestamp, $StatsTime::TIME_SQL );
+                    my %sample = (
+                        'time' => $time,
+                        'timestamp' => formatTime( $time, $StatsTime::TIME_SQL )
+                    );
+
+                    my @columns = split(",", $colsStr);
+                    for ( my $colIndex = 0; $colIndex <= $#columns; $colIndex++ ) {
+                        my $colName = $r_columnMap->{$colIndex};
+                        $sample{$r_columnMap->{$colIndex}} = $columns[$colIndex];
+                    }
+
+                    push @samples, \%sample;
+                }
+            } elsif ( $line =~ /^Time,(.*)/ ) {
+                my $colNamesStr = $1;
+                my @columnNames = split(",", $colNamesStr);
+                $r_columnMap = {};
+                for ( my $colIndex = 0; $colIndex <= $#columnNames; $colIndex++ ) {
+                    if ( $columnNames[$colIndex] =~ /(?:snmp-bulk-get|snmp-get-next|snmp-response|snmp-traps)/ ) {
+                        my $colVal = $columnNames[$colIndex];
+                        $colVal =~ s/-/_/g;
+                        $dbColMaps->{"$columnNames[$colIndex]"} = $colVal;
+                    }
+                    $r_columnMap->{$colIndex} = $columnNames[$colIndex];
+                }
+                if ( $DEBUG > 7 ) { print Dumper("parseFiles: r_columnMap", $r_columnMap); }
+            }
+        }
+        close INPUT;
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("parseInput: samples", \@samples); }
+    return (\@samples, $dbColMaps);
+}
+
+sub colMap($) {
+    my ($type) = @_;
+    my %dbColMap = ();
+    if ( ! defined $type ) {
+        die "Failed to get Request/Response type";
+    }
+
+    if ($type eq 'Request') {
+        my %dbColMap = (
+            'NETCONF' => 'NETCONF',
+            'CPP' => 'CPP',
+            'SNMP' => 'SNMP',
+            'SIMCMD' => 'SIMCMD',
+            # COM/ECIM
+            'ecim-get' => 'ecim_get',
+            'ecim-edit' => 'ecim_edit',
+            'ecim-MOaction' => 'ecim_MOaction',
+            # CPP
+            'cpp-createMO' => 'cpp_createMO',
+            'cpp-deleteMO' => 'cpp_deleteMO',
+            'cpp-setAttr' => 'cpp_setAttr',
+            'cpp-getMIB' => 'cpp_getMIB',
+            'cpp-nextMOinfo' => 'cpp_nextMOinfo',
+            'cpp-get' => 'cpp_get',
+            'cpp-MOaction' => 'cpp_MOaction',
+            # SNMP
+            'snmp-get' => 'snmp_get',
+            'snmp-set' => 'snmp_set',
+            # Bursts
+            'AVCbursts' => 'AVCbursts',
+            'MCDbursts' => 'MCDbursts',
+            'AlarmBursts' => 'AlarmBursts',
+            # SFTP
+            'SFTP' => 'SFTP',
+            'sftp-FileOpen' => 'sftp_FileOpen',
+            'sftp-get_cwd' => 'sftp_get_cwd'
+        );
+        return \%dbColMap;
+    } elsif ( $type eq 'Response') {
+        my %dbColMap = (
+            'NETCONF' => 'NETCONF',
+            'CORBA' => 'CORBA',
+            'SNMP' => 'SNMP',
+            'SSH' => 'SSH',
+            'SFTP' => 'SFTP',
+            'ecim-avc' => 'ecim_avc',
+            'ecim-MOcreated' => 'ecim_MOcreated',
+            'ecim-MOdeleted' => 'ecim_MOdeleted',
+            'ecim-reply' => 'ecim_reply',
+            'cpp-avc' => 'cpp_avc',
+            'cpp-MOcreated' => 'cpp_MOcreated',
+            'cpp-MOdeleted' => 'cpp_MOdeleted',
+            'cpp-reply' => 'cpp_reply',
+            'sftp-FileClose' => 'sftp_FileClose',
+            'snmp-response'  => 'snmp_response',
+            'snmp-traps' => 'snmp_traps'
+        );
+        return \%dbColMap;
+    }
+    return \%dbColMap
+}
+
+sub main() {
+    my ($inputDir, $site, $server);
+    my $result = GetOptions(
+        "dir=s" => \$inputDir,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    my ($netsimReqRes, $netsimTable);
+    if ( ! defined $inputDir ) {
+        die "Failed to get input Directory";
+    }
+
+    if ( $inputDir =~ /netsimprmn/ ) {
+        $netsimReqRes = 'Request';
+        $netsimTable = 'netsim_requests';
+    } elsif( $inputDir =~ /prmnresponse/ ) {
+        $netsimReqRes = 'Response';
+        $netsimTable = 'netsim_response';
+    }
+
+    my $dbColMapAdd = &colMap($netsimReqRes);
+    my ($r_samples, $modColMaps) = parseFiles($inputDir, $netsimReqRes, $dbColMapAdd);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId($dbh, $siteId, $server);
+    instrStoreData(
+        $netsimTable,
+        $site,
+        { 'serverid' => $serverId },
+        $r_samples,
+        $modColMaps
+    );
+}
+
+main();

@@ -1,0 +1,145 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+INPUT_DIR=$1
+SQL_DATE=$2
+OUTPUT_DIR=$3
+SITE=$4
+
+DATE=`echo ${SQL_DATE} | sed 's/20\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/\3\2\1/'`
+DASH_DATE=`echo ${SQL_DATE} | sed 's/20\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/\3-\2-\1/'`
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ ! -d ${OUTPUT_DIR}/sdm ]; then
+    mkdir ${OUTPUT_DIR}/sdm
+fi
+
+INPUT_FILES=""
+if [ -r ${INPUT_DIR}/dbperf.log ] ; then
+    INPUT_FILES="${INPUT_FILES} --dbperf ${INPUT_DIR}/dbperf.log"
+fi
+if [ -r ${INPUT_DIR}/perf.log ] ; then
+    INPUT_FILES="${INPUT_FILES} --perf ${INPUT_DIR}/perf.log"
+fi
+if [ -r ${INPUT_DIR}/xmlParser.statistics ] ; then
+    INPUT_FILES="${INPUT_FILES} --parser ${INPUT_DIR}/xmlParser.statistics"
+fi
+if [ -r ${INPUT_DIR}/StatTimerSave.log ] ; then
+    head --lines=10 ${INPUT_DIR}/StatTimerSave.log | grep ';' > /dev/null
+    if [ $? -eq 0 ] ; then
+	INPUT_FILES="${INPUT_FILES} --stattimer ${INPUT_DIR}/StatTimerSave.log --loadtable ${OUTPUT_DIR}/sdm/load_table.html"
+    fi
+fi
+
+if [ ! -d ${INPUT_DIR}/plots ] ; then
+    mkdir ${INPUT_DIR}/plots
+fi
+
+${ANALYSIS_BIN}/pm/parseSdm ${INPUT_FILES} --data ${TMP_DIR}/sdm_data.txt --date "${SQL_DATE}" --proctable ${OUTPUT_DIR}/sdm/proc_table.html --site ${SITE} --plotdir ${INPUT_DIR}/plots
+
+egrep '^[0-9:]+ +[0-9]+' ${INPUT_DIR}/loading.log > ${TMP_DIR}/loading.log
+cat > ${TMP_DIR}/sdm_cmd.txt <<EOF
+set xdata time
+set format x "%H:%M"
+set terminal jpeg
+set size 1,0.5
+
+set timefmt "%d%m%y:%H:%M"
+set xrange [ "${DATE}:00:00":"${DATE}:23:59" ]
+set output "${OUTPUT_DIR}/sdm/rops_waiting.jpg"
+set title "ROP waiting to be loaded"
+plot "${TMP_DIR}/loading.log" using 1:2 notitle with steps
+
+
+set timefmt "%H:%M:%S"
+set xrange [ "00:00:00":"23:59:59" ]
+set output "${OUTPUT_DIR}/sdm/deleteTime.jpg"
+set title "Deletion Procs Running"
+plot "${TMP_DIR}/sdm_data.txt" index 1 using 1:2 notitle with steps
+
+set timefmt "%H:%M:%S"
+set xrange [ "00:00:00":"23:59:59" ]
+set output "${OUTPUT_DIR}/sdm/aggTime.jpg"
+set title "Aggregation Delay"
+plot "${TMP_DIR}/sdm_data.txt" index 2 using 1:2 title 'Object' with steps, "${TMP_DIR}/sdm_data.txt" index 2 using 1:3 title 'Hourly' with steps, "${TMP_DIR}/sdm_data.txt" index 2 using 1:4 title 'Daily' with steps, "${TMP_DIR}/sdm_data.txt" index 2 using 1:5 title 'Weekly' with steps
+
+set output "${OUTPUT_DIR}/sdm/aggCompleted.jpg"
+set title "Aggregations Completed"
+plot "${TMP_DIR}/sdm_data.txt" index 3 using 1:2 title 'Object' with steps, "${TMP_DIR}/sdm_data.txt" index 3 using 1:3 title 'Hourly' with steps, "${TMP_DIR}/sdm_data.txt" index 3 using 1:4 title 'Daily' with steps, "${TMP_DIR}/sdm_data.txt" index 3 using 1:5 title 'Weekly' with steps
+
+
+set timefmt "%Y-%m-%d:%H:%M:%S"
+set xrange [ "${SQL_DATE}:00:00:00":"${SQL_DATE}:23:59:59" ]
+set style fill solid border noborder
+set output "${OUTPUT_DIR}/sdm/loadTime.jpg"
+set title "Loading"
+plot "${TMP_DIR}/sdm_data.txt" index 0 using 1:2:3 notitle with boxes
+
+EOF
+
+gnuplot ${TMP_DIR}/sdm_cmd.txt
+if [ $? -eq 0 ]; then
+    rm ${TMP_DIR}/sdm_data.txt ${TMP_DIR}/sdm_cmd.txt ${TMP_DIR}/loading.log
+fi
+
+
+if [ -r ${INPUT_DIR}/xmlParser.statistics ] ; then
+    tail --lines=+2 ${INPUT_DIR}/xmlParser.statistics > ${TMP_DIR}/sdm_parser_data.txt
+#COUNTERS TotalXmlParseBuildCount written_files written_data totalmem freemem fdnCacheMem Queue ParserQ LogicQ WriterQ fdnCacheEntries
+#2005-11-24:15:46 0 2 684343 603400 83953 50 2000 2000 0 0 486326
+
+    cat > ${TMP_DIR}/sdm_parser_cmd.txt <<EOF
+set xdata time
+set format x "%H:%M"
+set terminal jpeg
+set size 1,0.5
+set timefmt "%Y-%m-%d:%H:%M"
+set xrange [ "${SQL_DATE}:00:00":"${SQL_DATE}:23:59" ]
+
+set output "${OUTPUT_DIR}/sdm/parser_queue.jpg"
+set title "Queue "
+plot "${TMP_DIR}/sdm_parser_data.txt" using 1:8 notitle with steps
+EOF
+    gnuplot ${TMP_DIR}/sdm_parser_cmd.txt
+    #f [ $? -eq 0 ]; then
+    #rm ${TMP_DIR}/sdm_parser_data.txt ${TMP_DIR}/sdm_parser_cmd.txt
+    #fi
+
+    cat ${TMP_DIR}/sdm_parser_data.txt | sed 's/^20\([0-9]*\)-\([0-9]*\)-\([0-9]*\):\([0-9:]*\) /\3-\2-\1 \4:00.000 /' | awk '{print $1, $2, "sdm", ($6*1024), ($7*1024)}' > ${TMP_DIR}/sdm_parser_heap.txt
+    ${ANALYSIS_BIN}/server/plotHeap  ${TMP_DIR}/sdm_parser_heap.txt sdm ${DASH_DATE} ${OUTPUT_DIR}/sdm/parser_heap.jpg 1,0.5
+fi
+
+if [ -r ${INPUT_DIR}/optdiag.log ] ; then
+    cat ${INPUT_DIR}/optdiag.log | ${ANALYSIS_BIN}/pm/parseOptDiag > ${OUTPUT_DIR}/sdm/optdiag.html
+fi
+
+if [ -r ${INPUT_DIR}/cells.log ] ; then
+    cat ${INPUT_DIR}/cells.log | ${ANALYSIS_BIN}/pm/convertSybDate | awk '{print $2, $1}' > ${TMP_DIR}/cells.log
+    cat ${INPUT_DIR}/countLoaded.log | ${ANALYSIS_BIN}/pm/convertSybDate | awk '{print $1, $2}' > ${TMP_DIR}/countLoaded.log
+    cat > ${TMP_DIR}/loaded.cmd <<EOF
+set xdata time
+set format x "%H:%M"
+set terminal jpeg
+set size 1,0.5
+set timefmt "%Y-%m-%d:%H:%M"
+set xrange [ "${SQL_DATE}:00:00":"${SQL_DATE}:23:59" ]
+
+set output "${OUTPUT_DIR}/sdm/loaded_cells.jpg"
+set title "Cells Loaded"
+plot "${TMP_DIR}/cells.log" using 1:2 notitle with steps
+
+set output "${OUTPUT_DIR}/sdm/loaded_nodes.jpg"
+set title "Nodes Loaded"
+plot "${TMP_DIR}/countLoaded.log" using 1:2 notitle with steps
+EOF
+    gnuplot ${TMP_DIR}/loaded.cmd
+fi
+
+
+    

@@ -1,0 +1,389 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($instrCfg,$instrData,$dashDate);
+    my $instrDatasets = "COSM-MX,COSM-FileAuditor,COSM-Memory,COSM-Threading,COSM-OS";
+    my $result = GetOptions(
+        "cfg=s" => \$instrCfg,
+        "datasets=s" => \$instrDatasets,
+        "data=s" => \$instrData,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    setInstr_Debug($DEBUG);
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Map each Instr dataset to a table
+    my %dbTableMap;
+    my @datasets = split(/\,/, $instrDatasets);
+    foreach my $dataset (@datasets) {
+        $dbTableMap{$dataset} = lc($dataset) . "_stats";
+        $dbTableMap{$dataset} =~ s/\-/\_/g;
+    }
+
+    my $r_idMap = getIdMap($dbh, "jmx_names", "id", "name", \@datasets);
+    if ($DEBUG > 4) { print Dumper $r_idMap; }
+
+    # Map of the field names in the instr input data to the corresponding field names in statsdb
+    # We have a mapping for each dataset table: cosm_mx_stats, cosm_fileauditor_stats, cosm_os_stats
+
+    my %dbFieldMap;
+
+    # cosm_mx_stats
+    $dbFieldMap{'cosm_mx_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'cosm_mx_stats'}->{'TotalTasksCreated'} = 'total_tasks_created';
+    $dbFieldMap{'cosm_mx_stats'}->{'TotalRequestsDispatched'} = 'total_requests_dispatched';
+    $dbFieldMap{'cosm_mx_stats'}->{'RegisteredCallbacks'} = 'registered_callbacks';
+    $dbFieldMap{'cosm_mx_stats'}->{'ReceivedCallbacks'} = 'received_callbacks';
+    $dbFieldMap{'cosm_mx_stats'}->{'ProcessedCallbacks'} = 'processed_callbacks';
+    $dbFieldMap{'cosm_mx_stats'}->{'FailedCallbacks'} = 'failed_callbacks';
+
+    # cosm_fileauditor_stats
+    $dbFieldMap{'cosm_fileauditor_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'cosm_fileauditor_stats'}->{'LastCleanUpOperationStartTime'} = 'last_cleanup_operation_start_time';
+    $dbFieldMap{'cosm_fileauditor_stats'}->{'PolledDataLocation'} = 'polled_data_location';
+    $dbFieldMap{'cosm_fileauditor_stats'}->{'TotalFilesDeleted'} = 'total_files_deleted';
+    $dbFieldMap{'cosm_fileauditor_stats'}->{'TotalFilesProcessed'} = 'total_files_processed';
+    $dbFieldMap{'cosm_fileauditor_stats'}->{'TotalSpaceRecoveredInBytes'} = 'total_space_recovered_in_bytes';
+
+    # cosm_os_stats
+    $dbFieldMap{'cosm_os_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'cosm_os_stats'}->{'MaxFileDescriptorCount'} = 'max_file_descriptor_count';
+    $dbFieldMap{'cosm_os_stats'}->{'OpenFileDescriptorCount'} = 'open_file_descriptor_count';
+
+    # Set the field Order
+    my %dbFieldOrder = (
+        "cosm_mx_stats" => ['total_tasks_created', 'total_requests_dispatched', 'registered_callbacks', 'received_callbacks', 'processed_callbacks', 'failed_callbacks'],
+        "cosm_fileauditor_stats" => ['last_cleanup_operation_start_time', 'polled_data_location', 'total_files_deleted', 'total_files_processed', 'total_space_recovered_in_bytes'],
+        "cosm_os_stats" => ['max_file_descriptor_count', 'open_file_descriptor_count']
+    );
+
+    if ($DEBUG > 4) { print Dumper %dbFieldMap; }
+
+    # Gather up the metrics defined above and retrieve their ids into a map, updating the
+    # jmx_metric_names table in the process
+    my @metrics;
+    foreach my $name (keys(%dbTableMap)) {
+        foreach my $metric (keys(%{$dbFieldMap{$dbTableMap{$name}}})) {
+            push(@metrics,$metric);
+        }
+    }
+    my $r_metricidMap = getIdMap($dbh, "jmx_metric_names", "id", "name", \@metrics);
+
+    # Add metric types and retrieve the (currently manually specified) fields whose values are calculated
+    # as increments
+    updateMetricTypes(\%dbTableMap, \%dbFieldMap, $r_idMap, $r_metricidMap);
+    my $r_delMetricTypes = dbSelectAllHash($dbh, "SELECT n.name AS 'dataset', m.name AS 'metric' FROM jmx_metric_types t, jmx_names n, jmx_metric_names m WHERE t.nameid = n.id AND t.metricid = m.id AND t.type = 'DELTA'");
+
+    if ($DEBUG > 4) { print Dumper $r_delMetricTypes; }
+
+    my $r_data = parseData($instrCfg, $instrData);
+    # Check here for invalid data
+    # 21-07-14 00:02:49.822 COSM-FileAuditor Sun Jul 20 23:58:11 GMT+06:00 2014 /var/opt/ericsson/nms_cosm/polled_data 0 0 0 
+    my $r_fileAuditorStats = $r_data->{'COSM-FileAuditor'};
+    if ( defined $r_fileAuditorStats ) {
+	my $r_fileAuditorStat = $r_fileAuditorStats->[0];
+	if ( defined $r_fileAuditorStat ) {
+	    if ( $r_fileAuditorStat->{'PolledDataLocation'} !~ /^\// ) {
+		print "ERROR: Invalid data format for COSM-FileAuditor, aborting\n";
+		exit 1;
+	    }
+	}
+    }
+
+    if ($DEBUG > 7) {
+        print "Dumper parsed dataset:\n";
+        print Dumper($r_data);
+    }
+
+    # For each dataset, find the appropriate table, build up the bulk insert file and write the data to statsdb
+    foreach my $dataset (@datasets) {
+        my $nameid = $r_idMap->{$dataset};
+        my $table = $dbTableMap{$dataset};
+        my $reqDeltaCalcs = 0;
+        my @deltaMetrics;
+        # Check for datasets which include metrics that are to be calculated as incremented values rather than absolutes
+        DEL_CHK: foreach my $r_record (@{$r_delMetricTypes}) {
+                 if ($r_record->{'dataset'} eq $dataset) {
+                     $reqDeltaCalcs = 1;
+                     push(@deltaMetrics, $r_record->{'metric'});
+                 }
+        }
+        parseDataForBcp($sqlDate, $siteid, $nameid, $dataset, $table, \%dbFieldMap, \%dbFieldOrder, $r_data, $reqDeltaCalcs, \@deltaMetrics);
+    }
+}
+
+sub updateMetricTypes() {
+    my ($r_dbTableMap, $r_dbFieldMap, $r_idMap, $r_metricidMap) = @_;
+    my $dbh = connect_db();
+    my %metricTypes;
+
+    # Retrieve the dataset name and metric ids from the appropriate maps
+    my $i = 1;
+    foreach my $name (keys(%$r_dbTableMap)) {
+        foreach my $metric (keys(%{$r_dbFieldMap->{$r_dbTableMap->{$name}}})) {
+            my %pair = ( 'nameid' => $r_idMap->{$name}, 'metricid' => $r_metricidMap->{$metric} );
+            $metricTypes{$i} = \%pair;
+            $i++;
+        }
+    }
+
+    my $r_metricTypesExtant = dbSelectAllHash($dbh, "SELECT nameid, metricid FROM jmx_metric_types");
+    if ($DEBUG > 4) { print Dumper $r_metricTypesExtant; }
+    CHK_DB: foreach my $r_record (@{$r_metricTypesExtant}) {
+        foreach my $i (keys(%metricTypes)) {
+            if ($metricTypes{$i}->{'nameid'} == $r_record->{'nameid'} && $metricTypes{$i}->{'metricid'} == $r_record->{'metricid'}) {
+                delete $metricTypes{$i};
+                next CHK_DB;
+            }
+        }
+    }
+
+    # Build up the insert statement
+    my $sqlMetricTypesINS = "INSERT INTO jmx_metric_types (nameid, metricid) VALUES ";
+    foreach my $i (sort(keys(%metricTypes))) {
+        $sqlMetricTypesINS .= "(" . $metricTypes{$i}->{'nameid'} . "," . $metricTypes{$i}->{'metricid'} . "),";
+    }
+    $sqlMetricTypesINS =~ s/\,$//;
+    if ($DEBUG > 4) { print "SQL to update jmx_metric_types: " . $sqlMetricTypesINS . "\n"; }
+
+    # Update the jmx_metric_types table if needs be
+    if ($sqlMetricTypesINS =~ m/\)$/) {
+        dbDo($dbh, $sqlMetricTypesINS) or die "ERROR: Could not update jmx_metric_types table.\n";
+    }
+
+    # Until this is automated, manually set the fields to be treated as datasets where delta values are presented
+    my $sqlDeltaIdsSEL = "SELECT t.id AS 'metrictypeid' FROM jmx_metric_types t, jmx_names n, jmx_metric_names m WHERE " .
+        "t.nameid = n.id AND t.metricid = m.id AND n.name = 'COSM-MX' AND m.name IN " .
+        "('TotalTasksCreated', 'TotalRequestsDispatched', 'RegisteredCallbacks', " .
+        "'ReceivedCallbacks', 'ProcessedCallbacks', 'FailedCallbacks') " .
+        "UNION SELECT t.id AS 'metrictypeid' FROM jmx_metric_types t, jmx_names n, jmx_metric_names m " .
+        "WHERE t.nameid = n.id AND t.metricid = m.id AND n.name = 'COSM-FileAuditor' AND m.name IN " .
+        "('TotalFilesDeleted', 'TotalFilesProcessed', 'TotalSpaceRecoveredInBytes') "; 
+
+    my $sqlDeltaIdsUPD = "UPDATE jmx_metric_types SET type = 'DELTA' WHERE id IN (";
+    foreach my $r_ids (@{dbSelectAllArr($dbh, $sqlDeltaIdsSEL)}) {
+            $sqlDeltaIdsUPD .= pop(@$r_ids) . ",";
+    }
+    $sqlDeltaIdsUPD =~ s/\,$/)/;
+
+    if ($DEBUG > 4) { print "SQL to flag delta fields:" . $sqlDeltaIdsUPD . "\n"; }
+
+    dbDo($dbh, $sqlDeltaIdsUPD) or die "ERROR: Could not update type column in jmx_metric_types table.\n";
+
+    # Fix IDs that were previously set to deltas but shouldn't have been
+    my $sqlAbsIdsSEL = "SELECT t.id AS 'metrictypeid' FROM jmx_metric_types t, jmx_names n, jmx_metric_names m
+            WHERE t.nameid = n.id AND t.metricid = m.id AND n.name = 'COSM-Memory' AND m.name IN
+            ('HeapMemoryUsage-committed', 'HeapMemoryUsage-init', 'HeapMemoryUsage-max', 'HeapMemoryUsage-used',
+            'NonHeapMemoryUsage-committed', 'NonHeapMemoryUsage-init', 'NonHeapMemoryUsage-max', 'NonHeapMemoryUsage-used')
+            UNION SELECT t.id AS 'metrictypeid' FROM jmx_metric_types t, jmx_names n, jmx_metric_names m WHERE
+            t.nameid = n.id AND t.metricid = m.id AND n.name = 'COSM-Threading'
+            AND m.name IN ('ThreadCount', 'PeakThreadCount')";
+    my $sqlAbsIdsUPD = "UPDATE jmx_metric_types SET type = 'ABSOLUTE' WHERE id IN (";
+    foreach my $r_ids (@{dbSelectAllArr($dbh, $sqlAbsIdsSEL)}) {
+        $sqlAbsIdsUPD .= pop(@$r_ids) . ",";
+    }
+    $sqlAbsIdsUPD =~ s/\,$/)/;
+
+    if ($DEBUG > 4) { print "SQL to flag abs fields: " . $sqlAbsIdsUPD . "\n";
+        dbDo($dbh, $sqlAbsIdsUPD) or die "ERROR: Could not update type column in jmx_metric_types table.\n";
+    }
+}
+
+sub parseDataForBcp() {
+    my ($sqlDate, $siteid, $nameid, $dataset, $table, $r_dbFieldMap, $r_dbFieldOrder, $r_data, $reqDeltaCalcs, $r_deltaMetrics) = @_;
+    my %dataForStorage;
+    my $cnt = 0;
+    my %monthMap = (
+        "Jan" => "01",
+        "Feb" => "02",
+        "Mar" => "03",
+        "Apr" => "04",
+        "May" => "05",
+        "Jun" => "06",
+        "Jul" => "07",
+        "Aug" => "08",
+        "Sep" => "09",
+        "Oct" => "10",
+        "Nov" => "11",
+        "Dec" => "12"
+    );
+    my $previousRecordRef;
+    PARSE_RECORDS: foreach my $recordRef (@{$r_data->{$dataset}}) {
+        my $timestamp = instr2mysqlTime($recordRef->{'timestamp'});
+        if ($reqDeltaCalcs == 1) {
+            if ($timestamp =~ m/$sqlDate.*/) {
+                if ($cnt == 0) {
+                    $previousRecordRef = $recordRef;
+                    $cnt++;
+                    next PARSE_RECORDS;
+                } else {
+                    foreach my $instrField (keys(%{$r_dbFieldMap->{$table}})) {
+                        my $field = $r_dbFieldMap->{$table}->{$instrField};
+
+                        if ($DEBUG > 9) { print $table . " : " . $instrField . " : " . $field . "\n"; }
+                        if (exists($recordRef->{$instrField}) && lc($recordRef->{$instrField}) ne 'undef' && lc($recordRef->{$instrField}) ne '') {
+                            unless ($field eq 'time') {
+                                if (grep {$_ eq $instrField} @$r_deltaMetrics) {
+                                    # Calculate the COSM-Memory values in kB
+                                    if ($dataset eq 'COSM-Memory') {
+                                        $dataForStorage{$timestamp}->{$field} = int(($recordRef->{$instrField} - $previousRecordRef->{$instrField})/(1024*1024) + 0.5);
+                                    } else {
+                                        $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField} - $previousRecordRef->{$instrField};
+                                    }
+                                } else {
+                                    # Sort out the COSM-FileAuditor LastCleanUpOperationStartTime
+                                    if ($dataset eq 'COSM-FileAuditor' && $field eq 'last_cleanup_operation_start_time') {
+                                        my ($day, $Mon, $dd, $time, $zone, $ccyy) = split(/\-/, $recordRef->{$instrField});
+                                        my $lastCleanUpOperationStartTime = $ccyy . "-" . $monthMap{$Mon} . "-" . $dd . " " . $time;
+                                        $dataForStorage{$timestamp}->{$field} = $lastCleanUpOperationStartTime;
+                                    # Or calculate the COSM-Memory values in kB
+                                    } elsif ($dataset eq 'COSM-Memory') {
+                                        $dataForStorage{$timestamp}->{$field} = int ( ($recordRef->{$instrField} / (1024*1024)) + 0.5);
+                                    } else {
+                                        $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField};
+                                    }
+                                }
+                            }
+                        } else {
+                            $dataForStorage{$timestamp}->{$field} = '\N'; # Set non-existant values to NULL ('\N')
+                        }
+                    }
+                    $previousRecordRef = $recordRef;
+                }
+            } else {
+                print $timestamp . " not included for this recordset.\n";
+            }
+        } else {
+            if ($timestamp =~ m/$sqlDate.*/) {
+                foreach my $instrField (keys(%{$r_dbFieldMap->{$table}})) {
+                    my $field = $r_dbFieldMap->{$table}->{$instrField};
+
+                    if ($DEBUG > 9) { print $table . " : " . $instrField . " : " . $field . "\n"; }
+    
+                    if (exists($recordRef->{$instrField}) && lc($recordRef->{$instrField}) ne 'undef' && lc($recordRef->{$instrField}) ne '') {
+                        if ($dataset eq 'COSM-Memory' && $instrField ne 'timestamp') {
+                            $dataForStorage{$timestamp}->{$field} = int ( ($recordRef->{$instrField} / (1024*1024)) + 0.5);
+                        } else {
+                            $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField};
+                        }
+                    } else {
+                        $dataForStorage{$timestamp}->{$field} = '\N'; # Set non-existant values to NULL ('\N')
+                    }
+                }
+            } else {
+                print $timestamp . " not included for this recordset.\n";
+            }
+        }
+        $cnt++;
+    }
+
+    # If we have calculated deltas above, then there will be one less record than for absolute metrics
+    if ($reqDeltaCalcs == 1 && $cnt != 0) { $cnt--; }
+
+    if ($DEBUG > 4) { print Dumper %dataForStorage; }
+
+    writeBcpFile($sqlDate, $siteid, $nameid, $r_dbFieldMap, $r_dbFieldOrder, \%dataForStorage, $table, \$cnt);
+
+    return 0;
+}
+
+sub writeBcpFile() {
+    my ($sqlDate, $siteid, $nameid, $r_dbFieldMap, $r_dbFieldOrder, $r_dataForStorage, $table, $r_cnt) = @_;
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/" . $table . ".bcp";
+
+    my $fieldCnt = keys(%{$r_dbFieldMap->{$table}});
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $timestamp (sort(keys(%$r_dataForStorage))) {
+        my $record = $timestamp . "," . $siteid . "," . $nameid . ",";
+        my $blankCnt = 1; # Count the blanks
+
+        foreach my $field (@{$r_dbFieldOrder->{$table}}) {
+            if ($field ne 'time') {
+                if ($r_dataForStorage->{$timestamp}{$field} eq "\\N") { $blankCnt++; }
+                $record .= $r_dataForStorage->{$timestamp}{$field} . ",";
+            }
+        }
+
+        $record =~ s/\,$/\n/; # Remove the last comma and add a carriage return
+
+        $$r_cnt--; # Keep count to make sure all records are dealt with
+
+        if ($DEBUG > 4) { print $record; }
+
+        # Write the record to the file, eliminating records with no metrics
+        if ($blankCnt != $fieldCnt) {
+            print BULK_INSERT $record;
+        }
+    }
+
+    close BULK_INSERT;
+
+    if ($$r_cnt != 0) {
+        die "ERROR: Not all records have been processed - " . $$r_cnt . " over.\n";
+    }
+
+    # Run the bulk insert
+    storeDataset($sqlDate, $siteid, $nameid, $table, $bcpFile);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $nameid, $table, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM " . $table . " WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid . " AND nameid = " . $nameid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','");
+    $dbh->disconnect;
+
+    return 0;
+}
+

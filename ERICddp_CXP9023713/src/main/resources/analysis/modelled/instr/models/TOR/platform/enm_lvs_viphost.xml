@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@enm_lvs_viphost">
+
+  <hooks module="TOR::platform::LvsVip">
+    <hook>prestore</hook>
+  </hooks>
+
+  <table name="enm_lvs_viphost">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nicid" reftable="network_interfaces" reffiltercol="serverid"/>
+  </table>
+
+  <metricgroups>
+    <multi>vip</multi>
+    <multi>nicid</multi>
+
+    <metricgroup name="^eric_net_l4_master:(\S+):(\S+)">
+      <metric source="eric_net_l4_master" target="NONE" store="false"/>
+      <property name="vip" xsi:type="multilabelproperty" label="eric_l4_vip" index="1"/>
+      <property name="nicid" xsi:type="multilabelproperty" label="eric_l4_external_nic" index="2"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

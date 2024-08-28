@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^f5instr@f5nodestats$">
+
+  <table name="f5_node_stats">
+    <keycol name="nodeid" reftable="f5_node_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>nodeid</multi>
+
+    <metricgroup name="^F5nodestats-(\S+)">
+      <metric source="serverside.bitsOut" target="kbitsOutPerSec" delta="true" scale="1000" rate="true"/>
+      <metric source="serverside.bitsIn" target="kbitsInPerSec" delta="true" scale="1000" rate="true"/>
+      <metric source="serverside.totConns" target="connections" delta="true"/>
+      <metric source="serverside.totRequests" target="requests" delta="true"/>
+      <property name="nodeid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

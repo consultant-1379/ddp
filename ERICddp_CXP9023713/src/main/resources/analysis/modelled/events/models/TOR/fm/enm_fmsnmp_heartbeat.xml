@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmsnmp_heartbeat">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="mssnmpfm"/>
+  </services>
+  <events>
+<!-- HeartbeatOperationOnNode {\"ExecutionTime\":117,\"Timeout\":100,\"Node\":\"LTE17dg2ERBS00003\",\"OperationType\":\"AddNode\",\"HeartbeatMode\":\"PUSH\",\"_Thread\":\"Thread-537 (HornetQ-client-global-threads-119655677)\",\"Interval\":100,\"Result\":\"SUCCESS\"}","timestamp":"2019-11-24T11:19:38.011+00:00"}}  -->
+      <event name="HeartbeatOperationOnNode">
+        <metric source="host" target="serverid"/>
+        <metric source="ExecutionTime" target="executionTime"/>
+        <metric source="Timeout" target="timeout"/>
+        <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+        <metric source="OperationType" target="operationType"/>
+        <metric source="HeartbeatMode" target="heartbeatMode"/>
+        <metric source="Interval" target="intervalValue"/>
+        <metric source="Result" target="result"/>
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,15 @@
+#!/bin/sh
+
+if [ -z "${STATS_DB}" ] ; then
+    STATS_DB=statsdb
+fi
+
+MYSQL=/usr/bin/mysql
+
+SQL_FILE=$1
+
+if [ -z "${SQL_FILE}" ] ; then
+    ${MYSQL} ${STATS_DB} --batch --silent
+else
+    ${MYSQL} ${STATS_DB} --batch --silent < ${SQL_FILE}
+fi

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="swim">
+    <reference table="sites" condition="swim.siteid = sites.id" />
+  </dbtables>
+
+  <param name="site" />
+  <param name="date" />
+  <where>sites.name = '%site%' AND swim.date = '%date%'</where>
+
+  <column db="swim.name" label="Name" />
+  <column db="swim.pnumber" label="Product Number" />
+  <column db="swim.revision" label="Rev" />
+  <column db="swim.commercialName" label="Commercial Name" />
+  <column db="swim.semanticVersion" label="Semantic Version" />
+
+</modelledtable>

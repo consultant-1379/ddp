@@ -1,0 +1,114 @@
+#!/usr/bin/env perl
+
+# ENIQ 12 - WP00155: CR #: 42/109 18-FCP 103 8147/14 A
+# [2012-02-02 eronkeo]
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($log,$site,$date,$table);
+    my $result = GetOptions(
+        "log=s"   => \$log,
+        "site=s"  => \$site,
+        "date=s"  => \$date,
+        "debug=s" => \$DEBUG
+    );			    
+    ($result == 1) or die "Invalid args";
+
+    my $r_rows = loadLog($log);
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+
+    getTaskId($dbh,$r_rows);
+
+    my $siteId = getSiteId($dbh,$site);
+    my $fileName = makeBcp($date,$siteId,$table,$r_rows);
+
+    dbDo($dbh, "DELETE FROM eniq_workflow_events WHERE siteid = $siteId AND date = '$date'");
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$fileName' INTO TABLE eniq_workflow_events");
+
+    $dbh->disconnect();
+}
+
+sub makeBcp
+{
+    my($date,$siteId,$table,$r_rows) = @_;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) 
+    {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $fileName = $tmpDir . "/workflow_events.bcp";
+    open BCP, ">$fileName" or die "Cannot open $fileName";
+    foreach my $r_row ( @{$r_rows} ) {
+        printf BCP "%s\t%d\t%d\t%d\t%d\t%f\t%d\n", $date, $siteId, $r_row->[1], $r_row->[0], $r_row->[2], $r_row->[3], $r_row->[4];
+    }
+    close BCP;
+
+    return $fileName;
+}
+
+sub getTaskId {
+    my ($dbh,$r_rows) = @_;
+
+    my %workflowNameMap = ();
+    my %workflowTypeMap = ();
+    foreach my $r_row ( @{$r_rows} ) {
+        if ( $DEBUG > 7 ) { print "Type: " . $r_row->[0] . "\nName: " . $r_row->[1] . "\n"; }
+        $workflowTypeMap{$r_row->[0]}++;
+        $workflowNameMap{$r_row->[1]}++;
+    }
+    my @workflowNameList = keys %workflowNameMap;
+    my @workflowTypeList = keys %workflowTypeMap;
+    my $r_workflowNameIdMap = getIdMap($dbh,"eniq_workflow_names", "id", "name", \@workflowNameList );
+    my $r_workflowTypeIdMap = getIdMap($dbh,"eniq_workflow_types", "id", "name", \@workflowTypeList );
+
+    foreach my $r_row ( @{$r_rows} ) {
+        $r_row->[0] = $r_workflowTypeIdMap->{$r_row->[0]};
+        $r_row->[1] = $r_workflowNameIdMap->{$r_row->[1]};
+    }
+}
+
+sub loadLog
+{
+    my ($logFile) = @_;
+
+    my @rows = ();
+    open LOG, $logFile or die "Cannot open $logFile";
+    while ( my $line = <LOG> ) {
+        if ( $DEBUG > 7 ) { print "loadLog line: $line"; }
+
+        if ( $line =~ /^'/ ) {
+            chomp $line; # Remove \n
+            my @row = split( ',', $line );
+            foreach (@row){ s/\'//g; }
+            if ( $DEBUG > 6 ) { print Dumper("loadLog row: ", \@row ); }
+
+            # Remove leading 
+            #shift @row;
+
+            push @rows, \@row;
+        }
+    }
+    close LOG;
+
+    if ( $DEBUG > 5 ) { print Dumper("loadLog rows: ", \@rows ); }
+
+    return \@rows;
+}
+

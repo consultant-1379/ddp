@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="cm_import">
+    <reference table="sites" condition="cm_import.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND cm_import.job_end BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+
+  <groupby rollup="false">
+    <column db="IF( configuration IN ('Live', 'LIVE'), 'Live', 'Non Live')"/>
+    <column db="file_format"/>
+    <column db="status"/>
+  </groupby>
+
+  <column db="COUNT(jobid)" label="Jobs"/>
+  <column db="status" label="Status"/>
+  <column db="file_format" label="File Format"/>
+  <column db="numberOfNodes" label="Number Of Nodes"/>
+  <column db="IF( configuration IN ('Live', 'LIVE'), 'Live', 'Non Live')" label="Configuration"/>
+  <column db="IFNULL(sec_to_time(round((sum(copy_time) / 1000),0)),'NA')" label="Copy Time"/>
+  <column db="IFNULL(SEC_TO_TIME(round((sum(parsing_time) / 1000),0)),'NA')" label="Parsing Time"/>
+  <column db="IFNULL(SEC_TO_TIME(round((sum(import_time) / 1000),0)),'NA')" label="Import Time"/>
+  <column db="SUM(TIMEDIFF(job_end, job_start))" label="Total Elapsed Time"/>
+  <column db="SUM(nodes_copied)" label="Nodes Copied"/>
+  <column db="SUM(nodes_not_copied)" label="Nodes Not Copied"/>
+  <column db="SUM(mos_created)" label="MOs Created"/>
+  <column db="SUM(mos_updated)" label="MOs Updated"/>
+  <column db="SUM(mos_deleted)" label="MOs Deleted"/>
+  <column db="ROUND(AVG((mos_created + mos_updated + mos_deleted) / (import_time / 1000)),2)" label="Avg MOs Processed Per Sec"/>
+  <column db="ROUND(MAX((mos_created + mos_updated + mos_deleted) / (import_time / 1000)),2)" label="Max MOs Processed Per Sec"/>
+  <column db="ROUND(MIN((mos_created + mos_updated + mos_deleted) / (import_time / 1000)),2)" label="Min MOs Processed Per Sec"/>
+
+</modelledtable>

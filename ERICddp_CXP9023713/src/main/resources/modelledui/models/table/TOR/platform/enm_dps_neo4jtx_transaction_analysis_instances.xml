@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_dps_neo4jtx">
+    <reference table="sites" condition="enm_dps_neo4jtx.siteid = sites.id"/>
+    <reference table="servers" condition="enm_dps_neo4jtx.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="sids"/>
+  <where>sites.name = '%site%' AND enm_dps_neo4jtx.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND servers.id IN ( %sids% )</where>
+
+  <groupby>
+    <column db="inst"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance" id="inst"/>
+  <column db="SUM(readTxCount)" label="Read Tx count"/>
+  <column db="SUM(writeTxCount)" label="Write Tx count"/>
+  <column db="SUM(writeTxWithoutChangesCount)" label="Write Tx Without Changes Count"/>
+  <column db="SUM(totalWriteOperationsPerformed)" label="Total Write Operations Performed"/>
+  <column db="SUM(readTx5MillisecondsCount)" label="Read 5ms"/>
+  <column db="SUM(writeTx5MillisecondsCount)" label="Write 5ms"/>
+  <column db="SUM(readTx10MillisecondsCount)" label="Read 10ms"/>
+  <column db="SUM(writeTx10MillisecondsCount)" label="Write 10ms"/>
+  <column db="SUM(readTx50MillisecondsCount)" label="Read 50ms"/>
+  <column db="SUM(writeTx50MillisecondsCount)" label="Write 50ms"/>
+  <column db="SUM(readTx100MillisecondsCount)" label="Read 100ms"/>
+  <column db="SUM(writeTx100MillisecondsCount)" label="Write 100ms"/>
+  <column db="SUM(readTx500MillisecondsCount)" label="Read 500ms"/>
+  <column db="SUM(writeTx500MillisecondsCount)" label="Write 500ms"/>
+  <column db="SUM(readTx1SecondCount)" label="Read 1sec"/>
+  <column db="SUM(writeTx1SecondCount)" label="Write 1sec"/>
+  <column db="SUM(readTx10SecondsCount)" label="Read 10sec"/>
+  <column db="SUM(writeTx10SecondsCount)" label="Write 10sec"/>
+  <column db="SUM(readTx1MinuteCount)" label="Read 1min"/>
+  <column db="SUM(writeTx1MinuteCount)" label="Write 1min"/>
+  <column db="SUM(readTx2MinutesCount)" label="Read 2min"/>
+  <column db="SUM(writeTx2MinutesCount)" label="Write 2min"/>
+  <column db="SUM(readTx3MinutesCount)" label="Read 3min"/>
+  <column db="SUM(writeTx3MinutesCount)" label="Write 3min"/>
+  <column db="SUM(readTx4MinutesCount)" label="Read 4min"/>
+  <column db="SUM(writeTx4MinutesCount)" label="Write 4min"/>
+  <column db="SUM(readTx5MinutesCount)" label="Read 5min"/>
+  <column db="SUM(writeTx5MinutesCount)" label="Write 5min"/>
+  <column db="SUM(readTxOver5MinutesCount)" label="Read over 5min"/>
+  <column db="SUM(writeTxOver5MinutesCount)" label="Write over 5min"/>
+
+</modelledtable>

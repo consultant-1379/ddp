@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <table name="enm_node_tcim_normalization">
+        <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+        <keycol name="netypeid" reftable="ne_types"/>
+    </table>
+
+  <services>
+      <service name="mscm"/>
+      <service name="mscmip"/>
+      <service name="comecimmscm"/>
+      <service name="mscmapg"/>
+      <service name="mssnmpcm"/>
+      <service name="nedserv"/>
+  </services>
+
+  <events>
+      <!-- 2019-12-04 10:18:37,269 INFO  [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] (Thread-90 (HornetQ-client-global-threads-295153794)) TCIM.TCIM_NORMALIZATION_COMPLETED {"nodeName":"CORE42ML01","tcimNormalizedNodeStartTime":1575454715568,"tcimNormalizedMoPerNode":14,"tcimNormalizedNodeState":"NORMALIZED","tcimNormalizedNodeEndTime":1575454717087,"_Thread":"Thread-90 (HornetQ-client-global-threads-295153794)","neType":"MINI-LINK-6352","tcimNormalizedMoDurationPerNode":1519} -->
+      <event name="TCIM.TCIM_NORMALIZATION_COMPLETED">
+        <metric source="nodeName" target="neid" filtervalue="^[^=,]+$"/>
+        <metric source="neType" target="netypeid"/>
+        <metric source="tcimNormalizedNodeState" target="tcimNormalizedNodeState"/>
+        <metric source="tcimNormalizedMoPerNode" target="tcimNormalizedMoPerNode"/>
+        <metric source="tcimNormalizedMoDurationPerNode" target="tcimNormalizedMoDurationPerNode"/>
+        <metric source="interfacesCount" target="tcimInterfacesCount"/>
+        <metric source="numberOfFailedMos" target="tcimNumberOfFailedMos"/>
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_lifecycle_instr">
+    <reference table="sites" condition="enm_aim_lifecycle_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_lifecycle_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_lifecycle_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(totalBatchNotificationsSent)" label="totalBatchNotificationsSent"/>
+  <column db="SUM(totalEventsSent)" label="totalEventsSent"/>
+  <column db="SUM(totalNotificationErrors)" label="totalNotificationErrors"/>
+  <column db="SUM(eventSendingTime)" label="eventSendingTime"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="lc-nbiPush" label="Plot All"/>
+    <item id="lc-totalBatchNotificationsSent" label="Plot totalBatchNotificationsSent"/>
+    <item id="lc-totalEventsSent" label="Plot totalEventsSent"/>
+    <item id="lc-totalNotificationErrors" label="Plot totalNotificationErrors"/>
+    <item id="lc-eventSendingTime" label="Plot eventSendingTime"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

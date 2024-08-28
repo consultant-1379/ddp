@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_nhc_profiles_log">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="netypeid" reftable="ne_types"/>
+    <keycol name="swVerId" reftable="enm_nhc_profiles_sw_versions" refnamecol="name"/>
+    <keycol name="labelId" reftable="enm_nhc_profiles_labels" refnamecol="name"/>
+  </table>
+
+  <services>
+    <service name="shmservice"/>
+  </services>
+
+  <events>
+<!--{"NeType":"ERBS","ProductNo_ProductRev":"","ProfileName":"HealthCheckProfile_administrator_03072020120723","Lable":"preinstall, preupgrade","NumberofRulesIncluded":7,"_Thread":"ajp-executor-threads - 27"} -->
+    <event name="NHC.PROFILE_CREATE">
+      <metric source="host" target="serverid"/>
+      <metric source="ProfileName" target="profile"/>
+      <metric source="NeType" target="netypeid"/>
+      <metric source="ProductNo_ProductRev" target="swVerId"/>
+      <metric source="Lable" target="labelId"/>
+      <metric source="NumberofRulesIncluded" target="numberofRulesIncluded"/>
+      <metric source="Status" target="status"/>
+    </event>
+  </events>
+</modelledevents>
+

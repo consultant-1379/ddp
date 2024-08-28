@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="msec"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Average Message Processing Time"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="enm_neo4j_srv">
+        <reference table="sites" condition="enm_neo4j_srv.siteid = sites.id"/>
+        <reference table="servers" condition="enm_neo4j_srv.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="(boltProcTime/boltMsgDone)*1000" label="boltAvgProcTime"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

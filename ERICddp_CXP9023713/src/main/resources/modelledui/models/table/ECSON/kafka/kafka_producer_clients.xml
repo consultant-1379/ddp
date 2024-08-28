@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="kafka_producer_clients">
+    <reference table="sites" condition="kafka_producer_clients.siteid = sites.id"/>
+    <reference table="servers" condition="kafka_producer_clients.serverid  = servers.id"/>
+    <reference table="kafka_client_names" condition="kafka_producer_clients.clientid  = kafka_client_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND kafka_producer_clients.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="kafka_client_names.name"/>
+  </groupby>
+
+  <column db="kafka_producer_clients.clientid" label="ClientId" id="clientid" visible="false"/>
+  <column db="kafka_client_names.name" label="Client Name"/>
+  <column db="SUM(kafka_producer_clients.errorTotal)" label="Total Errors"/>
+  <column db="IFNULL(SEC_TO_TIME(SUM(kafka_producer_clients.lantancyMax)), 'NA')" label="Total Maximum Latency in (hh:mm:ss)"/>
+
+  <ctxmenu keycol="clientid" targettype="url" multiselect="true">
+    <item id="kclientproducer" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

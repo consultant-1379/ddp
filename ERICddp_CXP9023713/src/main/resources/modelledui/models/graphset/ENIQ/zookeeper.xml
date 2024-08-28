@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="zookeeper">
+      <reference table="sites" condition="zookeeper.siteid = sites.id"/>
+      <reference table="servers" condition="zookeeper.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverid"/>
+    <where>sites.name = '%s' AND zookeeper.serverid IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="avg_latency" type="tsc" ylabel="Milliseconds">
+      <title value="Average Latency"/>
+      <column db="avgLatency" label="Average Latency"/>
+    </graph>
+    <graph name="max_latency" type="tsc" ylabel="Milliseconds">
+      <title value="Maximum Latency"/>
+      <column db="maxLatency" label="Maximum Latency"/>
+    </graph>
+    <graph name="min_latency" type="tsc" ylabel="Milliseconds">
+      <title value="Minimum Latency"/>
+      <column db="minLatency" label="Minimum Latency"/>
+    </graph>
+    <graph name="outstanding_requests" type="tsc" ylabel="Count">
+      <title value="Outstanding Requests"/>
+      <column db="outstandingRequests" label="Outstanding Requests" />
+    </graph>
+    <graph name="packets_received" type="tsc" ylabel="Count">
+      <title value="Packets Received"/>
+      <column db="packetsReceived" label="Packets Received"/>
+    </graph>
+    <graph name="pending_syncs" type="tsc" ylabel="Count">
+      <title value="Pending Syncs"/>
+      <column db="pendingSyncs" label="Pending Syncs"/>
+    </graph>
+    <graph name="watch_count" type="tsc" ylabel="Count">
+      <title value="Watch Count"/>
+      <column db="watchCount" label="Watch Count"/>
+    </graph>
+    <graph name="znode_count" type="tsc" ylabel="Count">
+      <title value="Znode Count"/>
+      <column db="znodeCount" label="Znode Count"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="zookeeper_graphs">
+      <member>avg_latency</member>
+      <member>max_latency</member>
+      <member>min_latency</member>
+      <member>outstanding_requests</member>
+      <member>packets_received</member>
+      <member>pending_syncs</member>
+      <member>watch_count</member>
+      <member>znode_count</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

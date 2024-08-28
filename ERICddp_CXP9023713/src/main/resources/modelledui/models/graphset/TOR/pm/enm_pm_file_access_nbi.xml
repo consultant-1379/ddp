@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_pm_file_access_nbi">
+      <reference table="sites" condition="enm_pm_file_access_nbi.siteid = sites.id"/>
+      <reference table="servers" condition="enm_pm_file_access_nbi.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+  <graphs>
+    <graph name="apacheCpuload" type="sb" ylabel="%" forcelegend="true">
+      <title value="CPU"/>
+      <column db="apacheCpuload" label="Apache Cpu Load"/>
+    </graph>
+    <graph name="apacheSentKilobytesTotal" type="sb" ylabel="Kb" forcelegend="true">
+      <title value="Apache Sent"/>
+      <column db="apacheSentKilobytesTotal" label="Apache Sent Kilobytes Total"/>
+    </graph>
+    <graph name="apacheAccessesTotal" type="sb" ylabel="Requests" forcelegend="true">
+      <title value="Apache Requests"/>
+      <column db="apacheAccessesTotal" label="Apache Requests"/>
+    </graph>
+    <graph name="apacheWorkersStateValueIdle" type="sb" ylabel="Workers" forcelegend="true">
+      <title value="Apache Workers Idle State"/>
+      <column db="apacheWorkersStateValueIdle" label="Apache Workers Idle State"/>
+    </graph>
+    <graph name="apacheWorkersStateValueBusy" type="sb" ylabel="Workers" forcelegend="true">
+      <title value="Apache Workers Busy State"/>
+      <column db="apacheWorkersStateValueBusy" label="Apache Workers Busy State"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="cpu">
+      <member>apacheCpuload</member>
+    </group>
+    <group name="nbi">
+      <member>apacheSentKilobytesTotal</member>
+      <member>apacheAccessesTotal</member>
+      <member>apacheWorkersStateValueIdle</member>
+      <member>apacheWorkersStateValueBusy</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@opendj_ldap_stats"
+  sampleinterval="900">
+
+  <services>
+    <service name="opendj"/>
+    <service name="cts"/>
+  </services>
+
+  <table name="opendj_ldap_stats">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <multi>port</multi>
+
+    <metricgroup name="^bind:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="bind_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^bind$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^unbind:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="unbind_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^unbind$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^search:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="search_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^search$"/>
+        <labelfilter name="scope" value="^one$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^compare:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="compare_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^compare$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^modify:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="mod_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^modify$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^modify-dn:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="moddn_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^modify-dn$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^add:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="add_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^add$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^delete:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="delete_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^delete$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^abandon:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="abandon_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^abandon$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^search_base:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="search_base_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^search$"/>
+        <labelfilter name="scope" value="^base$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^search_sub:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="search_sub_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^search$"/>
+        <labelfilter name="scope" value="^sub$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^bind_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="bind_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^bind$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^unbind_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="unbind_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^unbind$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^search_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="search_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^search$"/>
+        <labelfilter name="scope" value="^one$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^compare_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="compare_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^compare$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^modify_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="mod_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^modify$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^modify-dn_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="moddn_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^modify-dn$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^add_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="add_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^add$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^delete_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="delete_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^delete$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^abandon_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="abandon_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^abandon$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^search_base_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="search_base_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^search$"/>
+        <labelfilter name="scope" value="^base$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^search_sub_time:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_seconds_total" target="search_sub_time" delta="true" filteridle="true" scale="0.001">
+        <labelfilter name="type" value="^search$"/>
+        <labelfilter name="scope" value="^sub$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^bytes_read_total:(.*)">
+      <metric source="ds_connection_handlers_ldap_bytes_read_total" target="bytes_read_total" delta="true" filteridle="true"/>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^bytes_read_count:(.*)">
+      <metric source="ds_connection_handlers_ldap_bytes_read_count" target="bytes_read_count" delta="true" filteridle="true"/>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^bytes_written_total:(.*)">
+      <metric source="ds_connection_handlers_ldap_bytes_written_total" target="bytes_written_total" delta="true" filteridle="true"/>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^bytes_written_count:(.*)">
+      <metric source="ds_connection_handlers_ldap_bytes_written_count" target="bytes_written_count" delta="true" filteridle="true"/>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ namespace="prometheus@zookeeper">
+  <table name="zookeeper">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="appid" reftable="k8s_pod_app_names"/>
+  </table>
+  <metricgroups>
+    <metricgroup name="zookeeper">
+      <metric source="packets_received" target="packetsReceived"/>
+      <metric source="watch_count" target="watchCount"/>
+      <metric source="max_latency" target="maxLatency" />
+      <metric source="avg_latency" target="avgLatency" />
+      <metric source="outstanding_requests" target="outstandingRequests" />
+      <metric source="pending_syncs" target="pendingSyncs" />
+      <metric source="znode_count" target="znodeCount" />
+      <metric source="min_latency" target="minLatency"/>
+      <property name="appid" xsi:type="fixedproperty" value="_servicegroup"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

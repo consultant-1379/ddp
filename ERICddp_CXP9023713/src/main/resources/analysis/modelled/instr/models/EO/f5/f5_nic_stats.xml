@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^f5instr@f5nicstats$"
+>
+
+  <table name="eo_f5_nic_stats">
+    <keycol name="nicid" reftable="eo_f5_nic_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>nicid</multi>
+
+    <metricgroup name="^F5nicstats-(\S+)">
+      <metric source="bitsOut" target="kbitsOutPerSec" delta="true" scale="1000" rate="true"/>
+      <metric source="bitsIn" target="kbitsInPerSec" delta="true" scale="1000" rate="true"/>
+      <metric source="dropsAll" target="dropsAll" delta="true"/>
+      <metric source="errorsAll" target="errorsAll" delta="true"/>
+      <property name="nicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

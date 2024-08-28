@@ -1,0 +1,1029 @@
+#!/bin/bash
+
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 date site statsroot"
+    exit 1
+fi
+
+SITE=$2
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+ANALYSIS_TYPE=$4
+if [ "${ANALYSIS_TYPE}" != "FULL" ] ; then
+    echo "INFO: Ignoring ANALYSIS_TYPE=${ANALYSIS_TYPE}"
+    exit 0
+fi
+
+DASH_DATE=${1}
+DATE=`echo ${1} | sed 's/-//g'`
+
+#If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+OSS_PAR="oss"
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+export TMP_DIR
+if [ -z "${INCR_DIR}" ] ; then
+    INCR_DIR=${TMP_DIR}
+fi
+export INCR_DIR
+
+log "Start OSS"
+STATS_ROOT=$3
+ANALYSIS_OUTPUT=${STATS_ROOT}/${SITE}/analysis/${DATE}
+DATADIR=${STATS_ROOT}/${SITE}/data/${DATE}
+
+if [ -r ${DATADIR}/OSS/oss_ver.txt ] ; then
+    OSSVER=`cat ${DATADIR}/OSS/oss_ver.txt`
+else
+    OSSVER="P20"
+    if [ -f ${DATADIR}/P21 ]; then
+        OSSVER="P21"
+    elif [ -f ${DATADIR}/P30 ] ; then
+        OSSVER="R2"
+    elif [ -f ${DATADIR}/R3 ] ; then
+        OSSVER="R3"
+    fi
+    echo $OSSVER > ${DATADIR}/OSS/oss_ver.txt
+fi
+
+
+#
+# Workaround for bug in V64
+#
+if [ -r ${DATADIR}/OSS/sdm/xmlParser.statistics.log ] ; then
+    rm ${DATADIR}/OSS/sdm/xmlParser.statistics.log
+fi
+
+#
+# Handle "old" version where the server/cs stuff wasn't in
+# sub dirs
+#
+if [ ! -d ${DATADIR}/server ]; then
+    mkdir ${DATADIR}/server
+fi
+FILES="last.txt uptime.txt netstat_i.log sar.txt"
+for FILE in $FILES; do
+    if [ -r ${DATADIR}/${FILE} ]; then
+        mv -f ${DATADIR}/${FILE} ${DATADIR}/server
+    fi
+done
+
+
+#
+# Handle old versions where the instr file had many different names
+#
+if [ -f ${DATADIR}/instr_P21.txt ]; then
+    mv ${DATADIR}/instr_P21.txt ${DATADIR}/instr.txt
+elif [ -f ${DATADIR}/instr_P30.txt ]; then
+    mv ${DATADIR}/instr_P30.txt ${DATADIR}/instr.txt
+elif [ -f ${DATADIR}/instr_R3.txt ]; then
+    mv ${DATADIR}/instr_R3.txt ${DATADIR}/instr.txt
+fi
+
+#
+# Include RANOS/OSS version
+#
+OSS_VER="NA"
+if [ -r ${DATADIR}/ranosver.txt ]; then
+    OSS_VER=`cat ${DATADIR}/ranosver.txt | sed 's/RANOS *\([^ ]*\) is installed/\1/'`
+elif [ -r ${DATADIR}/OSS/cp.status ] ; then
+    OSS_VER=`grep CP_STATUS ${DATADIR}/OSS/cp.status | sed 's/^CP_STATUS//g'`
+fi
+if [ -r ${DATADIR}/pkginfo.txt ] ; then
+    UTIL_VER=`grep "VERSION:" ${DATADIR}/pkginfo.txt | awk '{print $2}'`
+elif [ -r ${DATADIR}/version.txt ]; then
+    UTIL_VER=`cat ${DATADIR}/version.txt | grep Version | sed 's/.*Version: \([0-9]*\).*/\1/g'`
+else
+    UTIL_VER="0"
+fi
+OSS_VERSION=`echo ${OSSVER} | sed 's/[A-Za-z_]//g'`
+
+#
+# Find out the network size
+#
+NET_SIZE_OPTIONS=""
+NET_SIZE_FILE="${DATADIR}/OSS/network_size.txt"
+# Use the system.env values - they are more likely correct
+SYS_ENV=${DATADIR}/OSS/system.env
+if [ -r ${SYS_ENV} ] ; then
+    for NETWORK_TYPE in wran gsm core lte tdran ; do
+        UCTYPE=`echo $NETWORK_TYPE | tr '[a-z]' '[A-Z]'`
+        SIZE=`egrep "^${UCTYPE}_NETWORK_SIZE=" ${SYS_ENV} | awk -F= '{print $2}'`
+        if [ ! -z "${SIZE}" ] ; then
+            NET_SIZE_OPTIONS="${NET_SIZE_OPTIONS} -${NETWORK_TYPE} ${SIZE}"
+        fi
+    done
+fi
+
+
+# use the network_size file only as a fallback
+if [ -r ${NET_SIZE_FILE} ] && [ -z "${NET_SIZE_OPTIONS}" ] ; then
+    for NETWORK_TYPE in wran gsm core lte tdran ; do
+        SIZE=`egrep "^${NETWORK_TYPE}_net_size="  ${NET_SIZE_FILE} | awk -F= '{print $2}'`
+        if [ ! -z "${SIZE}" ] ; then
+            NET_SIZE_OPTIONS="${NET_SIZE_OPTIONS} -${NETWORK_TYPE} ${SIZE}"
+        fi
+    done
+fi
+
+if [ ! -z "${OSS_VER}" ] ; then
+    run ${ANALYSIS_BIN}/sql/setOssVer --site ${SITE} --date ${SQL_DATE} --sw "${OSS_VER}" ${NET_SIZE_OPTIONS}
+fi
+
+if [ -r ${DATADIR}/OSS/all.events ] ; then
+    log "Split Events file"
+    mkdir ${TMP_DIR}/events
+    run ${ANALYSIS_BIN}/events/splitEvents --input ${DATADIR}/OSS/all.events --outdir ${TMP_DIR}/events
+fi
+
+if [ -f ${DATADIR}/OSS/lvlog.log ] ; then
+    log " Processing lvlog"
+    if [ ! -d ${DATADIR}/log_plots ] ; then
+        mkdir ${DATADIR}/log_plots
+    fi
+    run ${ANALYSIS_BIN}/OSS/log/parseLvlog -input ${DATADIR}/OSS/lvlog.log -date ${SQL_DATE} -site ${SITE} \
+        --incr ${INCR_DIR}/lvlog_data.incr --plot ${DATADIR}/log_plots/lvlog.txt
+    if [ $? -ne 0 ] ; then
+        log "ERROR: parseLvlog failed"
+    fi
+
+    #
+    # Generate seperate LV log files for each MC (like what we do for the all.events)
+    #
+    mkdir ${TMP_DIR}/lvlog
+    run ${ANALYSIS_BIN}/OSS/log/splitLvLog --input ${DATADIR}/OSS/lvlog.log --outdir ${TMP_DIR}/lvlog
+fi
+
+#
+# NEAD Stats
+#
+if [ -r ${DATADIR}/OSS/nead.log ]; then
+    log "NEAD Analysis"
+    run ${ANALYSIS_BIN}/cms/plotCmsStats ${DATADIR} ${ANALYSIS_OUTPUT} ${DATE} ${SITE} ${SQL_DATE}
+    log "SNAD Analysis"
+    run ${ANALYSIS_BIN}/cms/plotSnad ${DATADIR} ${ANALYSIS_OUTPUT} ${DASH_DATE} ${SITE}
+fi
+
+
+#
+# Process SMA instrumentation - 553/159 41-FCP 103 8147 WI 1.31 [RK 19-07-2011]
+#
+if [ -r ${DATADIR}/OSS/sma.log ]; then
+    log "SMA Analysis"
+    run ${ANALYSIS_BIN}/OSS/sma/parseSmaLog --file ${DATADIR}/OSS/sma.log --site ${SITE}
+fi
+
+#
+# Process IPRAN SEMA Transport - 815/159 41-FCP 103 8147 WI 1.13 [CH 19-07-2012]
+#
+if [ -r ${DATADIR}/OSS/sema_status.log ] ; then
+    log "SEMA Analysis"
+    run ${ANALYSIS_BIN}/OSS/sema/parseSmartedgeMA --file ${DATADIR}/OSS/sema_status.log --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Event Rates / Channel
+#
+if [ -r ${DATADIR}/OSS/all.events ] ; then
+    log "Event Rate Per Channel"
+    run ${ANALYSIS_BIN}/events/plotAllEventRates ${TMP_DIR} ${ANALYSIS_OUTPUT} ${DASH_DATE} "${OSS_VER}"
+fi
+
+#
+# Notification Agent
+#  Need pfiles/lsof to map port number in IOR to process
+#
+SOCK_OPT=""
+if [ -r ${DATADIR}/server/pfiles.txt ] ; then
+    SOCK_OPT="--pfiles ${DATADIR}/server/pfiles.txt"
+elif [ -r ${DATADIR}/server/lsof.txt ] ; then
+    # HP35508 - Only process lsof file if non-header data is contained
+    # Updated to remove invalid command calls ($_MORE, $_EGREP, & $_RM) [14032012 - eronkeo]
+    if [ $(egrep -vi "lsof: WARNING:|^$" ${DATADIR}/server/lsof.txt| wc -l | awk '{print $0}') > 0 ] ; then
+        SOCK_OPT="--lsof ${DATADIR}/server/lsof.txt"
+    fi
+fi
+if [ ! -z "${SOCK_OPT}" ] ; then
+    IPADDRESS=`cat ${DATADIR}/server/hostname | awk '{print $1}'`
+    NA_LIST="int_:int_ ext_:ext_ :int_"
+    for NA in ${NA_LIST} ; do
+        FILE_PREFIX=`echo ${NA} | awk -F: '{print $1}'`
+        DIR_PREFIX=`echo ${NA} | awk -F: '{print $2}'`
+
+        if [ -r ${DATADIR}/OSS/${FILE_PREFIX}nsusers.txt ] ; then
+            log "NotificationAgent ${FILE_PREFIX}"
+            run ${ANALYSIS_BIN}/na/analyseNA \
+            --nsusers ${DATADIR}/OSS/${FILE_PREFIX}nsusers.txt \
+            --jps ${DATADIR}/server/jps.log --ip ${IPADDRESS} \
+            ${SOCK_OPT} \
+            --output ${ANALYSIS_OUTPUT}/${DIR_PREFIX}na.html
+        fi
+    done
+fi
+
+
+#
+#ESXi Server
+#
+if [ -d ${DATADIR}/ESXI ] ; then
+    log "ESXI SERVER"
+    DIR_LIST=$(ls ${DATADIR}/ESXI)
+    log "dirlist is ${DIR_LIST}"
+    for DIR in ${DIR_LIST} ; do
+        run ${ANALYSIS_BIN}/OSS/esxi/createServer -dirlist ${DIR} -site ${SITE} -date ${SQL_DATE}
+    done
+    for DIR in ${DIR_LIST} ; do
+    log "invoking parser"
+        run ${ANALYSIS_BIN}/OSS/esxi/parseESXi -dir ${DATADIR}/ESXI/${DIR} -date ${SQL_DATE} -site ${SITE}
+    done
+fi
+
+#
+# NMA Instrumentation [ecathor - WP00256]
+#
+if [ -d ${DATADIR}/OSS/nma ] ; then
+    log "NMA"
+    if [ ${OSS_VERSION} -ge 142 ] ; then
+        run ${ANALYSIS_BIN}/OSS/nma/processStats ${DATADIR} ${SITE} ${DATE} ${ANALYSIS_OUTPUT}
+    else
+        run ${ANALYSIS_BIN}/nma/parseNMALogs -dir ${DATADIR}/OSS/nma -site ${SITE} -date ${DASH_DATE}
+    fi
+fi
+
+#
+# NotificationService stats
+#
+if [ -r ${DATADIR}/instr.cfg ] ; then
+    NS_LIST=`egrep '^PT,[^,]*,Notification' ${DATADIR}/instr.cfg | awk -F, '{print $2}'`
+elif [ -r ${DATADIR}/instr/instr.cfg ] ; then
+    # next-gen instrumentation
+    NS_LIST=`grep "^prismtech," ${DATADIR}/instr/instr.cfg | awk -F, '{print $3}' | grep "Notification"`
+fi
+
+if [ ! -z "${NS_LIST}" ] ; then
+    if [ ! -d ${ANALYSIS_OUTPUT}/ns ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/ns
+    fi
+    for NS in ${NS_LIST} ; do
+        if [ ! -d ${ANALYSIS_OUTPUT}/ns/${NS} ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/ns/${NS}
+        fi
+        log "NotificationService Instrumentation ${NS}"
+        run ${ANALYSIS_BIN}/na/plotNS ${NS} ${DASH_DATE} ${DATADIR} ${ANALYSIS_OUTPUT}/ns/${NS}
+    done
+fi
+
+#
+# Alarm statistics from OSS/all.events
+#
+if [ -r ${DATADIR}/OSS/all.events ]; then
+    log "Alarm Analysis"
+    run ${ANALYSIS_BIN}/fm/plotAlarmStats ${DATADIR} ${ANALYSIS_OUTPUT} ${DASH_DATE} ${SITE} ${SQL_DATE}
+fi
+
+#
+# FM Instr
+#
+if [ -r ${DATADIR}/fm/instr.txt ] ; then
+    log "FM Instrumentation"
+    run ${ANALYSIS_BIN}/fm/plotFmInstr ${DATADIR} ${ANALYSIS_OUTPUT}/fm ${DASH_DATE}
+fi
+
+#
+# FM [CH 2012-01-03: OSS-RC 12 WP00564: IP 2/159 41-11/FCP 103 8147/2 Uen]
+#
+if [ -r ${DATADIR}/instr/fm.xml ] && [ -r ${DATADIR}/instr.txt ] ; then
+    log "FM Statistics"
+    run ${ANALYSIS_BIN}/fm/parseFmStats --cfg ${DATADIR}/instr/fm.xml --data ${DATADIR}/instr.txt --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# PMS statistics from OSS/all.events
+#
+if [ -r ${DATADIR}/OSS/all.events ]; then
+    HAS_PMS=1
+    if [ "${OSSVER}" != "P20" -a "${OSSVER}" != "P21" ] ; then
+        if [ ! -r ${DATADIR}/OSS/pm_scannerlist.txt ] ; then
+            HAS_PMS=0;
+        fi
+    fi
+
+    if [ ${HAS_PMS} -eq 1 ]; then
+        log "PMS Analysis"
+        PM_SCANNERLIST="NA"
+        if [ -r ${DATADIR}/OSS/pm_scannerlist.txt ]; then
+            PM_SCANNERLIST=${DATADIR}/OSS/pm_scannerlist.txt
+        fi
+
+        PM_PROFILELIST="NA"
+        if [ -r ${DATADIR}/OSS/pm_pmsprofiles.txt ]; then
+            head --lines=1 ${DATADIR}/OSS/pm_pmsprofiles.txt | egrep 'id=' > /dev/null
+            if [ $? -eq 0 ] ; then
+                PM_PROFILELIST=${DATADIR}/OSS/pm_pmsprofiles.txt
+            fi
+        fi
+
+        PMS_PREF_DIR=$(dirname ${STATS_ROOT})
+        PMS_PREF_DIR=${PMS_PREF_DIR}/pms_predef
+        if [ ! -d ${PMS_PREF_DIR} ] ; then
+            mkdir ${PMS_PREF_DIR}
+            mkdir ${PMS_PREF_DIR}/xml
+        fi
+        log "PMS"
+        run ${ANALYSIS_BIN}/pm/plotPmsStats ${DATADIR}/OSS/all.events ${DASH_DATE} ${ANALYSIS_OUTPUT} ${PM_SCANNERLIST} ${PM_PROFILELIST} ${SITE} ${SQL_DATE} ${PMS_PREF_DIR}
+    fi
+fi
+
+#
+# PM Statistics from SDM
+#
+if [ -d ${DATADIR}/OSS/sdmCommon ] ; then
+    log "SDM Operations - LOAD / DELETE"
+    for dir in "LOAD" "DELETE" ; do
+        if [ -d ${DATADIR}/OSS/sdmCommon/${dir} ] ; then
+            run ${ANALYSIS_BIN}/pm/storeSdmOperations -dir ${DATADIR}/OSS/sdmCommon/${dir} -site ${SITE}
+        fi
+    done
+fi
+
+#
+# PM Instrumentation statistics - SMIA, SGw, PDM, PDM_SNMP
+#
+if [ -f ${DATADIR}/single_instr.txt ] && [ -f ${DATADIR}/single_instr.cfg ] ; then
+    log "PM Instrumentation Metrics - SMIA, SGw, PDM, PDM_SNMP"
+    run ${ANALYSIS_BIN}/pm/storePmSingleInstrStats -site ${SITE} -date ${SQL_DATE} -datadir ${DATADIR}
+fi
+
+#
+# Log Analysis
+#
+if [ ${OSS_VERSION} -lt 100 ] ; then
+    log "Log Analysis"
+    LOGS="error system"
+    if [ ! -d ${ANALYSIS_OUTPUT}/logs ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/logs
+    fi
+    if [ ! -d ${DATADIR}/log_plots ] ; then
+        mkdir ${DATADIR}/log_plots
+    fi
+    for LOG in $LOGS; do
+        LF=${DATADIR}/OSS/${LOG}.log
+        if [ -r ${DATADIR}/OSS/${LOG}.log ] ; then
+            log " Processing ${LOG} log"
+            FMT_ARG=""
+            if [ "${OSSVER}" = "P21" -o "${OSSVER}" = "P20" ]; then
+                egrep "^Log has being cleared" ${LF} >> /dev/null
+                if [ $? -eq 0 ]; then
+                    mv ${LF} ${LF}.tmp
+                    run ${ANALYSIS_BIN}/log/repairLog --input ${LF}.tmp --output ${LF}
+                fi
+
+                egrep '^Last' ${LF} >> /dev/null
+                if [ $? -eq 0 ]; then
+                    RESULT=`${ANALYSIS_BIN}/log/checkLog --log ${LF} | egrep "^Totals:"`
+                    READ=`echo ${RESULT} | sed 's/.*Read = \([0-9]*\).*/\1/g'`
+                    MISSING=`echo ${RESULT} | sed 's/.*Missing = \([0-9]*\).*/\1/g'`
+                fi
+
+                FMT_ARG="--logformat cifr1e"
+            else
+                mv ${LF} ${LF}.tmp
+                run ${ANALYSIS_BIN}/log/removeDup  --input ${LF}.tmp --output ${LF}
+                rm ${LF}.tmp
+
+                FMT_ARG="--logformat cifr3"
+            fi
+
+            run ${ANALYSIS_BIN}/log/getLogStats --logname ${LOG} --input ${LF} --outputdir ${ANALYSIS_OUTPUT}/logs ${FMT_ARG} --plotdir ${DATADIR}/log_plots
+            if [ $? -ne 0 ] ; then
+                log "ERROR: getLogStats failed for ${LOG}"
+            fi
+        fi
+    done
+
+    if [ -r ${DATADIR}/OSS/cmd.log ] ; then
+        log " Processing cmd log"
+        run ${ANALYSIS_BIN}/log/parseCmdLog --cmdlog ${DATADIR}/OSS/cmd.log --site ${SITE} --date ${SQL_DATE}
+    fi
+fi
+
+#
+# HP92161: Parse DDP_GENERIC_MEASUREMENT data from the LV log if available, otherwise take from system log
+#
+if [ -r ${DATADIR}/OSS/lvlog.log ] ; then
+    log " Processing DDP_GENERIC_MEASUREMENT data from LV log"
+    INCR_ARG=""
+    OFFSET=0
+    if [ -r ${INCR_DIR}/ddp_generic ] ; then
+        OFFSET=$(cat ${INCR_DIR}/ddp_generic)
+        INCR_ARG="--incremental 1"
+    fi
+    tail --bytes=${OFFSET} ${DATADIR}/OSS/lvlog.log | grep 'DDP_GENERIC_MEASUREMENT' > ${TMP_DIR}/generic_measurements.txt
+    run ${ANALYSIS_BIN}/log/genericMeasurement --logfile ${TMP_DIR}/generic_measurements.txt --logfiletype "lvlog" --site ${SITE} ${INCR_ARG}
+    OFFSET=$(ls -l ${DATADIR}/OSS/lvlog.log | awk '{print $5}')
+    echo ${OFFSET} > ${INCR_DIR}/ddp_generic
+elif [ -r ${DATADIR}/OSS/system.log ] ; then
+    log " Processing DDP_GENERIC_MEASUREMENT data from system log"
+    grep 'DDP_GENERIC_MEASUREMENT' ${DATADIR}/OSS/system.log > ${TMP_DIR}/generic_measurements.txt
+    run ${ANALYSIS_BIN}/log/genericMeasurement --logfile ${TMP_DIR}/generic_measurements.txt --logfiletype "systemlog" --site ${SITE}
+fi
+
+#
+# General server stats for mate in HA-CS
+#
+if [ -r ${DATADIR}/server_mate/hostname ]; then
+    run ${ANALYSIS_BIN}/server/analyseServer -i ${DATADIR}/server_mate -o ${ANALYSIS_OUTPUT}/servers -s ${SITE} -d ${SQL_DATE} -a ${DATADIR}
+fi
+
+if [ -d ${DATADIR}/remotehosts ] ; then
+    run ${ANALYSIS_BIN}/OSS/remotehosts ${DATADIR} ${ANALYSIS_OUTPUT}/servers ${DATE} ${SQL_DATE} ${DASH_DATE} ${SITE}
+fi
+
+#
+# Parse the network configuration information for NetSim Servers
+#
+if [ -d ${DATADIR}/remotehosts ] ; then
+    log "NetSim Network Information"
+    run ${ANALYSIS_BIN}/netsim/parseNetsimNetworkStats --rhdir ${DATADIR}/remotehosts --date ${DATE} --sqldate ${SQL_DATE} --site ${SITE}
+fi
+
+
+#
+# Format sybaseinfo
+#
+log "Sybase"
+if [ -r ${DATADIR}/sybase_dbinfo.txt ]; then
+    NUM_LINES=`wc -l ${DATADIR}/sybase_dbinfo.txt | awk '{print $1 }'`
+    if [ "${NUM_LINES}" -gt 4 ]; then # Min of five lines to have valid date
+        cat ${DATADIR}/sybase_dbinfo.txt | ${ANALYSIS_BIN}/server/parseSybaseInfo > ${ANALYSIS_OUTPUT}/sybase_dbinfo_table.html
+    fi
+elif [ -r ${DATADIR}/sybinfo.txt ]; then
+    cat ${DATADIR}/sybinfo.txt | ${ANALYSIS_BIN}/server/parseSybInfo --date ${SQL_DATE} --site ${SITE} > ${ANALYSIS_OUTPUT}/sybase_sybinfo_table.html
+elif [ -r ${DATADIR}/OSS/sp_helpdb.txt ] ; then
+    cat ${DATADIR}/OSS/sp_helpdb.txt | ${ANALYSIS_BIN}/server/parseHelpDB --date ${SQL_DATE} --site ${SITE}
+fi
+
+if [ -r ${DATADIR}/OSS/symon.log ] ; then
+    if [ ! -d ${ANALYSIS_OUTPUT}/sybase ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/sybase
+    fi
+    run ${ANALYSIS_BIN}/server/plotSymon ${DATADIR}/OSS/symon.log ${ANALYSIS_OUTPUT}/sybase ${SITE} ${DASH_DATE}
+fi
+
+if [ -r ${DATADIR}/OSS/sybase_mda.log ] ; then
+    run ${ANALYSIS_BIN}/server/parseSybaseMda --input ${DATADIR}/OSS/sybase_mda.log --site ${SITE} --date ${SQL_DATE}
+fi
+if [ -r ${DATADIR}/OSS/sp_whocount.log ] ; then
+    run ${ANALYSIS_BIN}/server/parseSpWhoCount --input ${DATADIR}/OSS/sp_whocount.log --site ${SITE}
+fi
+
+
+#
+# Process ops.xml file -  WI:3 23/15941-FCP 1038147 Rev B
+#
+
+if [ -r ${DATADIR}/OSS/ops.xml ]; then
+    log "OPS Stats File"
+    SIZE=`grep -c scriptName ${DATADIR}/OSS/ops.xml`
+    if [ $SIZE -gt 0 ]; then
+        run ${ANALYSIS_BIN}/ops/parseOps --file ${DATADIR}/OSS/ops.xml --date ${SQL_DATE} --site ${SITE}
+    fi
+elif [ -d ${DATADIR}/OSS/ops ]; then
+    log "OPS Stats Dir"
+    if [ -f "${DATADIR}/OSS/ops/opsInstrumentationLog0.xml" ]; then
+        OPS_COUNT=`grep -c "</ops:log>" ${DATADIR}/OSS/ops/opsInstrumentationLog0.xml`
+        if [ ${OPS_COUNT} -eq 0 ]; then
+            /bin/echo "</ops:log>" >> ${DATADIR}/OSS/ops/opsInstrumentationLog0.xml
+        fi
+    fi
+    # remove ampersands - the parser can't handle them
+    for file in $(find ${DATADIR}/OSS/ops -name "opsInstrumentationLog*.xml") ; do
+        sed 's/&/_AMPERSAND_/g' ${file} > ${file}.new
+        mv ${file}.new ${file}
+    done
+    run ${ANALYSIS_BIN}/ops/parseOps --dir ${DATADIR}/OSS/ops --date ${SQL_DATE} --site ${SITE}
+fi
+
+#
+# Process CHA instrumentation 199/15941-FCP 1038147 Rev C WI 1.6
+#
+if [ -r ${DATADIR}/OSS/cha_cfh.txt -o -r ${DATADIR}/OSS/cha_scf.txt ]; then
+    log "CHA Stats"
+    run ${ANALYSIS_BIN}/cha/parseCha --cmd ${DATADIR}/OSS/cha_cfh.txt --scf ${DATADIR}/OSS/cha_scf.txt --date ${SQL_DATE} --site ${SITE}
+fi
+
+#
+# Process EAM Instrumentation IP 199/15941-FCP 1038147 Rev C WI:1.3
+#
+if [ -r ${DATADIR}/OSS/eam/cmd.log -a -r ${DATADIR}/OSS/eam/cap.txt -a -r ${DATADIR}/OSS/eam/eam_config.txt ]; then
+    log "EAM Stats"
+    # If we have the eam_connected_nes.txt then don't process the cmd.log file as it dup's what in the eam_connected_nes.txt
+    if [ -r ${DATADIR}/OSS/eam/eam_connected_nes.txt ] ; then
+        run ${ANALYSIS_BIN}/eam/parseEAMLogs --config ${DATADIR}/OSS/eam/eam_config.txt --map ${DATADIR}/OSS/eam/cap.txt -error ${DATADIR}/error.log --output ${ANALYSIS_OUTPUT} --site ${SITE} --date ${SQL_DATE}
+    else
+        run ${ANALYSIS_BIN}/eam/parseEAMLogs --config ${DATADIR}/OSS/eam/eam_config.txt --cmd ${DATADIR}/OSS/eam/cmd.log --map ${DATADIR}/OSS/eam/cap.txt -error ${DATADIR}/error.log --output ${ANALYSIS_OUTPUT} --site ${SITE} --date ${SQL_DATE}
+    fi
+fi
+
+#
+# Process EAM eai_esi_map data (AXE NEs) WP00349/CR 149/109 18-FCP 103 8147/11 [BG 2011-01-21]
+#
+if [[ -e ${DATADIR}/OSS/eam/eai_esi_map.txt && -r ${DATADIR}/OSS/eam/eai_esi_map.txt ]] ; then
+    log "EAM eai_esi_map data (AXE NEs)"
+    run ${ANALYSIS_BIN}/eam/parseEAMEaiEsiMap --file ${DATADIR}/OSS/eam/eai_esi_map.txt --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Process EAM connected NEs data WP00349/CR 149/109 18-FCP 103 8147/11 [BG 2011-01-21]
+#
+if [[ -e ${DATADIR}/OSS/eam/eam_connected_nes.txt && -r ${DATADIR}/OSS/eam/eam_connected_nes.txt ]] ; then
+    log "EAM connected NEs data"
+    run ${ANALYSIS_BIN}/eam/parseEAMConnectedNEs --file ${DATADIR}/OSS/eam/eam_connected_nes.txt --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Process EAM Alarm Processing Time WP00367/CR: 11/109 18-FCP 103 8147/13 [BG 2011-10-26]
+#
+if [[ -e ${DATADIR}/OSS/eam/nms_eam_ehip/ehip_alarm_times_instr.log && -r ${DATADIR}/OSS/eam/nms_eam_ehip/ehip_alarm_times_instr.log ]] || [[ -e ${DATADIR}/OSS/eam/nms_eam_ehms/ehms_alarm_times_instr.log && -r ${DATADIR}/OSS/eam/nms_eam_ehms/ehms_alarm_times_instr.log ]] || [[ -e ${DATADIR}/OSS/eam/nms_eam_ehm/ehm_alarm_times_instr.log && -r ${DATADIR}/OSS/eam/nms_eam_ehm/ehm_alarm_times_instr.log ]]; then
+    log "EAM Alarm Processing Time"
+    run ${ANALYSIS_BIN}/eam/parseEAMAlarms --data ${DATADIR}/OSS/eam --datasets "EHIP,EHMS,EHM" --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Process EAM Settings for Special Commands  CR 175/109 18-FCP 103 8147/11: IA 175 [BG 2010-11-11]
+#
+if [[ -e ${DATADIR}/OSS/eam/nms_eam_ehip/EHIP_command && -r ${DATADIR}/OSS/eam/nms_eam_ehip/EHIP_command ]] || [[ -e ${DATADIR}/OSS/eam/nms_eam_eht/EHT_command && -r ${DATADIR}/OSS/eam/nms_eam_eht/EHT_command ]] || [[ -e ${DATADIR}/OSS/eam/nms_eam_ehm/EHM_command && -r ${DATADIR}/OSS/eam/nms_eam_ehm/EHM_command ]] || [[ -e ${DATADIR}/OSS/eam/nms_eam_ehap/EHAP_command && -r ${DATADIR}/OSS/eam/nms_eam_ehap/EHAP_command ]]; then
+    log "EAM Settings for Special Commands"
+    run ${ANALYSIS_BIN}/eam/parseEAMSpCmdSettings --data ${DATADIR}/OSS/eam --datasets "EHIP,EHT,EHM,EHAP" --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Process EAM Spontaneous Reports CR 175/109 18-FCP 103 8147/11: IA 175 [BG 2010-11-16]
+#
+if [[ -e ${DATADIR}/OSS/eam/ehip_ac_spr_instr.log && -r ${DATADIR}/OSS/eam/ehip_ac_spr_instr.log ]] ; then
+    log "EAM Spontaneous Reports"
+    run ${ANALYSIS_BIN}/eam/parseEAMSpontaneousReports --data ${DATADIR}/OSS/eam --datasets "EHIP" --site ${SITE} --date ${DASH_DATE}
+fi
+
+# Applying fix for HJ12829
+# Process stats based on jps output
+#
+if [ -r ${DATADIR}/server_mate/jps.log ]; then
+    log "Server Mate"
+    if [ ! -d ${ANALYSIS_OUTPUT}/server_mate ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/server_mate
+    fi
+    MATENAME=`cat ${DATADIR}/server_mate/hostname | awk '{print $2}'`
+    if [ ! -d ${ANALYSIS_OUTPUT}/server_mate/process ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/server_mate/process
+    fi
+    run ${ANALYSIS_BIN}/server/plotJps -j ${DATADIR}/server_mate/jps.log -o ${ANALYSIS_OUTPUT}/server_mate/process -s ${SITE} -d ${SQL_DATE} -v ${MATENAME}
+
+fi
+
+#
+# RSD
+#
+if [ -r ${DATADIR}/rsdloaded.txt ]; then
+    log "RSD Analysis"
+    run ${ANALYSIS_BIN}/pm/plotRsd ${DATADIR} ${ANALYSIS_OUTPUT}
+fi
+
+#
+# SDM
+#
+if [ -r ${DATADIR}/sdmperf.log ] ; then
+    if [ -d ${DATADIR}/OSS/sdm ] ; then
+        mkdir ${DATADIR}/OSS/sdm
+    fi
+    mv ${DATADIR}/sdmperf.log ${DATADIR}/OSS/sdm/perf.log
+    if [ -r ${DATADIR}/sdmstatus.log ] ; then
+        mv ${DATADIR}/sdmstatus.log ${DATADIR}/OSS/sdm/loading.log
+    fi
+fi
+if [ -d ${DATADIR}/OSS/sdm ] ; then
+    log "SDM Analysis"
+    run ${ANALYSIS_BIN}/pm/plotSdm ${DATADIR}/OSS/sdm "${SQL_DATE}" ${ANALYSIS_OUTPUT} ${SITE}
+fi
+
+if [ -d ${DATADIR}/OSS/sdmg ] ; then
+    log "SDM-GRAN Analysis"
+    run ${ANALYSIS_BIN}/pm/plotSdmG ${DATADIR}/OSS/sdmg "${SQL_DATE}" ${ANALYSIS_OUTPUT} ${SITE}
+fi
+
+#
+# BCG
+#
+if [ -d ${DATADIR}/OSS/bcg/import ] || [ -d ${DATADIR}/OSS/bcg/export ]; then
+    log "Bulk Configuration General (BCG) Analysis"
+    run ${ANALYSIS_BIN}/bulkcm/parseBCGInstrument -data ${DATADIR}/OSS/bcg -site ${SITE} -date ${DASH_DATE}
+fi
+
+#
+# Export
+#
+if [ -r ${DATADIR}/OSS/exportperf.txt ]; then
+    log "Export Analysis"
+    run ${ANALYSIS_BIN}/export/analyseExport ${DATADIR} ${ANALYSIS_OUTPUT} ${DASH_DATE} ${SITE}
+fi
+
+
+#
+# Planned Area - Imports & Activations
+#
+#if [[ ${OSS_VERSION} -ge 122 ]] ; then
+if [[ ${OSS_VERSION} -ge 942 ]] ; then
+    log "Planned Area - From O12.2"
+    run ${ANALYSIS_BIN}/bulkcm/O12_2/parseAndStoreActivations --date ${SQL_DATE} --site ${SITE} --outdir ${DATADIR}/OSS
+    run ${ANALYSIS_BIN}/bulkcm/O12_2/parseAndStoreImports --date ${SQL_DATE} --site ${SITE} --outdir ${DATADIR}/OSS
+else
+    IMPORT_ARG=""
+    if [ -r ${DATADIR}/OSS/importperf.txt ] ; then
+        IMPORT_ARG="--impres ${DATADIR}/OSS/importperf.txt"
+    fi
+    if [ ! -d ${ANALYSIS_OUTPUT}/bulkcm ] ; then
+       mkdir ${ANALYSIS_OUTPUT}/bulkcm
+    fi
+    run ${ANALYSIS_BIN}/bulkcm/plannedArea ${IMPORT_ARG} \
+        --lvlogdir ${TMP_DIR}/lvlog --site ${SITE} \
+        --tabledir ${ANALYSIS_OUTPUT}/bulkcm  --actplot ${ANALYSIS_OUTPUT}/bulkcm/actplot.txt
+fi
+
+#
+#
+# CS analysis
+#
+if [ -d ${DATADIR}/OSS/cs  ]; then
+    log "CS Analysis"
+    if [ ${OSSVER} = "P21" ] ; then
+        run ${ANALYSIS_BIN}/cs/r1/analyzeCsLogs ${DASH_DATE} ${DATADIR}/OSS/cs ${ANALYSIS_OUTPUT}
+    else
+        run ${ANALYSIS_BIN}/cs/r3/analyzeCs ${DATADIR}/OSS/cs ${ANALYSIS_OUTPUT} ${DASH_DATE} ${SITE} ${SQL_DATE}
+        CS_LIB_FILES=$(find ${DATADIR}/instr -name "cslib_*")
+        if [ ! -z "${CS_LIB_FILES}" ] ; then
+            run ${ANALYSIS_BIN}/cs/o11/analyseCsLib -data ${DATADIR}/instr.txt -dir ${DATADIR}/instr -site ${SITE}
+        else
+            run ${ANALYSIS_BIN}/cs/r5/analyseCsLib ${DATADIR}/OSS/cs ${ANALYSIS_OUTPUT} ${DASH_DATE} ${SITE} ${SQL_DATE}
+        fi
+        # HQ48556: Store MO Counts by name for reporting. [BG 2013-01-18]
+    # Doesn't work when there is parallel analysis running
+        #run ${ANALYSIS_BIN}/cs/storeMoCounts --site ${SITE} --date ${DASH_DATE}
+
+        run ${ANALYSIS_BIN}/cs/eventAnalysis --site ${SITE} --date ${SQL_DATE} --events ${TMP_DIR}/events/0c1A --incr ${INCR_DIR}/cs.eventAnalysis
+    fi
+fi
+
+#
+# COSM [BG 2011-05-03: OSS-RC 12 WP00004: IP 362/159 41-FCP 103 8147]
+#
+if [ -d ${DATADIR}/instr ] && [ -r ${DATADIR}/instr.txt ] ; then
+    log "COSM Analysis"
+    run ${ANALYSIS_BIN}/cosm/parseCOSM --cfg ${DATADIR}/instr/cosm.xml --data ${DATADIR}/instr.txt --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# TSS [OSS-RC 12 WP00243: 186/1594-FCP 103 8147 (IS) & 495/159 41-FCP 103 8147 (IP)]
+#
+if [ -d ${DATADIR}/instr ] && [ -r ${DATADIR}/instr/TSSAuthorityMC.xml ] && [ -r ${DATADIR}/instr.txt ] ; then
+    log "TSS Logging"
+    run ${ANALYSIS_BIN}/tss/parseTSS --cfg ${DATADIR}/instr/TSSAuthorityMC.xml --data ${DATADIR}/instr.txt --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Java Eclipse Agent [OSS-RC 12 WP00003: 479/159 41-FCP 103 8147]
+#
+if [ -r ${DATADIR}/agentserver.txt ] ; then
+    log "Java Eclipse Agent"
+    run ${ANALYSIS_BIN}/agent/parseEclipseAgent --file ${DATADIR}/agentserver.txt --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# PCI [OSS-RC 12 WP00117: IP: 651/15941-FCP1038147]
+#
+# PCI JMX Instrumentation
+if [ -r ${DATADIR}/instr/pci.xml ] && [ -r ${DATADIR}/instr.txt ] ; then
+    log "PCI JMX Instrumentation"
+    run ${ANALYSIS_BIN}/OSS/pci/parsePCIJMXData --data ${DATADIR}/instr.txt --dataset PCI-MethodCount --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Open LDAP Monitor Information
+#
+if [ -r ${DATADIR}/OSS/OpenLDAPMonitor.log ] ; then
+    log "Open LDAP Monitor Information"
+    run ${ANALYSIS_BIN}/openldap/parseOpenLDAPMonitorInfo --monfile ${DATADIR}/OSS/OpenLDAPMonitor.log --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# Open DJ LDAP Monitor Information
+#
+if [ -r ${DATADIR}/OSS/OpenDJLDAPMonitor.log ] ; then
+    log "Open DJ LDAP Monitor Information"
+    run ${ANALYSIS_BIN}/openldap/parseOpenDJLDAPMonitorInfo --monfile ${DATADIR}/OSS/OpenDJLDAPMonitor.log --accfile ${DATADIR}/OSS/OpenDJLDAPaccess.log --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# AMOS
+#
+# Sessions
+if [ -d ${DATADIR}/OSS/amos ] ; then
+    log "AMOS Sessions"
+    run ${ANALYSIS_BIN}/amos/parseSessions --directory ${DATADIR}/OSS/amos --site ${SITE} --date ${DASH_DATE}
+fi
+# Commands: Parse from the LV log if available, otherwise take from command log [HP40698 BG 2012-07-26]
+if [ -r ${DATADIR}/OSS/lvlog.log ] ; then
+    if [ -r ${TMP_DIR}/lvlog/AMOS ] ; then
+        log " Processing AMOS commands from LV log"
+        run ${ANALYSIS_BIN}/amos/parseCommands --site ${SITE} --logfile ${TMP_DIR}/lvlog/AMOS --logfiletype lvlog --date ${DASH_DATE}
+    fi
+elif [ -r ${DATADIR}/OSS/cmd.log ] ; then
+    log " Processing AMOS commands from cmd log"
+    grep 'AMOS' ${DATADIR}/OSS/cmd.log > ${TMP_DIR}/amos_commands.txt
+    run ${ANALYSIS_BIN}/amos/parseCommands --site ${SITE} --logfile ${TMP_DIR}/amos_commands.txt --logfiletype cmdlog --date ${DASH_DATE}
+fi
+
+#
+# Managed Component Restarts
+#
+log "MC Restarts"
+run ${ANALYSIS_BIN}/server/plotMcRestarts ${DATADIR} ${ANALYSIS_OUTPUT} ${DASH_DATE} ${SITE}
+PROCESS_RESTARTS=0
+if [ -r ${ANALYSIS_OUTPUT}/restartTable.html ] ; then
+    PROCESS_RESTARTS=`wc -l ${ANALYSIS_OUTPUT}/restartTable.html | awk '{print $1}'`
+fi
+
+if [ -r ${TMP_DIR}/lvlog/SelfManagementStartStop ] &&
+    [ -r ${DATADIR}/OSS/smtool_start.txt ] &&
+    [ -r ${DATADIR}/OSS/smtool_stop.txt ] ; then
+    egrep 'Reason: SYSTEM_' ${TMP_DIR}/lvlog/SelfManagementStartStop > /dev/null
+    if [ $? -eq 0 ] ; then
+        log "System Restarts"
+        run ${ANALYSIS_BIN}/server/parseSystemRestart --log ${TMP_DIR}/lvlog/SelfManagementStartStop \
+        --start ${DATADIR}/OSS/smtool_start.txt \
+        --stop ${DATADIR}/OSS/smtool_stop.txt \
+        --site ${SITE} --date ${SQL_DATE}
+    fi
+fi
+
+
+#
+# ONRM Nodes
+#
+if [ -r ${DATADIR}/OSS/onrm_me.txt ] ; then
+    # Need to have managedElementType to be of any use
+    head ${DATADIR}/OSS/onrm_me.txt | grep managedElementType >> /dev/null
+    if [ $? -eq 0 ] ; then
+        log "ONRM ManagedElements"
+        run ${ANALYSIS_BIN}/ne/parseMe --input ${DATADIR}/OSS/onrm_me.txt --site ${SITE} --date ${SQL_DATE}
+    fi
+fi
+
+# OSS-RC 11 WP00557 (CR: 451/109 18-FCP 103 8147/11) [BG 2011-02-16]
+# Load up the node list data
+if [ -r ${DATADIR}/OSS/nodelist.txt ] ; then
+    # We only load this to get the GRAN IO Types at this time (OSS-RC 11.2.11 or after), so only load if this exists
+    head -1 ${DATADIR}/OSS/nodelist.txt | grep 'ioType' >> /dev/null
+    if [ $? -eq 0 ] ; then
+        log "ONRM Node List"
+        run ${ANALYSIS_BIN}/ne/parseNodeList --file ${DATADIR}/OSS/nodelist.txt --site ${SITE} --date ${DASH_DATE}
+    fi
+fi
+
+
+if [ "${OSSVER}" = "P21" -o "${OSSVER}" = "P20" ]; then
+    #
+    # Extract Upgrade Events
+    #
+    log " SWH"
+    run ${ANALYSIS_BIN}/swh/extractUpgradeEvents ${DATADIR}/OSS/event.log ${ANALYSIS_OUTPUT}/upgrade.txt
+
+elif [ "${OSSVER}" = "R2" ] ; then
+    if [ -r ${TMP_DIR}/events/SWH ] ; then
+        NUM_LINES=`wc -l ${TMP_DIR}/events/SWH | awk '{print $1}'`
+        if [ $NUM_LINES -gt 4 ] ; then
+            run ${ANALYSIS_BIN}/swh/parseSwhEvents --events ${TMP_DIR}/events/SWH --site ${SITE} --date ${SQL_DATE}
+        fi
+    fi
+else
+
+    #cat ${DATADIR}/OSS/all.events | ${ANALYSIS_BIN}/events/filterEvents -p '\s+SMO' > ${TMP_DIR}/smo.txt
+    if [ -r ${TMP_DIR}/events/SMO ] ; then
+        log " SMO"
+        NUM_LINES=`wc -l ${TMP_DIR}/events/SMO | awk '{print $1}'`
+        if [ $NUM_LINES -gt 4 ] ; then
+            # Check for R4 problem with logUpdated
+            grep logUpdated ${TMP_DIR}/events/SMO > /dev/null
+            if [ $? -eq 0 ] ; then
+                JOB_STATE=""
+                if [ -r ${DATADIR}/OSS/smo_jobs.txt ] ; then
+                    grep workFlow ${DATADIR}/OSS/smo_jobs.txt > /dev/null
+                    if [ $? -eq 0 ]; then
+                        JOB_STATE="--jobs ${DATADIR}/OSS/smo_jobs.txt"
+                    fi
+                fi
+                run ${ANALYSIS_BIN}/swh/parseSmoEvents --events ${TMP_DIR}/events/SMO --site ${SITE} --date ${SQL_DATE} --storejobs ${JOB_STATE}
+            fi
+        fi
+    fi
+fi
+
+#
+# ARNE Imports
+#
+if [ -r ${DATADIR}/OSS/arne_imports.txt ] ; then
+    log " ARNE Imports"
+    run ${ANALYSIS_BIN}/arne/plotImports ${DATADIR} ${ANALYSIS_OUTPUT} ${SITE} ${SQL_DATE}
+fi
+
+
+#
+# CEX Usability
+#
+if [ -f ${DATADIR}/OSS/usage_statistics.csv ] ; then
+    log " CEX Usability"
+    run ${ANALYSIS_BIN}/OSS/cex/parseCEXStats -file ${DATADIR}/OSS/usage_statistics.csv -site ${SITE} -date ${SQL_DATE}
+fi
+
+#
+# HA Logfile
+#
+if [ -f ${DATADIR}/OSS/halog ] ; then
+    log " HA Log"
+    run ${ANALYSIS_BIN}/ha/halog.pl -logfile ${DATADIR}/OSS/halog -site ${SITE} -date ${DATE}
+fi
+
+#
+# EBA Statistics
+#
+log " EBA Statistics"
+for dir in "eba_rpmo" "eba_ebsw" "eba_ebss" ; do
+    if [ -d ${DATADIR}/OSS/eba/${dir} ] ; then
+        log "analysing ${DATADIR}/OSS/eba/${dir}"
+        mkdir -p ${TMP_DIR}/eba/${dir} && log "made dir ${TMP_DIR}/eba/${dir} "
+        for file in `find ${DATADIR}/OSS/eba/${dir} -type f -name "*.xml"` ; do
+            # Dirty workaround for typo in XML file output
+            grep -v DOCTYPE ${file} >  ${TMP_DIR}/eba/${dir}/`basename ${file}`
+        done
+        run ${ANALYSIS_BIN}/eba/parseXml -xmldir ${TMP_DIR}/eba/${dir} -site ${SITE} -date ${SQL_DATE}
+    fi
+done
+rm -rf ${TMP_DIR}/eba
+
+#
+# RPMO log
+#
+if [ -f "${DATADIR}/OSS/rpmo/RpmoAgent.log" ] ; then
+    run ${ANALYSIS_BIN}/eba/parseRpmoLog --file ${DATADIR}/OSS/rpmo/RpmoAgent.log --site ${SITE}
+fi
+
+#
+# GRAN CM Activity logs
+#
+log " GRAN CM Activities"
+for file in cna_usage_log.txt bsm_usage_log.txt ; do
+    if [ -s ${DATADIR}/OSS/granCm/${file} ] ; then
+        run ${ANALYSIS_BIN}/gran_cm/parseLog --logfile ${DATADIR}/OSS/granCm/${file} --site ${SITE}
+    fi
+done
+
+#
+# Sybase monitoring log file
+#
+# EEICMUY: sp doesn't produce that in the format descripted in the IWD so disable this
+#log " Sybase Monitoring"
+#if [ -f ${DATADIR}/OSS/syb_repcollect.txt ] ; then
+#    run ${ANALYSIS_BIN}/sybase/parseSybaseReports --report ${DATADIR}/OSS/syb_repcollect.txt --site ${SITE}
+#fi
+
+
+#
+# Job Manager dbaudit log parsing
+#
+log "Job Manager Statistics"
+if [ -f ${DATADIR}/OSS/dbaudit.txt ]; then
+    run ${ANALYSIS_BIN}/jm/parseJM -log ${DATADIR}/OSS/dbaudit.txt -site ${SITE} -date ${SQL_DATE}
+fi
+
+#
+# CEX instr analysis
+#
+if [ -r ${DATADIR}/instr/active_mq.xml ] ; then
+    AMQ_XML=${DATADIR}/instr/active_mq.xml
+else
+    AMQ_XML=${DATADIR}/instr/3pps.xml
+fi
+
+if [ -d ${DATADIR}/instr ] && [ -r ${DATADIR}/instr.txt ] ; then
+    log "Common Explorer Analysis"
+    run ${ANALYSIS_BIN}/OSS/cex/parseCEX --cfg "${DATADIR}/instr/oss.xml,${AMQ_XML}" \
+    -datasets CEx-tasks,CEx-NSD-pm,CEx-NSD-fm,ActiveMQ-cexbroker \
+    --data ${DATADIR}/instr.txt --site ${SITE} --date ${DASH_DATE}
+elif [ -r ${DATADIR}/instr.cfg ]; then
+    grep ActiveMQ-cexbroker ${DATADIR}/instr.cfg > /dev/null
+    if [ $? -eq 0 ] ; then
+        log "CEX - 10.3 and earlier"
+        run ${ANALYSIS_BIN}/OSS/cex/plotCEX ${DATADIR} ${DASH_DATE} ${ANALYSIS_OUTPUT}
+    fi
+fi
+
+#
+# CEX Queue and Topic stats
+#
+if [ -d ${DATADIR}/instr ] && [ -r ${DATADIR}/instr.txt ] ; then
+    # OSS-RC 12 WP00370 - CR: 91/109 18-FCP 103 8147/13 [RK 17-08-2011]
+    grep "ActiveMQ-" ${DATADIR}/instr.txt | egrep -vi "ActiveMQ-.*mem|ActiveMQ-.*thr|ActiveMQ-cexbroker|ActiveMQ-.*ossloggingbroker" > ${TMP_DIR}/ActiveMQ-CIF.instr.txt
+    if [ $? -eq 0 ] ; then
+        log "CEX - CIF Queues and Topics"
+
+        run ${ANALYSIS_BIN}/OSS/activemq/storeQueueStats --cfg "${AMQ_XML}" --data ${TMP_DIR}/ActiveMQ-CIF.instr.txt --site ${SITE}
+    fi
+fi
+
+#
+# ActiveMQ_OSS_LoggingBroker Queue and Topic stats
+#
+AMQ_OSSLOGGINGBROKER_XML=${DATADIR}/instr/activemq_oss_loggingbroker.xml
+if [ -d ${DATADIR}/instr ] && [ -r ${DATADIR}/instr.txt ] ; then
+    grep "ActiveMQ_OSS_LoggingBroker" ${DATADIR}/instr.txt > ${TMP_DIR}/ActiveMQ_OSS_LogggingBroker.instr.txt
+    if [ $? -eq 0 ] ; then
+        log "ActiveMQ_OSS_LoggingBroker - Queues and Topics"
+
+        run ${ANALYSIS_BIN}/OSS/activemq/storeLoggingBrokerStats --cfg "${AMQ_OSSLOGGINGBROKER_XML}" --data ${TMP_DIR}/ActiveMQ_OSS_LogggingBroker.instr.txt --site ${SITE}
+    fi
+fi
+rm -rf ${TMP_DIR}/ActiveMQ_OSS_LogggingBroker.instr.txt
+
+#
+# CNA BSC counts
+#
+CNA_ARGS=""
+if [ -r ${DATADIR}/OSS/cnaCellCount.txt ] ; then
+    CNA_ARGS="${CNA_ARGS} -cells ${DATADIR}/OSS/cnaCellCount.txt"
+fi
+if [ -r ${DATADIR}/OSS/cnaBscCount.txt ] ; then
+    CNA_ARGS="${CNA_ARGS} -bscs ${DATADIR}/OSS/cnaBscCount.txt"
+fi
+if [ ! -z "${CNA_ARGS}" ] ; then
+    log " CNA BSC Cell counts"
+    run ${ANALYSIS_BIN}/OSS/cna/parseCnaCellCounts -date ${SQL_DATE} -site ${SITE} ${CNA_ARGS}
+fi
+
+#
+# GPI metrics - currently I have no way of determining whether we need to be processing them or not. Since 11.2
+#
+log "GPI Metrics"
+run ${ANALYSIS_BIN}/OSS/gpi/parseGpiMetrics -date ${SQL_DATE} -site ${SITE} -system ${DATADIR}/OSS/system.log
+
+#
+# VDB stats - OSSRC 12 WP00584: Versant Instrumentation [19-10-2011 RK]
+#
+if [ -d ${DATADIR}/instr ] && [ -r ${DATADIR}/instr.txt ] ; then
+    grep "VDB_" ${DATADIR}/instr.txt | sed 's/VDB_//' > ${TMP_DIR}/versant_instr.txt
+    if [ $? -eq 0 ] ; then
+        log "VDB - Statistics"
+        VDB_XML_LIST=`ls ${DATADIR}/instr | egrep -i versant`
+        for XML_FILE in ${VDB_XML_LIST} ; do
+            mkdir -p ${TMP_DIR}/versant
+            cp -p ${DATADIR}/instr/${XML_FILE} ${TMP_DIR}/versant/${XML_FILE}
+        done
+
+        run ${ANALYSIS_BIN}/OSS/versant/parseVersant --cfg "${TMP_DIR}/versant" --data "${TMP_DIR}/versant_instr.txt" --site ${SITE}
+    fi
+    rm -rf ${TMP_DIR}/versant
+fi
+
+#
+# RTTFI stats - OSS-RC 13 - WP00128: RTTFI Instrumentation [27-08-2012 RK]
+#
+log "RTTFI Metrics"
+RTTFI_LOG=${DATADIR}/OSS/common_nsd_server.log
+log "RTTFI_LOG: \"${RTTFI_LOG}\""
+if [ -r ${RTTFI_LOG} ] ; then
+    run ${ANALYSIS_BIN}/OSS/rttfi/parseRttfiLog --file ${RTTFI_LOG} --site ${SITE} --date ${SQL_DATE}
+fi
+
+
+#
+# RRPM Intrumentation - OSS-RC 12 - WP00856: WRAN: Re-parenting solution (RRPM) [28-09-2012 RK]
+#
+log "RRPM Metrics"
+RRPM_DIR=${DATADIR}/OSS/rrpm
+if [ -d ${RRPM_DIR} ] ; then
+    log "RRPM_DIR: \"${RRPM_DIR}\""
+    run ${ANALYSIS_BIN}/OSS/rrpm/parseRrpm --dir ${RRPM_DIR} --site ${SITE} --date ${SQL_DATE}
+else
+    log "RRPM_DIR: \"${RRPM_DIR}\" not available, thus skipping processing the RRPM Metrics"
+fi
+
+log "End OSS"

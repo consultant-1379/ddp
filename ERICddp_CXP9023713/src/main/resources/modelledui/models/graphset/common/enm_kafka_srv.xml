@@ -1,0 +1,39 @@
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_kafka_srv">
+      <reference table="sites" condition="enm_kafka_srv.siteid = sites.id"/>
+      <reference table="servers" condition="enm_kafka_srv.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverids"/>
+    <where>sites.name = '%s' AND enm_kafka_srv.serverid IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="messagesIn" type="sb" ylabel=" " forcelegend="true">
+      <title value="Messages In"/>
+      <column db="messagesIn" label="Messages In"/>
+    </graph>
+    <graph name="requestHandlerAvgIdlePercent" type="tsc" ylabel="%" forcelegend="true">
+      <title value="Request Handler AvgIdle (%)"/>
+      <column db="requestHandlerAvgIdlePercent" label="Request Handler AvgIdle (%)"/>
+    </graph>
+    <graph name="networkProcessorAvgIdlePercent" type="tsc" ylabel="%" forcelegend="true">
+      <title value="Network Processor AvgIdle (%)"/>
+      <column db="networkProcessorAvgIdlePercent" label="Network Processor AvgIdle (%)"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="msg">
+      <member>messagesIn</member>
+    </group>
+    <group name="requestHandlerAvgIdlePercent">
+      <member>requestHandlerAvgIdlePercent</member>
+    </group>
+    <group name="networkProcessorAvgIdlePercent">
+      <member>networkProcessorAvgIdlePercent</member>
+    </group>
+  </groups>
+</modelledgraphset>
+

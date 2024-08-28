@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@postgres_checkpoints_bufferwrites">
+
+  <table name="postgres_checkpoints_bufferwrites">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="pg_stat_bgwriter">
+      <metric source="pg_stat_bgwriter_checkpoints_timed" target="checkpointsTimed" delta="true" filteridle="true"/>
+      <metric source="pg_stat_bgwriter_checkpoints_req" target="checkpointsRequest" delta="true" filteridle="true"/>
+      <metric source="pg_stat_bgwriter_buffers_checkpoint" target="checkpointsBuffer" delta="true" filteridle="true"/>
+      <metric source="pg_stat_bgwriter_buffers_clean" target="bufferClean" delta="true" filteridle="true"/>
+      <metric source="pg_stat_bgwriter_buffers_backend" target="bufferBackend" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,118 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+
+my $DEBUG = 0;
+
+my $terse = 0;
+my $result = GetOptions(
+			"terse"   => \$terse,
+			"debug=s" => \$DEBUG
+			);
+
+my %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+my ($date,$tableName,$indexName);
+
+my %stats = ();
+
+while ( my $line = getLine() )
+{
+                 # Thu   Jan     12       18:00:00 GMT 2006
+    if ( $line =~/^\S+\s+(\S+)\s+(\d+)\s+(\S+)\s+\S+\s+(\d+)/ )
+    {
+	$date = sprintf "%04d-%02d-%02d:%s", $4, $monthMap{$1}, $2, $3;
+	if ( $DEBUG > 5 ) { print "Found date $date\n"; }
+    }
+    elsif ( $line =~ /^Statistics for table:\s+\"([^\"]+)\"/ )
+    {
+	$tableName = $1;
+	$indexName = "";
+	if ( $DEBUG > 5 ) { print "Found table $tableName\n"; }
+    }
+    elsif ( $line =~ /^Statistics for index:\s+\"([^\"]+)\"/ )
+    {
+	$indexName = $1;
+	if ( $DEBUG > 5 ) { print "Found index $indexName\n"; }
+
+	getLine();
+	my ($leaf) = getLine() =~ /:\s+(\d+)/;
+	my ($empty) = getLine() =~ /:\s+(\d+)/;
+	
+	if ( $leaf < 100 )
+	{
+	    $stats{$tableName}->{$indexName}->{'empty'} = 0;
+	}
+	else
+	{
+	    $stats{$tableName}->{$indexName}->{'empty'} = ((100*$empty)/$leaf);
+	}
+    }
+    elsif ( $line =~ /^\s+Space utilization:\s+([\d\.]+)/ )
+    {
+	my $spaceutil = $1;
+	if ( $indexName ne "" )
+	{
+	    $stats{$tableName}->{$indexName}->{'spaceutil'} = ($spaceutil * 100);
+	}
+    }	    
+	    
+}
+
+if ( ! $terse )
+{
+    print "<table border>\n";
+    print "<tr> <th>Table<\/th> <th>Index<\/th> <th>Empty Pages %<\/th> <th>Space utilization %<\/th> <\/tr>\n";
+}
+
+foreach my $tableName ( sort keys %stats )
+{
+    my $firstIndex = 1;
+    foreach my $indexName ( sort keys %{$stats{$tableName}} )
+    {
+	if ( $terse )
+	{
+	    printf "%s.%s %.2f %.2f\n", $tableName, $indexName, $stats{$tableName}->{$indexName}->{'empty'}, $stats{$tableName}->{$indexName}->{'spaceutil'};
+	}
+	else
+	{
+	    if ( $firstIndex )
+	    {
+		printf "<tr> <td>%s<\/td> <td>%s<\/td> <td>%.2f<\/td> <td>%.2f<\/td> <\/tr>\n", $tableName, $indexName, $stats{$tableName}->{$indexName}->{'empty'}, $stats{$tableName}->{$indexName}->{'spaceutil'};
+		$firstIndex = 0;
+	    }
+	    else
+	    {
+		printf "<tr> <td><\/td> <td>%s<\/td> <td>%.2f<\/td> <td>%.2f<\/td><\/tr>\n", $indexName, $stats{$tableName}->{$indexName}->{'empty'}, $stats{$tableName}->{$indexName}->{'spaceutil'};
+	    }
+	}
+    }
+}
+
+if ( ! $terse )
+{
+    print "<\/table>\n";
+}
+
+sub getLine()
+{
+    my $line = <STDIN>;
+    if ( $DEBUG > 9 ) { print "getLine(): line =:$line"; }
+
+    return $line;
+}

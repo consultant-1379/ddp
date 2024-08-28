@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+
+<service_bundle type='manifest' name='mysql'>
+  
+  <service name='application/database/mysql' type='service' version='1'>
+    <dependency name='network' grouping='require_all' restart_on='none' type='service'>
+      <service_fmri value='svc:/milestone/network:default' />
+    </dependency>
+    <dependency name='filesystem-local'	grouping='require_all' restart_on='none' type='service'>
+      <service_fmri value='svc:/system/filesystem/local:default' />
+    </dependency>
+    
+    <exec_method
+	type='method'
+	name='start'
+	exec='/lib/svc/method/mysql start'
+	timeout_seconds='60' />
+
+    <exec_method
+	type='method'
+	name='stop'
+	exec='/lib/svc/method/mysql stop'
+	timeout_seconds='60' />
+
+    <instance name='INSTANCE_NAME' enabled='false'>
+      <method_context>
+	<method_credential user='mysql' group='mysql' />
+      </method_context>
+
+      <property_group name='mysql' type='application'>
+	<propval name='data' type='astring' value='DATA_DIR' />
+	<propval name='defaults-file' type='astring' value='CFG' />
+      </property_group>      
+    </instance>
+  </service>
+
+</service_bundle>

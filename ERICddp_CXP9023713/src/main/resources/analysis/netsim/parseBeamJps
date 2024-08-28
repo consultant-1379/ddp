@@ -1,0 +1,369 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+our $MIN_LINES_IN_SECTION = 10;
+
+sub parseProcTime($) {
+    my ($Time) = @_;
+
+    my ($Days,$Hours,$Mins);
+    if ( $Time =~ /-/ )
+    {
+        ($Days,$Hours,$Mins) = $Time =~ /^(\d+)-(\d+):(\d+)$/;
+    }
+    elsif ( $Time =~ /:/ )
+    {
+        $Days = 0;
+        ($Hours,$Mins) = $Time =~ /^(\d+):(\d+)$/;
+    }
+    else
+    {
+        $Days = 0;
+        $Hours = 0;
+        $Mins = $Time;
+    }
+    my $TimeInMins = ($Days * 24 * 60) + ($Hours * 60) + $Mins;
+
+    if ( $DEBUG > 9 ) { print "parseProcTime: Time=$Time Days=$Days Hour=$Hours Mins=$Mins\n"; }
+    return $TimeInMins;
+}
+
+sub readSection($$$) {
+    my ($r_JpsLines,$format,$numProc) = @_;
+    my @proc = ();
+
+    for ( my $i = 0; $i < $numProc; $i++ )  {
+        my $line = shift @{$r_JpsLines};
+        if ( ! defined $line ) {
+            last;
+        }
+
+        # Protect against corrupt files, e.g.
+        #  7757  4-09:13       06  0.0      50    30     79     3^@^@^@...
+        if ( length($line) > 2048 ) {
+            print "WARN: Invalid line\n";
+            next;
+        }
+        if ( $DEBUG > 7 ) { print "readSection: line = $line"; }
+
+        my ($pid, $elpsd, $cpuTime, $mem, $thrs, $fd,$rss,$ppid,$uid,$gid,$cmd) = $line =~
+            /^\s*(\d+)\s+(\S+)\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+([-\d]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/;
+
+        if ( ! defined $cmd ) {
+            if ( $DEBUG ) { print "Failed to parse $line"; }
+
+            if ( $line =~ /^\d{6,6}:\d{2,2}:\d{2,2}$/ ) {
+                if ( $DEBUG ) { print "numProc=$numProc i=$i\n"; }
+
+                unshift @{$r_JpsLines}, $line;
+                $i = $numProc;
+            }
+            next;
+        } else {
+            if ( $DEBUG > 6 ) { print "readSection: pid=$pid, elpsd=$elpsd, cpuTime=$cpuTime, mem=$mem, thrs=$thrs, fd=$fd, rss=$rss, cmd=$cmd\n"; }
+
+            if ( $fd < 0 ) {
+                $fd = 0;
+                $rss = 0;
+            }
+
+
+            if ( $cmd =~ /^\/netsim\S+\/beam.smp/ ) {
+                my $cpuTimeInMins = parseProcTime($cpuTime);
+                my $elpsdInMins = parseProcTime($elpsd);
+
+                my $r_Process = {
+                    "cputime" => $cpuTimeInMins,
+                    "mem"     => $mem,
+                    "thrs"    => $thrs,
+                    "fd"      => $fd,
+                    "rss"     => $rss,
+                    "elpsd"   => $elpsdInMins,
+                    'cmd'     => $cmd,
+                    'pid'     => $pid,
+                    'ppid'    => $ppid
+                };
+
+                if ( $DEBUG > 8 ) { print Dumper("readSection: r_Process ", $r_Process); };
+                push @proc, $r_Process;
+            }
+        }
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("readSection: proc", \@proc); }
+    return \@proc;
+}
+
+sub deltaCpu($$$) {
+    my ($r_currList,$r_prevList,$sampleDeltaTime) = @_;
+
+    my %prevMap = ();
+    foreach my $r_proc ( @{$r_prevList} )
+    {
+        $prevMap{$r_proc->{'pid'} . " " . $r_proc->{'cmd'}} = $r_proc;
+    }
+
+    foreach my $r_proc ( @{$r_currList} )
+    {
+        if ( exists $prevMap{$r_proc->{'pid'} . " " . $r_proc->{'cmd'}} )
+        {
+            my $r_prevProc = $prevMap{$r_proc->{'pid'} . " " . $r_proc->{'cmd'}};
+            $r_proc->{'cpu'} = $r_proc->{'cputime'} - $r_prevProc->{'cputime'};
+        }
+        else
+        {
+            $r_proc->{'cpu'} = $r_proc->{'cputime'};
+        }
+    }
+}
+
+sub parseJps($) {
+    my ($inputFile) = @_;
+
+    open JPS_LOG, $inputFile or die "Cannot open jps log file $inputFile";
+    my @jpsLines = <JPS_LOG>;
+    close JPS_LOG;
+
+    my ($r_prevList,$r_prevTime);
+    my $currHour = 0;
+    my $sampleDeltaTime = 0;
+
+    my @samples = ();
+
+    while ( my $line = shift @jpsLines ) {
+        # Protect against corrupt files, e.g.
+        #  7757  4-09:13       06  0.0      50    30     79     3^@^@^@...
+        if ( length($line) > 2048 ) {
+            print "WARN: Invalid line\n";
+            next;
+        }
+
+        if ( $DEBUG > 9 ) { print "parseJps: line=$line"; }
+
+        if ( $line =~ /^(\d{6,6}):(\d{2,2}):(\d{2,2})$/ ) {
+            my ($date,$hour,$min) = ($1,$2,$3);
+            if ( $DEBUG > 6 ) { print "parseJps: added sampleTime $hour:$min\n"; }
+
+            my $r_currTime = "$hour:$min";
+
+            if ( defined $r_prevTime ) {
+                my ($prevHour,$prevMin) = $r_prevTime =~ /^(\d+):(\d+)$/;
+                $sampleDeltaTime = ( ($hour * 60) + $min ) - ( ($prevHour * 60) + $prevMin);
+
+                if ( $hour < $currHour ) {
+                    print "Time has wrapped, closing log\n";
+                    @jpsLines = ();
+                    next;
+                }
+                $currHour = $hour;
+            }
+
+            # Now validate that there's enough remaining lines for there to be valid content
+            if ( $#jpsLines < $MIN_LINES_IN_SECTION) {
+                print "Incomplete section, closing log\n";
+                @jpsLines = ();
+                next;
+            }
+
+            #
+            # Get number of processes in the section
+            #
+            $line = shift @jpsLines;
+            my ($numProc) = $line =~ /^Total = (\d+)$/;
+
+            #
+            # Find the header line i.e.
+            # PID      ELPSD      CPU CPU%    MEM  #THDS #FD    RSS   CMD
+            #
+            while ( $line && ($line !~ /^PID/) ) {
+                $line = shift @jpsLines;
+            }
+
+            my $format = 4;
+
+            # Skip the ---- line
+            shift @jpsLines;
+
+
+            #
+            # Extract the process for this section
+            #
+            my $r_currList = readSection(\@jpsLines,$format,$numProc);
+
+            #
+            # Calculate how much CPU was used
+            #
+            if ( defined $r_prevList ) {
+                deltaCpu($r_currList,$r_prevList,$sampleDeltaTime);
+            }
+
+            my $r_sample = {
+                'timestamp' => $r_currTime,
+                'process'   => {}
+            };
+
+            my @statNames = ( 'cpu', 'mem', 'thrs', 'fd', 'rss' );
+            foreach my $r_proc ( @{$r_currList} ) {
+                my %processSample = ();
+                foreach my $name ( @statNames ) {
+                    # CPU is a delta to the previous value, so if we don't have a previous value
+                    # we'll store a NULL (HL58974)
+                    if ($name ne 'cpu' || $sampleDeltaTime != 0) {
+                        $processSample{$name} = $r_proc->{$name};
+                    } else {
+                        $processSample{$name} = "\\N";
+                    }
+                }
+                $r_sample->{'process'}->{$r_proc->{'pid'}} = \%processSample;
+            }
+            push @samples, $r_sample;
+
+
+            $r_prevList = $r_currList;
+            $r_prevTime = $r_currTime;
+        }
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("parseJps: samples", \@samples); }
+
+    return \@samples;
+}
+
+
+sub getServerPids($) {
+    my ($psFile) = @_;
+
+    my %map = ();
+    open INPUT, $psFile or die "Cannot open ps file";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "getServerPids: line=$line"; }
+        if ( $line =~ /^netsim\s+(\d+)\s+.*\/netsim\S+\/beam.smp .* -sname (\S+)/ ) {
+            my ($pid,$serverId) = ($1,$2);
+        if ( $DEBUG > 8 ) { print "getServerPids: pid=$pid serverId=$serverId\n"; }
+            $map{$pid} = $serverId;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("getServerPids: map", \%map); }
+    return \%map;
+}
+
+sub getServerNeType($) {
+    my ($showStartFile) = @_;
+
+    my %map = ();
+    open INPUT, $showStartFile or die "Failed to open showStartFile $showStartFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "getServerNeType: line=$line"; }
+        if ( $line =~ /^'([^@]+)@[^']+' for (\S+ \S+)/ ) {
+            my ($serverId,$neType) = ($1,$2);
+        if ( $DEBUG > 8 ) { print "getServerNeType: serverId=$serverId neType=$neType\n"; }
+            $map{$serverId} = $neType;
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 5 ) { print Dumper("getServerNeType: map", \%map); }
+    return \%map;
+}
+
+sub groupByNeType($$$) {
+    my ($r_beamProcStats,$r_pidToServerId,$r_serverIdToNeType) = @_;
+
+    my @results = ();
+    foreach my $r_timeSample ( @{$r_beamProcStats} ) {
+        my %resultsByNeType = ();
+
+        while ( my ($pid,$r_proc) = each %{$r_timeSample->{'process'}} ) {
+            my $neType = 'UNKNOWN';
+            my $serverId = $r_pidToServerId->{$pid};
+            if ( $DEBUG > 7 ) { print "groupByNeType: pid=$pid serverId=" . (defined $serverId ? $serverId : "undef") . "\n"; }
+            if ( defined $serverId ) {
+                if ( $serverId !~ 'server_\d+' ) {
+                    $neType = 'NETSIM';
+                } elsif ( exists $r_serverIdToNeType->{$serverId} ) {
+                    $neType = $r_serverIdToNeType->{$serverId};
+                }
+            }
+            if ( $DEBUG > 7 ) { print "groupByNeType: neType=$neType\n"; }
+
+            my $r_resourceUsage = $resultsByNeType{$neType};
+            if ( ! defined $r_resourceUsage ) {
+                $r_resourceUsage = { 'cpu' => 0, 'rss' => 0 };
+                $resultsByNeType{$neType} = $r_resourceUsage;
+            }
+            $r_resourceUsage->{'cpu'} += $r_proc->{'cpu'};
+            $r_resourceUsage->{'rss'} += $r_proc->{'rss'};
+        }
+        push @results, { 'timestamp' => $r_timeSample->{'timestamp'}, 'res' => \%resultsByNeType };
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("groupByNeType: results", \@results); }
+    return \@results;
+}
+
+sub store($$$$) {
+    my ($site,$server,$date,$r_samples) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId($dbh, $siteId, $server);
+
+    my %types = ();
+    foreach my $r_sample ( @{$r_samples} ) {
+        foreach my $type ( keys %{$r_sample->{'res'}} ) {
+            $types{$type} = 1;
+        }
+    }
+    my @typeList = keys %types;
+    my $r_typeMap = getIdMap($dbh,"netsim_netypes", "id", "name", \@typeList);
+
+    dbDo($dbh, "DELETE FROM netsim_resource_usage WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59' AND serverid = $serverId") or die "Delete failed";
+    foreach my $r_sample ( @{$r_samples} ) {
+        my $timestamp = $date . " " . $r_sample->{'timestamp'} . ":00";
+        while ( my ($neType,$r_resourceUsage) = each %{$r_sample->{'res'}} ) {
+            dbDo($dbh, sprintf("INSERT INTO netsim_resource_usage (siteid,time,serverid,netypeid,cpu,rss) VALUES (%d,'%s',%d,%d,%d,%d)",
+                               $siteId, $timestamp, $serverId,$r_typeMap->{$neType},
+                               $r_resourceUsage->{'cpu'},$r_resourceUsage->{'rss'})
+             ) or die "Insert failed";
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($showStartFile,$jpsFile,$psFile,$site,$server,$date);
+    my $result = GetOptions(
+        "showstarted=s" => \$showStartFile,
+        "jps=s" => \$jpsFile,
+        "ps=s" => \$psFile,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+    setStatsDB_Debug($DEBUG);
+
+    my $r_beamProcStats = parseJps($jpsFile);
+    # Remove first sample from beamProcStats as we don't have anything to delta it against
+    shift @{$r_beamProcStats};
+    
+    my $r_pidToServerId = getServerPids($psFile);
+    my $r_serverIdToNeType = getServerNeType($showStartFile);
+    my $r_samples = groupByNeType($r_beamProcStats,$r_pidToServerId,$r_serverIdToNeType);
+    store($site,$server,$date,$r_samples);
+}
+
+main();

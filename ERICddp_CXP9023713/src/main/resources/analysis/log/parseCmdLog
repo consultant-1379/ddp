@@ -1,0 +1,227 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our $fixNames = "";
+main();
+
+sub main
+{
+    my ($cmdLog,$date,$site);
+    my $result = GetOptions(
+        "cmdlog=s" => \$cmdLog,
+        "date=s"  => \$date,
+        "site=s"  => \$site,
+        "debug=s" => \$DEBUG,
+        "fixnames=s" => \$fixNames,
+    ); 
+    ($result == 1) or die "Invalid args";
+
+    if ($fixNames ne "") {
+        print "Fixing names\n";
+        fixNames($fixNames);
+        return;
+    }
+
+    # Only parse entires starting with 23:35 last night
+    my ($year,$month,$day) = $date =~
+    /^(\d{4,4})-(\d{2,2})-(\d{2,2})/;    
+    my $baseTime = timelocal(0,0,0, $day, $month - 1, $year - 1900);
+    $baseTime -= ( 60 * 25 );
+
+    my $r_cmds = parseCmdLog($cmdLog,$baseTime);
+    storeTotals($date,$site,$r_cmds);
+}
+
+sub storeTotals
+{
+    my ( $date,$site, $r_cmds ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+
+    $dbh->do("DELETE FROM cmds WHERE siteid = $siteId AND date = \'" . $date . "\'");    
+
+    my @mcList = keys %{$r_cmds};
+    my $r_McMap = getIdMap($dbh,"cmd_mc", "id", "name", \@mcList );
+
+    my %cmdNames = ();
+    foreach my $mc ( @mcList ) {
+        foreach my $cmd ( keys %{$r_cmds->{$mc}} ) {
+            $cmdNames{$cmd} = 1;
+        }
+    }
+    my @cmdList = keys %cmdNames;
+    my $r_CmdMap = getIdMap($dbh,"cmd_names", "id", "name", \@cmdList);
+
+    foreach my $mc ( @mcList ) {
+        foreach my $cmd ( keys %{$r_cmds->{$mc}} ) {
+            my $sql = sprintf("INSERT INTO cmds (date,siteid,mcid,cmdid,count) VALUES (\'%s\', %d, %d, %d, %d)", 
+                $date, $siteId, 
+                $r_McMap->{$mc},
+
+                $r_CmdMap->{$cmd}, 
+                $r_cmds->{$mc}->{$cmd}
+            );
+            if ( $DEBUG > 2 ) { print "storeTotals: $sql\n"; }
+            $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+        }
+    }
+
+
+    $dbh->disconnect;
+}
+
+sub parseCmdLog
+{
+    my ($cmdLog,$baseTime) = @_;
+
+    my $r_cmds = {};
+
+    if ( $cmdLog eq "-" ) {
+        open(INPUT,  "<&=STDIN") or die "Failed to open $cmdLog";
+    } else {
+        open INPUT, $cmdLog or die "Failed to open $cmdLog";
+    }
+
+    while ( my $line = <INPUT> ) {
+        #2006-02-13 09:14.04 one_guiServer "eric_ran" "FM_ALV_U" "SUCCEEDED" "Launched FM_ALV_U" " " " "
+        if ( $line =~ /^\d+/ ) {
+            my ($date_time,$mc,$task) = $line =~ 
+            /^(\S+ \S+) (\S+) \"[^\"]*\" \"([^\"]+)\"/;
+
+            if ( $DEBUG > 8 ) { print "parseCmdLog: date,time,mc,task = $date_time,$mc,$task\n"; }
+
+            if ( $task =~ / / ) {
+                if ( $DEBUG > 0 ) { print "parseCmdLog: task has spaces $line"; }
+            } elsif ( $date_time ) {
+                my ($year,$month,$day,$hour,$min,$sec) = $date_time =~
+                /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d+):(\d+)\.(\d+)/;    
+                my $cmdTime = timelocal($sec,$min,$hour, $day, $month - 1, $year - 1900);
+
+                if ( $cmdTime >= $baseTime ) {
+                    if ( $mc eq 'rnh_config_reg_process' ) {
+                        my ($uc,$moType,$config) = $task =~ /^([^_]+)_([^_]+)(.*)/;
+                        my $newtask = "";
+                        if ( $moType eq 'IubCoC' ) {
+                            $newtask = $uc . ' IubCoC';
+                        } else {
+                            if ( $config ) {
+                                if ( $config eq "_valid area" ) {
+                                    $config = "Valid";
+                                } else {
+                                    $config = "Planned";
+                                }
+                            } else {
+                                $config = "Unknown";
+                            }
+
+                            $newtask = $uc . " " . $moType . " " . $config;
+
+                            #print "$task :: $newtask\n";
+                        }
+                        $task = $newtask;
+                    }
+                    elsif ( $mc eq 'jm_process' ) {
+                        if ( $task =~ /^SENT/ ) {
+                            $task = "SEND";
+                        } elsif ( $task =~ /^RCVD/ ) {
+                            $task = "RCVD";
+                        }
+                    }
+                    elsif ( $mc eq "cms_nead_seg_corba_server" || $mc eq "cms_snad_reg_corba_server" ) {
+                        $task = "ACTIVATE_PLANNED_CONFIGURATION";
+                    }
+                    elsif ( $mc eq "AMOS" ) {
+                        $task = "AMOS_CMD";
+                    }
+
+                    $r_cmds->{$mc}->{$task}++;
+                } else {
+                    if ( $DEBUG > 1 ) { print "parseCmdLog: disgarding too old line $line"; }
+                }
+            } else {
+                if ( $DEBUG > 0 ) { print "parseCmdLog: failed to parse $line"; }
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseCmdLog r_cmds", $r_cmds); }
+
+    return $r_cmds;
+}
+
+sub fixNames {
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    # reallocate existing command entries to point to ACTIVATE_PLANNED_CONFIGURATION
+    # 22 == ACTIVATE_PLANNED_CONFIGURATION ; 2 == cms_nead_seg_corba_server ; 29 == cms_snad_reg_corba_server
+    #$dbh->do("UPDATE cmds SET cmdid = 22 WHERE mcid = 2 OR mcid = 29");
+
+    # reallocate all AMOS command entries to a single generic one
+    #$dbh->do("UPDATE cmds SET cmdid = 281 WHERE mcid = 30");
+    removeUnUsed($dbh,"cmd_names","cmds","cmdid");
+}
+
+sub removeUnUsed
+{
+    # lifted from parseJps
+    my ($dbh,$nameTable, $statTable, $colName) = @_;
+
+    print "Checking for un-used entries in $nameTable\n";
+
+    print " Get used list from $statTable\n";
+    my $usedSth = $dbh->prepare("SELECT DISTINCT($colName) FROM $statTable")
+        or die "Couldn't prepare statement: " . $dbh->errstr;
+    $usedSth->execute() or die "Couldn't execute statement: " . $usedSth->errstr;
+
+    my %usedIds = ();
+    while ( my @row = $usedSth->fetchrow_array() ) {
+        $usedIds{$row[0]} = 1;
+    }
+    $usedSth->finish();
+
+    print " Get exists list from $nameTable\n";
+    my @procNameList = ();
+    my $r_procIdMap = getIdMap($dbh, $nameTable, "id", "name", \@procNameList );
+
+    print " Un-used list\n";
+    foreach my $cmd ( keys %{$r_procIdMap} ) {
+        if ( ! exists $usedIds{$r_procIdMap->{$cmd}} ) {
+            printf "  %5d %s\n", $r_procIdMap->{$cmd}, $cmd;
+            dbDo( $dbh, "DELETE FROM $nameTable WHERE id = " . $r_procIdMap->{$cmd}) or
+            die "Failed to delete from $nameTable";
+        }
+    }
+    # now remap the used ones
+    #$dbh->do("ALTER $nameTable MODIFY COLUMN id SMALLINT UNSIGNED NOT NULL");
+    $dbh->do("DROP TABLE IF EXISTS tmp_update");
+    $dbh->do("CREATE TABLE tmp_update LIKE $nameTable");
+    my $ids = $dbh->selectall_arrayref("SELECT id,name FROM $nameTable ORDER BY id", { Slice => {} });
+    print "mapping ...\n";
+    foreach my $cmdid (@$ids) {
+        $dbh->do("INSERT INTO tmp_update (name) VALUES('" . $cmdid->{name} . "')");
+        my $newId = $dbh->last_insert_id(undef,undef,undef,undef);
+        print "Mapping " . $cmdid->{id} . " to " . $newId . "\n";
+        $dbh->do("UPDATE " . $statTable . " SET " . $colName . " = " . $newId . " WHERE " . $colName . " = " . $cmdid->{id});
+    }
+    $dbh->do("TRUNCATE TABLE $nameTable");
+    $dbh->do("INSERT INTO $nameTable SELECT * FROM tmp_update");
+}
+

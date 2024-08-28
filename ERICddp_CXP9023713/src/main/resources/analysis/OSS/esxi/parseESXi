@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+our ($siteId,$dbh,$date,$serverId);
+
+sub getESXiServerId($$)
+{
+    my ( $dbh,$host ) = @_;
+    my $sql = "SELECT id from esxi_servers where siteid = $siteId AND hostname = '" . $host . "' AND date BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    my $sth = $dbh->prepare($sql)
+      or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute()    # Execute the query
+      or die "Couldn't execute statement: " . $sth->errstr;
+    my @row      = $sth->fetchrow_array();
+    $serverId = $row[0];
+    $sth->finish();
+}
+
+sub parseESXiData($)
+{
+    my($file)=@_;
+    my $key=1;
+    my %esxi_details;
+    open(ESXidata,$file) or print "Failed to open the file $file: $!";
+    while (my $line = <ESXidata>)
+    {
+        chomp $line;
+        if($line =~ /(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(\S*)\s+(\S*)\s+(\S*)\s+(.*)\s+(\S*)\s+(\d+)/)
+        {
+            $esxi_details{$key}{'date'} = $1." ".$2;
+            $esxi_details{$key}{'serverid'} = $serverId;
+            $esxi_details{$key}{'metric'} = $5;
+            $esxi_details{$key}{'instance'} = $6;
+            $esxi_details{$key}{'unit'} = $7;
+            $esxi_details{$key}{'metric_value'} = $8;
+            $esxi_details{$key}{'host_type'} = $3;
+            $esxi_details{$key}{'hostname'} = $4;
+        }
+        $key++;
+    }
+    close ESXidata;
+    return \%esxi_details;
+}
+
+sub storedata($$)
+{
+    my ($esxi_data,$file) = @_;
+    $file=~/.*\/(.*)\.txt/;
+    my $filename=$1;
+    my %stats;
+    $stats{'cpu_info'}='esxi_cpu_obj_details';
+    $stats{'mem_info'}='esxi_mem_obj_details';
+    $stats{'net_info'}='esxi_net_obj_details';
+    $stats{'disk_info'}='esxi_disk_obj_details';
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'})
+    {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    if(scalar(keys %{$esxi_data} ) > 0)
+    {
+        my $bcpFileObjEsxi= "$tmpDir/esxi_log_obj.bcp";
+        open (BCPACTV, "> $bcpFileObjEsxi") or die "Failed to open $bcpFileObjEsxi";
+
+        foreach my $key (keys %{$esxi_data})
+        {
+            print BCPACTV "$siteId\t$esxi_data->{$key}->{'date'}\t$esxi_data->{$key}->{'serverid'}\t$esxi_data->{$key}->{'metric'}\t$esxi_data->{$key}->{'instance'}\t$esxi_data->{$key}->{'unit'}\t$esxi_data->{$key}->{'metric_value'}\t$esxi_data->{$key}->{'host_type'}\t$esxi_data->{$key}->{'hostname'}\n";
+        }
+        close BCPACTV;
+
+        my $table_name=$stats{$filename};
+
+        dbDo( $dbh, "DELETE FROM $table_name  WHERE siteid = $siteId AND serverid=$serverId AND date BETWEEN '$date 00:00:00' AND '$date 23:59:59'" )
+                 or die "Failed to delete from $table_name";
+
+        dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileObjEsxi' INTO TABLE $table_name" )
+                 or print "Failed to load new data from '$bcpFileObjEsxi' file to $table_name table";
+
+        unlink $bcpFileObjEsxi;
+
+    }
+
+}
+
+sub main()
+{
+    my ($inputDir,$site,$DEBUG);
+    $dbh = connect_db();
+    my %cpu_details;
+    my $result = GetOptions(
+        "dir=s" => \$inputDir,
+        "date=s" =>\$date,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG,
+        );
+
+    $siteId = getSiteId($dbh, $site);
+    $inputDir=~/.*\/(.*)/;
+    my $host=$1;
+    getESXiServerId($dbh,$host);
+    opendir(DIR, $inputDir) || die "can't opendir $inputDir: $!";
+    my @allFiles = readdir(DIR);
+    closedir DIR;
+    foreach my $file (@allFiles)
+    {
+        $file = $inputDir."/".$file;
+        if ( $file =~ /(.*)\.txt/ )
+        {
+            my $esxi_data = parseESXiData($file);
+            if(scalar(keys %{$esxi_data} ) > 0)
+            {
+
+                storedata($esxi_data,$file);
+            }
+        }
+    }
+    $dbh->disconnect();
+}
+
+main();

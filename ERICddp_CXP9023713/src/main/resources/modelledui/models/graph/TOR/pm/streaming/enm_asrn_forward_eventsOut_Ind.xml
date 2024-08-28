@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Events Out"
+ timespan="day"
+ forcelegend="true"
+>
+  <presetagg type="SUM" interval="Per Minute" />
+  <title value="Events Out"/>
+  <queries>
+    <query timecol="time" multiseries="CONCAT(servers.hostname, ':',enm_str_jvm_names.jvm_name)">
+      <dbtables main="enm_str_fwd">
+        <reference table="sites" condition="enm_str_fwd.siteid=sites.id"/>
+        <reference table="servers" condition="enm_str_fwd.serverid = servers.id"/>
+        <reference table="enm_str_jvm_names" condition="enm_str_jvm_names.id = enm_str_fwd.jvmid"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where> sites.name = '%s' AND enm_str_fwd.serverid = %s </where>
+      <column db="eventsOut_asrn" label="ASR-N"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>
+

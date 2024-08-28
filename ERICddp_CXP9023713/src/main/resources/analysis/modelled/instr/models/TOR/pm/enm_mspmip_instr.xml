@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mspmip"/>
+  </services>
+
+  <table name="enm_mspmip_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.pm.service.instrumentation.snmp-pm-engine:type=SnmpPmEngineInstrumentationBean$">
+      <metric source="snmpGetDurationTime" target="snmpGetDurationTime"/>
+      <metric source="snmpGetNumberOperation" target="snmpGetNumberOperation" delta="true"/>
+      <metric source="snmpGetSizeResponseMessage" target="snmpGetSizeResponseMessage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.pm.handlers.instrumentation.snmp-pm-file-collection-handler:type=SnmpPmHandlerFileCollectionInstrBean$">
+      <metric source="fileGeneratedNumber" target="fileGeneratedNumber" delta="true"/>
+      <metric source="fileGeneratedSize" target="fileGeneratedSize"/>
+      <metric source="fileGeneratedTime" target="fileGeneratedTime"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkSnmpPmFileCollectionInstrBean15m$">
+      <metric source="noOfContinuousFiles" target="noOfContinuousFiles15min"/>
+      <metric source="noOfHistoricalFiles" target="noOfHistoricalFiles15min"/>
+      <metric source="noOfRecoveredHistoricalFiles" target="noOfRecoveredHistoricalFiles15min"/>
+      <metric source="minCounterValues" target="minCounterValues15min"/>
+      <metric source="avgCounterValues" target="avgCounterValues15min"/>
+      <metric source="maxCounterValues" target="maxCounterValues15min"/>
+      <metric source="minCollectionHandlerTime" target="minCollectionHandlerTime15min"/>
+      <metric source="maxCollectionHandlerTime" target="maxCollectionHandlerTime15min"/>
+      <metric source="minCounterCollectionTime" target="minCounterCollectionTime15min"/>
+      <metric source="maxCounterCollectionTime" target="maxCounterCollectionTime15min"/>
+      <metric source="minCreationHandlerTime" target="minCreationHandlerTime15min"/>
+      <metric source="maxCreationHandlerTime" target="maxCreationHandlerTime15min"/>
+      <metric source="noOfSnmpPingFailures" target="noOfSnmpPingFailures15min"/>
+      <metric source="noOfInterfacePopulationFailures" target="noOfInterfacePopulationFailures15min"/>
+      <metric source="noOfZeroCounterFiles" target="noOfZeroCounterFiles15min"/>
+      <metric source="noOfErrorsInFiles" target="noOfErrorsInFiles15min"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkSnmpPmFileCollectionInstrBean24h$">
+      <metric source="noOfContinuousFiles" target="noOfContinuousFiles24h"/>
+      <metric source="noOfHistoricalFiles" target="noOfHistoricalFiles24h"/>
+      <metric source="noOfRecoveredHistoricalFiles" target="noOfRecoveredHistoricalFiles24h"/>
+      <metric source="minCounterValues" target="minCounterValues24h"/>
+      <metric source="avgCounterValues" target="avgCounterValues24h"/>
+      <metric source="maxCounterValues" target="maxCounterValues24h"/>
+      <metric source="minCollectionHandlerTime" target="minCollectionHandlerTime24h"/>
+      <metric source="maxCollectionHandlerTime" target="maxCollectionHandlerTime24h"/>
+      <metric source="minCounterCollectionTime" target="minCounterCollectionTime24h"/>
+      <metric source="maxCounterCollectionTime" target="maxCounterCollectionTime24h"/>
+      <metric source="minCreationHandlerTime" target="minCreationHandlerTime24h"/>
+      <metric source="maxCreationHandlerTime" target="maxCreationHandlerTime24h"/>
+      <metric source="noOfSnmpPingFailures" target="noOfSnmpPingFailures24h"/>
+      <metric source="noOfInterfacePopulationFailures" target="noOfInterfacePopulationFailures24h"/>
+      <metric source="noOfZeroCounterFiles" target="noOfZeroCounterFiles24h"/>
+      <metric source="noOfErrorsInFiles" target="noOfErrorsInFiles24h"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkEthernetPmFileCollectionInstrBean15m$">
+      <metric source="noOfCollectedEthernetFiles" target="noOfCollectedEthernetFiles15min"/>
+      <metric source="noOfRecoveredEthernetFiles" target="noOfRecoveredEthernetFiles15min"/>
+      <metric source="minProcessingHandlerTime" target="minProcessingHandlerTime15min"/>
+      <metric source="maxProcessingHandlerTime" target="maxProcessingHandlerTime15min"/>
+      <metric source="numberOfUploadRequestFailures" target="numberOfUploadRequestFailuresEthernet15m"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsEthernet15m"/>
+      <metric source="numberOfProcessingFlowFailures" target="numberOfProcessingFlowFailuresEthernet15m"/>
+      <metric source="numberOfSuccessfulRecoveryRequests" target="numberOfSuccessfulRecoveryRequestsEthernet15m"/>
+      <metric source="numberOfFailedRecoveryRequests" target="numberOfFailedRecoveryRequestsEthernet15m"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkEthernetPmFileCollectionInstrBean24h$">
+      <metric source="noOfCollectedEthernetFiles" target="noOfCollectedEthernetFiles24h"/>
+      <metric source="noOfRecoveredEthernetFiles" target="noOfRecoveredEthernetFiles24h"/>
+      <metric source="minProcessingHandlerTime" target="minProcessingHandlerTime24h"/>
+      <metric source="maxProcessingHandlerTime" target="maxProcessingHandlerTime24h"/>
+      <metric source="numberOfUploadRequestFailures" target="numberOfUploadRequestFailuresEthernet24h"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsEthernet24h"/>
+      <metric source="numberOfProcessingFlowFailures" target="numberOfProcessingFlowFailuresEthernet24h"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkSoamPmFileCollectionInstrBean15m$">
+      <metric source="noOfCollectedSOAMFiles" target="noOfCollectedSOAMFiles15min"/>
+      <metric source="noOfRecoveredSOAMFiles" target="noOfRecoveredSOAMFiles15min"/>
+      <metric source="minProcessingHandlerTime" target="SOAMminProcessingHandlerTime15min"/>
+      <metric source="maxProcessingHandlerTime" target="SOAMmaxProcessingHandlerTime15min"/>
+      <metric source="numberOfUploadRequestFailures" target="numberOfUploadRequestFailuresSoam15m"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsSoam15m"/>
+      <metric source="numberOfProcessingFlowFailures" target="numberOfProcessingFlowFailuresSoam15m"/>
+      <metric source="numberOfSuccessfulRecoveryRequests" target="numberOfSuccessfulRecoveryRequestsSoam15m"/>
+      <metric source="numberOfFailedRecoveryRequests" target="numberOfFailedRecoveryRequestsSoam15m"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkSoamPmFileCollectionInstrBean24h$">
+      <metric source="noOfCollectedSOAMFiles" target="noOfCollectedSOAMFiles24h"/>
+      <metric source="noOfRecoveredSOAMFiles" target="noOfRecoveredSOAMFiles24h"/>
+      <metric source="minProcessingHandlerTime" target="SOAMminProcessingHandlerTime24h"/>
+      <metric source="maxProcessingHandlerTime" target="SOAMmaxProcessingHandlerTime24h"/>
+      <metric source="numberOfUploadRequestFailures" target="numberOfUploadRequestFailuresSoam24h"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsSoam24h"/>
+      <metric source="numberOfProcessingFlowFailures" target="numberOfProcessingFlowFailuresSoam24h"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.pm.mloutdoor.instrumentation.mini-link-outdoor-pm-handlers-code:type=MiniLinkOutdoorPmFileCollectionInstrBean15m$">
+      <metric source="noOfFilesCollected" target="noOfMlOutdoorFiles15min"/>
+      <metric source="noOfRecoveredFiles" target="noOfMlOutdoorRecoveredFiles15min"/>
+      <metric source="minProcessingHandlerTime" target="minProcessingHandlerTimeMlOutdoor15min"/>
+      <metric source="maxProcessingHandlerTime" target="maxProcessingHandlerTimeMlOutdoor15min"/>
+      <metric source="minUploadRequestHandlerTime" target="minuploadHandlerTimeMlOutdoor15min"/>
+      <metric source="maxUploadRequestHandlerTime" target="maxuploadHandlerTimeMlOutdoor15min"/>
+      <metric source="numberOfEmptyFilePathFailures" target="numberOfEmptyFilePathFailures15m"/>
+      <metric source="numberOfParsedDataFailures" target="numberOfParsedDataFailures15m"/>
+      <metric source="numberOfSshConnectionFailures" target="numberOfSshConnectionFailures15m"/>
+      <metric source="numberOfUploadCommandFailures" target="numberOfUploadCommandFailures15m"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.pm.mloutdoor.instrumentation.mini-link-outdoor-pm-handlers-code:type=MiniLinkOutdoorPmFileCollectionInstrBean24h$">
+      <metric source="noOfFilesCollected" target="noOfMlOutdoorFiles24h"/>
+      <metric source="noOfRecoveredFiles" target="noOfMlOutdoorRecoveredFiles24h"/>
+      <metric source="minProcessingHandlerTime" target="minProcessingHandlerTimeMlOutdoor24h"/>
+      <metric source="maxProcessingHandlerTime" target="maxProcessingHandlerTimeMlOutdoor24h"/>
+      <metric source="minUploadRequestHandlerTime" target="minuploadHandlerTimeMlOutdoor24h"/>
+      <metric source="maxUploadRequestHandlerTime" target="maxuploadHandlerTimeMlOutdoor24h"/>
+      <metric source="numberOfEmptyFilePathFailures" target="numberOfEmptyFilePathFailures24h"/>
+      <metric source="numberOfParsedDataFailures" target="numberOfParsedDataFailures24h"/>
+      <metric source="numberOfSshConnectionFailures" target="numberOfSshConnectionFailures24h"/>
+      <metric source="numberOfUploadCommandFailures" target="numberOfUploadCommandFailures24h"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkBulkPmFileCollectionInstrBean15m$">
+      <metric source="numberOfUploadRequestFailures" target="numberOfUploadRequestFailuresBulk15m"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsBulk15m"/>
+      <metric source="numberOfProcessingFlowFailures" target="numberOfProcessingFlowFailuresBulk15m"/>
+      <metric source="numberOfSuccessfulRecoveryRequests" target="numberOfSuccessfulRecoveryRequestsBulk15m"/>
+      <metric source="numberOfFailedRecoveryRequests" target="numberOfFailedRecoveryRequestsBulk15m"/>
+      <metric source="noOfCollectedBulkPmFiles" target="noOfCollectedBulkPmFilesBulk15m"/>
+      <metric source="noOfRecoveredBulkPmFiles" target="noOfRecoveredBulkPmFilesBulk15m"/>
+      <metric source="minProcessingHandlerTime" target="minProcessingHandlerTimeBulk15m"/>
+      <metric source="maxProcessingHandlerTime" target="maxProcessingHandlerTimeBulk15m"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilinkindoor.pm.handler.instrumentation.mini-link-indoor-pm-flows:type=MiniLinkBulkPmFileCollectionInstrBean24h$">
+      <metric source="numberOfUploadRequestFailures" target="numberOfUploadRequestFailuresBulk24h"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsBulk24h"/>
+      <metric source="numberOfProcessingFlowFailures" target="numberOfProcessingFlowFailuresBulk24h"/>
+      <metric source="noOfCollectedBulkPmFiles" target="noOfCollectedBulkPmFilesBulk24h"/>
+      <metric source="noOfRecoveredBulkPmFiles" target="noOfRecoveredBulkPmFilesBulk24h"/>
+      <metric source="minProcessingHandlerTime" target="minProcessingHandlerTimeBulk24h"/>
+      <metric source="maxProcessingHandlerTime" target="maxProcessingHandlerTimeBulk24h"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

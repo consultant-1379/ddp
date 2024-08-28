@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_rhel_version">
+    <reference table="sites" condition="eniq_rhel_version.siteid = sites.id"/>
+    <reference table="eniq_release_version_id_mapping" condition="eniq_release_version_id_mapping.id = eniq_rhel_version.rhelId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_rhel_version.date = '%date%' </where>
+
+  <column db="eniq_release_version_id_mapping.rhelVersion" label="Rhel Version"/>
+</modelledtable>

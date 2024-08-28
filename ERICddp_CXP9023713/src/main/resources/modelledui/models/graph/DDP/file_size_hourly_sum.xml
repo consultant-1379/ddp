@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="MB"
+ timespan="day"
+ useragg="false"
+>
+  <presetagg type="SUM" interval="Hourly" />
+  <title value="File Size"/>
+  <queries>
+    <query timecol="beginproc">
+      <dbtables main="ddpadmin.ddp_makestats"/>
+
+      <where></where>
+      <column db="filesize/(1024)" label="Size"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

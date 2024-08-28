@@ -1,0 +1,123 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseSapIqLargeMemory -----------
+#       This script parses the sap iq large memory log
+#       and store data to DB.
+#       @author - Siddharth Shah (xsiddsh)
+#       usage  parseSapIqLargeMemory --logfile <sapiq_large_memory> --site <site>
+######################################################################
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+our $table = "eniq_sap_iq_large_memory_details";
+
+sub main {
+    my ($site, $logFile);
+    GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    my ($r_parsedSapIqStats, $firstTimeStamp, $lastTimeStamp) = parseData($logFile);
+    my $sapIqBcpFile = createBcpFile($r_parsedSapIqStats);
+    removeOldData($firstTimeStamp, $lastTimeStamp);
+    loadDb($sapIqBcpFile);
+    if( $DEBUG > 1 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData {
+    my $logFile = shift;
+    open FILE, "<$logFile" or die "Can't open file $logFile to read";
+    my @r_data = ();
+    my $firstLine = "true";
+    my $firstTimeStamp = "";
+    my $lastTimeStamp = "";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( my ($time, $hostname, $totalMemory, $flexiblePercentage, $flexibleUsed, $inflexiblePercentage, $inflexibleUsed, $antiStarvationPercentage) = $line =~ /(\d+-\d+-\d+\s+\d+:\d+:\d+)\s+([\w-]+)[\w\s]+:(\d+)\w+,[\w\s]+:([\w]+),[\w\s]+:(\d+)\w+,[\w\s]+:(\d+),[\w\s]+:(\d+)\w+,.*:(\d+)/){
+            if ($firstLine eq "true") {
+                $firstTimeStamp = $time;
+                $firstLine = "false";
+            }
+            $lastTimeStamp = $time;
+            my $serverId = getServerId($dbh, $siteId, $hostname);
+            my %r_dataForLine = (
+                time                     => "$time",
+                serverId                 => "$serverId",
+                totalMemory              => "$totalMemory",
+                flexiblePercentage       => "$flexiblePercentage",
+                flexibleUsed             => "$flexibleUsed",
+                inflexiblePercentage     => "$inflexiblePercentage",
+                inflexibleUsed           => "$inflexibleUsed",
+                antiStarvationPercentage => "$antiStarvationPercentage"
+            );
+            push (@r_data, \%r_dataForLine);
+        }
+    }
+    close FILE;
+    if ($DEBUG > 2) { print Dumper ("R_DATA", \@r_data); }
+    return (\@r_data, $firstTimeStamp, $lastTimeStamp);
+}
+
+sub createBcpFile {
+    my $parsedData = shift;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "${tmpDir}/sapIqLargeMemory.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open bcpFile";
+    foreach my $dataElement ( @$parsedData ) {
+        printf BCP "%d|%d|%s|%d|%d|%d|%d|%d|%d\n",
+            $siteId,
+            $dataElement->{serverId},
+            $dataElement->{time},
+            $dataElement->{totalMemory},
+            $dataElement->{flexiblePercentage},
+            $dataElement->{flexibleUsed},
+            $dataElement->{inflexiblePercentage},
+            $dataElement->{inflexibleUsed},
+            $dataElement->{antiStarvationPercentage};
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($firstTimeStamp, $lastTimeStamp) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '$firstTimeStamp' AND '$lastTimeStamp'";
+    if ( $DEBUG > 3 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 4 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

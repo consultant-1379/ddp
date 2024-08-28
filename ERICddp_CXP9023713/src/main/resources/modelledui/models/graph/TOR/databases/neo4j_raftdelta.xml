@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" type="sb" timespan="day">
+  <title value="RAFT Deltas"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_neo4j_srv">
+        <reference table="sites" condition="enm_neo4j_srv.siteid = sites.id"/>
+        <reference table="servers" condition="enm_neo4j_srv.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="inst"/>
+      <where>sites.name = '%s' AND servers.hostname = "%s" AND clustAppendIndex >= clustCommitIndex AND clustCommitIndex >= clustAppliedIndex</where>
+      <column db="clustAppendIndex - clustCommitIndex" label="Commit (append - commit)"/>
+      <column db="clustCommitIndex - clustAppliedIndex" label="Applied (commit - applied)"/>
+    </query>
+  </queries>
+</modelledgraph>

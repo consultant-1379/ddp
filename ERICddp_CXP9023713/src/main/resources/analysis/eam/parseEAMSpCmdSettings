@@ -1,0 +1,203 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($dataDir,$dashDate);
+    my $datasets = "EHIP,EHT,EHM,EHAP";
+    my @datasets;
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "data=s" => \$dataDir,
+        "datasets=s" => \$datasets,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Pull the datasets into an array
+    foreach my $dataset (split(/\,/, $datasets)) {
+        push(@datasets, uc($dataset));
+    }
+
+    if ($DEBUG > 4) { print Dumper @datasets; }
+
+    # Store the datasets via getIdMap
+    my $r_datasets = getIdMap($dbh, "eam_datasets", "id", "name", \@datasets);
+
+    # Parse the files
+    PARSE_FILES: foreach my $dataset (@datasets) {
+        my $datasetid = $r_datasets->{$dataset};
+        my $file = $dataDir . "/nms_eam_" . lc($dataset) . "/" . uc($dataset) . "_command";
+        if ($DEBUG > 4) { print "Feed file: " . $file . "\n"; }
+
+        if (-e $file) {
+            processData($file, $sqlDate, $siteid, $datasetid, \%dataForStorage);
+        } else {
+            print "WARNING: No special commands file for '" . uc($dataset) . "' - expected file " . $file . " does not exist.\n";
+            next PARSE_FILES;
+        }
+    }
+
+    # Initial run: if there is no description in the table, set it equal to the name
+    my $sqlDefaultSettingDescs = "UPDATE eam_sp_cmd_settings SET description = name WHERE description IS NULL";
+    dbDo($dbh, $sqlDefaultSettingDescs) or die "ERROR: Failed to default the description field values to the name in eam_sp_cmd_settings\n";;
+    $dbh->disconnect;
+
+    # Add the descriptions given by the users
+    my %settingDescs = (
+        '\@auth' => "Command authority checking",
+        '\@skip_buf' => "Skip internal buffering of first immediate response buffer",
+        '\@imresp' => "Immediate response type in case of received type is not equal to NOT ACCEPTED",
+        '\@crlog' => "Command and response log options",
+        '\@bufto' => "Buffer time out",
+        '\@dr_ttl' => "Immediate response type",
+        '\@evlog' => "Event log"
+    );
+
+    foreach my $setting (keys(%settingDescs)) {
+        my $dbh = connect_db();
+        my $sqlUpdSettingDesc = "UPDATE eam_sp_cmd_settings SET description = '" . $settingDescs{$setting} . "' WHERE name = '" . $setting . "'";
+        dbDo($dbh, $sqlUpdSettingDesc) or die "ERROR: Failed to default the description field values to the name in eam_sp_cmd_settings using SQL: " . $sqlUpdSettingDesc . "\n";
+        $dbh->disconnect;
+    }
+
+    return 0;
+}
+
+sub processData() {
+    my ($file , $sqlDate, $siteid, $datasetid, $r_dataForStorage) = @_;
+    my $dbh = connect_db();
+    my $skippingHeader = 0;
+    my $identifyingGroup;
+    my $grouptmp;
+    my $group;
+    my @groups;
+    my @commands;
+    my @settings;
+    my %datasetForStorage;
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+        if ($line =~ /^\s*$/ || ($skippingHeader == 1 && $line !~ /^\! \-+$/)) {
+            next LINE;
+        } elsif ($line =~ /^\! \-+$/) {
+            if ($skippingHeader == 0) {
+                $skippingHeader = 1;
+            } else {
+                $skippingHeader = 0;
+            }
+            next LINE;
+        } elsif ($line =~ /^\!\s*TR\s*\:/) {
+            next LINE;
+        } else {
+            my $groupCat;
+            if ((($groupCat) = $line =~ /^\! (\S+.*)/) && !defined($identifyingGroup)) {
+                $identifyingGroup = 1;
+                $grouptmp = $groupCat;
+            } elsif ((($groupCat) = $line =~ /^\!( \S+.*)/) && defined($identifyingGroup)) {
+                $grouptmp .= $groupCat;
+            } elsif ($line =~ /\S+ \@\S+\=[0-9]/) {
+                undef($identifyingGroup);
+                if (defined($grouptmp)) {
+                    $group = $grouptmp;
+                    undef($grouptmp);
+                    push(@groups, $group);
+                    $identifyingGroup = 0;
+                }
+
+                # Parse the command record
+                my @record = split(/ +/, $line);
+                my $command = shift(@record);
+                push(@commands, $command);
+                foreach my $setting_value (@record) {
+                    my @setting = split(/\=/, $setting_value);
+                    push(@settings, $setting[0]);
+                    $datasetForStorage{$group}->{$command}->{$setting[0]} = $setting[1];
+                }
+            }
+
+        }
+    }
+    close(DATA);
+
+    if ($DEBUG > 7) { print Dumper %datasetForStorage; }
+
+    # Store the groups via getIdMap
+    my $r_groups = getIdMap($dbh, "eam_sp_cmd_groups", "id", "name", \@groups);
+    my $r_commands = getIdMap($dbh, "eam_sp_cmd_names", "id", "name", \@commands);
+    my $r_settings = getIdMap($dbh, "eam_sp_cmd_settings", "id", "name", \@settings);
+
+    storeDataset($sqlDate, $siteid, $datasetid, \%datasetForStorage, $r_groups, $r_commands, $r_settings);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $datasetid, $r_datasetForStorage, $r_groups, $r_commands, $r_settings) = @_;
+    my $dbh = connect_db();
+    my $table = "eam_sp_cmd_details";
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/eam_sp_cmd_details." . $datasetid . "." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $group (keys(%{$r_datasetForStorage})) {
+        foreach my $command (keys(%{$r_datasetForStorage->{$group}})) {
+            foreach my $setting (keys(%{$r_datasetForStorage->{$group}->{$command}})) {
+                print BULK_INSERT $sqlDate . "|" . $siteid . "|" . $datasetid . "|" . $r_groups->{$group} . "|" . $r_commands->{$command} . "|" . $r_settings->{$setting} . "|" . $r_datasetForStorage->{$group}->{$command}->{$setting} . "\n";
+            }
+        }
+    }
+    close BULK_INSERT;
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM eam_sp_cmd_details WHERE date = '" . $sqlDate . "' AND siteid = " . $siteid . " AND datasetid = " . $datasetid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data eam_sp_cmd_details for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE eam_sp_cmd_details FIELDS TERMINATED BY '|'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into " . $table . " with statement " . $sqlInsert . "\n";;
+    $dbh->disconnect;
+
+    return 0;
+}

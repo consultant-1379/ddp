@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="ne_types.name">
+    <dbtables main="enm_aim_node_training_status">
+      <reference table="sites" condition="enm_aim_node_training_status.siteid = sites.id"/>
+      <reference table="ne_types" condition="enm_aim_node_training_status.netypeid = ne_types.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="Training" type="tsc" ylabel="Training%" forcelegend="true">
+      <title value="Node Training Status"/>
+      <column db="training"/>
+    </graph>
+    <graph name="Total" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Nodes Monitored"/>
+      <column db="total"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>Training</member>
+      <member>Total</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

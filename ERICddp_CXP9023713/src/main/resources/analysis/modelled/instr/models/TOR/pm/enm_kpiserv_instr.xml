@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="kpiservice"/>
+    <service name="conskpiserv"/>
+  </services>
+
+  <table name="enm_kpiserv_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.ejb.service.metrics.kpi-calculation-service:type=KpiQueryMetric$">
+      <metric source="numberOfRequests" target="numberOfKpiQueries" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpi.kpiservice.ejb.metric.kpi-service:type=KpiQueryMetric$">
+      <metric source="numberOfKpiQueries" target="numberOfKpiQueries" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpispecification.service.metrics.kpi-specification-service:type=KpiSpecificationServiceMetric$">
+      <metric source="avgNumberOfNodes_activeCellLevelKPI" target="avgNumberOfNodes_activeCellLevelKPI"/>
+      <metric source="avgNumberOfNodes_activeNodeLevelKPI" target="avgNumberOfNodes_activeNodeLevelKPI"/>
+      <metric source="numberOf_activeCellLevelKPI" target="numberOf_activeCellLevelKPI"/>
+      <metric source="numberOf_activeNodeLevelKPI" target="numberOf_activeNodeLevelKPI"/>
+      <metric source="numberOf_activeCellLevelKPI" target="numberOf_activeCellLevelKPI"/>
+      <metric source="numberOfActiveKpis" target="numberOfActiveKpis"/>
+      <metric source="avgNumberOfNodesOfActiveKpis" target="avgNumberOfNodesOfActiveKpis"/>
+      <metric source="numberOfActiveEUtranCellFDDKpis" target="numberOfActiveEUtranCellFDDKpis"/>
+      <metric source="avgNumberOfNodesOfActiveEUtranCellFDDKpis" target="avgNumberOfNodesOfActiveEUtranCellFDDKpis"/>
+      <metric source="numberOfActiveEUtranCellTDDKpis" target="numberOfActiveEUtranCellTDDKpis"/>
+      <metric source="avgNumberOfNodesOfActiveEUtranCellTDDKpis" target="avgNumberOfNodesOfActiveEUtranCellTDDKpis"/>
+      <metric source="numberOfActiveNbIotCellKpis" target="numberOfActiveNbIotCellKpis"/>
+      <metric source="avgNumberOfNodesOfActiveNbIotCellKpis" target="avgNumberOfNodesOfActiveNbIotCellKpis"/>
+      <metric source="numberOfActiveENodeBFunctionKpis" target="numberOfActiveENodeBFunctionKpis"/>
+      <metric source="avgNumberOfNodesOfActiveENodeBFunctionKpis" target="avgNumberOfNodesOfActiveENodeBFunctionKpis"/>
+      <metric source="numberOfActiveERBSKpis" target="numberOfActiveERBSKpis"/>
+      <metric source="avgNumberOfNodesOfActiveERBSKpis" target="avgNumberOfNodesOfActiveERBSKpis"/>
+      <metric source="numberOfActiveRadioNodeKpis" target="numberOfActiveRadioNodeKpis"/>
+      <metric source="avgNumberOfNodesOfActiveRadioNodeKpis" target="avgNumberOfNodesOfActiveRadioNodeKpis"/>
+      <metric source="numberOfActivePicoKpis" target="numberOfActivePicoKpis"/>
+      <metric source="avgNumberOfNodesOfActivePicoKpis" target="avgNumberOfNodesOfActivePicoKpis"/>
+      <metric source="numberOfActiveRBSKpis" target="numberOfActiveRBSKpis"/>
+      <metric source="avgNumberOfNodesOfActiveRBSKpis" target="avgNumberOfNodesOfActiveRBSKpis"/>
+      <metric source="numberOfActiveRNCKpis" target="numberOfActiveRNCKpis"/>
+      <metric source="avgNumberOfNodesOfActiveRNCKpis" target="avgNumberOfNodesOfActiveRNCKpis"/>
+      <metric source="numberOfActiveRncFunctionKpis" target="numberOfActiveRncFunctionKpis"/>
+      <metric source="avgNumberOfNodesOfActiveRncFunctionKpis" target="avgNumberOfNodesOfActiveRncFunctionKpis"/>
+      <metric source="numberOfActiveUtranCellKpis" target="numberOfActiveUtranCellKpis"/>
+      <metric source="avgNumberOfNodesOfActiveUtranCellKpis" target="avgNumberOfNodesOfActiveUtranCellKpis"/>
+      <metric source="numberOfActiveNodeBFunctionKpis" target="numberOfActiveNodeBFunctionKpis"/>
+      <metric source="avgNumberOfNodesOfActiveNodeBFunctionKpis" target="avgNumberOfNodesOfActiveNodeBFunctionKpis"/>
+      <metric source="numberOfActiveHsDschResourcesKpis" target="numberOfActiveHsDschResourcesKpis"/>
+      <metric source="avgNumberOfNodesOfActiveHsDschResourcesKpis" target="avgNumberOfNodesOfActiveHsDschResourcesKpis"/>
+      <metric source="numberOfActivePmGroupUnitMeasKpis" target="numberOfActivePmGroupUnitMeasKpis"/>
+      <metric source="avgNumberOfNodesOfActivePmGroupUnitMeasKpis" target="avgNumberOfNodesOfActivePmGroupUnitMeasKpis"/>
+      <metric source="numberOfActivePmGroupPortMeasKpis" target="numberOfActivePmGroupPortMeasKpis"/>
+      <metric source="avgNumberOfNodesOfActivePmGroupPortMeasKpis" target="avgNumberOfNodesOfActivePmGroupPortMeasKpis"/>
+      <metric source="numberOfActiveFronthaulKpis" target="numberOfActiveFronthaulKpis"/>
+      <metric source="avgNumberOfNodesOfActiveFronthaulKpis" target="avgNumberOfNodesOfActiveFronthaulKpis"/>
+      <metric source="numberOfActiveRouter6672Kpis" target="numberOfActiveRouter6672Kpis"/>
+      <metric source="avgNumberOfNodesOfActiveRouter6672Kpis" target="avgNumberOfNodesOfActiveRouter6672Kpis"/>
+      <metric source="numberOfActiveRouter6675Kpis" target="numberOfActiveRouter6675Kpis"/>
+      <metric source="avgNumberOfNodesOfActiveRouter6675Kpis" target="avgNumberOfNodesOfActiveRouter6675Kpis"/>
+      <metric source="numberOfActivePortHistoryKpis" target="numberOfActivePortHistoryKpis"/>
+      <metric source="avgNumberOfNodesOfActivePortHistoryKpis" target="avgNumberOfNodesOfActivePortHistoryKpis"/>
+      <metric source="numberOfActiveGlobalKpis" target="numberOfActiveGlobalKpis"/>
+      <metric source="avgNumberOfNodesOfActiveGlobalKpis" target="avgNumberOfNodesOfActiveGlobalKpis"/>
+      <metric source="numberOfActiveContextKpis" target="numberOfActiveContextKpis"/>
+      <metric source="avgNumberOfNodesOfActiveContextKpis" target="avgNumberOfNodesOfActiveContextKpis"/>
+      <metric source="numberOfActiveDot1qHistoryKpis" target="numberOfActiveDot1qHistoryKpis"/>
+      <metric source="avgNumberOfNodesOfActiveDot1qHistoryKpis" target="avgNumberOfNodesOfActiveDot1qHistoryKpis"/>
+      <metric source="numberOfActiveLinkGroupHistoryKpis" target="numberOfActiveLinkGroupHistoryKpis"/>
+      <metric source="avgNumberOfNodesOfActiveLinkGroupHistoryKpis" target="avgNumberOfNodesOfActiveLinkGroupHistoryKpis"/>
+      <metric source="numberOfActiveRadioTNodeKpis" target="numberOfActiveRadioTNodeKpis"/>
+      <metric source="avgNumberOfNodesOfActiveRadioTNodeKpis" target="avgNumberOfNodesOfActiveRadioTNodeKpis"/>
+      <metric source="numberOfActiveEthernetPortKpis" target="numberOfActiveEthernetPortKpis"/>
+      <metric source="avgNumberOfNodesOfActiveEthernetPortKpis" target="avgNumberOfNodesOfActiveEthernetPortKpis"/>
+      <metric source="numberOfActiveVlanPortKpis" target="numberOfActiveVlanPortKpis"/>
+      <metric source="avgNumberOfNodesOfActiveVlanPortKpis" target="avgNumberOfNodesOfActiveVlanPortKpis"/>
+      <metric source="numberOfActiveInterfaceIPV4Kpis" target="numberOfActiveInterfaceIPV4Kpis"/>
+      <metric source="avgNumberOfNodesOfActiveInterfaceIPV4Kpis" target="avgNumberOfNodesOfActiveInterfaceIPV4Kpis"/>
+      <metric source="numberOfActiveInterfaceIPV6Kpis" target="numberOfActiveInterfaceIPV6Kpis"/>
+      <metric source="avgNumberOfNodesOfActiveInterfaceIPV6Kpis" target="avgNumberOfNodesOfActiveInterfaceIPV6Kpis"/>
+      <metric source="numberOfActiveSuperChannelKpis" target="numberOfActiveSuperChannelKpis"/>
+      <metric source="avgNumberOfNodesOfActiveSuperChannelKpis" target="avgNumberOfNodesOfActiveSuperChannelKpis"/>
+      <metric source="numberOfActiveTgTransportKpis" target="numberOfActiveTgTransportKpis"/>
+      <metric source="avgNumberOfNodesOfActiveTgTransportKpis" target="avgNumberOfNodesOfActiveTgTransportKpis"/>
+      <metric source="numberOfActiveTwampTestSessionKpis" target="numberOfActiveTwampTestSessionKpis"/>
+      <metric source="avgNumberOfNodesOfActiveTwampTestSessionKpis" target="avgNumberOfNodesOfActiveTwampTestSessionKpis"/>
+      <metric source="numberOfActiveSgsnMmeKpis" target="numberOfActiveSgsnMmeKpis"/>
+      <metric source="avgNumberOfNodesOfActiveSgsnMmeKpis" target="avgNumberOfNodesOfActiveSgsnMmeKpis"/>
+      <metric source="numberOfActiveSgsnMmeROKpis" target="numberOfActiveSgsnMmeROKpis"/>
+      <metric source="avgNumberOfNodesOfActiveSgsnMmeROKpis" target="avgNumberOfNodesOfActiveSgsnMmeROKpis"/>
+      <metric source="numberOfActiveMmeFunctionKpis" target="numberOfActiveMmeFunctionKpis"/>
+      <metric source="avgNumberOfNodesOfActiveMmeFunctionKpis" target="avgNumberOfNodesOfActiveMmeFunctionKpis"/>
+      <metric source="numberOfActiveRAKpis" target="numberOfActiveRAKpis"/>
+      <metric source="avgNumberOfNodesOfActiveRAKpis" target="avgNumberOfNodesOfActiveRAKpis"/>
+      <metric source="numberOfActiveQosClassIdentifierKpis" target="numberOfActiveQosClassIdentifierKpis"/>
+      <metric source="avgNumberOfNodesOfActiveQosClassIdentifierKpis" target="avgNumberOfNodesOfActiveQosClassIdentifierKpis"/>
+      <metric source="numberOfActiveIpInterfacePmKpis" target="numberOfActiveIpInterfacePmKpis"/>
+      <metric source="avgNumberOfNodesOfActiveIpInterfacePmKpis" target="avgNumberOfNodesOfActiveIpInterfacePmKpis"/>
+      <metric source="numberOfActiveEthPortKpis" target="numberOfActiveEthPortKpis"/>
+      <metric source="avgNumberOfNodesOfActiveEthPortKpis" target="avgNumberOfNodesOfActiveEthPortKpis"/>
+      <metric source="numberOfActiveSgsnFunctionKpis" target="numberOfActiveSgsnFunctionKpis"/>
+      <metric source="avgNumberOfNodesOfActiveSgsnFunctionKpis" target="avgNumberOfNodesOfActiveSgsnFunctionKpis"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.dashboardapp.rest.metrics.myservice-test:type=KpiRestMetric$">
+      <metric source="numberOfKpiViewerExportRequests" target="numberOfKpiViewerExportRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfKpisExported" target="numberOfKpisExported" delta="true" filteridle="true"/>
+      <metric source="numberOfKpisRequested" target="numberOfKpisRequested" delta="true" filteridle="true"/>
+      <metric source="numberOfKpiRequestsLessBreachInfoSent" target="numberOfKpiRequestsLessBreachInfoSent" delta="true" filteridle="true"/>
+      <metric source="numberOfKpiResponsesLessBreachInfoReceived" target="numberOfKpiResponsesLessBreachInfoReceived" delta="true" filteridle="true"/>
+      <metric source="numberOfKpiRequestsLessBreachInfoFailed" target="numberOfKpiRequestsLessBreachInfoFailed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.networkscope.ejb.metric.myservice-test:type=NetworkScopeRestMetric$">
+      <metric source="numberGetAllElementsInScopeRequests" target="numberGetAllElementsInScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberGetQueryScopeRequests" target="numberGetQueryScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberGetAttributesForScopeRequests" target="numberGetAttributesForScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberGetNeTypesInScopeRequets" target="numberGetNeTypesInScopeRequets" delta="true" filteridle="true"/>
+      <metric source="numberIsScopeReadyRequests" target="numberIsScopeReadyRequests" delta="true" filteridle="true"/>
+      <metric source="numberAddElementToScopeRequests" target="numberAddElementToScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberAddElementsToScopeRequests" target="numberAddElementsToScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberAddElementsToSelectedScopeRequests" target="numberAddElementsToSelectedScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberCreateFixedScopeRequests" target="numberCreateFixedScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberDeleteFixedScopeRequests" target="numberDeleteFixedScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberDeleteFromScopeRequests" target="numberDeleteFromScopeRequests" delta="true" filteridle="true"/>
+      <metric source="numberDeleteScopeByIdRequests" target="numberDeleteScopeByIdRequests" delta="true" filteridle="true"/>
+      <metric source="numberDeleteAllElementsInScopeRequests" target="numberDeleteAllElementsInScopeRequests" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhmservice.ejb.metrics.myservice-test:type=NhaRestMetrics$">
+      <metric source="numberOfCellTabRequests" target="numberOfCellTabRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfKPITabRequests" target="numberOfKPITabRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfNHAExportsRequested" target="numberOfNHAExportsRequested" delta="true" filteridle="true"/>
+      <metric source="numberOfNhaCmStateRequests" target="numberOfNhaCmStateRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfNhaKpisRequested" target="numberOfNhaKpisRequested" delta="true" filteridle="true"/>
+      <metric source="numberOfNodeTabRequests" target="numberOfNodeTabRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfHistoricalDataRequests" target="numberOfHistoricalDataRequests" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.networkstatus.rest.metrics.network-status-service:type=NetworkStatusRestMetric$">
+      <metric source="numberNetworkStateWidgetRequests" target="numberNetworkStateWidgetRequests" delta="true" filteridle="true"/>
+      <metric source="numberSyncStateWidgetRequests" target="numberSyncStateWidgetRequests" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.networkstatus.ejb.service.metric.network-status-service:type=NetworkStatusServicePushMetrics$">
+      <metric source="numberOfAdminStateEventsPushed" target="numberOfAdminStateEventsPushed" delta="true" filteridle="true"/>
+      <metric source="numberOfAvailabilityStatusEventsPushed" target="numberOfAvailabilityStatusEventsPushed" delta="true" filteridle="true"/>
+      <metric source="numberOfNodeLevelStateEventsPushed" target="numberOfNodeLevelStateEventsPushed" delta="true" filteridle="true"/>
+      <metric source="numberOfOpStateEventsPushed" target="numberOfOpStateEventsPushed" delta="true" filteridle="true"/>
+      <metric source="numberOfSyncStateEventsPushed" target="numberOfSyncStateEventsPushed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

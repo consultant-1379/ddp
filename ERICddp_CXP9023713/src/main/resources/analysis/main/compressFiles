@@ -1,0 +1,20 @@
+#!/bin/bash
+
+DATADIR=$1
+
+MAXSIZE_MB=2
+MAXSIZE=$(expr ${MAXSIZE_MB} \* 1048576)
+LARGE_FILES=$(find ${DATADIR} -size +${MAXSIZE}c | egrep -v '.gz\.?.*$|.zip$')
+for FILE in ${LARGE_FILES} ; do
+    FILE_LIST+=("${FILE}")
+done
+
+if [ -x /usr/bin/parallel ] ; then
+    /usr/bin/parallel -j 2 /usr/bin/gzip -f -- ${FILE_LIST[@]}
+else
+    for FILE in "${FILE_LIST[@]}" ; do
+        if [ ! -z "${FILE}" ] ; then
+            gzip -f ${FILE}
+        fi
+    done
+fi

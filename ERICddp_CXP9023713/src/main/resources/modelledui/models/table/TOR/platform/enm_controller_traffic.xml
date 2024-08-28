@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ingress_controller_traffic">
+    <reference table="sites" condition="enm_ingress_controller_traffic.siteid = sites.id"/>
+    <reference table="servers" condition="enm_ingress_controller_traffic.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ingress_controller_traffic.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.id" label="Instance" visible="false" id="InstanceId"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(totalConnection)" label="Total Connections(Accepted)"/>
+  <column db="SUM(bytesRead)" label="Bytes Read"/>
+  <column db="SUM(bytesWrite)" label="Bytes Written"/>
+
+  <ctxmenu keycol="InstanceId" targettype="url">
+    <item id="instance" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <xs:complexType name="propertybase" abstract="true">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!--
+      fixedproperty are used to store a contant value into a column
+      e.g. the router type in cm_supervsion
+  -->
+  <xs:complexType name="fixedproperty">
+    <xs:complexContent>
+      <xs:extension base="propertybase">
+        <xs:attribute name="value" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <!--
+      nameproperty is used to store a contant value into a column
+      where the value stored comes from part of the metric group name
+      e.g. the cache name for enm_cache_instr
+  -->
+  <xs:complexType name="nameproperty">
+    <xs:complexContent>
+      <xs:extension base="propertybase">
+        <xs:attribute name="index" type="xs:integer" use="required"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <!--
+      labelproperty is used to store a contant value into a column
+      where the value stored comes from a label value
+  -->
+  <xs:complexType name="labelproperty">
+    <xs:complexContent>
+      <xs:extension base="propertybase">
+        <xs:attribute name="label" type="xs:string" use="required"/>
+        <xs:attribute name="filtervalue" type="xs:string"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <!--
+      multilabelproperty properties is used to store a contant value into a column
+      where the value stored comes from a label value. It it used where there are multiple
+      instances of a metric group, each instance being identified by the value of the property
+  -->
+  <xs:complexType name="multilabelproperty">
+    <xs:complexContent>
+      <xs:extension base="propertybase">
+        <xs:attribute name="label" type="xs:string" use="required"/>
+        <xs:attribute name="filtervalue" type="xs:string"/>
+        <xs:attribute name="index" type="xs:integer" use="required"/>
+        <xs:attribute name="optional" type="xs:boolean" default="false"/>
+        <!-- Generally addtogroup should not be set as it is handled automatically -->
+        <xs:attribute name="addtogroup" default="auto">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="auto"/>
+              <xs:enumeration value="true"/>
+              <xs:enumeration value="false"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:element name="modelledinstr">
+    <xs:complexType>
+      <xs:all>
+
+        <xs:element name="services" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="service" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="blacklist" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="service" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="hooks" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="hook" minOccurs="1">
+                <xs:simpleType>
+                  <xs:restriction base="xs:string">
+                    <xs:enumeration value="prestore"/>
+                  </xs:restriction>
+                </xs:simpleType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="module" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="table" minOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="keycol" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                  <xs:attribute name="reftable" type="xs:string" use="required"/>
+                  <xs:attribute name="refnamecol" type="xs:string" default="name"/>
+                  <xs:attribute name="reffiltercol" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="timecol" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="metricgroups" minOccurs="1" >
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="multi" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+
+              <xs:element name="metricgroup" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="metric" minOccurs="1" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="labelfilter" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required"/>
+                              <!--
+                                  Note: The filter value is applied as a regex so you may need to add
+                                  anchors, e.g. if filtering on bind and unbind, a filter value of bind
+                                  will also match unbind, to match exactly bind you need a value of "^bind$"
+                              -->
+                              <xs:attribute name="value" type="xs:string" use="required"/>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="source" type="xs:string" use="required"/>
+                        <xs:attribute name="target" type="xs:string" use="required"/>
+                        <xs:attribute name="delta" type="xs:boolean" default="false"/>
+                        <xs:attribute name="filterstatic" type="xs:boolean" default="false"/>
+                        <xs:attribute name="filteridle" type="xs:boolean" default="false"/>
+                        <xs:attribute name="scale" type="xs:decimal"/>
+                        <xs:attribute name="rate" type="xs:boolean" default="false"/>
+                        <xs:attribute name="store" type="xs:boolean" default="true"/>
+                        <xs:attribute name="filtervalue" type="xs:string"/>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="property" type="propertybase" minOccurs="0" maxOccurs="unbounded"/>
+                  </xs:sequence>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                  <xs:attribute name="providername" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+      </xs:all>
+      <xs:attribute name="namespace" type="xs:string" use="required"/>
+      <xs:attribute name="sampleinterval" type="xs:int"/>
+      <xs:attribute name="instnamelabel" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

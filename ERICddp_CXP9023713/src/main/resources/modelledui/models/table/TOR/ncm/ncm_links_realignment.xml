@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ncm_links_realignment">
+    <reference table="sites" condition="enm_ncm_links_realignment.siteid = sites.id"/>
+    <reference table="servers" condition="enm_ncm_links_realignment.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ncm_links_realignment.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time - INTERVAL ROUND(duration/1000) SECOND" label="Start Time" formatter="ddpFormatTime"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="duration" label="Duration(msec)"/>
+  <column db="numOfLinks" label="Number of Links"/>
+  <column db="numOfInvalidLinks" label="Number of Invalid Links"/>
+  <column db="status" label="Status"/>
+  <column db="info" label="Info"/>
+</modelledtable>

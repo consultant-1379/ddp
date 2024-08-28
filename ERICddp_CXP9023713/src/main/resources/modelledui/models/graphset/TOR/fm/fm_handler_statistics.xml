@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_fm_handler_statistics">
+      <reference table="sites" condition="enm_fm_handler_statistics.siteid = sites.id"/>
+      <reference table="servers" condition="enm_fm_handler_statistics.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="totalalarmsreceived" type="sb" forcelegend="true">
+      <title value="Total Number Of Alarms Received"/>
+      <column db="totalNoOfAlarmsReceived" label="Total Number Of Alarms Received"/>
+    </graph>
+    <graph name="totalsuccessfultransformations" type="sb" forcelegend="true">
+      <title value="Total Number Of Successful Transformations"/>
+      <column db="totalNoOfSuccessfulTransformations" label="Total Number Of Successful Transformations"/>
+    </graph>
+    <graph name="totalalarmeventnotifications" type="sb" forcelegend="true">
+      <title value="Total Number Of Forwarded Alarm Event Notifications"/>
+      <column db="totalNoOfForwardedAlarmEventNotifications" label="Total Number Of Forwarded Alarm Event Notifications"/>
+    </graph>
+    <graph name="totalsyncalarmeventnotifications" type="sb" forcelegend="true">
+      <title value="Total Number Of Forwarded Sync Alarm Event Notifications"/>
+      <column db="totalNoOfForwardedSyncAlarmEventNotifications" label="Total Number Of Forwarded Sync Alarm Event Notifications"/>
+    </graph>
+  </graphs>
+  <groups>
+    <group name="alarmsReceived">
+      <member>totalalarmsreceived</member>
+    </group>
+    <group name="alarmsTransformed">
+      <member>totalsuccessfultransformations</member>
+    </group>
+    <group name="forwardedEventNotifications">
+      <member>totalalarmeventnotifications</member>
+      <member>totalsyncalarmeventnotifications</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

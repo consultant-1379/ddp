@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_cm_change_mediation">
+  <reference table="sites" condition="ecson_cm_change_mediation.siteid = sites.id"/>
+  <reference table="servers" condition="ecson_cm_change_mediation.serverid  = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_cm_change_mediation.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Servers" id="serverNames"/>
+ <column db="SUM(ecson_cm_change_mediation.statusUpdateHttpRequest)" label="Status Update HTTP Request"/>
+ <column db="SUM(ecson_cm_change_mediation.activationChangeHttpRequest)" label="Activation Change HTTP Request"/>
+ <column db="SUM(ecson_cm_change_mediation.succeededActivation)" label="Succeeded Activation"/>
+ <column db="SUM(ecson_cm_change_mediation.succeededChange)" label="Succeeded Change"/>
+
+</modelledtable>

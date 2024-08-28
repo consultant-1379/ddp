@@ -1,0 +1,182 @@
+#!/usr/bin/env perl
+# Generate an instrumentation configuration file
+# as identical as possible to the pre-O11 one, so we
+# can continue to use older code unmodified.
+use strict;
+use warnings;
+
+use XML::DOM;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+our %profiles = ();
+
+sub main() {
+    my ($cfgdir, $output);
+    my $result = GetOptions(
+        "cfg=s" => \$cfgdir,
+        "out=s" => \$output,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid arguments";
+
+    if ($DEBUG > 2) { print "cfgdir: " . $cfgdir . "\n"; }
+    print "
+# WARNING: THIS FILE IS LEGACY AND WILL BE DEPRECATED.
+#
+# This file is generated from the contents of the instr directory,
+# and is only intended for use by legacy scripts which rely on the
+# format of the original instr.cfg file. If you are processing new data
+# provided by instr, please use the XML files to acquire configuration
+# data.
+#
+";
+    if (defined($cfgdir)) {
+        opendir(XMLDIR, $cfgdir) or die "Invalid directory: " . $cfgdir . "\n";
+        my @files = sort grep { /\.xml$/ } readdir XMLDIR;
+        foreach my $file (@files) {
+            if ($DEBUG > 2) { print "Processing " . $file . "\n"; }
+            if ($file =~ /^oss\.xml$/) { 
+		processOSSFile($cfgdir . "/" . $file); 
+	    } elsif ( $file eq "prismtech.xml" || $file =~ /^versant.*\.xml$/ ) { 
+		processOSSFile($cfgdir . "/" . $file); 
+	    }
+            else { print "# No defined action for " . $file . "\n"; }
+        }
+    }
+}
+
+sub parseXml {
+    my $file = shift;
+    if ($DEBUG > 5) { print "parseXml: Processing " . $file . "\n"; }
+    my $parser = XML::DOM::Parser->new();
+    return $parser->parsefile($file);
+}
+    
+    
+sub processOSSFile {
+    my $file = shift;
+    my $doc = parseXml($file);
+    my $profiles = $doc->getElementsByTagName('profile');
+    if ($DEBUG > 5) { print "processOSSFile: found " . $profiles->getLength() . " profiles\n"; }
+    for (my $i = 0 ; $i < $profiles->getLength ; $i++) {
+        my $profile = $profiles->item($i);
+        if ($DEBUG > 5) { print "processOSSFile: Processing profile: " . $profile->getAttributeNode("name")->getValue() . "\n"; }
+        my @providers = $profile->getElementsByTagName('provider');
+        foreach my $provider (@providers) {
+            my $pType = $provider->getAttributeNode("type")->getValue();
+            my $pName = $provider->getAttributeNode("name")->getValue();
+            if ($DEBUG > 5) { print "Processing provider: " . $pName . ": " . $pType . "\n"; }
+            if ($pType =~ /^selfmgt$/) {
+                # we can safely just print the name, and the following strings, since they should be identical
+                # in name and order to the ones in O10
+                print $pName;
+                my $nodes = $provider->getChildNodes();
+                for (my $i = 0 ; $i < $nodes->getLength ; $i++) {
+                    my $n = $nodes->item($i);
+                    if ($n->getNodeName() =~ /^metric$/) {
+                        print "," . $n->getAttribute('name');
+                    }
+                }
+                print "\n";
+            } elsif ($pType =~ /^jmx$/ && $pName =~ /^CEx$/) {
+                # just print out the original configuration
+                # with my new titles
+                print 
+"JMXPROPS,CEx-mem,.*-Ds=CEx.*,java.lang:type=Memory,HeapMemoryUsage
+JMXPROPS,CEx-thr,.*-Ds=CEx.*,java.lang:type=Threading,ThreadCount,PeakThreadCount
+JMXPROPS,CEx-tasks,.*-Ds=CEx.*,CEX:name=tasks,RequestedTasks.length,RunningTasks.length,FinishedTasks.length
+JMXPROPS,CEX-domain,.*-Ds=CEx.*,CEX:name=domain,ReceivedEvents,CreatedObjects,DeletedObjects
+JMXPROPS,CEx-NSD-pm,.*-Ds=CEx.*,NSD:name=performanceManager,CellRequests,ClusterRequests,KPISendChunk,RbsRequests,RncRequests
+JMXPROPS,CEx-NSD-fm,.*-Ds=CEx.*,NSD:name=alarms,AckAlarms,AlarmListRebuild,ClearedAlarms,DeleteAlarms,NewAlarms,OtherAlarms,TotalAlarms
+";
+            } elsif ( $pType eq "prismtech" )  {
+		printf "PT,%s,Notification", $pName;
+                my $nodes = $provider->getChildNodes();
+                for (my $i = 0 ; $i < $nodes->getLength ; $i++) {
+                    my $n = $nodes->item($i);
+                    if ($n->getNodeName() =~ /^metric$/) {
+                        print "," . $n->getAttribute('name');
+                    }
+                }
+                print "\n";
+	    } elsif ( $pType eq "versant" ) {
+		printf "VDB,%s", $pName;
+                my $nodes = $provider->getChildNodes();
+                for (my $i = 0 ; $i < $nodes->getLength ; $i++) {
+                    my $n = $nodes->item($i);
+                    if ($n->getNodeName() =~ /^metric$/) {
+                        print "," . $n->getAttribute('name');
+                    }
+                }
+                print "\n";
+	    }
+        }
+    }
+}
+
+sub processProfile {
+    my $profile = shift;
+    my @providers = $profile->getElementsByTagName('provider');
+    my $profileName = $profile->getAttributeNode("name")->getValue();
+    foreach my $provider (@providers) {
+        if ($DEBUG > 5) { print "Processing provider: " . $provider->getAttributeNode("name")->getValue() . ": " .
+            $provider->getAttributeNode("type")->getValue() . "\n"; }
+        for ($provider->getAttributeNode("type")->getValue()) {
+            /^jmx$/       and do { processJmx($profile, $provider) ; last ; };
+            /^selfmgt$/   and do { processProvider($profileName, 'selfmgt', $provider) ; last ; };
+            /^prismtech$/ and do { processProvider($profileName, 'prismtech', $provider) ; last ; };
+            print "# ERROR: Unknown provider type: " . $_ . "\n";
+        }
+    }
+}
+
+sub processJmx {
+    my ($profile, $provider) = @_;
+    my $nodes = $provider->getChildNodes();
+    my $profileName = $profile->getAttributeNode("name")->getValue();
+    my $providerName = $provider->getAttributeNode("name")->getValue();
+    for (my $i = 0 ; $i < $nodes->getLength ; $i++) {
+        my $n = $nodes->item($i);
+        for ($n->getNodeName()) {
+            /^metricGroup$/ and do {
+                my $pName = $providerName . "-" . $n->getAttributeNode("name")->getValue();
+                processProvider($pName, "jmx", $n);
+                last;
+            }
+        }
+    }
+}
+
+sub processProvider {
+    my ($profileName, $type, $provider) = @_;
+    if ($DEBUG > 5) { print "Processing Provider\n"; }
+    my $name = $provider->getAttributeNode("name")->getValue();
+    my $initialStr = $type . "," . $profileName . "," . $name;
+    my $nodes = $provider->getChildNodes();
+    $initialStr .= processNode($provider);
+    #for (my $i = 0 ; $i < $nodes->getLength ; $i++) {
+    #    my $n = $nodes->item($i);
+    #    if ($DEBUG > 5) { print "Processing node: " . $n->getNodeName() . "\n"; }
+    #    $initialStr .= processNode($n);
+    #}
+    print $initialStr . "\n";
+}
+
+sub processNode {
+    my $mg = shift;
+    my $retval = "";
+    my $nodes = $mg->getChildNodes();
+    for (my $i = 0 ; $i < $nodes->getLength ; $i++) {
+        my $n = $nodes->item($i);
+        for ($n->getNodeName()) {
+            /^metric$/ and do { $retval .= "," . $n->getAttribute('name') ; last ; } ;
+            /^compositeMetric$/ and do { $retval .= processNode($n); last; } ;
+        }
+    }
+    return $retval;
+}
+
+main();

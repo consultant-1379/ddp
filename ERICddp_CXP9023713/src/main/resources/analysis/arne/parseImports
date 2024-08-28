@@ -1,0 +1,622 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Time::Local;
+use Data::Dumper;
+
+use StatsTime;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $SEARCH_START = 0;
+our $SEARCH_END = 1;
+our $NEXT_PLAN = 2;
+
+our %EVENT_TYPE_MAP = ( 'OBJECT_CREATION' => 'create', 'ATTRIBUTE_VALUE_CHANGE' => 'update', 'OBJECT_DELETION' => 'delete' );
+our @PLUGIN_NAMES = ( "com.ericsson.nms.ldapPlugin.LdapPlugin", "com.ericsson.nms.umts.ranos.wma.main.UtranPlugin", "com.ericsson.nms.gpi.GeranPlugin" );
+
+sub compareStart
+{
+    return parseTime($a->{'start'},$StatsTime::TIME_SQL) <=> parseTime($b->{'start'},$StatsTime::TIME_SQL);
+}
+
+sub processWmaTimes($$) {
+    my ($r_Imports,$r_WmaTimes) = @_;
+
+    my $numWmaTimes = $#{$r_WmaTimes} + 1;
+    if ( $DEBUG > 4 ) { print "processWmaTimes: Entered numWmaTimes=$numWmaTimes\n"; }
+
+    foreach my $r_Import ( @{$r_Imports} ) {
+    if ( $DEBUG > 5 ) { print Dumper("processWmaTimes: r_Import", $r_Import); }
+    my $wmaIndex = 0;
+    foreach my $r_plan ( @{$r_Import->{'plans'}} ) {
+        if ( $DEBUG > 4 ) {
+        printf("processWmaTimes: looking for WMA update for %s created %s updated %s\n",
+               $r_plan->{'name'},
+               formatTime($r_plan->{'created'},$StatsTime::TIME_SQL), formatTime($r_plan->{'updated'},$StatsTime::TIME_SQL));
+        printf("processWmaTimes: wmaIndex=%d end   time=%s\n",
+               $wmaIndex, formatTime($r_WmaTimes->[$wmaIndex]->{'time'},$StatsTime::TIME_SQL));
+        }
+
+        while ( ($wmaIndex < $numWmaTimes) &&
+            ($r_WmaTimes->[$wmaIndex]->{'time'} <= $r_plan->{'updated'}) ) {
+        if ( $DEBUG > 4 ) { printf("processWmaTimes: wmaIndex=%d time=%s\n", $wmaIndex, formatTime($r_WmaTimes->[$wmaIndex]->{'time'},$StatsTime::TIME_SQL)); }
+
+        if ( $r_WmaTimes->[$wmaIndex]->{'time'} >= $r_plan->{'created'} ) {
+            if ( $DEBUG > 4 ) { print Dumper("processWmaTimes: matched wmaIndex=$wmaIndex", $r_WmaTimes->[$wmaIndex]); }
+            $r_plan->{'wmaStats'} = $r_WmaTimes->[$wmaIndex]->{'stats'};
+        }
+        $wmaIndex++;
+        if ( $DEBUG > 4 ) { printf("processWmaTimes: wmaIndex=%d end   time=%s\n", $wmaIndex, formatTime($r_WmaTimes->[$wmaIndex]->{'time'},$StatsTime::TIME_SQL));}
+        }
+    }
+    }
+}
+
+sub processPlugins($$) {
+    my ($r_Imports,$r_pluginsByPlan) = @_;
+    foreach my $r_Import ( @{$r_Imports} ) {
+    foreach my $r_plan ( @{$r_Import->{'plans'}} ) {
+        my $r_plugsins = $r_pluginsByPlan->{$r_plan->{'name'}};
+        if ( defined $r_plugsins ) {
+        $r_plan->{'plugings'} = $r_plugsins;
+        } else {
+        print "WARN: No plugin information for $r_plan->{'name'} in import starting at " . $r_Import->{'start'} . "\n";
+        }
+    }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("processPlugins: r_Import", $r_Imports); }
+}
+
+sub getImportId
+{
+    my ($dbh,$siteId,$r_Import) = @_;
+
+    my $importId;
+
+    my $query =
+        sprintf("SELECT id,end FROM arne_import WHERE siteid = %d AND start = '%s'",
+                $siteId, $r_Import->{'start'});
+    if ( $DEBUG > 3 ) { print "getImportId: query = \"$query\"\n"; }
+
+    my $sth = $dbh->prepare($query) or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute() or die "Couldn't execute statement: " . $sth->errstr;
+    my $numFound = $sth->rows;
+    if (  $sth->rows > 0 )
+    {
+        my @row = $sth->fetchrow_array();
+        $importId = $row[0];
+
+    # Check that the endTime is set
+    #  could have already processed this import while the import is on-going and
+    #  so the endTime would have been null
+    my $currEndTime = $row[1];
+    if ( $currEndTime ne $r_Import->{'end'} ) {
+        dbDo($dbh, "UPDATE arne_import SET end = '$r_Import->{'end'}' WHERE id = $importId")
+        or die 'Cannot UPDATE arne_import';
+    }
+    } else {
+    dbDo($dbh, sprintf("INSERT INTO arne_import (siteid,start,end) VALUES (%d,%s,%s)",
+               $siteId,
+               $dbh->quote($r_Import->{'start'}),
+               $dbh->quote($r_Import->{'end'})
+               ) )
+        or die 'Cannot insert into arne_import';
+    $importId = $dbh->last_insert_id(undef,undef,"arne_import","id");
+    }
+
+    return $importId;
+}
+
+sub printImports($) {
+    my @pluginNames = ( "com.ericsson.nms.ldapPlugin.LdapPlugin", "com.ericsson.nms.umts.ranos.wma.main.UtranPlugin", "com.ericsson.nms.gpi.GeranPlugin" );
+    my ($r_Imports) = @_;
+    for my $r_Import ( @{$r_Imports} ) {
+    print "$r_Import->{'start'} $r_Import->{'end'}\n";
+    foreach my $r_plan ( @{$r_Import->{'plans'}} ) {
+        if ( $DEBUG > 7 ) { print Dumper($r_plan); }
+        printf("%-26s %s %d %d", $r_plan->{'name'}, formatTime($r_plan->{'created'},$StatsTime::TIME_SQL),
+           $r_plan->{'created'}, $r_plan->{'deleted'});
+        if ( exists $r_plan->{'lastchange'} ) {
+        printf(" %3d", $r_plan->{'lastchange'} - $r_plan->{'created'});
+        }
+
+        if ( exists $r_plan->{'plugings'} ) {
+        my $plugInStart;
+        my $plugInEnd = 0;
+        my $plugInStr = "";
+        foreach my $plugInName ( @pluginNames ) {
+            my $r_plugin = $r_plan->{'plugings'}->{$plugInName};
+            my $duration;
+
+            if ( defined $r_plugin ) {
+            if ( $DEBUG > 8 ) { print Dumper("printImports: plugInName=$plugInName r_plugin",$r_plugin); }
+            $plugInStart = $r_plugin->{'startTime'};
+            if ( exists $r_plugin->{'endTime'} ) {
+                my $delta = $r_plugin->{'endTime'} - $plugInStart;
+                if ( $DEBUG > 8 ) { print "printImports:  plugInStart=$plugInStart, endTime=$r_plugin->{'endTime'} delta=$delta\n"; }
+                $duration = sprintf("%3d ", $delta);
+                if ( $r_plugin->{'endTime'} > $plugInEnd ) {
+                $plugInEnd = $r_plugin->{'endTime'};
+                }
+            } else {
+                $duration = "END ";
+            }
+            } else {
+            $duration = "MIA ";
+            }
+            $plugInStr .= $duration;
+        }
+
+        printf(" %s", $plugInStr);
+        if(defined $r_plan->{'updated'} && $r_plan->{'deleted'} && $plugInEnd > 0) {
+            printf(" %3d %3d", $r_plan->{'updated'} - $plugInEnd, $r_plan->{'deleted'} - $r_plan->{'updated'} )
+        }
+        }
+        print "\n";
+    }
+    }
+}
+
+sub getPlanTimes($) {
+    my ($r_plan) = @_;
+
+    if ( $DEBUG > 7 ) { print Dumper("getPlanTimes: ", $r_plan); }
+
+    my %times = (
+    'created'  => formatTime($r_plan->{'created'},$StatsTime::TIME_SQL),
+    'modified' => formatTime($r_plan->{'lastchange'},$StatsTime::TIME_SQL),
+    'updated'  => formatTime($r_plan->{'updated'},$StatsTime::TIME_SQL),
+    'deleted'  => formatTime($r_plan->{'deleted'},$StatsTime::TIME_SQL)
+    );
+
+    if ( exists $r_plan->{'plugings'} ) {
+    my $plugInStart;
+    my $plugInEnd = 0;
+    foreach my $plugInName ( @PLUGIN_NAMES ) {
+        my $r_plugin = $r_plan->{'plugings'}->{$plugInName};
+        if ( defined $r_plugin ) {
+        if ( $DEBUG > 8 ) { print Dumper("getPlanTimes: plugInName=$plugInName r_plugin",$r_plugin); }
+        $plugInStart = $r_plugin->{'startTime'};
+        if ( exists $r_plugin->{'endTime'} ) {
+            my ($shortName) = $plugInName =~ /\.([^\.]+)Plugin$/;
+            $shortName = lc($shortName);
+            $times{$shortName} = formatTime($r_plugin->{'endTime'},$StatsTime::TIME_SQL);
+
+            if ( $r_plugin->{'endTime'} > $plugInEnd ) {
+            $plugInEnd = $r_plugin->{'endTime'};
+            }
+        }
+        }
+    }
+
+    if ( defined $plugInStart ) {
+        $times{'pistart'} = formatTime($plugInStart,$StatsTime::TIME_SQL);
+    }
+    if($plugInEnd > 0) {
+        $times{'piend'} = formatTime($plugInEnd,$StatsTime::TIME_SQL);
+    }
+
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("getPlanTimes: times", \%times); }
+    return \%times;
+}
+
+sub storeResults
+{
+    my ($site,$date,$r_Imports) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    my %allMos = ();
+    for my $r_Import ( @{$r_Imports} ) {
+    foreach my $r_plan ( @{$r_Import->{'plans'}} ) {
+        if ( exists $r_plan->{'mo'} ) {
+        foreach my $moType ( keys %{$r_plan->{'mo'}} ) {
+            $allMos{$moType} = 1;
+        }
+        }
+    }
+    }
+    my @moList = keys %allMos;
+    my $r_idMap = getIdMap($dbh,"mo_names", "id", "name", \@moList );
+
+    for my $r_Import ( @{$r_Imports} ) {
+    if ( $DEBUG > 3 ) { print Dumper("storeResults: r_import", $r_Import); }
+
+    my $importId = getImportId($dbh, $siteId, $r_Import);
+
+    dbDo($dbh, "DELETE FROM arne_import_content WHERE importid = $importId");
+    dbDo($dbh, "DELETE FROM arne_import_detail WHERE importid = $importId");
+    foreach my $r_plan ( @{$r_Import->{'plans'}} ) {
+        if ( $DEBUG > 4 ) { print Dumper("storeResults: r_plan", $r_plan); }
+        my ($planId) = $r_plan->{'name'} =~ /^PA_ARNE_ARNEServer:(\d+)/;
+
+        foreach my $moType ( keys %{$r_plan->{'mo'}} ) {
+        dbDo($dbh,
+             sprintf("INSERT INTO arne_import_content (importid,plan,moid,creates,updates,deletes) VALUES (%d,%d,%d,%d,%d,%d)",
+                 $importId, $planId,
+                 $r_idMap->{$moType},
+                 $r_plan->{'mo'}->{$moType}->{'create'},
+                 $r_plan->{'mo'}->{$moType}->{'update'},
+                 $r_plan->{'mo'}->{$moType}->{'delete'})
+            ) or die 'Cannot insert into arne_import_content';
+        }
+
+        my $r_times = getPlanTimes($r_plan);
+        my @colNames = ( "importid","plan","created","modified","pistart","piend","ldap","utran","geran","updated","deleted");
+        my @colValues = ($importId, $planId,
+                 $dbh->quote($r_times->{'created'}),
+                 $dbh->quote($r_times->{'modified'}),
+                 $dbh->quote($r_times->{'pistart'}),
+                 $dbh->quote($r_times->{'piend'}),
+                 $dbh->quote($r_times->{'ldap'}),
+                 $dbh->quote($r_times->{'utran'}),
+                 $dbh->quote($r_times->{'geran'}),
+                 $dbh->quote($r_times->{'updated'}),
+                 $dbh->quote($r_times->{'deleted'}));
+        if ( exists $r_plan->{'wmaStats'} ) {
+        foreach my $statName ( 'TRT', 'TET', 'TAT', 'TACT', 'TVRT', 'TMRT' ) {
+                    my $value = $r_plan->{'wmaStats'}->{$statName};
+                    if ( defined $value ) {
+                        push @colNames, "wma". $statName;
+                        push @colValues, $value / 1000;
+                    }
+                }
+            }
+
+            dbDo($dbh, sprintf("INSERT INTO arne_import_detail (%s) VALUES (%s)",
+                               join(",",@colNames),join(",",@colValues))
+        ) or die "Failed to insert data";
+    }
+
+
+    }
+
+    $dbh->disconnect();
+}
+
+
+sub readEvent
+{
+    my @eventLines = ();
+    my $line;
+    while ( defined($line = <EVENTS>) && ($line !~ /^$/) )
+    {
+    chop $line;
+    push @eventLines, $line;
+    }
+
+    my $result;
+    if ( $#eventLines > -1 )
+    {
+    $result = \@eventLines;
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("readEvent: result", $result); }
+
+    return $result;
+}
+
+
+
+
+
+sub parseLvLogs($$) {
+    my ($lvLogDir,$r_wmaTimes) = @_;
+
+    my %pluginsByPlan = ();
+    my $mafLog = $lvLogDir . "/MAF";
+
+    if ( ! -r $mafLog ) {
+    return \%pluginsByPlan;
+    }
+
+    my %activePluginsById = ();
+    my %activePluginsByName = ();
+
+    open LOG, $mafLog or die "Cannot open $mafLog";
+    while ( my $line = <LOG> ) {
+    if ( $DEBUG > 9 ) { print "parseLvLogs: line=$line"; }
+    if ( $line =~ /^(\S+) (\S+) SYSTEM "MAF" .* \"WMA Times\s+: ID \d+ (.*)\"$/ ) {
+        my ($date,$time,$statsStr) = ($1,$2,$3);
+
+#               " TRT " = totalReadTime // time doing the iterations arount the planned MOs
+#               " TET " = totalExecuteTime  // time executing the command
+#               " TAT " =  totalAttachTime  // time attaching nead
+#               " TACT " = totalAddCmdTime   // time adding the command to the list (includes building up the time)
+#               " TVRT " = totalReadValidTime // time spent reading Extra MOS
+#               " TRFT " = reflectionTime // time finding the MO cmd by reflection. (I dislike the reflection and was hoping it would be really slow so I could justify changing it)
+#               " TVR " =  totalMosValidRead  // number of Mos read from valid while building up commands
+#               " TMRT " =  totalreadMETime  // time spent reading Managed Element
+#               " TX " = totalTxStarted  // total transaction - not done yet as it we proving hard to track down all the Txs
+#               " TR " = totalMosRead  // number of Mos read from the plan
+#               " TE " = totalMosExecuted // Number of commands executed.
+
+        if ( $DEBUG > 7 ) { print "parseLvLogs: date,time,statsStr = $date,$time,$statsStr\n"; }
+
+        my @statsFields = split / /, $statsStr;
+        my %stats = ();
+        for ( my $i = 0; $i <= $#statsFields; $i+=2 ) {
+        if ( $DEBUG > 7 ) { printf "parseLvLogs: %s = %s\n", $statsFields[$i],$statsFields[$i]; }
+        if ( $statsFields[$i] =~ /^T\S+$/ ) {
+            $stats{$statsFields[$i]} = $statsFields[$i+1];
+        }
+        }
+        # Remove TAT as this comes in a seperate log entry
+        delete $stats{'TAT'};
+
+        if ( $DEBUG > 6 ) { print Dumper("parseLvLogs: wma stats",\%stats); }
+
+        my $r_wmaUpdate = {
+        'timestr' => $date . " " . $time,
+        'time' => parseTime($date . " " . $time, $StatsTime::TIME_YYYYMD_HMS),
+        'stats' => \%stats
+        };
+        push @{$r_wmaTimes}, $r_wmaUpdate;
+    } elsif ( $line =~ /^\S+ \S+ SYSTEM "MAF" .* \"WMA Times\s+TRT 0.*TAT\s+(\d+)/ ) {
+        my $attachTime = $1;
+        if ( $#{$r_wmaTimes} > 0 ) {
+        $r_wmaTimes->[$#{$r_wmaTimes}]->{'stats'}->{'TAT'} = $attachTime;
+        }
+    } elsif ( $line =~ /^(\S+) (\S+) SYSTEM "MAF".*com.ericsson.nms.MAF_Server.Update_call_on_Plugin.*Plugin-ID\s+\[(\d+)\] Plugin-Name\s+\[(\S+)\] Planned Configuration Name \[(\S+)\]/ ) {
+        my ($date,$time,$pluginId,$pluginName,$plan) = ($1,$2,$3,$4,$5);
+        if ( $DEBUG > 7 ) { print "parseLvLogs: start pluginName=$pluginName pluginId=$pluginId plan=$plan\n"; }
+
+        # Only one instance of plugin can be active
+        # So if we see a start of an already active plugin
+        # then the previous one failed
+        if ( exists $activePluginsByName{$pluginName} ) {
+        my $prevId = delete $activePluginsByName{$pluginName};
+        delete $activePluginsById{$prevId};
+        print "WARN: Got start for $pluginName while $prevId active\n";
+        }
+
+        # Store this as an active instance
+        $activePluginsById{$pluginId} = {
+        'plan' => $plan,
+        'pluginName' => $pluginName
+        };
+        $activePluginsByName{$pluginName} = $pluginId;
+
+        my $r_plugins = $pluginsByPlan{$plan};
+        if ( ! defined $r_plugins ) {
+        $r_plugins = {};
+        $pluginsByPlan{$plan} = $r_plugins;
+        }
+        $r_plugins->{$pluginName} = {
+        'startTime' => parseTime($date . " " . $time, $StatsTime::TIME_YYYYMD_HMS)
+        };
+
+    } elsif ( $line =~ /^(\S+) (\S+) SYSTEM "MAF".*com.ericsson.nms.MAF_Server.Plugin_Elapsed_Time.*Plugin-ID \[(\d+)], elapsed time is: (\d+)Hrs :(\d+)Mins :([\d\.]+)Sec/ ) {
+        my ($date,$time,$pluginId,$hour,$min,$sec) = ($1,$2,$3,$4,$5,$6);
+        if ( $DEBUG > 7 ) { print "parseLvLogs: end pluginId=$pluginId\n"; }
+        my $r_activePlugin = delete $activePluginsById{$pluginId};
+        if ( defined $r_activePlugin ) {
+        delete $activePluginsByName{$r_activePlugin->{'pluginName'}};
+
+        my $r_plugins = $pluginsByPlan{$r_activePlugin->{'plan'}};
+        $r_plugins->{$r_activePlugin->{'pluginName'}}->{'endTime'} = parseTime($date . " " . $time, $StatsTime::TIME_YYYYMD_HMS);
+        $r_plugins->{$r_activePlugin->{'pluginName'}}->{'duration'} = ($hour*3600) + ($min*60) + $sec;
+        if ( $DEBUG > 8 ) { print Dumper("parseLvLogs: plugin info", $r_plugins->{$r_activePlugin->{'pluginName'}}); }
+        } else {
+        print "WARN: Failed to find active plugin $pluginId\n";
+        }
+    }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseLvLogs: activePluginsById", \%activePluginsById); }
+    if ( $DEBUG > 4 ) { print Dumper("parseLvLogs: pluginsByPlan", \%pluginsByPlan); }
+
+    return \%pluginsByPlan;
+}
+
+sub getEventTime($$) {
+    my ($r_Event,$r_headerFields) = @_;
+
+    # if first attribute of event is time= then use this for the event time
+    # otherwise use the notif received time
+    my $eventTime = undef;
+    if ( ($#{$r_Event} > 0) && ( $r_Event->[1] =~ /^\s+time=(\S+)/) ) {
+    my $eventTimeStr = $1;
+    if ( $eventTimeStr =~ /^(\S+)\.\d{3,3}$/ ) {
+        $eventTime = parseTime($1,$StatsTime::TIME_DDMMYY_HMS);
+    }
+    }
+
+    if ( !defined $eventTime ) {
+    if ( $DEBUG > 3 ) { print Dumper("getEventTime: Could not extract time from time field", $r_Event); }
+    my ($eventTimeStr) = $r_headerFields->[0] =~ /^(\S+)\.\d{3,3}$/;
+    $eventTime = parseTime($eventTimeStr,$StatsTime::TIME_DDMMYY_HMS);
+    }
+
+    return $eventTime;
+}
+
+
+#
+# Foreach import add an 'plans' member which is an array of plan hashes
+# 'name'
+# 'created'
+# 'updated'
+# 'deleted'
+# 'lastchange'
+# 'mo' => hash keyed by moType
+#     values
+#      'create' => numCreated
+#
+sub processEvents
+{
+    my ($r_Imports, $eventsFile) = @_;
+
+    open EVENTS, $eventsFile or die "Cannot open $eventsFile";
+    my $r_Event = readEvent();
+    foreach my $r_Import ( @{$r_Imports} )
+    {
+    if ( $DEBUG > 5 ) { print Dumper("processEvents: Processing r_Import", $r_Import); }
+
+    my $startTime = parseTime($r_Import->{'start'},$StatsTime::TIME_SQL);
+    my $endTime = parseTime($r_Import->{'end'},$StatsTime::TIME_SQL);
+
+    $r_Import->{'plans'} = [];
+
+    my $state = $SEARCH_START;
+    while ( ($state == $SEARCH_START) && $r_Event ) {
+        my @headerFields = split / /, $r_Event->[0];
+        my $eventTime = getEventTime($r_Event,\@headerFields);
+        if ( $eventTime > $endTime ) {
+        $state = $NEXT_PLAN;
+        if ( $DEBUG > 0 ) { print Dumper("processEvents: WARN $headerFields[0] greater then end of current import", $r_Import); }
+        } elsif (  $eventTime >= $startTime ) {
+        $state = $SEARCH_END;
+        if ( $DEBUG > 3 ) { print "processEvents: $headerFields[0] Reached Start of import\n"; }
+        } else {
+        $r_Event = readEvent();
+        }
+    }
+
+    my $r_plan;
+    while ( ($state == $SEARCH_END) && $r_Event )
+    {
+        my @headerFields = split / /, $r_Event->[0];
+        my $eventTime = getEventTime($r_Event,\@headerFields);
+        if ( $eventTime > $endTime )
+        {
+        $state = $SEARCH_START;
+        if ( $DEBUG > 3 ) { print "processEvents: $headerFields[0] Reached End of import\n"; }
+        }
+        else
+        {
+        my $eventType = $headerFields[3];
+        if ( $DEBUG > 7 ) { print "processEvents: $headerFields[0] eventType=$eventType\n"; }
+
+        if ( $eventType eq 'CONFIGURATION_CREATED' )
+        {
+            my ($planName) = $r_Event->[2] =~ /=\"([^\"]+)\"$/;
+            $r_plan = {
+            'created' => $eventTime,
+            'name'    => $planName,
+            'mo'      => {}
+            };
+
+            if ( $DEBUG > 7 ) { print Dumper("processEvents: Found new plan", $r_plan); }
+            push @{$r_Import->{'plans'}}, $r_plan;
+        }
+        elsif ( $eventType eq 'CONFIGURATION_CHANGE' )
+        {
+            if ( $headerFields[4] eq 'UPDATED' )
+            {
+            $r_plan->{'updated'} = $eventTime;
+            }
+        }
+        elsif ( $eventType eq 'CONFIGURATION_DELETED' )
+        {
+            $r_plan->{'deleted'} = $eventTime;
+
+            if ( $DEBUG > 4 ) { print Dumper("processEvents: r_plan", $r_plan); }
+            undef ($r_plan);
+        }
+        elsif ( exists $EVENT_TYPE_MAP{$eventType} ) {
+            #my ($commitTimeStr) = $r_Event->[1] =~ /time=([\d\-:]+)\.\d{3,3}$/;
+            # Sometimes the time is not correctly formatted
+            # 08-11-13:09:01:26.226 OSS 0c1A OBJECT_DELETION PLAN
+            #   time=136031940862060000
+            #my $commitTime;
+            #if ( defined $commitTimeStr ) {
+            #$commitTime = parseTime($commitTimeStr,$StatsTime::TIME_DDMMYY_HMS);
+            #} else {
+            #$commitTime = $eventTime;
+            #}
+            $r_plan->{'lastchange'} = $eventTime;
+
+            my ($moc) = $r_Event->[2] =~ /=\"([^\"]+)\"$/;
+            my $r_moCounts = $r_plan->{'mo'}->{$moc};
+            if ( ! defined $r_moCounts ) {
+            $r_moCounts = {
+                'create' => 0,
+                'update' => 0,
+                'delete' => 0
+            };
+            $r_plan->{'mo'}->{$moc} = $r_moCounts;
+            }
+            $r_moCounts->{$EVENT_TYPE_MAP{$eventType}}++;
+        }
+
+        $r_Event = readEvent();
+        }
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("processEvents: End of while SEARCH_END r_Import", $r_Import); }
+    }
+    close EVENTS;
+}
+
+sub getImportList($) {
+    my ($importListFile) = @_;
+
+    my @imports = ();
+    open LIST_FILE, $importListFile or die "Cannot open $importListFile";
+    while ( my $line = <LIST_FILE> )
+    {
+    if ( $DEBUG > 9 ) { print "getImportList: line = $line"; }
+
+    #-rw-r--r--   1 nmsadm   nms      7427656 Apr 26 21:59:36 2007 /var/opt/ericsson/arne/ARNE_Import_Log.2007-04-26_18:09:13
+    my ($monthStr,$mday,$time,$year,$file) = $line =~
+        /(\S+)\s{1,2}(\d+) ([\d:]+) (\d{4,4}) (\S+)$/;
+    my $end = formatTime( parseTime( "XXX $monthStr $mday $time $year", $StatsTime::TIME_DAY_MON_DD_HHMMSS_YYYY),
+                  $StatsTime::TIME_SQL);
+    my ($startDate,$startTime) = $file =~ /ARNE_Import_Log\.([\d\-]+)_([\d:]+)$/;
+    my $start = $startDate . " " . $startTime;
+
+    my $r_Import = {
+        'start' => $start,
+        'end'   => $end
+        };
+    push @imports, $r_Import;
+    }
+    close LIST_FILE;
+
+    my @sortedImports = sort compareStart @imports;
+
+    if ( $DEBUG > 5 ) { print Dumper("getImportList sortedImports", \@sortedImports); }
+
+    return \@sortedImports;
+}
+
+sub main() {
+    my ($date,$importListFile,$eventsFile,$lvLogDir,$site);
+    my $result = GetOptions(
+                "date=s"  => \$date,
+                "imports=s" => \$importListFile,
+                "events=s" => \$eventsFile,
+                        "logdir=s" => \$lvLogDir,
+                "site=s" => \$site,
+                "debug=s"   => \$DEBUG
+                );
+    ($result == 1) or die "Invalid args";
+
+    my $r_Imports = getImportList($importListFile);
+    processEvents($r_Imports,$eventsFile);
+    my @wmaTimes = ();
+    my $r_plugInsByplan = parseLvLogs($lvLogDir,\@wmaTimes);
+    processPlugins($r_Imports,$r_plugInsByplan);
+    processWmaTimes($r_Imports, \@wmaTimes );
+    if ( $DEBUG > 0 ) {
+    printImports($r_Imports);
+    }
+    if ( $site ) {
+    storeResults($site,$date,$r_Imports);
+    }
+}
+
+main();

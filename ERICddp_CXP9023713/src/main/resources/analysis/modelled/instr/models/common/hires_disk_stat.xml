@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="node_exporter">
+
+  <table name="hires_disk_stat">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="diskid" reftable="disks" reffiltercol="serverid"/>
+  </table>
+
+  <hooks module="common::DiskStats">
+    <hook>prestore</hook>
+  </hooks>
+
+  <metricgroups>
+    <multi>diskid</multi>
+
+    <metricgroup name="^disk:(\S+)">
+      <metric source="node_disk_io_time_seconds_total" target="busy" delta="true" rate="true" scale="0.01"/>
+      <metric source="rws" target="rws" delta="true" rate="true"/>
+      <metric source="byte" target="blks" delta="true" rate="true" scale="512"/>
+      <metric source="node_disk_read_bytes_total" target="readblks" delta="true" rate="true" scale="512"/>
+      <metric source="avserv" target="avserv"/>
+      <property name="diskid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

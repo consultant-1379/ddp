@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_plms_instr">
+      <reference table="sites" condition="enm_plms_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_plms_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="inst"/>
+    <where>sites.name = '%s' AND servers.hostname = "%s"</where>
+  </query>
+
+  <graphs>
+    <graph name="totalNumberOfNotifications" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Notifications"/>
+      <column db="totalNumberOfCreateNotifications" label="TCIM_Notifications_Create"/>
+      <column db="totalNumberOfDeleteNotifications" label="TCIM_Notifications_Delete"/>
+      <column db="totalNumberOfUpdateNotifications" label="TCIM_Notifications_Update"/>
+      <column db="totalNumberOfAlarmNotifications" label="TCIM_Notifications_Alarm"/>
+    </graph>
+    <graph name="totalNumberOfLinkAlarms" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Link Alarms"/>
+      <column db="totalNumberOfLinkAlarms" label="totalNumberOfLinkAlarms"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="ald">
+      <member>totalNumberOfNotifications</member>
+      <member>totalNumberOfLinkAlarms</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

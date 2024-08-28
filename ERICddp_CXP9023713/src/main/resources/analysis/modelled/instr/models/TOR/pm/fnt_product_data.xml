@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="pushservice"/>
+  </services>
+
+  <table name="enm_fnt_product_data">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.fnt.ejb.service.ccpd.fnt-command-handler:type=FntProductDataConfigStatistics$">
+      <metric source="numberOfNodesSpecifiedToEnableProductData" target="numberOfNodesSpecifiedToEnableProductData"/>
+      <metric source="numberOfNodesEnabledForProductData" target="numberOfNodesEnabledForProductData"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

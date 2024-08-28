@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Time (millisec)"
+>
+  <title value="Maximum Latency"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="kafka_producer_clients">
+        <reference table="sites" condition="kafka_producer_clients.siteid = sites.id"/>
+        <reference table="servers" condition="kafka_producer_clients.serverid = servers.id"/>
+        <reference table="kafka_client_names" condition="kafka_producer_clients.clientid  = kafka_client_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverids"/>
+      <param name="clientid"/>
+      <where>sites.name = '%s' AND kafka_producer_clients.serverid IN ( %s ) AND kafka_producer_clients.clientid = '%s'</where>
+      <column db="kafka_producer_clients.lantancyMax" label="Maximum Latency"/>
+    </query>
+  </queries>
+  <size width="480" height="240"/>
+</modelledgraph>

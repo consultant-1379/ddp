@@ -1,0 +1,209 @@
+#!/usr/bin/perl
+####################################################################################
+#  Description --------- parseFlsApplicationLogs -----------
+#  This script parses the File Lookup Service(FLS) master slave and symlink
+#  creation log files for DDP and stores data to DB
+#  @author - Sunil Yadav (xsunyad)
+#  usage parseFlsApplicationLogs --dir ${DIR} --site ${SITE} --date ${SQL_DATE}
+#####################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $dir;
+our $siteId;
+our $DEBUG = 0;
+our $date = "";
+our $tmpDir = "/data/tmp";
+
+sub main {
+    my $site;
+    my $result = GetOptions(
+        "dir=s"      => \$dir,
+        "site=s"     => \$site,
+        "date=s"     => \$date,
+        "debug=s"    => \$DEBUG
+        );
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    parseData();
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData {
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    closedir DIR;
+    if ( $DEBUG > 2 ) {
+        print Dumper("Files to be parsed", @files);
+    }
+    foreach my $file (@files) {
+        next if $file =~ /^\./;
+        if ( $file =~ /^fls_master_slave_instr_(.*)/ ) {
+            my $bcpFile = parseFlsMasterSlaveLog($file);
+            my $table = "eniq_fls_master_slave_details";
+            removeOldData($table);
+            loadDb($bcpFile, $table);
+        }
+        elsif ( $file =~ /^symboliclinkcreator-.*/ ) {
+            my $temporaryLogForFileInfo = "$tmpDir/temporaryFlsFileLog";
+            my $temporaryLogForSymlinkInfo = "$tmpDir/temporaryFlsSymlinkLog";
+            # Filtering lines which contain file fetching information for File Lookup Service(FLS).
+            `grep "Time taken(in ms) to query fls for NodeType" $dir/$file > $temporaryLogForFileInfo`;
+            # Filtering lines which contain symlink creation information for File Lookup Service(FLS).
+            `grep "Time taken(in ms) to create symlink for" $dir/$file > $temporaryLogForSymlinkInfo`;
+            if( -s $temporaryLogForFileInfo || -s $temporaryLogForSymlinkInfo ) {
+                my ($bcpForFileInfo, $bcpForSymlinkInfo) = parseFlsFileSymlinkLog($temporaryLogForFileInfo, $temporaryLogForSymlinkInfo);
+                my $fileTable = "eniq_stats_fls_file_details";
+                removeOldData($fileTable);
+                loadDb($bcpForFileInfo, $fileTable);
+                my $symlinkTable = "eniq_stats_fls_symlink_details";
+                removeOldData($symlinkTable);
+                loadDb($bcpForSymlinkInfo, $symlinkTable);
+            }
+        }
+    }
+}
+
+sub parseFlsMasterSlaveLog {
+    my $file = shift;
+    my @roles = ();
+    my @serverNames = ();
+    my @dateTimes = ();
+    open FILE, "<$dir/$file" or die "Can't open file to read $file\n";
+    my $bcpFile = "$tmpDir/fls_master_slave_detail.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        my ($dateTime, $serverName, $role) = split(/;/, $line);
+        push(@dateTimes, $dateTime);
+        push(@serverNames, $serverName);
+        push(@roles, $role);
+    }
+    my $r_serverIdMap = getIdMap($dbh, "fls_server_name_id_mapping", "id", "serverName", \@serverNames);
+    my $r_roleIdMap = getIdMap($dbh, "fls_role_type_id_mapping", "id", "roleType", \@roles);
+    my $i = 0;
+    my $j = 0;
+    foreach my $serverName (@serverNames) {
+        printf BCP "%s|%d|%d|%d\n",
+        $dateTimes[$i++],
+        $siteId,
+        $r_roleIdMap->{$roles[$j++]},
+        $r_serverIdMap->{$serverName};
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parseFlsFileSymlinkLog {
+    my @nodeTypesForFileInfo = ();
+    my @r_fileInfo=();
+    my @nodeTypesForSymlinkInfo = ();
+    my @r_symlinkInfo=();
+    for my $file (@_) {
+        open FILE, "<$file" or die "Can't open file $file to read\n";
+        while ( my $line = <FILE> ) {
+            chomp($line);
+            if ( my ($timeStampForFileInfo, $nodeTypeForFileInfo, $fetchingFileDuration, $fileCount) = $line =~ /^.*(\d{2}:\d{2}:\d{2}).*NodeType:\s(\w+).*:\s(\d+).*:(\d+)$/ ) {
+                my $sqlTimeStamp = "$date $timeStampForFileInfo";
+                my %r_dataForFileInfo = (
+                    date_timestamp         => "$sqlTimeStamp",
+                    node_type              => "$nodeTypeForFileInfo",
+                    fetching_file_duration => "$fetchingFileDuration",
+                    file_count             => "$fileCount"
+                );
+                push (@r_fileInfo, \%r_dataForFileInfo);
+                if ( $DEBUG > 3 ) {
+                    print Dumper("FLS File Data", @r_fileInfo);
+                }
+                push (@nodeTypesForFileInfo, $nodeTypeForFileInfo);
+            }
+            elsif ( my ($timeStampForSymlinkInfo, $nodeTypeForSymlinkInfo, $fileType, $createdSymlinkDuration) = $line =~ /^.*(\d{2}:\d{2}:\d{2}).*NodeType:\s(\w+).*for\s(\w+).*:\s(\d+)$/ ) {
+                my $sqlTimeStamp = "$date $timeStampForSymlinkInfo";
+                my %r_dataForSymlinkInfo = (
+                    date_timestamp           => "$sqlTimeStamp",
+                    node_type                => "$nodeTypeForSymlinkInfo",
+                    file_type                => "$fileType",
+                    created_symlink_duration => "$createdSymlinkDuration"
+                );
+                push (@r_symlinkInfo, \%r_dataForSymlinkInfo);
+                if ( $DEBUG > 4 ) {
+                    print Dumper("FLS Symlink Data", @r_symlinkInfo);
+                }
+                push (@nodeTypesForSymlinkInfo, $nodeTypeForSymlinkInfo);
+            }
+        }
+        close FILE;
+        unlink($file);
+    }
+    my $r_nodeIdMapForFileInfo = getIdMap($dbh, "fls_file_symlink_nodeType_id_mapping", "id", "nodeType", \@nodeTypesForFileInfo);
+    my $r_nodeIdMapForSymlinkInfo = getIdMap($dbh, "fls_file_symlink_nodeType_id_mapping", "id", "nodeType", \@nodeTypesForSymlinkInfo);
+    my $i = 0;
+    my $j = 0;
+    my $bcpForFile = "$tmpDir/fls_file.bcp";
+    open BCP, ">$bcpForFile" or die "Cannot open BCPFile $bcpForFile";
+    for my $fileInfoData (@r_fileInfo) {
+        printf BCP "%s|%d|%d|%d|%d\n",
+        $fileInfoData->{date_timestamp},
+        $siteId,
+        $r_nodeIdMapForFileInfo->{$nodeTypesForFileInfo[$i++]},
+        $fileInfoData->{fetching_file_duration},
+        $fileInfoData->{file_count};
+    }
+    close BCP;
+    my $bcpForSymlink = "$tmpDir/fls_symlink.bcp";
+    open BCP, ">$bcpForSymlink" or die "Cannot open BCPFile $bcpForSymlink";
+    for my $symlinkInfoData (@r_symlinkInfo) {
+        printf BCP "%s|%d|%d|%s|%d\n",
+        $symlinkInfoData->{date_timestamp},
+        $siteId,
+        $r_nodeIdMapForSymlinkInfo->{$nodeTypesForSymlinkInfo[$j++]},
+        $symlinkInfoData->{file_type},
+        $symlinkInfoData->{created_symlink_duration};
+    }
+    close BCP;
+    return  $bcpForFile, $bcpForSymlink;
+}
+
+sub removeOldData {
+    my $table = shift;
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 5 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 6 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+main();

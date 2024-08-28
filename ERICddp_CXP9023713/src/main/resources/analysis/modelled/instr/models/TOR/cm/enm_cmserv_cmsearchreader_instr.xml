@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="cmservice"/>
+    <service name="conscmeditor"/>
+  </services>
+
+  <table name="enm_cmserv_cmsearchreader_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.cm.cmsearch.instrumentation.cm-reader:type=InstrumentedCmQueryBean$">
+      <metric source="cmContainmentQueryTotalQueryResultCount" target="cmContainmentQueryTotalQueryResultCount"/>
+      <metric source="cmContainmentQueryVisits" target="cmContainmentQueryVisits" delta="true" filteridle="true"/>
+      <metric source="cmFdnQueryTotalQueryResultCount" target="cmFdnQueryTotalQueryResultCount"/>
+      <metric source="cmFdnQueryVisits" target="cmFdnQueryVisits" delta="true" filteridle="true"/>
+      <metric source="cmParentChildQueryTotalQueryResultCount" target="cmParentChildQueryTotalQueryResultCount"/>
+      <metric source="cmParentChildQueryVisits" target="cmParentChildQueryVisits" delta="true" filteridle="true"/>
+      <metric source="cmPoQueryTotalQueryResultCount" target="cmPoQueryTotalQueryResultCount"/>
+      <metric source="cmPoQueryVisits" target="cmPoQueryVisits" delta="true" filteridle="true"/>
+      <metric source="cmTypeQueryTotalQueryResultCount" target="cmTypeQueryTotalQueryResultCount"/>
+      <metric source="cmTypeQueryVisits" target="cmTypeQueryVisits" delta="true" filteridle="true"/>
+      <metric source="compositeCmQueryTotalQueryResultCount" target="compositeCmQueryTotalQueryResultCount"/>
+      <metric source="compositeCmQueryVisits" target="compositeCmQueryVisits" delta="true" filteridle="true"/>
+      <metric source="fastCmTypeQueryTotalQueryResultCount" target="fastCmTypeQueryTotalQueryResultCount"/>
+      <metric source="fastCmTypeQueryVisits" target="fastCmTypeQueryVisits" delta="true" filteridle="true"/>
+      <metric source="cmContainmentQueryTotalExecutionTime" target="cmContainmentQueryTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="cmFDNQueryTotalExecutionTime" target="cmFDNQueryTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="cmParentChildQueryTotalExecutionTime" target="cmParentChildQueryTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="cmPoQueryTotalExecutionTime" target="cmPoQueryTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="cmTypeQueryTotalExecutionTime" target="cmTypeQueryTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="compositeCmQueryTotalExecutionTime" target="compositeCmQueryTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="fastCmTypeQueryTotalExecutionTime" target="fastCmTypeQueryTotalExecutionTime" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

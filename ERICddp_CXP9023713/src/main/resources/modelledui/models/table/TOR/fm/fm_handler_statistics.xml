@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_fm_handler_statistics">
+    <reference table="sites" condition="enm_fm_handler_statistics.siteid = sites.id"/>
+    <reference table="servers" condition="enm_fm_handler_statistics.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_fm_handler_statistics.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(totalNoOfSuccessfulTransformations)" label="Number Of Successful Transformations "/>
+  <column db="SUM(totalNoOfForwardedAlarmEventNotifications)" label="Number Of Forwarded Alarm Event Notifications "/>
+  <column db="SUM(totalNoOfForwardedSyncAlarmEventNotifications)" label="Number Of Forwarded Sync Alarm Event Notifications "/>
+  <column db="SUM(totalNoOfAlarmsReceived)" label="Number Of Alarms Received"/>
+  <column db="SUM(totalNoOfHeartbeatsReceived)" label="Number Of Heartbeats Received"/>
+
+</modelledtable>
+

@@ -1,0 +1,64 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+EVENT_DATA=$1
+DASH_DATE=$2
+GRAPH_FILE=$3
+TITLE=$4
+INTERVAL=$5
+PLOT_TYPE=$6
+PRE_PARSED=$7
+EVENT_RATE_FILE=$8
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ -z "${EVENT_RATE_FILE}" ] ; then
+    EVENT_RATE_FILE=${TMP_DIR}/eventRate.txt
+fi
+
+if [ -z "${PLOT_TYPE}" ]; then
+    PLOT_TYPE="lines"
+fi
+
+PRE_PARSED_ARG=""
+if [ "${PRE_PARSED}" = "YES" ]  ; then
+    PRE_PARSED_ARG="--preparsed"
+fi
+
+${ANALYSIS_BIN}/events/getEventRate --interval ${INTERVAL} --input ${EVENT_DATA} --output ${EVENT_RATE_FILE} ${PRE_PARSED_ARG}
+
+if [ "${PLOT_TYPE}" = "boxes" ]; then
+    /bin/mv ${EVENT_RATE_FILE} ${EVENT_RATE_FILE}.pre_center
+    cat ${EVENT_RATE_FILE}.pre_center | ${ANALYSIS_BIN}/events/centerData ${INTERVAL} > ${EVENT_RATE_FILE}
+fi
+
+head -20 ${EVENT_RATE_FILE} | egrep "^${DASH_DATE}" > /dev/null
+if [ $? -ne 0 ]; then
+    # No data to plot
+    exit 0
+fi
+
+cat > ${TMP_DIR}/gnuplot.cmd <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DASH_DATE}:00:00:00":"${DASH_DATE}:23:59:59" ]
+set yrange [ 0:* ]
+set format x "%H:%M"
+set terminal jpeg medium
+set output "${GRAPH_FILE}"
+set title "${TITLE}" 
+plot "${EVENT_RATE_FILE}" using 1:2 notitle with ${PLOT_TYPE}
+exit
+EOF
+gnuplot < ${TMP_DIR}/gnuplot.cmd
+if [ $? -eq 0 ]; then 
+   /bin/rm -f ${TMP_DIR}/gnuplot.cmd
+else
+    echo "Gnu plot failed"
+    exit 1
+fi
+

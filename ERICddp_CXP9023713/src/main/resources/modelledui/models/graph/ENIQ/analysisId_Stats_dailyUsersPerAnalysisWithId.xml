@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Number of Users"
+>
+  <presetagg type="COUNT" interval="Hourly"/>
+  <title value="Daily Users"/>
+  <queries>
+    <query timecol="time" multiseries="netanserver_auditlog_details.analysis_name">
+      <dbtables main="netanserver_auditlog_details">
+        <reference table="sites" condition="netanserver_auditlog_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serviceId"/>
+      <where>sites.name = '%s' AND serviceId = '%s'</where>
+      <column db="distinct(user_name)" label="User Name"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

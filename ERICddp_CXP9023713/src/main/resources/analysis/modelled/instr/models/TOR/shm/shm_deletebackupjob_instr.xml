@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="shmcoreservice"/>
+      <service name="consshm"/>
+  </services>
+
+  <table name="shm_deletebackupjob_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.shm.es.instrumentation.impl.cppinventorysynchservice:type=DeleteBackupJobInstrumentationBean$">
+      <metric source="backupBackupJobSuccessRate" target="backupBackupJobSuccessRate"/>
+      <metric source="deleteBackupJobAverage" target="deleteBackupJobAverage"/>
+      <metric source="dusGen2DeleteBackupJobAverage" target="dusGen2DeleteBackupJobAverage"/>
+      <metric source="dusGen2DeleteBackupJobSuccessRate" target="dusGen2DeleteBackupJobSuccessRate"/>
+      <metric source="erbsDeleteBackupJobAverage" target="erbsDeleteBackupJobAverage"/>
+      <metric source="erbsDeleteBackupJobSuccessRate" target="erbsDeleteBackupJobSuccessRate"/>
+      <metric source="sgsnDeleteBackupJobAverage" target="sgsnDeleteBackupJobAverage"/>
+      <metric source="sgsnDeleteBackupJobSuccessRate" target="sgsnDeleteBackupJobSuccessRate"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

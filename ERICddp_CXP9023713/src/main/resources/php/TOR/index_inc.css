@@ -1,0 +1,51 @@
+#menuTreeSystemView table,
+#menuTreePlatform table,
+#menuTreeCmServ table,
+#menuTreeCmMed table,
+#menuTreePerformance table,
+#menuTreePm table,
+#menuTreeNCM table,
+#menuTreeShm table,
+#menuTreeSmrs table,
+#menuTreeFm table,
+#menuTreeSecurity table,
+#menuTreeDatabases table,
+#menuTreeHw table,
+#menuTreeRVInfo table {
+    border: 0px;
+}
+
+#menuTreeSystemView tr,
+#menuTreePlatform tr,
+#menuTreeCmServ tr,
+#menuTreeCmMed table,
+#menuTreePerformance tr,
+#menuTreePm tr,
+#menuTreeNCM tr,
+#menuTreeShm tr,
+#menuTreeSmrs tr,
+#menuTreeFm tr,
+#menuTreeSecurity tr,
+#menuTreeDatabases tr,
+#menuTreeHw tr,
+#menuTreeRVInfo tr {
+    line-height: 100%;
+}
+
+#menuTreeSystemView td, #menuTreeSystemView th,
+#menuTreePlatform td, #menuTreePlatform th,
+#menuTreeCmServ td, #menuTreeCmServ th,
+#menuTreeCmMed td, #menuTreeCmMed th,
+#menuTreePerformance td, #menuTreePerformance th,
+#menuTreePm td, #menuTreePm th,
+#menuTreeNCM td, #menuTreeNCM th,
+#menuTreeShm td, #menuTreeShm th,
+#menuTreeSmrs td, #menuTreeSmrs th,
+#menuTreeFm td, #menuTreeFm th,
+#menuTreeSecurity td, #menuTreeSecurity th,
+#menuTreeDatabases td, #menuTreeDatabases th,
+#menuTreeHw td, #menuTreeHw th,
+#menuTreeRVInfo td, #menuTreeRVInfo th {
+    border: 0px;
+    padding: 0px;
+}

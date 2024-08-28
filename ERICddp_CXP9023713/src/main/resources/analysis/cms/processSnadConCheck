@@ -1,0 +1,422 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our @CS_OP_NAMES = ( 'FindMO', 'ModifyMO', 'CreateMO', 'DeleteMO', 'StartTx', 'RollbackTx', 'CommitTx' );
+
+main();
+
+sub main
+{
+    my ($inputFile,$site);
+    my $result = GetOptions("input=s"  => \$inputFile,
+                "site=s" => \$site,
+                "debug=s" => \$DEBUG );
+
+    my ($r_CcList,$dateLog) = loadEvents($inputFile);
+    my $r_CcList2 = checkEvents($r_CcList);
+
+    if ( $#{$r_CcList2} > -1 )
+    {
+    storeEvents($r_CcList2,$site,$dateLog);
+    }
+}
+
+sub checkEvents
+{
+    my ($r_CcList) = @_;
+
+    my @ccOkay = ();
+    foreach my $r_CC ( @{$r_CcList} )
+    {
+    if ( $DEBUG > 7 ) { print Dumper("checkEvents: checking", $r_CC); }
+
+    # Can calcuate duration
+    if ( (exists $r_CC->{'start'} && exists $r_CC->{'end'}) ||
+         (exists $r_CC->{'duration'} && exists $r_CC->{'end'}) )
+    {
+        # Seems to be a bug in some versions of SNAD where the Num to check isn't correct
+        if ( exists $r_CC->{'todo'} && exists $r_CC->{'done'} )
+        {
+        if ( $r_CC->{'todo'}->{'MASTERRNCFUNCTION'}->[0] != 0 &&
+             $r_CC->{'done'}->{'MASTERRNCFUNCTION'}->[0] == 0 &&
+             ( ! exists $r_CC->{'status'} ) )
+        {
+            if ( $DEBUG > 0 ) { print "checkEvents: $r_CC->{'start'} seem to have the MASTERRNCFUNCTION function bug\n"; }
+
+            $r_CC->{'done'}->{'MASTERRNCFUNCTION'}->[0] = $r_CC->{'todo'}->{'MASTERRNCFUNCTION'}->[0];
+
+            if ( $r_CC->{'numchecked'} < $r_CC->{'numcheck'} )
+            {
+            if ( $DEBUG > 0 ) { print "checkEvents: adding $r_CC->{'todo'}->{'MASTERRNCFUNCTION'}->[0] to numchecked ($r_CC->{'numchecked'})\n"; }
+            $r_CC->{'numchecked'} += $r_CC->{'todo'}->{'MASTERRNCFUNCTION'}->[0];
+            }
+        }
+        }
+
+        push @ccOkay, $r_CC;
+    }
+    else
+    {
+        if ( $DEBUG > 0 ) { print Dumper("checkEvents: disgarding", $r_CC); }
+    }
+    }
+
+    return \@ccOkay;
+}
+
+sub storeEvents
+{
+    my ($r_CcList,$site,$dateLog) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 )
+    {
+    print "ERROR: Could not find siteid for $site\n";
+    return;
+    }
+
+    if ( $#{$r_CcList} > -1 )
+    {
+    my $minTime = "$dateLog 00:00:00";
+    my $maxTime = "$dateLog 23:59:59";
+
+    my $sql = sprintf("DELETE FROM snad_cc WHERE siteid = %d AND start BETWEEN %s AND %s",
+              $siteId,
+              $dbh->quote($minTime),
+              $dbh->quote($maxTime)
+              );
+    if ( $DEBUG > 1 ) { print "storeEvents: delete = $sql\n"; }
+    $dbh->do($sql) or die "Failed to delete $sql " . $dbh->errstr;
+    }
+
+    foreach my $r_CC ( @{$r_CcList} )
+    {
+    if ( exists $r_CC->{'end'} )
+    {
+        my @names = (); my @values = ();
+        push @names, 'start';      push @values, $dbh->quote(getStartTime($r_CC));
+        push @names, 'end';        push @values, $dbh->quote(getEndTime($r_CC));
+        push @names, 'siteid';     push @values, $siteId;
+
+            # BG 2011-12-14: Status by true/false [pre 12.2.5]
+            if ( exists $r_CC->{'status'} ) {
+                push @names, 'status';     push @values, $dbh->quote($r_CC->{'status'});
+            }
+
+            # BG 2011-12-14: Status by % [12.2.5 onwards]
+            if ( exists $r_CC->{'pc_status'} ) {
+                push @names, 'pc_status';     push @values, $dbh->quote($r_CC->{'pc_status'});
+            }
+            if (exists $r_CC->{'numcheck'} ) {
+                push @names, 'numcheck';   push @values, $r_CC->{'numcheck'};
+            }
+
+            if (exists $r_CC->{'numchecked'} ) {
+        push @names, 'numchecked'; push @values, $r_CC->{'numchecked'};
+        }
+
+        if ( exists $r_CC->{'donetotals'} ) {
+        my @colNames = ( 'checked', 'consist', 'inconsist', 'missing', 'multiple' );
+        # Skip checked as it is the same as numchecked
+        for ( my $i = 1; $i <= $#colNames; $i++ ) {
+            push @names, $colNames[$i];   push @values, $r_CC->{'donetotals'}->[$i];
+        }
+        }
+
+        if ( exists $r_CC->{'csop'} ) {
+        foreach my $csOpName ( @CS_OP_NAMES ) {
+            if ( exists $r_CC->{'csop'}->{$csOpName} ) {
+            push @names, lc($csOpName) . "_num";    push @values, $r_CC->{'csop'}->{$csOpName}->{'num'};
+            push @names, lc($csOpName) . "_time";   push @values, $r_CC->{'csop'}->{$csOpName}->{'time'};
+            }
+        }
+        } elsif ( $DEBUG > 1 ) { print "storeEvents: no csop\n" ; }
+
+
+        my $nameStr = join( ",", @names );
+        my $valueStr = join( ",", @values );
+        my $sql = sprintf("INSERT INTO snad_cc (%s) VALUES (%s)", $nameStr, $valueStr );
+        if ( $DEBUG > 1 ) { print "storeEvents: insrt = $sql\n"; }
+        $dbh->do($sql) or die "Failed to insert $sql " . $dbh->errstr;
+    }
+    }
+
+    $dbh->disconnect;
+}
+
+sub processBefore
+{
+    my ($r_ccList,$ccNum,$addInfo,$date,$time) = @_;
+
+    if ( $DEBUG > 5 ) { print "processBefore: Matched start fmt 1\n"; }
+
+    my $r_CC;
+    if ( ($#{$r_ccList} > -1) && ($r_ccList->[$#{$r_ccList}]->{'num'} == $ccNum) )
+    {
+    if ( $DEBUG > 0 ) { print "processBefore: inconsistent log found end event before start event currCC=$ccNum #cc=$#{$r_ccList}\n"; }
+    $r_CC = $r_ccList->[$#{$r_ccList}];
+    }
+    else
+    {
+    $r_CC = {};
+    push @{$r_ccList}, $r_CC;
+    if ( $DEBUG > 8 ) { print "processBefore: created new CC entry #cc now=$#{$r_ccList}\n"; }
+    }
+
+    ###
+    # BG 2011-12-14: OSS-RC 12 WP00558: CR 862/109 18-FCP 103 8147/13 A
+    # The following data is included in the 'Before' records only as far as OSS-RC 12.2.5.
+    ###
+    if ($addInfo =~ /No. of MOs to check: (\d+)/) {
+        my ($numToCheck) = $1;
+        my ($whatCheckStr) = $addInfo =~ / \[To_(.*)  Processed since/;
+        my $r_WhatCheck = parseWhat($whatCheckStr);
+    # Don't record numchecked anymore, just sum the values in the after reports
+        #$r_CC->{"numcheck"} = $numToCheck;
+        $r_CC->{'todo'} = $r_WhatCheck;
+    }
+
+    $r_CC->{'num'} = $ccNum;
+    $r_CC->{'start'} = $date . " ". $time;
+}
+
+sub processAfter
+{
+    my ($r_ccList,$ccNum,$addInfo,$date,$time) = @_;
+
+    my $r_CC;
+    if ( ($#{$r_ccList} == -1) || ($r_ccList->[$#{$r_ccList}]->{'num'} != $ccNum) )
+    {
+    if ( $DEBUG > 0 ) { print "loadEvents: inconsistent log currCC=$ccNum #cc=$#{$r_ccList}\n"; }
+    if ( ($DEBUG > 0) && ($#{$r_ccList} > -1)  ) { print "loadEvents: inconsistent log last cc=", $r_ccList->[$#{$r_ccList}]->{'num'}, "\n"; }
+
+    $r_CC = {
+        'num' => $ccNum
+    };
+    push @{$r_ccList}, $r_CC;
+    }
+    else
+    {
+    $r_CC = $r_ccList->[$#{$r_ccList}];
+    }
+
+    my ($afterType) = $addInfo =~ /$ccNum After (\S+)/;
+    if ( $DEBUG > 5 ) { print "processAfter: afterType=$afterType\n"; }
+
+    $r_CC->{'end'} = $date . " " . $time;
+
+    ###
+    # BG 2011-12-14: OSS-RC 12 WP00558: CR 862/109 18-FCP 103 8147/13 A
+    #
+    # From OSS-RC 12.2.5, the following changes occur to 'After' records:
+    #     - No. of MOs to be checked is no longer logged
+    #     - status is logged as a percentage rather than true/false
+    ###
+    if ($addInfo =~ /Checked (\d+) MOs out of (\d+) to be checked in (\d+)/) {
+    my ($numChecked,$numToCheck,$duration) = ($1, $2, $3);
+
+    if ( defined $numToCheck ) {
+        if ( $DEBUG > 5 ) { print "processAfter: Matched end fmt 1, numChecked=$numChecked\n"; }
+
+        # Note: There can be more then one "After report, e.g. UtranCell and consistency
+        $r_CC->{'numcheck'} += $numToCheck;
+        $r_CC->{'numchecked'} += $numChecked;
+        $r_CC->{'duration'} += $duration;
+
+        my ($status) = $addInfo =~ /Completed status: (\S+),?/;
+        $r_CC->{'status'} = $status;
+    } else {
+        my ($numChecked) = $addInfo =~ /No\. of MOs checked: (\d+)/;
+        if ( $DEBUG > 5 ) { print "processAfter: Matched end fmt 2, numChecked = $numChecked\n"; }
+        $r_CC->{'numchecked'} += $numChecked;
+    }
+    } elsif ($addInfo =~ /Completed status: (\S+)\%\s+Checked (\d+) MOs in (\d+)/) {
+    my ($pc_status,$numChecked,$duration) = ($1, $2, $3);
+
+    $r_CC->{'numchecked'} += $numChecked;
+    $r_CC->{'duration'} += $duration;
+    $r_CC->{'pc_status'} = $pc_status;
+    }
+
+    my ($whatCheckedStr) = $addInfo =~ /Stats:After Consistency Check: \[(.*)/;
+    if ( ! defined $whatCheckedStr ) {
+
+    ####
+    # OSS-88460
+    # The following data is included in the 'After' records only as far as OSSRC 13
+    # The way in which the 'After' records are written in the lvlog.log file has changed from shipment 14 to till date
+    # So, Checking for a pattern of "Stats:" despite "Stats:[" as it is common in all versions of lvlog.log for a consistency check report line
+    ####
+
+    ($whatCheckedStr) = $addInfo =~ /Stats:(.*)/;
+    }
+    my $r_WhatChecked = parseWhat($whatCheckedStr);
+    if ( defined $r_WhatChecked ) {
+    $r_CC->{'done'} = $r_WhatChecked;
+    if ( ! exists $r_CC->{'donetotals'} ) {
+        $r_CC->{'donetotals'} = [ 0, 0, 0, 0, 0 ];
+    } else {
+        if ( $DEBUG > 3 ) { print "processAfter: donetotals already exists!\n"; }
+    }
+
+    foreach my $type ( keys %{$r_WhatChecked} ) {
+        for ( my $i = 0; $i < 5; $i++ ) {
+        $r_CC->{'donetotals'}->[$i] += $r_WhatChecked->{$type}->[$i];
+        }
+    }
+    }
+
+    my ($csOpStat) = $addInfo =~ /Time spent in CS operations:.*Average_Time(.*)/;
+    if ( $DEBUG > 5 ) { print "processAfter: csOpStat=$csOpStat\n"; }
+    if ( defined $csOpStat ) {
+    foreach my $csOpName ( @CS_OP_NAMES ) {
+        my ($num,$totalTime) = $csOpStat =~ /\s+$csOpName,\s+(\d+),\s+(\d+)/;
+        if ( $DEBUG > 6 ) { print "processAfter: op=$csOpName num=$num totalTime=$totalTime\n"; }
+        if ( defined $num ) {
+        $r_CC->{'csop'}->{$csOpName}->{'num'} += $num;
+        $r_CC->{'csop'}->{$csOpName}->{'time'} += $totalTime;
+        }
+    }
+    }
+
+
+    if ( $DEBUG > 5 ) { print Dumper("processAfter: r_CC", $r_CC); }
+}
+sub loadEvents
+{
+    my ($inputFile) = @_;
+
+    open INPUT, $inputFile or die "Cannot open input $inputFile";
+
+    my $dateLog;
+    my @cc = ();
+    while ( my $line = <INPUT> )
+    {
+    if ( $DEBUG > 10 ) { print "loadEvents: line = $line"; }
+
+        my ($date,$time,$addInfo);
+        ###
+        # Retrieve the data from the LV log if available, otherwise use the CIF system log.
+        # This is determined by the plotSnad script which calls this script.
+        # Line format differentiates the two logs. [BG 2011-12-14]
+        ###
+        if ($line =~ /^([\d\-]+) (\S+) \S+ \"\S+\"\s+\"\S+\" \"\S*\" \"\S*\" \"[^\"]+\" \S+ \"\S*\" \"\S*\" \"(.*)\"$/) {
+            ($date,$time,$addInfo) = ($1, $2, $3);
+            if(not defined $dateLog) {
+                $dateLog = $date;
+            }
+
+        } else {
+        ($date,$time,$addInfo) = $line =~ /^([\d\-]+) (\S+) \S+ \"[^\"]+\" \S+ \"(.*)\"$/;
+            if(not defined $dateLog) {
+                $dateLog = $date;
+            }
+        }
+
+    if ( $DEBUG > 8 ) { print "loadEvents: date=$date time=$time addInfo=$addInfo\n"; }
+
+    if ( $addInfo =~ /^CMS_CONSISTENCY_CHECK_(\d+) (\S+)/ || $addInfo =~ /^CCC_(\d+) (\S+)/ )
+    {
+        my ($ccNum,$beforeAfter) = ($1,$2);
+
+        if ( $DEBUG > 6 ) { print "loadEvents: ccNum=$ccNum beforeAfter=$beforeAfter\n"; }
+
+        if ( $beforeAfter eq "Before" ) {
+        processBefore(\@cc,$ccNum,$addInfo,$date,$time);
+        } elsif ( $beforeAfter eq "After" ) {
+        processAfter(\@cc,$ccNum,$addInfo,$date,$time);
+        }
+    }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("loadEvents: cc", \@cc); }
+
+    return (\@cc,$dateLog);
+}
+
+sub parseWhat
+{
+    my ($whatCheckStr) = @_;
+
+    if ( $DEBUG > 9 ) { print "parseWhat: whatCheckStr=$whatCheckStr\n"; }
+
+    my %stats = ();
+
+    my @parts = split /\|/, $whatCheckStr;
+    shift @parts;
+
+    foreach my $part ( @parts )
+    {
+    if ( $DEBUG > 8 ) { print "parseWhat: part=$part\n"; }
+    my ($type, $check, $con, $incon, $miss, $mult ) = $part =~
+        /^(\S+)\s*\[\s*(\d+),(\d+),(\d+),(\d+),(\d+)/;
+    (defined $check) or die "Could not parse $part";
+
+    if ( $DEBUG > 8 ) { print "parseWhat: type=$type check,con,incon,miss,mult=$check, $con, $incon, $miss, $mult\n"; }
+    if ( ($check + $con + $incon + $miss + $mult) > 0 ) {
+        $stats{$type} = [ $check, $con, $incon, $miss, $mult ];
+    }
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("parseWhat: stats", \%stats); }
+
+    return \%stats;
+}
+
+ sub getStartTime
+{
+    my ($r_CC) = @_;
+
+    if ( $DEBUG > 5 ) { print "getStartTime: start=$r_CC->{'start'} end=$r_CC->{'end'} duration=$r_CC->{'duration'}\n"; }
+
+    my $sqlTime;
+    if ( exists $r_CC->{'start'} )
+    {
+    $sqlTime = $r_CC->{'start'};
+    $sqlTime =~ s/\./:/;
+    }
+    elsif ( exists $r_CC->{'duration'} )
+    {
+    my ($year,$month,$day,$hour,$min,$sec) = $r_CC->{'end'} =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2})$/;
+    ($year) or die "getStartTime: cannot parse end time";
+
+    my $endTime = timelocal($sec, $min, $hour, $day, $month - 1, $year - 1900);
+    my $starttime = $endTime - $r_CC->{'duration'};
+    my ($sec,$min,$hour,$day,$month,$year,$wday,$yday,$isdst) = localtime($starttime);
+    $sqlTime = sprintf("%04d-%02d-%02d %02d:%02d:%02d", $year + 1900, $month + 1, $day, $hour, $min, $sec);
+    }
+
+    if ( $DEBUG > 5 ) { print "getStartTime: sql start=$sqlTime\n" };
+    return $sqlTime;
+}
+
+sub getEndTime
+{
+    my ($r_CC) = @_;
+
+    if ( $DEBUG > 5 ) { print "getEndTime: start=$r_CC->{'start'} end=$r_CC->{'end'} duration=$r_CC->{'duration'}\n"; }
+
+    my $sqlTime;
+    if ( exists $r_CC->{'end'} )
+    {
+    $sqlTime = $r_CC->{'end'};
+    $sqlTime =~ s/\./:/;
+    }
+
+    if ( $DEBUG > 5 ) { print "getEndTime: sql end=$sqlTime\n" };
+    return $sqlTime;
+}
+

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="pushservice"/>
+  </services>
+
+  <table name="enm_fnt_push_service">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <multi>serviceType</multi>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.fnt.ejb.instrumentation.file-push-service:type=FntCmFileTransferStatistics$">
+      <metric source="numberOfCmFilesToTransferIn15Mins" target="numberOfFilesToTransfer" delta="true" filteridle="true"/>
+      <metric source="numberOfCmFilesTransferredIn15Mins" target="numberOfFilesTransferred" delta="true" filteridle="true"/>
+      <metric source="numberOfCmFilesFailedIn15Mins" target="numberOfFilesFailed" delta="true" filteridle="true"/>
+      <property name="serviceType" xsi:type="fixedproperty" value="CM"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.fnt.ejb.instrumentation.file-push-service:type=FntPmFileTransferStatistics$">
+      <metric source="numberOfPmFilesToTransferIn15Mins" target="numberOfFilesToTransfer" delta="true" filteridle="true"/>
+      <metric source="numberOfPmFilesTransferredIn15Mins" target="numberOfFilesTransferred" delta="true" filteridle="true"/>
+      <metric source="numberOfPmFilesFailedIn15Mins" target="numberOfFilesFailed" delta="true" filteridle="true"/>
+      <property name="serviceType" xsi:type="fixedproperty" value="PM_STATS"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.fnt.ejb.instrumentation.file-push-service:type=FntProductDataTransferStatistics$">
+      <metric source="numberOfProductDataTarFilesToTransferIn15Mins" target="numberOfFilesToTransfer" delta="true" filteridle="true"/>
+      <metric source="numberOfProductDataTarFilesTransferredIn15Mins" target="numberOfFilesTransferred" delta="true" filteridle="true"/>
+      <metric source="numberOfProductDataTarFilesFailedIn15Mins" target="numberOfFilesFailed" delta="true" filteridle="true"/>
+      <property name="serviceType" xsi:type="fixedproperty" value="ProductData"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>
+

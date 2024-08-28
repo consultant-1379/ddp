@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ned_swsync">
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+  
+  <services>
+    <service name="nedoserv"/>
+  </services>
+
+  <events>
+    <!-- NED_TOPOLOGY_SERVICE.INITIATED_SOFTWARE_SYNC {"NE_TYPE":"CPP-TYPE-D","_Thread":"EJB async - 23","NUMBER_OF_NODES":"2"} -->
+    <event name="NED_TOPOLOGY_SERVICE.INITIATED_SOFTWARE_SYNC">
+      <metric source="NE_TYPE" target="netypeid"/>
+      <metric source="NUMBER_OF_NODES" target="n_nodes"/>      
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,590 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use NameTable;
+use StatsCommon;
+use StatsTime;
+use File::Basename;
+use lib dirname($0);
+use EAMCommon;
+
+use DBI;
+use Time::HiRes qw(gettimeofday tv_interval);
+
+
+our $DEBUG = 0;
+our $dash_date;
+our $site;
+
+our %eamConfigMap = ();
+our @ne_config = ();
+
+our $EXIT_FILE = undef;
+our $EXIT_FILE_FOUND = 0;
+
+main();
+
+sub logMsg($) {
+    my ($msg) = @_;
+    print scalar(localtime(time())) . " ". $msg . "\n";
+}
+
+sub checkExit
+{
+    if ( (! defined $EXIT_FILE) ) {
+        return 0;
+    } elsif ( $EXIT_FILE_FOUND == 1 ) {
+        return 1;
+    } elsif ( -r $EXIT_FILE ) {
+        $EXIT_FILE_FOUND = 1;
+        logMsg("Found Exit File");
+        unlink($EXIT_FILE);
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+sub fixCmdTable($)  {
+    my ($fixMode) = @_;
+
+    my $doUpdate = 0;
+    if ( $fixMode eq 'test' ) {
+        $doUpdate = 0;
+    } elsif ( $fixMode eq 'fix' ) {
+        $doUpdate = 1;
+    } else {
+        die "Invalid value for fix $fixMode";
+    }
+
+    my $dbh = connect_db();
+
+    my %usingTables = (
+        'eam_cmd_ne'  => 'cmdid'
+    );
+    #Add a temporary index
+    if ( $doUpdate ) {
+        doModifyIndex($dbh, "ADD", %usingTables);
+    }
+
+    my $unusedCount = NameTable::removeUnused($dbh,
+                                              "eam_trimmed_cmd_names","id", "name",
+                                              \%usingTables,
+                                              $doUpdate );
+    if ( $doUpdate ) { NameTable::compact($dbh,"eam_trimmed_cmd_names","id", "name",\%usingTables, $EXIT_FILE ); }
+
+    my $r_cmdIdMap = getIdMap($dbh, "eam_trimmed_cmd_names", "id", "name", [] );
+    my %cmdsToMapToExisting = ();
+    my %cmdsToMapToNew = ();
+    foreach my $cmd ( keys %{$r_cmdIdMap} ) {
+        my $strippedCmd = EAMCommon::stripCommand($cmd);
+        if ( $strippedCmd ne $cmd ) {
+            if ( exists $r_cmdIdMap->{$strippedCmd} ) {
+                print "\tExists $cmd => $strippedCmd\n";
+                $cmdsToMapToExisting{$cmd} = $strippedCmd;
+            } else {
+                print "\tNew    $cmd => $strippedCmd\n";
+                $cmdsToMapToNew{$cmd} = $strippedCmd;
+            }
+        }
+    }
+
+    doRemap( \%cmdsToMapToExisting, $dbh, $doUpdate );
+    if ( $doUpdate ) { NameTable::compact($dbh,"eam_trimmed_cmd_names","id", "name",\%usingTables, $EXIT_FILE ); }
+
+    doRemap( \%cmdsToMapToNew, $dbh, $doUpdate );
+    if ( $doUpdate ) { NameTable::compact($dbh,"eam_trimmed_cmd_names","id", "name",\%usingTables, $EXIT_FILE ); }
+
+    #Remove temporary index
+    if ( $doUpdate ) {
+        doModifyIndex($dbh, "DROP", %usingTables);
+    }
+
+    $dbh->disconnect();
+}
+
+sub doModifyIndex($$$) {
+    my ($dbh, $type, %usingTables) = @_;
+    my $lc_type = lc($type);
+    while (my ($table, $col) = each(%usingTables)) {
+        my $tabCol = "$table($col)";
+        logMsg(scalar( localtime( time() ) ) . " Trying to $lc_type temp index on $tabCol");
+
+        if ( $type eq "ADD" ) {
+            dbDo( $dbh, "ALTER TABLE $table ADD INDEX tmpIDX ($col)" ) or die "Failed to add temp index to $table => $col";
+        } elsif ( $type eq "DROP" ) {
+            dbDo( $dbh, "ALTER TABLE $table DROP INDEX tmpIDX" ) or die "Failed to drop temp index from $table => $col";
+        }
+
+        logMsg(scalar( localtime( time() ) ) . " $lc_type temp index on $tabCol successful");
+    }
+}
+
+sub doRemap($$$) {
+    my ( $r_remapCmds, $dbh, $doUpdate ) = @_;
+
+    my @fromList = keys %{$r_remapCmds};
+    if ( $DEBUG > 1 ) { print "doRemap: num procs to be mapped = ", ($#fromList + 1), "\n"; }
+
+    #
+    # Make sure the shortened cmds are in process_names
+    #
+    my @toList = values %{$r_remapCmds};
+    my $r_cmdIdMap = getIdMap($dbh, "eam_trimmed_cmd_names", "id", "name", \@toList );
+
+    my $fromSth = $dbh->prepare("SELECT siteid, date, neid, initiatorid, cmdcount FROM eam_cmd_ne WHERE cmdid = ?")
+        or die "Couldn't prepare statement: " . $dbh->errstr;
+    my $toSth = $dbh->prepare("SELECT cmdcount FROM eam_cmd_ne WHERE siteid = ? AND date = ? AND neid = ? AND initiatorid = ? AND cmdid = ?")
+        or die "Couldn't prepare statement: " . $dbh->errstr;
+
+    my $cmdCount = 0;
+    logMsg("Mapping rows in eam_cmd_ne");
+    logMsg(sprintf("%5s %5s %5s %5s %5s %5s %s", '', 'Frm Id', 'To Id', 'Up id', 'Id Ex', 'Up Ex', 'From => To Cmd'));
+    foreach my $cmd ( sort keys %{$r_remapCmds} ) {
+        if ( checkExit() ) { return 1; }
+        my $cmdName = $r_remapCmds->{$cmd};
+        my $fromId = $r_cmdIdMap->{$cmd};
+        my $toId = $r_cmdIdMap->{$cmdName};
+
+        $cmdCount++;
+
+        if ( $DEBUG > 2 ) { print( "doRemap: cmdCount=$cmdCount looking for the cmd=\"$cmd\" id=$fromId\n"); }
+
+        $fromSth->execute($fromId)
+            or die "Couldn't execute statement: " . $fromSth->errstr;
+
+        my $updateInPlace = 0;
+        my $existsCount = 0;
+        my $updateExisting = 0;
+        while ( my $r_fromRow = $fromSth->fetchrow_hashref() ) {
+            if ( $DEBUG > 4 ) { print Dumper("doRemap: fromRow", $r_fromRow); }
+
+            if ( $DEBUG > 3 ) { print( "doRemap: looking for existing mapped cmd=", $cmdName, ", id=", $toId, "\n"); }
+
+            $toSth->execute($r_fromRow->{'siteid'}, $r_fromRow->{'date'}, $r_fromRow->{'neid'}, $r_fromRow->{'initiatorid'}, $toId)
+                or die "Couldn't execute statement: " . $toSth->errstr;
+            my $r_toRow = $toSth->fetchrow_hashref();
+            if ( $DEBUG > 3  ) { print Dumper("doRemap: toRow", $r_toRow); }
+            if ( defined $r_toRow ) {
+                $existsCount++;
+                $updateExisting++;
+                my $sql = sprintf("UPDATE eam_cmd_ne SET cmdcount = %d WHERE siteid = %d AND date = '%s' AND neid = %d AND initiatorid = %d AND cmdid = %d",
+                                  $r_fromRow->{'cmdcount'} + $r_toRow->{'cmdcount'},
+                                  $r_toRow->{'siteid'}, $r_toRow->{'date'}, $r_toRow->{'neid'}, $r_toRow->{'initiatorid'},
+                                  $toId );
+                if ( $doUpdate ) { dbDo($dbh,$sql); }
+            } else {
+                $updateInPlace++;
+                my $sql = sprintf("UPDATE eam_cmd_ne SET cmdid = %d WHERE siteid = %d AND date = '%s' AND neid = %d AND initiatorid = %d AND cmdid = %d",
+                                  $toId,
+                                  $r_fromRow->{'siteid'}, $r_fromRow->{'date'}, $r_fromRow->{'neid'}, $r_fromRow->{'initiatorid'}, $fromId);
+                if ( $doUpdate ) { dbDo($dbh,$sql); }
+            }
+        }
+
+        # If we did just update all the cmdid, then we still have rows with the old
+        # procid which need to be deleted
+        if ( $DEBUG > 3 ) { print "doRemap: existsCount=$existsCount\n"; }
+        if ( $existsCount > 0 ) {
+            my $sql = sprintf("DELETE FROM eam_cmd_ne WHERE cmdid = %d", $fromId);
+            if ( $doUpdate ) { dbDo($dbh,$sql); }
+        }
+
+        my $sql = sprintf("DELETE FROM eam_trimmed_cmd_names WHERE id = %d", $fromId);
+        if ( $doUpdate ) { dbDo($dbh,$sql); }
+
+        logMsg(
+            sprintf("%5d %5d %5d %5d %5d %5d %s", $cmdCount, $fromId, $toId, $updateInPlace, $existsCount, $updateExisting,
+                    ($cmd . " => " . $cmdName))
+            );
+    }
+
+    $fromSth->finish;
+    $toSth->finish;
+}
+
+
+sub main()
+{
+    my $cmdLog; my $configLog; my $mapLog; my $errorLog; my $outputdir; my $fixMode;
+    my $opt = GetOptions(
+                          "cmd=s"  => \$cmdLog,
+                          "config=s" => \$configLog,
+                          "map=s" => \$mapLog,
+                          "error=s" => \$errorLog,
+                          "date=s" => \$dash_date,
+                          "output=s" => \$outputdir,
+                          "site=s" => \$site,
+                          "fix=s" => \$fixMode,
+                          "exit=s" => \$EXIT_FILE,
+                          "debug=s" => \$DEBUG);
+    ( $opt == 1 ) or die("Invalid Args");
+    setStatsDB_Debug($DEBUG);
+
+    if ( defined $fixMode ) {
+        fixCmdTable($fixMode);
+        return;
+    }
+
+    if ( ! $dash_date || ! $site || ! $outputdir )
+    {
+        print "SQL Date, output dir, and site is required\n";
+        exit 1;
+    }
+    if ( ! $configLog && ! $mapLog && ! $errorLog )
+    {
+        print "Please specify eam_config.txt, cap.txt, and error.log files.\n";
+        exit 1;
+    }
+
+    my %neToInit = ();
+    if ( -r $mapLog)
+    {
+        readMapLog($mapLog);
+        foreach my $r_neConfig ( @ne_config ) {
+            $neToInit{$r_neConfig->[1]} = $r_neConfig->[0];
+        }
+    }
+
+    my $r_CmdStats;
+    if ( defined $cmdLog )
+    {
+        $r_CmdStats = readCommandLog($cmdLog,$dash_date,\%neToInit);
+    }
+    if ( -r $configLog)
+    {
+        readConfigLog($configLog);
+    }
+    if ( -r $errorLog)
+    {
+       readErrorLog($errorLog,$outputdir);
+    }
+    store($r_CmdStats,\%neToInit);
+}
+# Reading the configuration file for number of initiators and responders that are configured
+sub readConfigLog()
+{
+    my ($configlog)=@_;
+    open CONFIG, "$configlog" or die "Cannot open $configlog";
+    while(<CONFIG>)
+    {
+    my($key,$value) = split("=",$_);
+    $value =~ s/^\s+//; # Remove the white space that will be present
+    $eamConfigMap{$key}=$value;
+    }
+    close CONFIG;
+}
+#
+# This function reads the cmd.log file. It contains the data for number of connection sessions per NE. It also includes the individual commands executed within a session.
+# Refer to EAM IWD 1/155 19-APR 901 982 for further information about command and response logging data
+# EAM will raise the CR to add the application name in the tapdb. For the moment it will set appName as Unknown here. Once we start getting the application name this script will then store the actual app name into DB.
+#
+sub readCommandLog()
+{
+    my ($cmdlog,$dash_date,$r_neToInit)=@_;
+
+    my $midNight = parseTime("$dash_date:00:00:00", $StatsTime::TIME_YYYYMDHMS);
+    my $currTime = $midNight - (60*30);
+    my %cmdStats = {
+        'byTime' => (),
+        'byNE'   => {}
+    };
+    my $r_currBin;
+
+    open CMD, "$cmdlog" or die "Cannot open $cmdlog";
+    while( my $line = <CMD>)
+    {
+        if ( $DEBUG > 9 ) { print "readCommandLog: line=$line"; }
+        chop $line;
+        my ($dummy,$date, $es_name, $assoc_id, $cmd, $dummy, $cmdState, $respState, $appName) = split(";",$line);
+        if ( $DEBUG > 8 ) { print "readCommandLog: $date, $es_name, $assoc_id, $cmd, $cmdState, $respState, $appName\n"; }
+        next if ( ! defined $date && ! defined $es_name && ! defined $cmd && ! defined $cmdState && ! defined $respState );
+        next if ( $date !~ /M$/ );
+
+        # EAM Design will write a CR that require DDC to collect application name from tapdb into cmd.log
+        # So there will be two versions of DDC, one that collects application name and other that does not.
+        # So if there is no appName then set it to default Unknown
+        if ( $appName eq "") {
+            $appName="Unknown";
+        } else {
+            $appName = getAppName($appName);
+        }
+
+        my $time = parseTime($date, $StatsTime::TIME_SYB_NO_SEC);
+        if ( $time < 0 ) {
+            next;
+        }
+
+        while ( $time > ($currTime + (60*30)) ) {
+            $currTime += (60*30);
+            $r_currBin = {
+                'time' => formatTime( $currTime, $StatsTime::TIME_SQL ),
+                'init' => {},
+            };
+            if ( $DEBUG > 5 ) { print "readCommandLog: allocating bin for " . $r_currBin->{'time'} . "\n"; }
+            push @{$cmdStats{'byTime'}}, $r_currBin;
+        }
+
+        my $init = $r_neToInit->{$es_name};
+        my $r_initStats = $r_currBin->{'init'}->{$init};
+        if ( ! defined $r_initStats ) {
+            $r_initStats = {
+                'sess'    => {},
+                'command' => 0,
+                'ne'      => {}
+            };
+            $r_currBin->{'init'}->{$init} = $r_initStats;
+        }
+
+        $r_initStats->{'sess'}->{$assoc_id}++;
+        $r_initStats->{'command'}++;
+        $r_initStats->{'ne'}->{$es_name}++;
+
+        $cmd = EAMCommon::stripCommand($cmd);
+
+        my $r_ne = $cmdStats{'byNE'}->{$es_name};
+        if ( ! defined $r_ne ) {
+            $r_ne = {
+                'cmd' => {},
+                'sess' => {}
+            };
+            $cmdStats{'byNE'}->{$es_name} = $r_ne;
+        }
+
+        $r_ne->{'cmd'}->{$cmd}++;
+        $r_ne->{'sess'}->{$assoc_id}++;
+    }
+
+    close CMD;
+
+    foreach my $r_timeBin ( @{$cmdStats{'byTime'}} ) {
+        foreach my $init ( keys %{$r_timeBin->{'init'}} ) {
+            my $r_bin = $r_timeBin->{'init'}->{$init};
+
+            my @sessionIds = keys %{delete $r_bin->{'sess'}};
+            $r_bin->{'numsess'} = ($#sessionIds + 1);
+
+            my @neNames = keys %{delete $r_bin->{'ne'}};
+            $r_bin->{'numne'} = ($#neNames + 1);
+        }
+    }
+
+    foreach my $neName ( keys %{$cmdStats{'byNE'}} ) {
+        my $r_NeStats = $cmdStats{'byNE'}->{$neName};
+        my @sessionIds = keys %{delete $r_NeStats->{'sess'}};
+        $r_NeStats->{'numsess'} = ($#sessionIds + 1);
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("readCommandLog cmdStats", \%cmdStats); }
+
+    return \%cmdStats;
+}
+#
+# Method to parse the EAM map configuration file that contains the time out details. Refer to EAM IWD for further details
+# EAM IWD 1/155 19-APR 901 982
+#
+sub readMapLog()
+{
+    my ($maplog)=@_;
+    open MAP, "$maplog" or die "Cannot open $maplog";
+    while(<MAP>)
+    {
+        if ( $_ =~ /ES_info\$/ )
+        {
+            my ($es_info, $ne, $initName, $connIdle, $shortBuf, $longBuf) = $_ =~ /^ES_info\$(\d+).*name, s, \"(.*?)\".*cr_daemon, s, \"(.*?)\".*conn_idle_to, i, (\d+).*short_buf_to, i, (\d+).*long_buf_to, i, (\d+)/mg;
+           if ( $es_info > 0 )
+           {
+               push @ne_config, ["$initName","$ne",$connIdle, $shortBuf, $longBuf];
+           }
+        }
+    }
+    close MAP;
+}
+
+#
+# This method stores the EAM Statistics into DB.
+#
+sub store()
+{
+    my ($r_cmdStats,$r_neToInit) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    my %nes = ();
+    my %cmds = ();
+    my %inits = ();
+
+    if ( defined $r_cmdStats ) {
+        foreach my $neName ( keys %{$r_cmdStats->{'byNE'}} ) {
+            $nes{$neName}++;
+            my $r_neCmds = $r_cmdStats->{'byNE'}->{$neName}->{'cmd'};
+            foreach my $cmd ( keys %{$r_neCmds} ) {
+                $cmds{$cmd}++;
+            }
+        }
+
+        foreach my $r_timeBin ( @{$r_cmdStats->{'byTime'}} ) {
+            foreach my $init ( keys %{$r_timeBin->{'init'}} ) {
+                $inits{$init}++;
+            }
+        }
+    }
+
+    foreach my $r_neConfig ( @ne_config ) {
+        $nes{$r_neConfig->[1]}++;
+    }
+
+    my @_neNames = keys %nes;
+
+    # Strip if any ',' & string after ',' of @_neNames
+    foreach my $ne (@_neNames) {
+        $ne =~ s/,.*//;
+    }
+
+    my $r_neIdMap = getIdMap($dbh, "eam_ne_names", "id", "name", \@_neNames );
+
+
+    dbDo($dbh, "DELETE FROM eam_init_stats WHERE siteid = $siteId AND date='$dash_date'");
+    foreach my $key ( sort keys %eamConfigMap )
+    {
+        dbDo($dbh, "INSERT INTO eam_init_stats (siteid,cmd_responders_initiators,date,count) VALUES ($siteId,'$key','$dash_date',$eamConfigMap{$key})")
+                or die "Failed to insert in eam_init_stats table";
+    }
+    # Insert the Map file log entries into eam_ne_config table
+    dbDo($dbh, "DELETE FROM eam_ne_config WHERE siteid = $siteId AND date='$dash_date'");
+    for my $i ( 0 .. $#ne_config )
+    {
+        my $neId = $r_neIdMap->{$ne_config[$i][1]};
+ my $sql= "INSERT INTO eam_ne_config (siteid,date,neid,initiator_name,conn_idle_to,short_buf_to,long_buf_to) VALUES($siteId,'$dash_date',$neId,'$ne_config[$i][0]',$ne_config[$i][2],$ne_config[$i][3],$ne_config[$i][4])";
+      dbDo($dbh,$sql) or die "Failed to insert in eam_ne_config table";
+    }
+
+    if ( defined $r_cmdStats ) {
+        my @_initNames = keys %inits;
+        my $r_initIdMap = getIdMap($dbh, "eam_initiator_names", "id", "name", \@_initNames );
+
+        my @_cmdNames = keys %cmds;
+        my $r_cmdIdMap = getIdMap($dbh, "eam_trimmed_cmd_names", "id", "name", \@_cmdNames );
+
+        my $r_appIdMap = getIdMap($dbh, "eam_trimmed_app_names", "id", "name", [ '' ] );
+
+        my $tmpDir = "/tmp";
+        if ( exists $ENV{"TMP_DIR"} )
+        {
+            $tmpDir = $ENV{"TMP_DIR"};
+        }
+
+        my $appId = $r_appIdMap->{''};
+        my $timeBcpFile = "$tmpDir/eam_cmd_time.bcp";
+        open TIME_BCP, ">$timeBcpFile" or die "Cannot open $timeBcpFile";
+        foreach my $r_timeBin ( @{$r_cmdStats->{'byTime'}} ) {
+            foreach my $init ( keys %{$r_timeBin->{'init'}} ) {
+                my $r_bin = $r_timeBin->{'init'}->{$init};
+                printf TIME_BCP "%d\t%s\t%d\t%d\t%d\t%d\t%d\n", $siteId, $r_timeBin->{'time'}, $r_initIdMap->{$init}, $appId,
+                $r_bin->{'command'}, $r_bin->{'numsess'}, $r_bin->{'numne'};
+            }
+        }
+        close TIME_BCP;
+
+        my $neBcpFile = "$tmpDir/eam_cmd_ne.bcp";
+        open NE_BCP, ">$neBcpFile" or die "Cannot open $neBcpFile";
+        foreach my $neName ( keys %{$r_cmdStats->{'byNE'}} ) {
+            my $neId = $r_neIdMap->{$neName};
+            my $initId = $r_initIdMap->{$r_neToInit->{$neName}};
+            my $r_NeStats = $r_cmdStats->{'byNE'}->{$neName};
+            foreach my $cmd ( keys %{$r_NeStats->{'cmd'}} ) {
+                my $cmdId = $r_cmdIdMap->{$cmd};
+                printf NE_BCP "%d\t%s\t%d\t%d\t%d\t%d\n", $siteId, $dash_date, $neId, $initId, $cmdId, $r_NeStats->{'cmd'}->{$cmd};
+            }
+        }
+        close NE_BCP;
+
+        dbDo($dbh, "DELETE FROM eam_cmd_time WHERE siteid = $siteId AND time BETWEEN '$dash_date 00:00:00' AND '$dash_date 23:59:59'");
+        dbDo($dbh, "LOAD DATA LOCAL INFILE \'$timeBcpFile\' INTO TABLE eam_cmd_time") or die "Failed to load data";
+        dbDo($dbh, "DELETE FROM eam_cmd_ne WHERE siteid = $siteId AND date = '$dash_date'");
+        dbDo($dbh, "LOAD DATA LOCAL INFILE \'$neBcpFile\' INTO TABLE eam_cmd_ne") or die "Failed to load data";
+    }
+
+}
+
+
+#
+# This method reads the error log and extracts the EAM Error Origin and differentiate the error entries based on Error Number Range.
+# It then further associate the results to the Error Log page by creating a link.
+#
+sub readErrorLog()
+{
+    my $date; my $time; my $origin; my $error; my $range; my $part="";
+    my %errorMap = ();
+    my %countByName = ();
+    my ($errorlog, $outputdir)=@_;
+    open ERRORLOG, "$errorlog" or die "Cannot open $errorlog";
+    while(<ERRORLOG>)
+    {
+        if ( /^(\S+) (\S+)\s+(\S+) \"(\w+).(\d+)\"/ )
+        {
+           $date = $1;
+           $time = $2;
+           $origin = $3;
+           $error = $4;
+           $range = $5;
+
+           if ( $date =~ $dash_date )
+           {
+               my $isFound=0;
+               if ( $range >= 1600 && $range <= 1603 )
+               {
+                $part = "";
+                $isFound=1;
+               } elsif ( $range >= 20000 && $range <= 25999 ) {
+                    $part = "EAC"; $isFound = 1;
+               } elsif ( $range >= 30000 && $range <= 35999 ) {
+                    $part = "EHM"; $isFound = 1;
+               } elsif ( $range >= 1035000 && $range <= 1035199) {
+                    $part = "EHT,EHIP,EHMS"; $isFound = 1;
+               }
+               if ( $isFound == 1 )
+               {
+                   $origin =~ s/.\d+//g;
+                   if ( $DEBUG > 0 ) {  print "$origin $error $range\n"; }
+                   $errorMap{$origin}=$part;
+                   $countByName{$origin} = $countByName{$origin} + 1;
+               }
+           }
+        }
+    }
+    my @sortedKeys = keys %errorMap;
+    if ( $DEBUG > 0 )
+    {
+        foreach my $key ( @sortedKeys ) { print "$key $errorMap{$key} $countByName{$key}\n"; }
+    }
+    my $filename = $outputdir . "/" . "eam_error_table.html";
+    open TABLE, ">$filename" or die "Cannot open $filename";
+    foreach my $key ( @sortedKeys )
+    {
+        print TABLE "part=$errorMap{$key}&origin=$key&count=$countByName{$key}\n";
+    }
+    close TABLE;
+    close ERRORLOG;
+}
+
+sub getAppName($) {
+    my ($appName) = @_;
+
+    if ( $appName =~ /^(\d+)$/ ) {
+        return "[NUM]";
+    }
+
+    # EEICMUY: Seem to getting a number appended to the end of the app name which is causing eam_app_names
+    # to fill. So lets strip of this number
+    $appName =~ s/\d+$//;
+
+    return $appName;
+}
+

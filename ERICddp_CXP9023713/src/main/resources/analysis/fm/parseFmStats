@@ -1,0 +1,375 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main{
+    my($instrCfg,$instrData,$dashDate);
+    my $instrDatasets = "FM_supi,IMH_FMAI_server,IMH_alarm_server,FMA_handler_1";
+    my $result = GetOptions(
+        "cfg=s" => \$instrCfg,
+        "datasets=s" => \$instrDatasets,
+        "data=s" => \$instrData,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    setInstr_Debug($DEBUG);
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+   # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    #Maps each instr dataset to a table
+    my %dbTableMap;
+    my @datasets = split(/\,/, $instrDatasets);
+    foreach my $dataset (@datasets){
+        $dbTableMap{$dataset} = lc($dataset) . "_stats";
+    }
+
+    my $r_idMap = getIdMap($dbh, "fm_process_names", "id", "name", \@datasets);
+    if ($DEBUG > 4) { print Dumper $r_idMap; }
+
+    # Map of the field names in the instr input data to the corresponding field names in statsdb
+    #  We have a mapping for each dataset table fm_supi_stats, fm_handler1_stats, 
+    
+    my %dbFieldMap;
+
+    #fm_supi_stats
+    $dbFieldMap{'fm_supi_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'fm_supi_stats'}->{'TotalEventsFromManager'} = 'total_events_from_manager';
+    $dbFieldMap{'fm_supi_stats'}->{'TotalActionsFromKernel'} = 'total_actions_from_kernel';
+    $dbFieldMap{'fm_supi_stats'}->{'TotalCommandsToKernel'} = 'total_commands_to_kernel';
+    $dbFieldMap{'fm_supi_stats'}->{'ActionsFromKernelQueueSize'} = 'actions_from_kernel_queue_size';
+    $dbFieldMap{'fm_supi_stats'}->{'CommandToKernelQueueSize'} = 'command_to_kernel_queue_size';
+    $dbFieldMap{'fm_supi_stats'}->{'EventFromManagerQueueSize'} = 'event_from_manager_queue_size';
+    $dbFieldMap{'fm_supi_stats'}->{'StartTimeSecs'} = 'start_time_secs';
+    
+    #imh_fmai_server_stats 
+    $dbFieldMap{'imh_fmai_server_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'imh_fmai_server_stats'}->{'IncomingFMXEDDEvents'} = 'incoming_fm_xedd_events';
+    $dbFieldMap{'imh_fmai_server_stats'}->{'IncomingAlarms'} = 'incoming_alarms';
+    $dbFieldMap{'imh_fmai_server_stats'}->{'IncomingContextDCorrelatedMess'} = 'incoming_context_d_correlated_mess';
+    $dbFieldMap{'imh_fmai_server_stats'}->{'OutgoingAlarmTotal'} = 'outgoing_alarm_total';
+    $dbFieldMap{'imh_fmai_server_stats'}->{'OutgoingAlarmFMX'} = 'outgoing_alarm_fmx';
+    $dbFieldMap{'imh_fmai_server_stats'}->{'StartTimeSecs'} = 'start_time_secs';
+    
+    #imh_alarm_server_stats
+    $dbFieldMap{'imh_alarm_server_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'IncomingTotalAlarms'} = 'incoming_total_alarms';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'IncomingFMXAlarms'} = 'incoming_fmx_alarms';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'IncomingAckEvents'} = 'incoming_ack_events';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'IncomingUnackEvents'} = 'incoming_unack_events';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'IncomingCommentEvents'} = 'incoming_comment_events';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'OutgoingAlarms'} = 'outgoing_alarms';
+    $dbFieldMap{'imh_alarm_server_stats'}->{'StartTimeSecs'} = 'start_time_secs';
+
+    #fma_handler_1_stats
+    $dbFieldMap{'fma_handler_1_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ReceivedAlarms'} = 'received_alarms';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ReceivedAdminEvents'} = 'received_admin_events';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ReceivedNetworkModelNotifications'} = 'received_network_model_notifications';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMIIComments'} = 'sent_fmii_comments';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMIIAck'} = 'sent_fmii_ack';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMIIUnAck'} = 'sent_fmii_unack';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMIIAlarm'} = 'sent_fmii_alarm';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentActionMessages'} = 'sent_action_messages';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentContextDCorrelatedMessage'} = 'sent_context_dcorrelated_message';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMXIMessages'} = 'sent_fmxi_messages';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMAIAck'} = 'sent_fmai_ack';
+    $dbFieldMap{'fma_handler_1_stats'}->{'SentFMAIUnAck'} = 'sent_fmai_unack';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread0'} = 'message_processed_by_list_thread_0';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread1'} = 'message_processed_by_list_thread_1';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread2'} = 'message_processed_by_list_thread_2';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread3'} = 'message_processed_by_list_thread_3';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread4'} = 'message_processed_by_list_thread_4';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread5'} = 'message_processed_by_list_thread_5';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread6'} = 'message_processed_by_list_thread_6';
+    $dbFieldMap{'fma_handler_1_stats'}->{'MessageProcessedbyListThread7'} = 'message_processed_by_list_thread_7';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread0'} = 'alarm_message_processed_by_log_thread_0';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread1'} = 'alarm_message_processed_by_log_thread_1';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread2'} = 'alarm_message_processed_by_log_thread_2';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread3'} = 'alarm_message_processed_by_log_thread_3';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread4'} = 'alarm_message_processed_by_log_thread_4';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread5'} = 'alarm_message_processed_by_log_thread_5';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread6'} = 'alarm_message_processed_by_log_thread_6';
+    $dbFieldMap{'fma_handler_1_stats'}->{'AlarmMessageProcessedbyLogThread7'} = 'alarm_message_processed_by_log_thread_7';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread0'} = 'correlation_message_processed_by_log_thread_0';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread1'} = 'correlation_message_processed_by_log_thread_1';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread2'} = 'correlation_message_processed_by_log_thread_2';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread3'} = 'correlation_message_processed_by_log_thread_3';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread4'} = 'correlation_message_processed_by_log_thread_4';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread5'} = 'correlation_message_processed_by_log_thread_5';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread6'} = 'correlation_message_processed_by_log_thread_6';
+    $dbFieldMap{'fma_handler_1_stats'}->{'CorrelationMessageProcessedbyLogThread7'} = 'correlation_message_processed_by_log_thread_7';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize0'} = 'list_thread_qsize_0';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize1'} = 'list_thread_qsize_1';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize2'} = 'list_thread_qsize_2';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize3'} = 'list_thread_qsize_3';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize4'} = 'list_thread_qsize_4';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize5'} = 'list_thread_qsize_5';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize6'} = 'list_thread_qsize_6';
+    $dbFieldMap{'fma_handler_1_stats'}->{'ListThreadQSize7'} = 'list_thread_qsize_7';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize0'} = 'log_thread_qsize_0';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize1'} = 'log_thread_qsize_1';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize2'} = 'log_thread_qsize_2';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize3'} = 'log_thread_qsize_3';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize4'} = 'log_thread_qsize_4';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize5'} = 'log_thread_qsize_5';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize6'} = 'log_thread_qsize_6';
+    $dbFieldMap{'fma_handler_1_stats'}->{'LogThreadQSize7'} = 'log_thread_qsize_7';
+    $dbFieldMap{'fma_handler_1_stats'}->{'StartTimeSecs'} = 'start_time_secs';
+
+    # Set the field Order
+    my %dbFieldOrder = (
+        "fm_supi_stats" => ['total_events_from_manager', 'total_actions_from_kernel', 'total_commands_to_kernel', 'actions_from_kernel_queue_size', 'command_to_kernel_queue_size', 'event_from_manager_queue_size', 'start_time_secs'],
+        "imh_fmai_server_stats" => ['incoming_fm_xedd_events','incoming_alarms','incoming_context_d_correlated_mess','outgoing_alarm_total','outgoing_alarm_fmx','start_time_secs'],
+        "imh_alarm_server_stats" => ['incoming_total_alarms','incoming_fmx_alarms','incoming_ack_events','incoming_unack_events','incoming_comment_events','outgoing_alarms','start_time_secs'],
+        "fma_handler_1_stats" => ['received_alarms','received_admin_events','received_network_model_notifications','sent_fmii_comments','sent_fmii_ack','sent_fmii_unack','sent_fmii_alarm','sent_action_messages','sent_context_dcorrelated_message','sent_fmxi_messages','sent_fmai_ack','sent_fmai_unack','message_processed_by_list_thread_0','message_processed_by_list_thread_1','message_processed_by_list_thread_2','message_processed_by_list_thread_3','message_processed_by_list_thread_4','message_processed_by_list_thread_5','message_processed_by_list_thread_6','message_processed_by_list_thread_7','alarm_message_processed_by_log_thread_0','alarm_message_processed_by_log_thread_1','alarm_message_processed_by_log_thread_2','alarm_message_processed_by_log_thread_3','alarm_message_processed_by_log_thread_4','alarm_message_processed_by_log_thread_5','alarm_message_processed_by_log_thread_6','alarm_message_processed_by_log_thread_7','correlation_message_processed_by_log_thread_0','correlation_message_processed_by_log_thread_1','correlation_message_processed_by_log_thread_2','correlation_message_processed_by_log_thread_3','correlation_message_processed_by_log_thread_4','correlation_message_processed_by_log_thread_5','correlation_message_processed_by_log_thread_6','correlation_message_processed_by_log_thread_7','list_thread_qsize_0','list_thread_qsize_1','list_thread_qsize_2','list_thread_qsize_3','list_thread_qsize_4','list_thread_qsize_5','list_thread_qsize_6','list_thread_qsize_7','log_thread_qsize_0','log_thread_qsize_1','log_thread_qsize_2','log_thread_qsize_3','log_thread_qsize_4','log_thread_qsize_5','log_thread_qsize_6','log_thread_qsize_7','start_time_secs']
+    );
+    
+    if ($DEBUG > 7) { print Dumper %dbFieldMap; }
+    
+    # Gather up the metrics defined above and retrieve their ids into a map, updating the
+    # fm_metrics table in the process
+    my @metrics;
+    foreach my $name(keys (%dbTableMap)){
+            foreach my $metric (keys(%{$dbFieldMap{$dbTableMap{$name}}})) {
+                push(@metrics,$metric);
+            }
+    }
+    my $r_metricidMap = getIdMap($dbh, "fm_metrics", "id", "name", \@metrics);
+ 
+    #Add metric types and retrieve the (currently manually specified) fields whose values are calculated
+    #as increments
+    updateMetricsTypes(\%dbTableMap, \%dbFieldMap, $r_idMap, $r_metricidMap);
+    my $r_delMetricTypes = dbSelectAllHash($dbh, "SELECT  n.name AS 'dataset', m.name AS 'metric' FROM fm_metrics m, fm_process_names n, fm_metric_types t WHERE t.nameid = n.id AND  t.metricid = m.id  AND t.type = 'DELTA'" );
+     
+    if ($DEBUG > 4) { print Dumper $r_delMetricTypes; }
+
+    my $r_data = parseData($instrCfg, $instrData);
+
+    if ($DEBUG > 7) {
+        print "Dumper parsed dataset:\n";
+        print Dumper($r_data);
+    }
+
+
+    # For each dataset, find the appropriate table, build up the bulk insert file and write the data to statsdb
+    foreach my $dataset (@datasets) {
+        my $nameid = $r_idMap->{$dataset};
+        my $table = $dbTableMap{$dataset};
+        my $reqDeltaCalcs = 0;
+        my @deltaMetrics;
+        # Check for datasets which include metrics that are to be calculated as incremented values rather than absolutes
+        DEL_CHK: foreach my $r_record (@{$r_delMetricTypes}) {
+            if ($r_record->{'dataset'} eq $dataset) {
+                $reqDeltaCalcs = 1;
+                push(@deltaMetrics, $r_record->{'metric'});
+            }
+        }
+        parseDataforBulkInsert($sqlDate, $siteid, $nameid, $dataset, $table, \%dbFieldMap, \%dbFieldOrder, $r_data, $r_idMap, $reqDeltaCalcs, \@deltaMetrics )
+    }
+}
+
+
+sub updateMetricsTypes(){
+    my ($r_dbTableMap, $r_dbFieldMap, $r_idMap, $r_metricidMap) = @_;
+    my $dbh = connect_db();
+    my %metricTypes;
+
+    # Retrieve the dataset name and metric ids from the appropriate maps
+    my $i = 1;
+    foreach my $name (keys(%$r_dbTableMap)) {
+        foreach my $metric (keys(%{$r_dbFieldMap->{$r_dbTableMap->{$name}}})) {
+            my %pair = ( 'nameid' => $r_idMap->{$name}, 'metricid' => $r_metricidMap->{$metric} );
+            $metricTypes{$i} = \%pair;
+            $i++;
+        }
+    }
+
+    my $r_metricTypesExtant = dbSelectAllHash($dbh, "SELECT nameid, metricid FROM fm_metric_types");
+    if ($DEBUG > 4) { print Dumper $r_metricTypesExtant; }
+    CHK_DB: foreach my $r_record (@{$r_metricTypesExtant}) {
+        foreach my $i (keys(%metricTypes)) {
+            if ($metricTypes{$i}->{'nameid'} == $r_record->{'nameid'} && $metricTypes{$i}->{'metricid'} == $r_record->{'metricid'}) {
+                delete $metricTypes{$i};
+                next CHK_DB;
+            }
+        }
+    }
+
+    # Build up the insert statement
+    my $sqlMetricTypesINS = "INSERT INTO fm_metric_types (nameid, metricid) VALUES ";
+    foreach my $i (sort(keys(%metricTypes))) {
+        $sqlMetricTypesINS .= "(" . $metricTypes{$i}->{'nameid'} . "," . $metricTypes{$i}->{'metricid'} . "),";
+    }
+    $sqlMetricTypesINS =~ s/\,$//;
+    if ($DEBUG > 4) { print "SQL to update fm_metric_types: " . $sqlMetricTypesINS . "\n"; }
+
+    # Update the jmx_metric_types table if needs be
+    if ($sqlMetricTypesINS =~ m/\)$/) {
+        dbDo($dbh, $sqlMetricTypesINS) or die "ERROR: Could not update jmx_metric_types table.\n";
+    }
+
+    # Until this is automated, manually set the fields to be treated as datasets where delta values are presented
+    my $sqlAbsIdsSEL= "SELECT t.id AS 'metrictypeid' FROM fm_metric_types t, fm_process_names n, fm_metrics m WHERE " .
+            "t.nameid = n.id AND t.metricid = m.id AND  m.name IN ('StartTimeSecs','EventFromManagerQueueSize','CommandToKernelQueueSize','ActionsFromKernelQueueSize','ListThreadQSize0','ListThreadQSize1','ListThreadQSize2','ListThreadQSize3','ListThreadQSize4','ListThreadQSize5','ListThreadQSize6','ListThreadQSize7','LogThreadQSize0','LogThreadQSize1','LogThreadQSize2','LogThreadQSize3','LogThreadQSize4','LogThreadQSize5','LogThreadQSize6','LogThreadQSize7')";
+
+    my $sqlAbsIdsUPD = "UPDATE fm_metric_types SET type = 'ABSOLUTE' WHERE metricid IN (";
+        foreach my $r_ids (@{dbSelectAllArr($dbh, $sqlAbsIdsSEL)}) {
+            $sqlAbsIdsUPD .= pop(@$r_ids) . ",";
+    }
+    $sqlAbsIdsUPD =~ s/\,$/)/;
+    
+    if ($DEBUG > 4) { print "SQL to flag abs fields: " . $sqlAbsIdsUPD . "\n";
+        dbDo($dbh, $sqlAbsIdsUPD) or die "ERROR: Could not update type column in fm_metrics  table.\n";
+    }
+
+}
+
+sub parseDataforBulkInsert(){
+    my ($sqlDate, $siteid, $nameid, $dataset, $table, $r_dbFieldMap, $r_dbFieldOrder, $r_data, $r_idMap, $reqDeltaCalcs, $r_deltaMetrics ) = @_;
+    my %dataForStorage;
+    my $cnt = 0;
+    
+    my $r_previousRecordRef;
+    PARSE_RECORDS:foreach my $recordRef (@{$r_data->{$dataset}}) {
+        my $timestamp = instr2mysqlTime($recordRef->{'timestamp'});
+        if ($timestamp =~ m/$sqlDate.*/) {
+            if($cnt == 0){
+                $r_previousRecordRef = $recordRef;
+                $cnt++;
+                next PARSE_RECORDS;
+            }else{
+                #foreach my $instrField (@{$r_MetricTypes}){
+                foreach my $instrField (keys(%{$r_dbFieldMap->{$table}})){
+                    my $field = $r_dbFieldMap->{$table}->{$instrField};
+                        
+                    if ($DEBUG > 9) { print $table . " : " . $instrField . " : " . $field . "\n"; }
+                    if (exists($recordRef->{$instrField}) && lc($recordRef->{$instrField}) ne 'undef' && lc($recordRef->{$instrField}) ne '') {   
+                        unless($field eq 'time'){
+                            if (grep {$_ eq $instrField} @$r_deltaMetrics) {
+                                    $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField} - $r_previousRecordRef->{$instrField};
+                            }else{
+                                #calc value into kB
+                                if ($instrField eq 'StartTimeSecs') {
+                                    $dataForStorage{$timestamp}->{$field} = int ( ($recordRef->{$instrField} / (1024*1024)) + 0.5);
+                                } else {
+                                    $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField};
+                                }
+                            }
+                        }    
+                    } else {
+                        $dataForStorage{$timestamp}->{$field} = '\N'; # Set non-existant values to NULL ('\N')
+                    }
+                }
+                $r_previousRecordRef = $recordRef;
+            }
+        } else {
+            print $timestamp . " not included for this recordset.\n";
+        }
+        $cnt++; 
+    }        
+    # If we have calculated deltas above, then there will be one less record than for absolute metrics
+    if ($reqDeltaCalcs == 1 && $cnt != 0) { $cnt--; }
+         
+    if ($DEBUG > 4) { print Dumper %dataForStorage; }
+
+    writeBulkImport($sqlDate, $siteid, $nameid, $r_dbFieldMap, $r_dbFieldOrder , \%dataForStorage, $table, \$cnt);
+
+    return 0;
+}
+
+
+sub writeBulkImport(){
+    my($sqlDate, $siteid, $nameid, $r_dbFieldMap, $r_dbFieldOrder, $r_dataForStorage, $table, $r_cnt) = @_;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/" . $table . ".bcp";
+
+    my $fieldCnt = keys(%{$r_dbFieldMap->{$table}});
+
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $timestamp (sort(keys(%$r_dataForStorage))) {
+        my $record = $timestamp . "," . $siteid . "," . $nameid . ",";
+        my $blankCnt = 1; # Count the blanks
+
+        foreach my $field (@{$r_dbFieldOrder->{$table}}) {
+            if ($field ne 'time') {
+                if ($r_dataForStorage->{$timestamp}{$field} eq "\\N") { $blankCnt++; }
+                $record .= $r_dataForStorage->{$timestamp}{$field} . ",";
+            }
+        }
+
+        $record =~ s/\,$/\n/; # Remove the last comma and add a carriage return
+
+        $$r_cnt--; # Keep count to make sure all records are dealt with
+
+        if ($DEBUG > 4) { print $record; }
+
+        # Write the record to the file, eliminating records with no metrics
+        if ($blankCnt != $fieldCnt) {
+            print BULK_INSERT $record;
+        }
+    }    
+
+    close BULK_INSERT;
+
+    if ($$r_cnt != 0) {
+        die "ERROR: Not all records have been processed - " . $$r_cnt . " over.\n";
+    }
+    
+    storeDataset($sqlDate, $siteid, $nameid,  $table, $bcpFile);
+    return 0;
+}
+
+sub storeDataset(){
+    my ($sqlDate, $siteid, $nameid, $table, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Run the bulk insert into the fm_stats
+    my $rerunDelete = "DELETE FROM " . $table . " WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid . " AND nameid = " . $nameid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','");
+    $dbh->disconnect;
+
+    return 0;
+
+}

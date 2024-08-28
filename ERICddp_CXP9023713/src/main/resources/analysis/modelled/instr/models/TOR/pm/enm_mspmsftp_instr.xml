@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mspm"/>
+  </services>
+
+  <table name="enm_mspmsftp_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+  
+  <!-- These metrics use filteridle as the are reset to 0 on each read. See TORF-383766 -->
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.ftp.instrumentation.MultipleFileCollectionHandler:type=FtpInstrumentation$">
+       <metric source="successfulFtpConnectionCounter" target="successfulFtpConnectionCounter" filteridle="true"/>
+       <metric source="successfulMinimumFtpConnectionDuration" target="successfulMinimumFtpConnectionDuration" filteridle="true"/>
+       <metric source="successfulMaximumFtpConnectionDuration" target="successfulMaximumFtpConnectionDuration" filteridle="true"/>
+       <metric source="failureFtpConnectionCounter" target="failureFtpConnectionCounter" filteridle="true"/>
+       <metric source="failureMinimumFtpConnectionDuration" target="failureMinimumFtpConnectionDuration" filteridle="true"/>
+       <metric source="failureMaximumFtpConnectionDuration" target="failureMaximumFtpConnectionDuration" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ ylabel="Execution Time(secs)"
+>
+  <title value="Order Project Stats"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_apserv_metrics">
+        <reference table="sites" condition="enm_apserv_metrics.siteid = sites.id"/>
+        <reference table="servers" condition="enm_apserv_metrics.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND enm_apserv_metrics.useCaseType = 'ORDER_PROJECT' AND enm_apserv_metrics.status='success' AND enm_apserv_metrics.view LIKE 'Metric'</where>
+      <column db="executionTime" label="executionTime"/>
+    </query>
+  </queries>
+  <size width="480" height="180"/>
+</modelledgraph>
+

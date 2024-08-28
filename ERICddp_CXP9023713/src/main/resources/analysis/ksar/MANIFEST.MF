@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Ant-Version: Apache Ant 1.9.4
+Created-By: 1.7.0_03-b05 (Oracle Corporation)
+Built-By: xchapiy @ Ericsson Systems Expertise
+Main-Class: net.atomique.ksar.Main
+

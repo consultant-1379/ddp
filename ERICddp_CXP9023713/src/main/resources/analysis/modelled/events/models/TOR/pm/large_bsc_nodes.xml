@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_large_bsc_nodes">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="mspm"/>
+  </services>
+
+  <events>
+    <!-- LARGE_BSC_NODES {"TOTAL_VOLUME":3078543,"AVG_LARGEST_FILE_SIZE":1026181,"NODE_NAME":"M02B03","TOTAL_NUMBER_OF_FILES_COLLECTED":3,"ROP_PERIOD":900} -->
+    <event name="LARGE_BSC_NODES">
+      <metric source="host" target="serverid"/>
+      <metric source="NODE_NAME" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="ROP_PERIOD" target="ropPeriod"/>
+      <metric source="TOTAL_VOLUME" target="totalVolume" scale="1024"/>
+      <metric source="TOTAL_NUMBER_OF_FILES_COLLECTED" target="totalNumberOfFilesCollected"/>
+      <metric source="AVG_LARGEST_FILE_SIZE" target="largestFileSize" scale="1048576"/>
+    </event>
+  </events>
+</modelledevents>

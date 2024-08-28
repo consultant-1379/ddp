@@ -1,0 +1,181 @@
+#!/usr/bin/perl
+########################################################################################################################
+#  Description ---------   parseFSSnapshotUtilization -----------
+#  This script parses the FS Snapshot Utilization LOG file for DDP and store data to Db
+#  @author - Sunil Yadav (xsunyad)
+#  usage  parseFSSnapshotUtilization --logfile ${LogFile} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+########################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+
+our $dbh;
+our $siteId;
+our $serverId;
+our $DEBUG = 0;
+our $date = "";
+
+sub main {
+    my ($site, $server, $logFile);
+    my $result = GetOptions(
+        "logfile=s"  => \$logFile,
+        "site=s"     => \$site,
+        "server=s"   => \$server,
+        "date=s"     => \$date,
+        "debug=s"    => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $r_fsSnapshotUtilization = parseData($logFile);
+    my $bcpFile = createBcpFile($r_fsSnapshotUtilization);
+    my $table = "eniq_fs_snapshot_utilization";
+    removeOldData($table);
+    loadDb($bcpFile, $table);
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData {
+    my $logFile = shift;
+    my ($fileSystem, $pool, $attributes, $size, $poolOrigin, $dataPercent, $dateSubStr, $sizeUnit);
+    my (@dateTime, @fsSnapshotUtilizationArray) = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        my $fsSnapshotUtilizationSqlDateTime = "";
+        if ( $line =~ /^(\d+-\d+-\d+\_\d+\.\d+\.\d+)\s+-\s+Snapshot.*created successfully.*$/ ) {
+            my $fsSnapshotUtilizationDateTime = $1;
+            $fsSnapshotUtilizationSqlDateTime = convertDateToSql($fsSnapshotUtilizationDateTime);
+        }
+        if (defined $fsSnapshotUtilizationSqlDateTime) {
+           @dateTime = split(' ', $fsSnapshotUtilizationSqlDateTime);
+           $dateSubStr = $dateTime[0];
+        }
+        if (defined $dateSubStr && $date eq $dateSubStr ) {
+            while ( my $line = <FILE> ) {
+                if ( ($fileSystem, $pool, $attributes, $size, $sizeUnit, $poolOrigin, $dataPercent) = $line =~ /^\s+([\w_-]+)\s+([\w_]+)\s+([\w-]+)\s+[<]?(\d+||\d+.\d+)(m|g|t|k)\s+([\w_]+)\s+([\d.]+)\s+$/ ) {
+                    $size = convertSizeToGB($size, $sizeUnit);
+                    my %r_fs_snapshot_utilization1 = (
+                        time_stamp    => "$fsSnapshotUtilizationSqlDateTime",
+                        file_system   => "$fileSystem",
+                        pool          => "$pool",
+                        attributes    => "$attributes",
+                        size          => "$size",
+                        pool_origin   => "$poolOrigin",
+                        data_percent  => "$dataPercent"
+                    );
+                    push (@fsSnapshotUtilizationArray, \%r_fs_snapshot_utilization1);
+                }
+                elsif ( ($fileSystem, $pool, $attributes, $size, $sizeUnit) = $line =~ /^\s+([\w_-]+)\s+([\w_]+)\s+([\w-]+)\s+[<]?(\d+||\d+.\d+)(m|g|t|k)\s+$/ ) {
+                    $size = convertSizeToGB($size, $sizeUnit);
+                    my %r_fs_snapshot_utilization2 = (
+                        time_stamp    => "$fsSnapshotUtilizationSqlDateTime",
+                        file_system   => "$fileSystem",
+                        pool          => "$pool",
+                        attributes    => "$attributes",
+                        size          => "$size",
+                        pool_origin   => "",
+                        data_percent  => ""
+                    );
+                    push (@fsSnapshotUtilizationArray, \%r_fs_snapshot_utilization2);
+                }
+                elsif ( $line =~ /NAS Snapshot cache utilization is/ ) {
+                    last;
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 2 ) {
+        print Dumper("FS Snapshot Utilization", @fsSnapshotUtilizationArray);
+    }
+    close FILE;
+    return (\@fsSnapshotUtilizationArray);
+}
+
+sub createBcpFile {
+    my $parsedfsSnapshotUtilization = shift;
+    my $fsSnapshotUtilizationBcpFile = getBcpFileName("fs_snapshot_utilization_details");
+    open BCP, ">$fsSnapshotUtilizationBcpFile" or die "Cannot open BCPFile $fsSnapshotUtilizationBcpFile";
+    for my $fsSnapshotUtilization ( @$parsedfsSnapshotUtilization ) {
+        printf BCP "%s|%d|%d|%s|%s|%s|%s|%s|%s\n",
+        $fsSnapshotUtilization->{time_stamp},
+        $siteId,
+        $serverId,
+        $fsSnapshotUtilization->{file_system},
+        $fsSnapshotUtilization->{pool},
+        $fsSnapshotUtilization->{attributes},
+        $fsSnapshotUtilization->{size},
+        $fsSnapshotUtilization->{pool_origin},
+        $fsSnapshotUtilization->{data_percent};
+    }
+    close BCP;
+    if ($DEBUG > 3) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $fsSnapshotUtilizationBcpFile");
+    }
+    return $fsSnapshotUtilizationBcpFile;
+}
+
+sub convertSizeToGB ($$) {
+    my ( $size, $sizeUnit ) = @_;
+    if ( $sizeUnit eq "m" ) {
+        $size = $size / 1024;
+    } elsif ( $sizeUnit eq "t" ) {
+        $size = $size * 1024;
+    } elsif ( $sizeUnit eq "k" ) {
+        $size = $size / (1024 * 1024);
+    }
+    return $size;
+}
+
+sub convertDateToSql {
+    my ($timeStamp) = @_;
+    my @dateTimeFormat = split('_', $timeStamp);
+    my $timeSubStr = $dateTimeFormat[1];
+    my $sqlTimeStr = join( ":", split( /\./, $timeSubStr ) );
+    my $dateSubStr = $dateTimeFormat[0];
+    return "$dateSubStr $sqlTimeStr";
+}
+
+sub removeOldData {
+    my $table = shift;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 5 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

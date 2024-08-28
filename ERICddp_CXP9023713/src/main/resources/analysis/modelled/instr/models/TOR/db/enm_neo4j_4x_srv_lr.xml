@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^neo4j-lowres@neo4j$">
+  <table name="enm_neo4j_srv_lr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^neo4jlr-NumberOfNodeIdsInUse$">
+      <metric source="Value" target="nodeIds"/>
+    </metricgroup>
+    <metricgroup name="^neo4jlr-NumberOfPropertyIdsInUse$">
+      <metric source="Value" target="propIds"/>
+    </metricgroup>
+    <metricgroup name="^neo4jlr-NumberOfRelationshipIdsInUse$">
+      <metric source="Value" target="relIds"/>
+    </metricgroup>
+    <metricgroup name="^neo4jlr-NumberOfRelationshipTypeIdsInUse$">
+      <metric source="Value" target="relTypeIds"/>
+    </metricgroup>
+    <metricgroup name="^neo4jlr-TotalStoreSize$">
+      <metric source="Value" target="totalMB" scale="1048576"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_comecim_syncstatus">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="reasonid" reftable="enm_comecim_syncstatus_reason"/>
+  </table>
+
+  <services>
+    <service name="mscmapg"/>
+    <service name="comecimmscm"/>
+  </services>
+
+  <hooks module="TOR::sync_status_changes">
+    <hook>preprocess</hook>
+  </hooks>
+
+  <events>
+    <event name="SyncStatusChange">
+      <metric source="SyncStatus" target="syncstatus"/>
+      <metric source="host" target="serverid"/>
+      <metric source="Reason" target="reasonid"/>
+      <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+    </event>
+  </events>
+</modelledevents>

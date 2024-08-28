@@ -1,0 +1,623 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+#use StatsTime;
+
+# Parameter defaults
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main
+{
+    my ($OpenLDAPMonInfoLog,$site,$dashDate);
+
+    my $result = GetOptions(
+        "monfile=s"  => \$OpenLDAPMonInfoLog,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+        );
+
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    # Validate the parameters passed
+    if ( ! $OpenLDAPMonInfoLog ) {
+        printUsageAndExit("No OpenLDAP Monitor Log specified");
+    }
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        printUsageAndExit("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+    my $LDAPDate = $dd . $mm . $yy;
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh,$site);
+
+    if ( $siteid == -1 ) {
+        die ("ERROR: site " . $site . " does not exist in DDP. The site needs to be added to DDP before its data can be uploaded - exiting now...\n");
+    }
+
+    # Determine the times for the passed date that we need to load up (from the file)
+    # This is just a quick check if there is data to be loaded
+    my @loadTimes = ();
+    getTimesForLoad($OpenLDAPMonInfoLog,$LDAPDate,\@loadTimes,$siteid);
+
+    # If there's no data to load, exit here
+    if ( scalar(@loadTimes) == 0 ) {
+        print "INFO: No data to load for " . $dashDate . " - exiting...\n";
+        exit 0;
+    }
+
+    # Poll through the dates and create the dataset for loading
+    my %allOpenLDAPData = ();
+    readOpenLDAPMonInfoLog($OpenLDAPMonInfoLog, $LDAPDate, $sqlDate, $siteid, \%allOpenLDAPData);
+
+    # Now, calculate the deltas for the metric values we have collected,
+    # store them in a hash, and prepare for writing to the database
+    my $recordCnt = 0;
+    my (%previousDataset,%currentDataset,%datasetForStorage);
+    my @metrics = ( 'operations_bind', 'operations_unbind', 'operations_search', 'operations_compare', 'operations_modify', 'operations_modrdn', 'operations_add', 'operations_delete', 'statistics_bytes', 'statistics_entries', 'threads_max', 'threads_open', 'threads_active', 'time_uptime' );
+
+    DATALOOP : foreach my $record (sort(keys(%allOpenLDAPData))) {
+        my %dataRecordForStorage;
+
+        if ( $recordCnt == 0 ) {
+            $currentDataset{'time'} = $allOpenLDAPData{$record}{'time'};
+            $currentDataset{'siteid'} = $allOpenLDAPData{$record}{'siteid'};
+            foreach my $metric (@metrics) {
+                $currentDataset{$metric} = $allOpenLDAPData{$record}{$metric};
+            }
+
+            $previousDataset{'time'} = $currentDataset{'time'};
+            $previousDataset{'siteid'} = $currentDataset{'siteid'};
+            foreach my $metric (@metrics) {
+                $previousDataset{$metric} = $currentDataset{$metric};
+            }
+            $recordCnt++;
+            next DATALOOP;
+        } else {
+            $previousDataset{'time'} = $currentDataset{'time'};
+            $previousDataset{'siteid'} = $currentDataset{'siteid'};
+            foreach my $metric (@metrics) {
+                $previousDataset{$metric} = $currentDataset{$metric};
+            }
+
+            $currentDataset{'time'} = $allOpenLDAPData{$record}{'time'};
+            $currentDataset{'siteid'} = $allOpenLDAPData{$record}{'siteid'};
+            foreach my $metric (@metrics) {
+                $currentDataset{$metric} = $allOpenLDAPData{$record}{$metric};
+            }
+            $recordCnt++;
+        }
+
+        # Calculate the differences for each metric.
+        # Set the time as that for the later set, as this is the end of the time period
+        # being monitored
+        $dataRecordForStorage{'time'} = $currentDataset{'time'};
+        $dataRecordForStorage{'siteid'} = $siteid;
+        foreach my $metric (@metrics) {
+            $dataRecordForStorage{$metric} = $currentDataset{$metric} - $previousDataset{$metric};
+        }
+        $datasetForStorage{$record} = \%dataRecordForStorage;
+    }
+
+    if ( $DEBUG > 3 ) {
+        print "\nStorage Dataset:\n";
+        foreach my $key (sort(keys(%datasetForStorage))) {
+            print $key . " :     " . $datasetForStorage{$key}{'operations_bind'} . "\n";
+        }
+    }
+        storeOpenLDAPMonInfoData($sqlDate, \%datasetForStorage, \@metrics, $siteid);
+}
+
+sub getTimesForLoad() {
+    my ($OpenLDAPMonInfoLog,$LDAPDate,$r_loadTimes,$siteid) = @_;
+
+    # Read the file and get the times of the data records to be created
+    open READOLDAP, "$OpenLDAPMonInfoLog" or die "Could not open System Log File";
+
+    while ( my $line = <READOLDAP> ) {
+        if ( $DEBUG > 5 ) { print "getTimesForLoad: line=$line"; }
+        chomp $line;
+        # Find the header instance of the Open LDAP format date, format it into 
+        # a MySQL date and store them in a hash
+        if ( $line =~ m/^$LDAPDate/ ) {
+            push(@$r_loadTimes,$line);
+            if ( $DEBUG > 5 ) { print Dumper @$r_loadTimes; }
+        }
+    }
+    close(READOLDAP);
+
+    return 0;
+}
+
+sub readOpenLDAPMonInfoLog() {
+    my ($OpenLDAPMonInfoLog, $LDAPDate, $sqlDate, $siteid, $r_allOpenLDAPData) = @_;
+    my $currentLoadTime = '1970-01-01 00\:00\:00';
+    my %LDAPDatasetMetricMap = (
+        'operations_bind' => 'monitorOpCompleted',
+        'operations_unbind' => 'monitorOpCompleted',
+        'operations_search' => 'monitorOpCompleted',
+        'operations_compare' => 'monitorOpCompleted',
+        'operations_modify' => 'monitorOpCompleted',
+        'operations_modrdn' => 'monitorOpCompleted',
+        'operations_add' => 'monitorOpCompleted',
+        'operations_delete' => 'monitorOpCompleted',
+        'statistics_bytes' => 'monitorCounter',
+        'statistics_entries' => 'monitorCounter',
+        'threads_max' => 'monitoredInfo',
+        'threads_open' => 'monitoredInfo',
+        'threads_active' => 'monitoredInfo',
+        'time_uptime' => 'monitoredInfo'
+    );
+    my %progress = ( 
+        'time' => 0,
+        'operations_bind' => -1,
+        'operations_unbind' => -1,
+        'operations_search' => -1,
+        'operations_compare' => -1,
+        'operations_modify' => -1,
+        'operations_modrdn' => -1,
+        'operations_add' => -1,
+        'operations_delete' => -1,
+        'statistics_bytes' => -1,
+        'statistics_entries' => -1,
+        'threads_max' => -1,
+        'threads_open' => -1,
+        'threads_active' => -1,
+        'time_uptime' => -1
+    );
+
+    ################################################################################
+    # Poll through the file and lift the metrics.
+    # As these are metric values, and not "container" objects, they will always 
+    # appear in our query. If they do not have a value, it appears as zero.
+    #
+    # The parsing procedure is as follows, and
+    # tracked in the %progress hash above:
+    # 1) Default value for time progress is 0, for metrics progress is -1
+    # 2) Find each occurence of the date and get the time from this, then find all
+    #    required metrics for that time's dataset.
+    # 3) When the label for the metric is found, set the progress value for that 
+    #    metric to zero.
+    # 4) Continue on down through the file until the value is found.
+    # 5) When the value is found using the label in the %LDAPDatasetMetricMap above,
+    #    store it with the appropriate key in the currentDataset hash.
+    # 6) Set the progress value to 1 in the progress hash.
+    # 7) Find the end of the dataset, and then reset the time and progress hash.
+    # 7) Repeat for the remaining times.
+    ################################################################################
+    open READOLDAP, "$OpenLDAPMonInfoLog" or die "Could not open System Log File";
+    FILEPARSE: while ( my $line = <READOLDAP> ) {
+
+        if ( $DEBUG > 5 ) { print "readOpenLDAPMonInfoLog: line=$line"; }
+        chomp $line;
+
+        # First find the initial record in the dataset
+        if ( $progress{'time'} == 0 ) {
+            if ( $line =~ m/^$LDAPDate/ ) {
+                my ($LDAPYYMMDD,$LDAPHH,$LDAPMM) = split(/\:/, $line);
+                $currentLoadTime = $sqlDate . " " . $LDAPHH . "\:" . $LDAPMM . "\:00";
+                $r_allOpenLDAPData->{$currentLoadTime}{'time'} = $sqlDate . " " . $LDAPHH . "\:" . $LDAPMM . "\:00";
+	        $progress{'time'} = 1;
+            } 
+            next FILEPARSE;
+        }
+
+        # Exit if the time is not set
+        if ( $currentLoadTime eq '1970-01-01 00\:00\:00' ) {
+            die ("ERROR: load time not set\n");
+        }
+
+        # Operations/Bind metric
+        if ( $progress{'operations_bind'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Bind\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_bind'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_bind'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_bind'}\: [0-9]+" ) {
+			    $r_allOpenLDAPData->{$currentLoadTime}{'operations_bind'} = (split(/ /, $line))[1];
+			    $progress{'operations_bind'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_bind'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Unbind metric
+        if ( $progress{'operations_unbind'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Unbind\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_unbind'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_unbind'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_unbind'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_unbind'} = (split(/ /, $line))[1];
+                    $progress{'operations_unbind'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_unbind'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Search metric
+        if ( $progress{'operations_search'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Search\,cn\=Operations\,cn\=Monitor" ) {
+	            $progress{'operations_search'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_search'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_search'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_search'} = (split(/ /, $line))[1];
+                    $progress{'operations_search'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_search'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Compare metric
+        if ( $progress{'operations_compare'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Compare\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_compare'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_compare'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_compare'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_compare'} = (split(/ /, $line))[1];
+                    $progress{'operations_compare'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_compare'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Modify metric
+        if ( $progress{'operations_modify'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Modify\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_modify'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_modify'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_modify'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_modify'} = (split(/ /, $line))[1];
+                    $progress{'operations_modify'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_modify'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Modrdn metric
+        if ( $progress{'operations_modrdn'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Modrdn\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_modrdn'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_modrdn'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_modrdn'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_modrdn'} = (split(/ /, $line))[1];
+                    $progress{'operations_modrdn'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_modrdn'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Add metric
+        if ( $progress{'operations_add'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Add\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_add'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_add'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_add'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_add'} = (split(/ /, $line))[1];
+                    $progress{'operations_add'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_add'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Operations/Delete metric
+        if ( $progress{'operations_delete'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Operations\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Delete\,cn\=Operations\,cn\=Monitor" ) {
+                    $progress{'operations_delete'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'operations_delete'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'operations_delete'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'operations_delete'} = (split(/ /, $line))[1];
+                    $progress{'operations_delete'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'operations_delete'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Statistics/Bytes metric
+        if ( $progress{'statistics_bytes'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Statistics\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Bytes\,cn\=Statistics\,cn\=Monitor" ) {
+                    $progress{'statistics_bytes'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'statistics_bytes'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'statistics_bytes'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'statistics_bytes'} = (split(/ /, $line))[1];
+                    $progress{'statistics_bytes'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'statistics_bytes'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Statistics/Entries metric
+        if ( $progress{'statistics_entries'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Statistics\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Entries\,cn\=Statistics\,cn\=Monitor" ) {
+                    $progress{'statistics_entries'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'statistics_entries'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'statistics_entries'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'statistics_entries'} = (split(/ /, $line))[1];
+                    $progress{'statistics_entries'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'statistics_entries'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Threads/Max metric
+        if ( $progress{'threads_max'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Threads\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Max\,cn\=Threads\,cn\=Monitor" ) {
+                    $progress{'threads_max'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'threads_max'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'threads_max'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'threads_max'} = (split(/ /, $line))[1];
+                    $progress{'threads_max'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'threads_max'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Threads/Open metric
+        if ( $progress{'threads_open'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Threads\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Open\,cn\=Threads\,cn\=Monitor" ) {
+                    $progress{'threads_open'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'threads_open'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'threads_open'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'threads_open'} = (split(/ /, $line))[1];
+                    $progress{'threads_open'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'threads_open'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Threads/Active metric
+        if ( $progress{'threads_active'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Threads\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Active\,cn\=Threads\,cn\=Monitor" ) {
+                    $progress{'threads_active'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                next FILEPARSE;
+            }
+        }
+        if ( $progress{'threads_active'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'threads_active'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'threads_active'} = (split(/ /, $line))[1];
+                    $progress{'threads_active'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'threads_active'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # Time/Uptime metric
+        if ( $progress{'time_uptime'} == -1 ) {
+            if ( $line =~ "dn\: cn\=[A-Z][a-z]+\,cn\=Time\,cn\=Monitor" ) {
+                if ( $line eq "dn\: cn\=Uptime\,cn\=Time\,cn\=Monitor" ) {
+                    $progress{'time_uptime'} = 0;
+                    next FILEPARSE;
+                }
+            } else {
+                    next FILEPARSE;
+            }
+        }
+        if ( $progress{'time_uptime'} == 0 ) {
+                if ( $line =~ "$LDAPDatasetMetricMap{'time_uptime'}\: [0-9]+" ) {
+                    $r_allOpenLDAPData->{$currentLoadTime}{'time_uptime'} = (split(/ /, $line))[1];
+                    $progress{'time_uptime'} = 1;
+                    next FILEPARSE;
+                } elsif ( ($line =~ "\# [A-Za-z]+\, [A-Za-z]+") || ($line =~ "\# [A-Za-z]+") ) {
+                    $progress{'time_uptime'} = 1;
+                } else {
+                    next FILEPARSE;
+                }
+        }
+
+        # If we've hit the end of the dataset, reset the current load time and the progress hash
+        if ( $line =~ "\# numResponses\: [0-9]+" ) {
+            $currentLoadTime = '1970-01-01 00\:00\:00';
+            %progress = ( 
+                'time' => 0,
+                'operations_bind' => -1,
+                'operations_unbind' => -1,
+                'operations_search' => -1,
+                'operations_compare' => -1,
+                'operations_modify' => -1,
+                'operations_modrdn' => -1,
+                'operations_add' => -1,
+                'operations_delete' => -1,
+                'statistics_bytes' => -1,
+                'statistics_entries' => -1,
+                'threads_max' => -1,
+                'threads_open' => -1,
+                'threads_active' => -1,
+                'time_uptime' => -1
+            );
+        }
+            
+    } # end of FILEPARSE
+
+    if ( $DEBUG > 3 ) { print Dumper %progress; }
+
+    close(READOLDAP);
+
+    return 0;
+}
+
+sub storeOpenLDAPMonInfoData() {
+    my ($sqlDate,$r_datasetForStorage, $r_metrics, $siteid) = @_;
+    my $dbh = connect_db();
+    my @records = sort(keys(%$r_datasetForStorage));
+
+    if ( scalar(keys(%$r_datasetForStorage)) == 0 ) {
+        print "INFO: No further data to load for " . $sqlDate . " - exiting...\n";
+        exit 0;
+    }
+
+    # Now build up the INSERT statement for writing to statsdb
+    @records = sort(keys(%$r_datasetForStorage));
+    my $storageQuery = "INSERT INTO open_ldap_monitor_info (time,siteid,";
+    foreach my $metric (@$r_metrics) {
+	$storageQuery .= $metric . ",";
+    }
+    $storageQuery =~ s/\,$/) VALUES /;
+
+    foreach my $record (sort(keys(%$r_datasetForStorage))) {
+        $storageQuery .= "('" . $r_datasetForStorage->{$record}{'time'} . "'," . $r_datasetForStorage->{$record}{'siteid'} . ",";
+        foreach my $metric (@$r_metrics) {
+            $storageQuery .= $r_datasetForStorage->{$record}{$metric} . ",";
+        }
+        $storageQuery =~ s/\,$/),/;
+    }
+    $storageQuery =~ s/\,$//;
+
+    # If we have data to store, store it
+    if ( (scalar @records) != 0 ) {
+        my $rerunDelete = "DELETE FROM open_ldap_monitor_info WHERE time BETWEEN '" . $sqlDate . " 00\:00\:00' AND '" . $sqlDate . " 23\:59\:59' AND siteid = " . $siteid;
+        if ( $DEBUG > 3 ) { print "Rerun delete for " . $sqlDate . ": " . $rerunDelete . "\nStorage query: " . $storageQuery . "\n"; }
+        dbDo( $dbh, $rerunDelete) or die "ERROR: Failed to clear monitor info log data from open_ldap_monitor_info table in statsdb for rerun...\n";
+        dbDo( $dbh, $storageQuery) or die "ERROR: Failed to write monitor info log data to open_ldap_monitor_info table in statsdb...\n";
+    }
+    
+    return 0;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseOpenLDAPMonitorInfo --monfile OpenLDAPInfo.log --site sitename --date yy-mm-dd \n";
+    
+    exit 1;
+}

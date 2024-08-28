@@ -1,0 +1,96 @@
+#!/usr/bin/env perl
+
+
+use Getopt::Long;
+
+$DATE_TIME = '^\d+\.\d+\.(\d+):(\d+):(\d+),([^,]*),(.*)$';
+
+$tableFile = "";
+$errorFile = "";
+$dataFile = "";
+$result = GetOptions("table=s"  => \$tableFile,
+		     "data=s"  => \$dataFile,
+		     "error=s"    => \$errorFile );
+
+($result == 1) or die "Invalid args"; 
+( -r $errorFile ) or die "error $errorFile cannot be read";
+if ( ($tableFile eq "") or ($errorFile eq "") )
+{
+    die "Invalid args";
+}
+
+open ERROR, "$errorFile" or die "Cannot open error $errorFile";
+#open DATA, ">$dataFile" or die "Cannot open data $dataFile";
+
+
+while ( $line = <ERROR> )
+{
+    if ( ! ($line =~ /^\d/) )
+    {
+	next;
+    }
+
+    $_ = $line;
+    ($hour,$min,$sec,$operation,$sessionInfo) = /$DATE_TIME/;
+
+    $timeInDay = ($hour*3600) + ($min*60) + $sec;
+    
+    $_ = $sessionInfo;    
+    ($sessionName,$cs,$number) = /(.*?),[^,:]+:com\/ericsson\/nms\/cif\/service\/([^:]+):([^,]+),/;
+    #print "$sessionName\n";
+    $sessionName = trimSessName($sessionName) . ":" . $cs;
+    $sessionId = $cs . ":" . $number;
+
+    $endCount{$sessionName}++;
+}
+
+open TABLE, ">$tableFile" or die "Cannot open table $tableFile";
+foreach $sessionName ( sort keys %endCount )
+{
+    printf TABLE " <tr> <td>%s</td> <td>%d</d> </tr>\n", $sessionName, $endCount{$sessionName};
+}
+close TABLE;
+
+sub trimSessName
+{
+    my ($sessionName) = @_;
+    
+    if ( $sessionName =~ /^IncrSync/ ) # Need to trim the name 
+    {
+	$sessionName = "IncrSync";
+    }
+    elsif ( $sessionName =~ /^cms_nead_seg:/ )
+    {
+	$_ = $sessionName;
+	($sessionName) = /^(.*):.*$/;
+    }
+    elsif ( $sessionName =~ /\d{13,13}/ )
+    {
+	# Strip out timestamp
+	$_ = $sessionName;
+	($pre,$post) = /^(.*)\d{13,13}(.*)$/;
+	$sessionName = $pre . "[TIMESTAMP]" . $post;
+    }
+    elsif ( $sessionName =~ /\d{4,4}\.\d{2,2}\.\d{2,2} - \d{2,2}:\d{2,2}:\d{2,2}/ )
+    {
+	# Stupid FMS/PMS timestamp
+	$_ = $sessionName;
+	($pre,$post) = /^(.*)\d{4,4}\.\d{2,2}\.\d{2,2} - \d{2,2}:\d{2,2}:\d{2,2}(.*)$/;
+	$sessionName = $pre . "[TIMESTAMP]" . $post;
+    }
+    elsif ( $sessionName =~ /snad.*@/ )
+    {
+	$_ = $sessionName;
+	($type) = /.*\.([^@]*)@/;
+	$sessionName = "SNAD:" . $type;
+    }
+    elsif ( $sessionName =~ /MoProxyFlush :\d+/ )
+    {
+	$_ = $sessionName;
+	($pre,$post) = /^(.*)MoProxyFlush :\d+(.*)$/;
+	$sessionName = $pre . "MoProxyFlush :[NUM]" . $post;
+    }	    	    
+    
+    return $sessionName;
+}
+

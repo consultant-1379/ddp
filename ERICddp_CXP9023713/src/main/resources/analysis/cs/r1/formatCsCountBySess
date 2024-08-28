@@ -1,0 +1,24 @@
+#!/usr/bin/env perl
+
+open DATA, "$ARGV[0]" or die "Cannot open $ARGV[0]";
+open TABLE, ">$ARGV[1]" or die "Cannot open $ARGV[1]";
+while ( $line = <DATA> )
+{
+    chop $line;
+    @parts = split /\|/, $line;
+    if ( $parts[$#parts] =~ /moscript:\// )
+    {
+	$_ = $parts[$#parts];
+	($pre,$post) = /(.*):.*\/(.*)/;
+	$parts[$#parts] = $pre . ":" . $post;
+    }
+
+    print TABLE " <tr> <td>$parts[8]</td>";
+    for ( $i = 0; $i < $#parts; $i++ )
+    {
+	print TABLE " <td>$parts[$i]</td>";
+    }
+    print TABLE " </tr>\n";
+}
+close DATA;
+close TABLE;

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Seconds"
+ >
+  <title value="Upgrade Time"/>
+  <queries>
+    <query timecol="end_time" multiseries="ddpadmin.upgrade_history.to_version">
+      <dbtables main="ddpadmin.upgrade_history"/>
+      <where>end_time IS NOT NULL AND status = 'Success'</where>
+      <column db="TIME_TO_SEC( TIMEDIFF( end_time, start_time ) )" label="Upgrade Time"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+if ( $ARGV[0] eq "-r" )
+{
+    $opt = 0;
+}
+else
+{
+    $opt = 1;
+}
+
+for ( $i = 1; $i <= $#ARGV; $i++ )
+{
+    $filterList[$i-1] = $ARGV[$i];
+}
+
+while ( $line = <STDIN> )
+{
+    if ( $line =~ /^(\d+)/ )
+    {
+	$event = $line;
+	$endEvent = 0;
+	while ( $endEvent == 0 )
+	{
+	    $line = <STDIN>;
+		#print "Entered while, $eventBodyLine";
+	    $event .= $line;
+
+	    if ( (length $line) <= 1 )
+	    {
+		$endEvent = 1;
+	    }
+	}
+
+	$matched = 0;
+	foreach $filter ( @filterList )
+	{
+	    if ( $event =~ /$filter/ )
+	    {
+		#print $filter, ": ",  $event;
+		$matched = 1;
+		break;
+	    }
+	}
+	    
+	#print "$matched $opt $filter $event\n";
+	if ( $matched == $opt )
+	{
+	    print $event;
+	}
+    }
+}

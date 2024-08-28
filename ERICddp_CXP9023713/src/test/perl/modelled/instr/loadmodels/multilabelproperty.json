@@ -1,0 +1,17 @@
+{
+    "model": "multi.xml",
+    "checks": [
+        {
+            "desc": "Verfiy multilabelproperty",
+            "path": [ "metricgroup", "bind", "property", 0 ],
+            "expected": {
+                "addtogroup": "auto",
+                "name": "port",
+                "label": "ldap_handler",
+                "type": "multilabelproperty",
+                "index": "1",
+                "optional": 0
+            }
+        }
+    ]
+}

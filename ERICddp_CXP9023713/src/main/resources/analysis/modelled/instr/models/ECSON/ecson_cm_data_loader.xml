@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_cm_data_loader">
+
+  <table name="ecson_cm_data_loader">
+  </table>
+
+  <metricgroups>
+    <metricgroup name="eric-prometheus-pushgateway">
+      <metric source="parsing_and_transforming_process_time" target="parsingTransformingProcessTime" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="P0:(\S+)">
+      <metric source="transformation_process_time" target="processTimeP0" delta="true" filteridle="true">
+        <labelfilter name="partition" value="P0"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="P1:(\S+)">
+      <metric source="transformation_process_time" target="processTimeP1" delta="true" filteridle="true">
+        <labelfilter name="partition" value="P1"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="P2:(\S+)">
+      <metric source="transformation_process_time" target="processTimeP2" delta="true" filteridle="true">
+        <labelfilter name="partition" value="P2"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="P3:(\S+)">
+      <metric source="transformation_process_time" target="processTimeP3" delta="true" filteridle="true">
+        <labelfilter name="partition" value="P3"/>
+      </metric>
+    </metricgroup>
+
+
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@enm_neo4j_srv_lr:prom"
+    sampleinterval="900">
+  <table name="enm_neo4j_srv_lr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="neo4j">
+      <!-- neo4j 3.x -->
+      <metric source="neo4j_ids_in_use_node" target="nodeIds"/>
+      <metric source="neo4j_ids_in_use_property" target="propIds"/>
+      <metric source="neo4j_ids_in_use_relationship" target="relIds"/>
+
+      <!-- neo4j 4.x -->
+      <metric source="neo4j_dps_ids_in_use_node" target="nodeIds"/>
+      <metric source="neo4j_dps_ids_in_use_property" target="propIds"/>
+      <metric source="neo4j_dps_ids_in_use_relationship" target="relIds"/>
+      <metric source="neo4j_dps_store_size_total" target="totalMB" scale="1048576"/>
+
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

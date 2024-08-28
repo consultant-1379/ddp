@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Count"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Successfull Subscription Validations"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="mscmip_supervision_instr">
+        <reference table="sites" condition="mscmip_supervision_instr.siteid = sites.id"/>
+        <reference table="servers" condition="mscmip_supervision_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="successfullSubscriptionValidations" label="Successfull Subscription Validations"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

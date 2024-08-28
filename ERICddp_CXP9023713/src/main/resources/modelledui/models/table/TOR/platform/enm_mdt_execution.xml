@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_mdt_execution">
+    <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_mdt_execution.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Start Time" formatter="ddpFormatTime"/>
+  <column db="t_total" label="Total" formatter="ddpFormatMSec"/>
+  <column db="t_phase1" label="Phase 1 Time" formatter="ddpFormatMSec"/>
+  <column db="t_phase2" label="Phase 2 Time" formatter="ddpFormatMSec"/>
+  <column db="t_phase3" label="Phase 3 Time" formatter="ddpFormatMSec"/>
+  <column db="t_rootdir_io" label="Model Root Dir I/O" formatter="ddpFormatMSec"/>
+  <column db="n_deployed" label="Deployed Models"/>
+  <column db="n_undeployed" label="Un-deployed Models"/>
+  <column db="n_unique" label="Unique Models"/>
+  <column db="n_new" label="New Models"/>
+  <column db="n_overwritten" label="Overwritten Models"/>
+  <column db="n_notwritten" label="Not-Written Models"/>
+  <column db="n_validated" label="Models Validated"/>
+  <column db="n_dependencies" label="Dependencies Calculated"/>
+  <column db="n_model_jars" label="Model JARs"/>
+  <column db="n_meta_info" label="JARs with Model Meta Info"/>
+  <column db="orphansCreated" label="Orphans Created"/>
+  <column db="orphansRemoved" label="Orphans Removed"/>
+  <column db="orphansReclaimed" label="Orphans Reclaimed"/>
+</modelledtable>

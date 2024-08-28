@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Application Count"
+>
+  <title value="Published Application"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_ocs_published_application">
+        <reference table="sites" condition="eniq_ocs_published_application.siteid = sites.id"/>
+        <reference table="servers" condition="eniq_ocs_published_application.serverid = servers.id"/>
+        <reference table="eniq_server_info" condition="eniq_server_info.serverid = eniq_ocs_published_application.serverid"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="hostname"/>
+      <where>sites.name = '%s' AND servers.hostname = '%s'</where>
+      <column db="eniq_ocs_published_application.biWirc" label="BI_WIRC" />
+      <column db="eniq_ocs_published_application.biUdt" label ="BI_UDT" />
+      <column db="eniq_ocs_published_application.biIdt" label ="BI_IDT" />
+      <column db="eniq_ocs_published_application.netanAnalyst" label ="NetAn_Analyst" />
+    </query>
+  </queries>
+  <size width="800" height="250"/>
+</modelledgraph>
+

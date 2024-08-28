@@ -1,0 +1,779 @@
+#!/usr/bin/perl
+######################################################################
+#       Description ---------   parseGlassfishInstr -----------
+#       This script parses the Glassfish Access LOG file for DDP
+#       and store data to Db
+#       @author - SOUMYA MONDAL (xmonsou)
+#       usage parseGlassfishInstr --logdir ${DATADIR}/plugin_data/glassfish_domain1/ --schemaroot ${ANALYSIS_BIN}/ENIQ/Schema/ --site ${SITE} --date ${SQL_DATE}
+######################################################################
+use XML::Simple;
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use Time::Local;
+use Time::HiRes qw(gettimeofday);
+use POSIX qw(strftime);
+use Date::Parse;
+use StatsDB;
+use StatsTime;
+use strict;
+use warnings;
+
+## Script parameter varaible.
+our $schemaRoot = "";
+our $glassfishLogFileDir = "";
+our $siteId = "";
+our $DEBUG = 0;
+our $date = "";
+our $dbh = "";
+
+## Variable representing table name for raw and aggregate table.
+our $dbTable = "";
+our $browserDbTableAgg = "";
+our $timeDimDbTableAgg = "";
+our $urlDbTableAgg = "";
+
+## Reference hash representing raw and agg tables schema.
+our $r_metricKeySet = ();
+our $r_metricKeySetBrowserAgg = ();
+our $r_metricKeySetTimeDimAgg = ();
+our $r_metricKeySetUrlAgg = ();
+
+## Reference hash to hold distinct values.
+our $urlList = {};
+our $businessCaseList = {};
+our $userList = {};
+our $userAgentList = {};
+our $browserAggNameList = {};
+
+our $r_metricSetCollection = ();
+our $r_metricSetCollectionBrowserAgg = ();
+our $r_metricSetCollectionTimeDimAgg = ();
+our $r_metricSetCollectionUrlAgg = ();
+
+sub main {
+    my $site = "";
+
+    my $result = GetOptions(
+        "logdir=s"      => \$glassfishLogFileDir,
+        "schemaroot=s"  => \$schemaRoot,
+        "site=s"        => \$site,
+        "debug=s"       => \$DEBUG,
+        "date=s"        => \$date
+    );
+
+    ( -r $schemaRoot ) or die "Cannot read schema file $schemaRoot";
+    ( -r $glassfishLogFileDir ) or die "Cannot read log file $glassfishLogFileDir";
+
+    my $startTime = 0;
+
+    if($DEBUG > 1){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+
+    $dbh = connect_db();
+
+    $siteId = getSiteId($dbh, $site);
+    ( $siteId > -1) or die "Failed to get siteid for $site";
+
+    my $r_metricSetCollection=parseInput();
+
+    populateId("glassfish_users", "id", "username", $userList, "userid", $r_metricSetCollection);
+    populateId("resource_urls", "id", "url", $urlList, "urlid", $r_metricSetCollection);
+    populateId("browser_name", "id", "browser_name", $browserAggNameList, "browserid", $r_metricSetCollection);
+    populateId("user_agent", "id", "user_agent", $userAgentList, "user_agent_id", $r_metricSetCollection);
+    populateId("browser_name", "id", "browser_name", $browserAggNameList, "browser_id", $r_metricSetCollectionBrowserAgg);
+    populateId("business_cases", "id", "business_case", $businessCaseList, "business_case", $r_metricSetCollectionUrlAgg);
+    populateId("resource_urls", "id", "url", $urlList, "url", $r_metricSetCollectionUrlAgg);
+
+    updateTableAgg($r_metricSetCollectionBrowserAgg, $browserDbTableAgg, $r_metricKeySetBrowserAgg);
+    updateTableAgg($r_metricSetCollectionTimeDimAgg, $timeDimDbTableAgg, $r_metricKeySetTimeDimAgg);
+    updateTableAgg($r_metricSetCollectionUrlAgg, $urlDbTableAgg, $r_metricKeySetUrlAgg);
+
+    loadDb($r_metricSetCollection);
+    $dbh->disconnect();
+
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$startTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+##
+## createBcp()
+##
+## Arguments:
+##    $r_metricSet: Refrence array of hashes. Each hash represents parsed log from glassfish
+##                  access log file (Same corresponds to a row in raw table 'glassfish_stats').
+##
+## Returns  : Reference to the BCP file
+##
+## Creates a BCP file from passed reference of array, to be inserted in to raw data table glassfish_stats.
+##
+sub createBcp {
+    my ($r_metricSet) = @_;
+    my $metricHash = "";
+
+    # initialise the BCP file
+    my $tmpDir = "/data/tmp";
+
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    # BCP file and record counter
+
+    my $bcpFile = $tmpDir."/".$dbTable."_metrics.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+
+    if ( $DEBUG > 2 ) { print Dumper(@{$r_metricSet}) };
+
+    foreach $metricHash (@{$r_metricSet})
+    {
+        printf BCP "%s|%s|",
+        $metricHash->{'timestamp'},
+        $siteId;
+        foreach (@$r_metricKeySet) {
+            if(defined $metricHash->{$_}){
+                print BCP $metricHash->{$_}."|";
+            }
+            else{
+                print BCP "|";
+            }
+        }
+        print BCP "\n";
+    }
+
+    close BCP;
+
+    return $bcpFile;
+}
+
+##
+## createBcpAgg()
+##
+## Arguments:
+##    $r_metricSet      : Reference array of hashes. Each hash represents aggregation of
+##                        raw data from glassfish_stats.
+##    $dbTable          : Name of aggregate table that need to be updated.
+##    $r_metricKeySetAgg: Reference array representing aggregate table schema.
+##
+## Returns  : Reference to the BCP file.
+##
+## Description : This creates bcp file for aggregation table
+##
+sub createBcpAgg {
+    my ($r_metricSet, $dbTable, $r_metricKeySetAgg) = @_;
+    my $metricHash = {};
+
+    # initialise the BCP file
+    my $tmpDir = "/data/tmp";
+
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir."/".$dbTable."_metrics.bcp";
+
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+
+    if ( $DEBUG > 2 ) {print Dumper(@{$r_metricSet})};
+
+    foreach $metricHash (@{$r_metricSet})
+    {
+        foreach (@{$r_metricKeySetAgg}) {
+            if(defined $metricHash->{$_}){
+                print BCP $metricHash->{$_}."|";
+            }
+            else{
+                print BCP "|";
+            }
+        }
+        print BCP "\n";
+    }
+
+    close BCP;
+
+    return $bcpFile;
+}
+
+##
+## loadDb()
+##
+## Arguments:
+##    $r_stats: array of hash which contains all the raw data
+##
+## Returns: NONE
+##
+## This calls the createBcp to create BCP for RAW and loads that file into DB
+##
+## This function loads the data from the access log file and according to the sequence
+## mentioned in glassfish.xml file, It loads the data in to the raw table (glassfish_stats).
+##
+sub loadDb {
+    my ($r_stats) = @_;
+    my $bcpFile = createBcp($r_stats);
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $dbTable FIELDS TERMINATED BY \'|\'";
+
+    if($DEBUG > 1) {
+        print "loadDB : $sth\n";
+    }
+
+    dbDo($dbh, $sth) or die "Failed to load Data".$dbh->errstr."\n";
+
+    unlink($bcpFile);
+}
+
+##
+## updateTableAgg()
+##
+## Arguments:
+##    $r_stats       : Reference array of hashes. Each hash represnts aggregation of
+##                     raw data from glassfish_stats.
+##    $dbTable       : Name of aggregate table that need to be updated.
+##    $r_metricKeySet: Reference array representing aggregate table schema.
+##
+## Returns  : NONE
+##
+## This sub calls the createBcpAgg sub to create a BCP file and load that file into DB.
+##
+sub updateTableAgg {
+    my ($r_stats, $dbTable, $r_metricKeySet) = @_;
+    my $bcpFile = createBcpAgg($r_stats, $dbTable, $r_metricKeySet);
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $dbTable FIELDS TERMINATED BY \'|\'";
+
+    if($DEBUG > 1) {
+        print "updateTableAgg : $sth\n";
+    }
+
+    dbDo($dbh, $sth) or die "Failed to load Data".$dbh->errstr."\n";
+
+    unlink($bcpFile);
+}
+
+##
+## getMetricHash()
+##
+## Arguments:
+##    $schemaFile   : Complete location of the schema file.
+##    $specification: This specifies hash is created for which table.
+##
+## Returns  : NONE.
+##
+## This sub parses $schemaFile and create array of hash representing it.
+##
+## Details of the Arrays reference initialized.
+##
+## r_metricKeySet : This represents table schema for table glassfish_stat as in glassfishSchema.xml.
+## Index -> Value
+##  0 -> hostip
+##  1 -> userid
+##  2 -> urlid
+##  3 -> time_dimension
+##  4 -> type
+##  5 -> node
+##  6 -> imsi
+##  7 -> tac
+##  8 -> msisdn
+##  9 -> groupname
+## 10 -> display
+## 11 -> tzOffset
+## 12 -> maxRows
+## 13 -> response_status
+## 14 -> response_length
+## 15 -> response_time
+## 16 -> cookie
+## 17 -> user_agent_id
+## 18 -> browserid
+## 19 -> browser_version
+## 20 -> http_version
+##
+## r_metricKeySetBrowserAgg : This represents table schema for table glassfish_browser_aggregation as in browserStatsSchema.xml.
+##
+## Index -> Value
+## 0     -> date
+## 1     -> siteid
+## 2     -> browser_id
+## 3     -> browser_version
+## 4     -> total_request
+## 5     -> success
+## 6     -> failure
+##
+## r_metricKeySetTimeDimAgg: This represents table schema for table glassfish_time_dimension_aggregation as in timeDimensionStatsSchema.xml.
+##
+## Index -> Value
+## 0     -> date
+## 1     -> siteid
+## 2     -> time_dim
+## 3     -> total_request
+## 4     -> success
+## 5     -> failure
+##
+## r_metricKeySetUrlAgg: This represents table schema for table glassfish_url_aggregation as in urlStatsSchema.xml.
+##
+## Index -> Value
+## 0     -> date
+## 1     -> siteid
+## 2     -> url
+## 3     -> business_case
+## 4     -> total_request
+## 5     -> success
+## 6     -> failure
+##
+sub getMetricHash {
+    my($schemaFile, $specification) = @_;
+    my @metricKeySet = ();
+    my $schema = XMLin($schemaFile);
+    my $metricList = $schema->{"MetricSet"}->{metric};
+    my $index = 0;
+    my %metricListHash = ();
+
+    while(exists($metricList->[$index])) {
+        $metricListHash{$metricList->[$index]} = '';
+        push(@metricKeySet, $metricList->[$index]);
+        $index ++;
+    }
+
+    if ( $DEBUG > 3 ) {print Dumper(%metricListHash);}
+
+    if($specification eq "browser_aggregation") {
+        $r_metricKeySetBrowserAgg = \@metricKeySet;
+        $browserDbTableAgg = $schema->{"DbTable"};
+    }
+    elsif($specification eq "time_dimension_aggregation") {
+        $r_metricKeySetTimeDimAgg = \@metricKeySet;
+        $timeDimDbTableAgg = $schema->{"DbTable"};
+    }
+    elsif($specification eq "url_aggregation") {
+        $r_metricKeySetUrlAgg = \@metricKeySet;
+        $urlDbTableAgg = $schema->{"DbTable"};
+    }
+    else {
+        $r_metricKeySet = \@metricKeySet;
+        $dbTable = $schema->{"DbTable"};
+    }
+
+    return;
+}
+
+##
+## parseQueryParam()
+##
+## Arguments:
+##    $r_metricHash: Hash reference of a log.
+##
+## Returns: NONE.
+##
+## Extracts the query parameters from the url and populates passed hash elements according to query parameter.
+##
+## E.g. /EniqEventsServices/NETWORK/KPI_NOTIFICATION/NOTIFICATION_COUNT?time=60&tzOffset=+0530
+## Parameter extracted : time=60 and tzOffset=+0530
+##
+sub parseQueryParam {
+    my($r_metricHash)= @_;
+    if(my($url) = $r_metricHash->{urlid} =~ /^.* (.*)\?/)
+    {
+        foreach my $metricName (@{$r_metricKeySet}){
+            if(my($metricValue) = $r_metricHash->{urlid} =~ /$metricName=(.*?)[& ]/)
+            {
+               $r_metricHash->{$metricName} = $metricValue;
+            }
+        }
+        $r_metricHash->{urlid} = $url;
+    }
+    else
+    {
+        if(my($url) = $r_metricHash->{urlid} =~/^.* (.*) .*$/){
+            $r_metricHash->{urlid} = $url;
+        }
+    }
+}
+
+##
+## populateId()
+##
+## Arguments:
+##    $table              : Table name
+##    $keyColumn          : Column name of key in the $table
+##    $nameColumn         : Name of the column in $table value of which is to be replace in $metricSetCollection.
+##    $value              : Reference hash containing distinct values of key $keyName of hashes in $metricSetCollection.
+##                          These values are to be replaced with corresponding id from $table.
+##    $keyName            : Name of the key of hashes in $metricSetCollection.
+##    $metricSetCollection: Reference array of hashes.
+##
+## Returns: NONE
+##
+## Update the array of hash with key value from $table
+##
+sub populateId {
+    my($table, $keyColumn, $nameColumn, $value, $keyName, $metricSetCollection) = @_;
+    my @value = ();
+
+    for my $metricName ( keys %$value) {
+        push @value ,$metricName;
+    }
+
+    my $r_id_map = getIdMap($dbh, $table, $keyColumn, $nameColumn, \@value);
+    my $metricSize = @$metricSetCollection;
+
+    for(my $i=0;$i<$metricSize;$i++){
+        $metricSetCollection->[$i]->{$keyName} = $r_id_map->{$metricSetCollection->[$i]->{$keyName}};
+    }
+}
+
+##
+## removeOldData()
+##
+## Arguments: NONE
+##
+## Returns  : NONE
+##
+## This sub deletes old data for current date ($date).
+##
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $dbTable WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    my $deleteBrowserOldDataAgg = "DELETE FROM $browserDbTableAgg WHERE siteid = $siteId AND date = '$date'";
+    my $deleteTimeDimOldDataAgg = "DELETE FROM $timeDimDbTableAgg WHERE siteid = $siteId AND date = '$date'";
+    my $deleteUrlOldDataAgg = "DELETE FROM $urlDbTableAgg WHERE siteid = $siteId AND date = '$date'";
+    dbDo($dbh, $deleteSql) or die "Failed to delete old Glassfish stat data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteBrowserOldDataAgg) or die "Failed to delete old Glassfish stat data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteTimeDimOldDataAgg) or die "Failed to delete old Glassfish stat data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteUrlOldDataAgg) or die "Failed to delete old Glassfish stat data".$dbh->errstr."\n";
+}
+
+##
+## parseInput()
+##
+## Arguments:
+##
+## Returns: None.
+##
+## This function does parsing of glassfish access log files and creates raw as well aggregation hash and fetches parameters like
+## browser version, time, http version, url, username, browser id, host IP etc used to insert data in raw table and aggregation table.
+##
+## Details of all Hash
+##
+## Sample Log :
+## "29/Oct/2014:01:04:47 +0000" "172.26.193.164" "admin" "GET /EniqEventsServices/NETWORK/KPI_NOTIFICATION/NOTIFICATION_COUNT?time=60&tzOffset=+0530 HTTP/1.1" 200 160 "526" "65b77c989eabee1f1208b553064f" "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2062.103 Safari/537.36"
+##
+## $metricHash -> Hash map representing a parsed log from log file.
+## Elements :  (Value of the elements are mentioned if not null in above log example.)
+##        'timestamp'       -> Time stamp (E.g. 29/Oct/2014:01:04:47)
+##        'browser_version' -> This represents broswer version. (E.g. 37.0.2062.103)
+##        'time_dimension'  -> This is a query parameter named 'time' in the URL. This could be null. (E.g. 60)
+##        'imsi'            -> This is a query parameter named 'imsi' in the URL. This could be null.
+##        'node'            -> This is a query parameter named 'node' in the URL. This could be null.
+##        'http_version'    -> This is the version of http in the URL. (E.g. 1.1)
+##        'response_length' -> This is the length of the http response in the URL. (E.g. 160)
+##        'display'         -> This is a query parameter named 'display' in the URL. Its value could be grid/chart. This could be null.
+##        'cookie'          -> This is the cookie value of the browser client. (E.g. 65b77c989eabee1f1208b553064f)
+##        'tzOffset'        -> This is a query parameter named 'tzOffset' in the URL. This could be null. (E.g. +0530)
+##        'groupname'       -> This is a query parameter named 'groupname' in the URL. This could be null.
+##        'urlid'           -> This represents URL in the log. (E.g. "/EniqEventsServices/NETWORK/KPI_NOTIFICATION/NOTIFICATION_COUNT")
+##        'response_status' -> This represents http response status code. (E.g. 200)
+##        'browserid'       -> This represents name of the browswer. (E.g. Chrome)
+##        'response_time'   -> This represents reponse time for the requested URl. (E.g. 526)
+##        'user_agent_id'   -> This represents the user-agent field of http request.
+##                             (E.g. Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2062.103 Safari/537.36)
+##        'tac'             -> This is a query parameter named 'tac' in the URL. This could be null.
+##        'userid'          -> This represents the user requesting the URL. (E.g. admin)
+##        'msisdn'          -> This is a query parameter named 'msisdn' in the URL. This could be null.
+##        'hostip'          -> This represents the host ip of the browser client. (E.g. 172.26.193.164)
+##        'type'            -> This is a query parameter named 'type' in the URL. This could be null.
+##        'maxRows'         -> This is a query parameter named 'maxRows' in the URL. This could be null.
+##
+## $metricHashBrowserAgg -> Reference array of hashes containing browser-wise aggregation.
+##                          Aggregation is based on browser name and browser version.
+##                          Each hash represents data for a combination of browser name and browser version.
+## Elements :
+##         'success'         -> This is a counter. Number of URL with response type "200" for particular a combination of
+##                              browser_id and browser_version.
+##         'total_request'   -> This is a counter. Number of URL request for a combination of browser_id and browser_version.
+##         'failure'         -> This is a counter. Number of URL with response type other than "200" for particular a combination of
+##                              browser_id and browser_version.
+##         'browser_version' -> This represents version of the browser.
+##         'browser_id'      -> This represents name of the browser.
+##         'siteid'          -> Site Id.
+##         'date'            -> Date in the log.
+##
+##
+## $metricHashTimeDimAgg: Reference array of hashes containing time dimension wise aggregation.
+##                        Aggregation is based on time query parameter in the URL.
+##                        Each hash represents data for a time query parameter.
+## Elements :
+##          'success'        -> This is a counter. Number of URL response with "200" for a paritcular time query parameter value.
+##          'total_request'  -> This is a counter. Number of URL request for a particular time query parameter value.
+##          'failure'        -> This is a counter. Number of URL response other than "200" for a paritcular time query parameter value.
+##          'siteid'         -> Site Id.
+##          'date'           -> Date in the log
+##          'time_dim'       -> 'time' query parameter value in the URL.
+##
+##
+## $metricHashUrlAgg: Reference array of hashes containing URL (URL part without query parameters) wise aggregation.
+##                    Aggregation is based on URL. Each hash represents data for a URL.
+## Elements :
+##          'success'        -> This is a counter. Number of URL response with "200" for a paritcular URL.
+##          'total_request'  -> This is a counter. Number of URL request for a paritcular URL.
+##          'business_case'  -> Business case of the url (E.g. for URL "/EniqEventsServices/NETWORK/KPI_NOTIFICATION/NOTIFICATION_COUNT"
+##                              business case is 'NETWORK').
+##          'failure'        -> This is a counter. Number of URL response other than "200" for a paritcular URL.
+##          'siteid'         -> Site Id.
+##          'date'           -> Date in the log.
+##          'url'            -> URL. (E.g. "/EniqEventsServices/NETWORK/KPI_NOTIFICATION/NOTIFICATION_COUNT")
+##
+##
+## @metricSet                    : A local array used for global reference $r_metricKeySet.
+## @metricSetCollection          : A local array used to store $metricHash
+## @metricSetCollectionBrowserAgg: A local array used to store $metricHashBrowserAgg hash
+## @metricSetCollectionUrlAgg    : A local array used to store $metricHashUrlAgg hash
+## @metricSetCollectionTimeDimAgg: A local array used to store $metricHashTimeDimAgg hash
+sub parseInput {
+    my @metricSetCollection = ();
+    my @metricSetCollectionBrowserAgg = ();
+    my @metricSetCollectionUrlAgg = ();
+    my @metricSetCollectionTimeDimAgg = ();
+    my $time_dim = 0;
+
+    getMetricHash($schemaRoot."glassfishSchema.xml", "MetricSet", "Raw");
+
+    my @metricSet = @{$r_metricKeySet};
+
+    getMetricHash($schemaRoot."browserStatsSchema.xml", "browser_aggregation");
+    getMetricHash($schemaRoot."timeDimensionStatsSchema.xml", "time_dimension_aggregation");
+    getMetricHash($schemaRoot."urlStatsSchema.xml", "url_aggregation");
+
+    opendir my $dir, "$glassfishLogFileDir" or die "Cannot open directory: $!";
+    my @files = readdir $dir;
+    closedir $dir;
+
+    foreach (@files){
+        if($_ =~ /.*.txt$/){
+            open LOG, "<$glassfishLogFileDir$_" or die "Can't open file to read $glassfishLogFileDir$_\n";
+                while( my $line = <LOG>){
+                    if ($line =~ /(?!(\/EniqEventsServices\/USER\/SETTINGS))(?!(\/EniqEventsServices\/METADATA\/UI))(?!(\/EniqEventsServices\/DASHBOARD\/REPORTS))(?!(\/EniqEventsServices\/j_security_check))(?=(\/EniqEventsServices\/))/){
+                        if ( my (@metricCollector) = $line =~ /\"(\d\d\/\w\w\w\/\d\d\d\d\:\d\d\:\d\d\:\d\d) .*\" \"(\d*.\d*.\d*.\d*)\" \"(.*)\" \"(.*)\" (.*) (.*) \"(.*)\" \"(.*)\" \"(.*)\"/){
+                            my $metricHash = {};
+
+                            $metricHash->{timestamp} = formatTime(parseTime($metricCollector[0], $StatsTime::TIME_DD_MMM_YYYY), $StatsTime::TIME_DD_MMM_YYYY);
+
+                            my ($logDate) = $metricHash->{timestamp} =~ /^(\d\d\d\d-\d\d-\d\d) \d\d:\d\d:\d\d/;
+
+                            if($logDate eq $date){
+                                $metricHash->{$metricSet[0]} = $metricCollector[1];
+                                $metricHash->{$metricSet[1]} = $metricCollector[2];
+
+                                my ($httpVersion) = $metricCollector[3] =~ m/.*HTTP\/(\d*\.\d*)/;
+
+                                $metricHash->{$metricSet[2]} = $metricCollector[3];
+                                $metricHash->{$metricSet[13]} = $metricCollector[4];
+                                $metricHash->{$metricSet[14]} = $metricCollector[5];
+                                $metricHash->{$metricSet[15]} = $metricCollector[6];
+                                $metricHash->{$metricSet[16]} = $metricCollector[7];
+                                $metricHash->{$metricSet[17]} = $metricCollector[8];
+
+                                ## Analysisng Browser from user_agent string
+                                my $browser_info = analyzeBrowser($metricCollector[8]);
+
+                                $metricHash->{$metricSet[18]} = $browser_info->{'browser_name'};
+                                $metricHash->{$metricSet[19]} = $browser_info->{'browser_version'};
+                                $metricHash->{$metricSet[20]} = $httpVersion;
+
+                                ## Parse URL.
+                                parseQueryParam($metricHash);
+
+                                if(exists $metricHash->{$metricSet[3]}) {
+                                   $time_dim = $metricHash->{$metricSet[3]};
+                                }
+                                else{
+                                    $time_dim = 0;
+                                }
+
+                                my ($businessCase) = $metricHash->{$metricSet[2]} =~ /\/EniqEventsServices\/(\w*)\/\w*/;
+
+                                $userList->{$metricCollector[2]} = 1;
+                                $userAgentList->{$metricCollector[8]} = 1;
+                                $urlList->{$metricHash->{$metricSet[2]}} = 1;
+                                $businessCaseList->{$businessCase} = 1;
+                                $browserAggNameList->{$browser_info->{'browser_name'}} = 1;
+
+                                push @metricSetCollection ,$metricHash;
+
+                                aggregationBrowserStatistics(\@metricSetCollectionBrowserAgg, $metricHash);
+                                aggregationOtherStatistics(\@metricSetCollectionTimeDimAgg, $metricHash, $time_dim, "time_dim", $businessCase);
+                                aggregationOtherStatistics(\@metricSetCollectionUrlAgg, $metricHash, $metricHash->{$metricSet[2]}, "url", $businessCase);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    removeOldData();
+
+    $r_metricSetCollectionBrowserAgg = \@metricSetCollectionBrowserAgg;
+    $r_metricSetCollectionTimeDimAgg = \@metricSetCollectionTimeDimAgg;
+    $r_metricSetCollectionUrlAgg = \@metricSetCollectionUrlAgg;
+
+    if ( $DEBUG > 4 ) {print Dumper(@metricSetCollection)};
+
+    return \@metricSetCollection;
+}
+
+
+##
+## aggregationBrowserStatistics()
+##
+## Arguments:
+##    $metricSetCollectionAgg: Array of hash containing aggregated data
+##    $metricHash            : Raw hash data containing data of currently parsed log
+##
+## Returns: The updated $metricSetCollectionAgg containing aggregated data
+##
+## Does the aggregation of $metricHash into $metricSetCollectionAgg based on
+## browser_version and browserid.
+##
+sub aggregationBrowserStatistics {
+    my $metricHashAgg = {};
+    my $aggregationBrowserFlag = 0;
+    my ($metricSetCollectionAgg,$metricHash) = @_;
+
+    foreach (@{$metricSetCollectionAgg}){
+        my $metricHashAggElement = $_;
+        if($metricHashAggElement->{'browser_version'} eq $metricHash->{'browser_version'} && $metricHashAggElement->{'browser_id'} eq $metricHash->{'browserid'}){
+            if($metricHash->{'response_status'} eq "200"){
+                $metricHashAggElement->{'success'}++;
+            }
+            else{
+                $metricHashAggElement->{'failure'}++;
+            }
+            $metricHashAggElement->{'total_request'}++;
+            $aggregationBrowserFlag = 1;
+        }
+    }
+
+    if($aggregationBrowserFlag == 0){
+        if($metricHash->{'response_status'} eq "200"){
+            $metricHashAgg->{'success'} = 1;
+            $metricHashAgg->{'failure'} = 0;
+        }
+        else{
+            $metricHashAgg->{'failure'} = 1;
+            $metricHashAgg->{'success'} = 0;
+        }
+
+        $metricHashAgg->{'total_request'} = 1;
+        $metricHashAgg->{'browser_version'} = $metricHash->{'browser_version'};
+        $metricHashAgg->{'browser_id'} = $metricHash->{'browserid'};
+        $metricHashAgg->{'siteid'} = $siteId;
+        $metricHashAgg->{'date'} = $date;
+
+        push @{$metricSetCollectionAgg},$metricHashAgg;
+    }
+
+    return $metricSetCollectionAgg;
+}
+
+##
+## aggregationOtherStatistics()
+##
+## Arguments:
+##    $metricSetCollectionAgg: Array of hash containing aggregated data
+##    $metricHash            : Raw hash data containing data of currently parsed log
+##    $value                 : Contains value of main column based on which aggregation is done(e.g "/eniqeventsservices/kpi/subscriber")
+##    $parameter             : parameter on which aggregation is done (E.G. url)
+##    $businessCase          : Business case of the url (E.g. for URL "/EniqEventsServices/NETWORK/KPI_NOTIFICATION/NOTIFICATION_COUNT"
+##                             business case is 'NETWORK').
+##
+## Returns: The updated $metricSetCollectionAgg containing aggregated data.
+##
+## ## Does the aggregation of $metricHash into $metricSetCollectionAgg based on
+## URL or TIME DIMENSION type as passed by $parameter
+##
+sub aggregationOtherStatistics {
+    my $metricHashAgg = {};
+    my $aggregationFlag = 0;
+    my ($metricSetCollectionAgg, $metricHash, $value, $parameter, $businessCase) = @_;
+
+    foreach (@{$metricSetCollectionAgg}){
+        my $metricHashAggElement = $_;
+
+        if($metricHashAggElement->{$parameter} eq $value){
+            if($metricHash->{'response_status'} eq "200"){
+                $metricHashAggElement->{'success'}++;
+            }
+            else{
+                $metricHashAggElement->{'failure'}++;
+            }
+            $metricHashAggElement->{'total_request'}++;
+            $aggregationFlag = 1;
+        }
+    }
+
+    if($aggregationFlag == 0){
+        if($metricHash->{'response_status'} eq "200"){
+            $metricHashAgg->{'success'} = 1;
+            $metricHashAgg->{'failure'} = 0;
+        }
+        else{
+            $metricHashAgg->{'failure'} = 1;
+            $metricHashAgg->{'success'} = 0;
+        }
+
+        $metricHashAgg->{'total_request'} = 1;
+        $metricHashAgg->{$parameter} = $value;
+        $metricHashAgg->{'siteid'} = $siteId;
+        $metricHashAgg->{'date'} = $date;
+
+        push @{$metricSetCollectionAgg},$metricHashAgg;
+    }
+
+    if($parameter eq "url"){
+        $metricHashAgg->{'business_case'} = $businessCase;
+    }
+
+    return $metricSetCollectionAgg;
+}
+
+##
+## analyzeBrowser()
+##
+## Arguments:
+##    $user_agent_string: User agent string by which we can determine the browser details.
+##
+## Returns  : Hash Reference of the browser name and browser versions
+##            E.g. 'browser_name' = 'Google Chrome' , 'browser version' is '34.0.1847.137'
+##
+##
+sub analyzeBrowser {
+    my($user_agent_string) = @_;
+    my $browser_found_flag = 1;
+    my %browser_data = (
+        'Internet Explorer' => 'MSIE (\d*\.\d*);',
+        'Mozilla Firefox' => 'Firefox\/(\d*.\d*.\d*)',
+        'Opera' => 'Opera\/(\d*.\d*)|Opera (\d*.\d*)',
+        'Google Chrome' => 'Chrome\/(\d*.\d*.\d*.\d*) '
+    );
+
+    my %browser_info = ('browser_name' => '',
+        'browser_version' => ''
+    );
+
+    foreach my $key ( keys %browser_data )
+    {
+        if(my($browser_version) = $user_agent_string =~ /$browser_data{$key}/)
+        {
+            $browser_found_flag = 0;
+            $browser_info{'browser_name'} = $key;
+            $browser_info{'browser_version'} = $browser_version;
+            last;
+        }
+    }
+
+    if($browser_found_flag)
+    {
+        $browser_info{'browser_name'} = "Others";
+        $browser_info{'browser_version'} = "N.A.";
+    }
+
+    return \%browser_info;
+}
+
+main();

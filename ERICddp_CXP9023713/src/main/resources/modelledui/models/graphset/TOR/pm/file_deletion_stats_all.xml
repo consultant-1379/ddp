@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="enm_pmic_datatypes.name">
+    <dbtables main="enm_pm_file_del_stats">
+      <reference table="sites" condition="enm_pm_file_del_stats.siteid = sites.id"/>
+      <reference table="enm_pmic_datatypes" condition="enm_pmic_datatypes.id = datatypeid"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="timeToDelete" type="tsc" ylabel="Time(ms)" forcelegend="true">
+      <title value="Time Taken To Delete"/>
+      <column db="timeToDelete" label="Time Taken To Delete"/>
+    </graph>
+    <graph name="filesToDelete" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Expired File Count"/>
+      <column db="filesToDelete" label="Expired File Count"/>
+    </graph>
+    <graph name="filesDeletedFS" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Files Deleted from FS"/>
+      <column db="filesDeletedFS" label="Files Deleted from FS"/>
+    </graph>
+    <graph name="filesDeletedFLSDB" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Files Deleted from FLSDB"/>
+      <column db="filesDeletedFLSDB" label="Files Deleted from FLSDB"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="all">
+      <member>filesToDelete</member>
+      <member>filesDeletedFS</member>
+      <member>filesDeletedFLSDB</member>
+      <member>timeToDelete</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_ret_custom_service">
+  <reference table="sites" condition="ecson_ret_custom_service.siteid = sites.id"/>
+  <reference table="servers" condition="ecson_ret_custom_service.serverid  = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_ret_custom_service.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Servers" id="serverNames"/>
+ <column db="SUM(ecson_ret_custom_service.cmChangeCount)" label="Total Proposed CM Change"/>
+
+</modelledtable>

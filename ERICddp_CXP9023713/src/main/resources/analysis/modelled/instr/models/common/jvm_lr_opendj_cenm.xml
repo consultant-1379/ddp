@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@jvm_lr"
+  sampleinterval="900">
+
+  <table name="jvm_lr">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>nameid</multi>
+    <metricgroup name="ds_jvm_memory_pools:(\S*)">
+      <metric source="ds_jvm_memory_pools_code_cache_used_bytes" target="cc_used" scale="1048576"/>
+      <metric source="ds_jvm_memory_pools_compressed_class_space_used_bytes" target="ccs_used" scale="1048576"/>
+      <metric source="ds_jvm_memory_pools_metaspace_used_bytes" target="meta_used" scale="1048576"/>
+      <property name="nameid"  xsi:type="multilabelproperty" label="service" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <table name="enm_ncmagent_mefServiceLcm_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=MefServiceLcmMBean$">
+      <metric source="configMessages" target="configMessages" delta="true" filteridle="true"/>
+      <metric source="unexpectedFailed" target="unexpectedFailed" delta="true" filteridle="true"/>
+      <metric source="createCrossConnectionsSuccess" target="createCrossConnectionsSuccess" delta="true" filteridle="true"/>
+      <metric source="createCrossConnectionsFailed" target="createCrossConnectionsFailed" delta="true" filteridle="true"/>
+      <metric source="createCrossConnectionsSuccessDuration" target="createCrossConnectionsSuccessDuration"/>
+      <metric source="createCrossConnectionsFailedDuration" target="createCrossConnectionsFailedDuration"/>
+      <metric source="deleteCrossConnectionsSuccess" target="deleteCrossConnectionsSuccess" delta="true" filteridle="true"/>
+      <metric source="deleteCrossConnectionsFailed" target="deleteCrossConnectionsFailed" delta="true" filteridle="true"/>
+      <metric source="deleteCrossConnectionsSuccessDuration" target="deleteCrossConnectionsSuccessDuration"/>
+      <metric source="deleteCrossConnectionsFailedDuration" target="deleteCrossConnectionsFailedDuration"/>
+      <metric source="modifyCrossConnectionsSuccess" target="modifyCrossConnectionsSuccess" delta="true" filteridle="true"/>
+      <metric source="modifyCrossConnectionsFailed" target="modifyCrossConnectionsFailed" delta="true" filteridle="true"/>
+      <metric source="modifyCrossConnectionsSuccessDuration" target="modifyCrossConnectionsSuccessDuration"/>
+      <metric source="modifyCrossConnectionsFailedDuration" target="modifyCrossConnectionsFailedDuration"/>
+      <metric source="setDataPortParametersSuccess" target="setDataPortParametersSuccess" delta="true" filteridle="true"/>
+      <metric source="setDataPortParametersFailed" target="setDataPortParametersFailed" delta="true" filteridle="true"/>
+      <metric source="setDataPortParametersSuccessDuration" target="setDataPortParametersSuccessDuration"/>
+      <metric source="setDataPortParametersFailedDuration" target="setDataPortParametersFailedDuration"/>
+      <metric source="setCesPortConfigSuccess" target="setCesPortConfigSuccess" delta="true" filteridle="true"/>
+      <metric source="setCesPortConfigFailed" target="setCesPortConfigFailed" delta="true" filteridle="true"/>
+      <metric source="setCesPortConfigSuccessDuration" target="setCesPortConfigSuccessDuration"/>
+      <metric source="setCesPortConfigFailedDuration " target="setCesPortConfigFailedDuration"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>
+

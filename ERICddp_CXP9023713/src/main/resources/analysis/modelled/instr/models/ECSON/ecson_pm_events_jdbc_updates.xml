@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_pm_events_jdbc_updates">
+
+  <table name="ecson_pm_events_jdbc_updates">
+    <keycol name="typeid" reftable="event_type_names"/>
+  </table>
+
+  <services>
+    <service name="eric-prometheus-pushgateway"/>
+  </services>
+
+  <metricgroups>
+    <multi>typeid</multi>
+
+    <metricgroup name="^number:(\S+)$">
+      <metric source="number_of_jdbc_updates" target="jdbcUpdates" delta="true"  filteridle="true"/>
+      <metric source="number_of_failed_jdbc_updates" target="failedJdbcUpdates" delta="true"  filteridle="true"/>
+      <property name="typeid" xsi:type="multilabelproperty" label="type" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

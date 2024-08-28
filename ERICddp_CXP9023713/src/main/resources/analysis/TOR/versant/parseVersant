@@ -1,0 +1,403 @@
+#! /usr/bin/perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use StatsDB;
+use DBI;
+use DBD::mysql;
+use Time::HiRes;
+
+our $DEBUG = 0;
+our $dbh;
+
+sub parseNonLive($) {
+    my ($filePath) = @_;
+
+    open INPUT, $filePath or die "Cannot open $filePath";
+    my %results = ();
+    my $r_counts = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^BEGIN (.*)/ ) {
+            my $cfgName = $1;
+            $r_counts = [];
+            $results{$cfgName} = $r_counts;
+        } elsif ( $line =~ /^([^\.]+)\.([^:]+):(\d+)/ ) {
+            my ($namespace,$moName,$count) = ($1,$2,$3);
+            $results{$namespace}->{$moName} += $count;
+        }
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("parseNonLive: results", %results); }
+    return \%results;
+}
+
+sub getVersantDatabaseList {
+    my @fileList = @_;
+    my @versantDatabaseList = ();
+
+    foreach my $file ( @fileList ) {
+        if ( $file =~ /^(.*)\.object_count/ ) {
+            push @versantDatabaseList, $1;
+        }
+    }
+    return @versantDatabaseList;
+}
+
+sub parseVersantData {
+    my ($objectCountFile, $databaseSpaceFile) = @_;
+
+    my $r_databasesInfoHash->{'managedObjects'} = parseVersantManagedObjects($objectCountFile);
+    if ($DEBUG > 5) { printVersantManagedObjects($r_databasesInfoHash->{'managedObjects'}); }
+
+    $r_databasesInfoHash->{'databaseSpace'} = parseVersantDatabaseSpace($databaseSpaceFile);
+    if ($DEBUG > 5) { printVersantDatabaseSpace($r_databasesInfoHash->{'databaseSpace'}); }
+
+    return $r_databasesInfoHash;
+}
+
+sub parseVersantManagedObjects {
+    my $fileName = shift;
+
+    if ( $DEBUG > 5 ) { print "parseVersantManagedObjects: fileName=$fileName\n" };
+
+    open OBJECT_COUNT_FILE, $fileName or die "Cannot open $fileName";
+
+    my @objectList = ();
+
+    while ( my $line = <OBJECT_COUNT_FILE> ) {
+        my ($objectCount, $objectNamespace, $managedObjectClassName) = parseObjectCountLine($line);
+
+        if ( defined $objectCount && $objectCount > 0 ) {
+            push @objectList, { 'count' => $objectCount, 'namespace' => $objectNamespace, 'managedObjectClassName' => $managedObjectClassName };
+        }
+    }
+    close OBJECT_COUNT_FILE;
+
+    return \@objectList;
+}
+
+sub parseObjectCountLine {
+    my $line = shift;
+    chomp($line);
+
+    my ($objectCount, $objectNamespace, $managedObjectClassName);
+
+    # Example: 0 'ns_ERBS_NODE_MODEL.Pt_NodeManagementFunction'
+    if ( $line =~ /^(\d+) \'ns_(\w+)\.Pt_(\w+)\'/ ) {
+        ($objectCount, $objectNamespace, $managedObjectClassName) = ($1, $2, $3);
+    }
+        # This part of code commented: as MO table should only have primary types
+        # elsif ($line =~ /^(\d+) \'(\w+)\'$/) {
+        # Example: 0 'PersistenceObjectEntity'
+        # ($objectCount, $managedObjectClassName, $objectNamespace) = ($1, $2,"UNDEFINED");
+    # }
+
+    if ( $DEBUG > 5 ) { print "parseVersantObjects: objectCount=$objectCount,
+        managedObjectClassName=$managedObjectClassName, objectNamespace=$objectNamespace\n" };
+
+    return ($objectCount, $objectNamespace, $managedObjectClassName);
+}
+
+sub printVersantManagedObjects {
+    my $managedObjectList = shift;
+
+    if ( $DEBUG > 5) { print "printVersantManagedObjects: $managedObjectList\n"; }
+
+    foreach my $managedObjectName ( @{$managedObjectList} ) {
+        print "\n", '#' x 40, "\n";
+        print "\n\tNamespace: $managedObjectName->{'namespace'}";
+        print "\n\tMO: $managedObjectName->{'managedObjectClassName'}";
+        print "\n\tCount: $managedObjectName->{'count'}\n";
+    }
+    print "\n", '=' x 40, "\n";
+}
+
+sub parseVersantDatabaseSpace {
+    my $fileName = shift;
+    my @databaseSpaceList;
+
+    my ($volume, $name, $size, $percentageFree, $freeSpace);
+
+    open VERSANT_DB_SPACE_FILE, $fileName or die "Error opening $fileName";
+
+    while ( my $line = <VERSANT_DB_SPACE_FILE> ) {
+        # Example: Volume 256:
+        if($line =~ /^Volume\s+(\w+):.*$/){
+            $volume = $1;
+        # Example: Sysname "vol1"  Size: 44444444K
+        } elsif ($line =~ /^\s+Sysname \"(\w+)\"\s+Size: (\d+)K/ ) {
+            $name = $1;
+            $size = $2;
+        # Example: Percentage of free extents in vol vol1 : 32%
+        } elsif (defined $name && $line =~ /^\s+Percentage of free (?:extents )?in vol $name : (\d+)%/ ) {
+            $percentageFree = $1;
+        # Example: Free extent space in vol vol1 : 3333333KB
+        } elsif (defined $name && $line =~ /^\s+Free (?:extent )?space in vol $name : (\d+)KB/ ) {
+            $freeSpace = $1;
+            push @databaseSpaceList, createVolumeInformationHash($volume, $name, $size, $percentageFree, $freeSpace);
+        # Example: Percentage of free extents in DB : 96%
+        } elsif ($line =~ /^\s+Percentage of free (?:extents )?in DB : (\d+)%/ ) {
+            $percentageFree = $1;
+        # Example: Total available extent free space in DB : 20238336KB
+        } elsif ($line =~ /^\s+Total available (?:extent )?free space in DB : (\d+)KB/ ) {
+            $freeSpace = $1;
+            $volume = "TOTAL";
+            $name = "";
+            $size = 0;
+
+            push @databaseSpaceList, createVolumeInformationHash($volume, $name, $size, $percentageFree, $freeSpace);
+        }
+    }
+    close(VERSANT_DB_SPACE_FILE);
+
+    return \@databaseSpaceList;
+}
+
+sub createVolumeInformationHash{
+    my ($volume, $name, $size, $percentageFree, $freeSpace) = @_;
+
+    my %databaseSpaceHash = (
+        'volumeName' => $volume,
+        'name' => $name,
+        'size' => $size,
+        'percentageFree' => $percentageFree,
+        'free' => $freeSpace
+    );
+
+    return \%databaseSpaceHash;
+}
+
+sub printVersantDatabaseSpace {
+    my $databaseSpaceList = shift;
+
+    foreach my $databaseSpaceName ( @{$databaseSpaceList} ) {
+        my $numberOfDatabaseSpaceTypes = keys %{$databaseSpaceName};
+
+        if ( $DEBUG > 5 ) { print "\nDEBUG: Number of DatabaseSpace types: $numberOfDatabaseSpaceTypes\n"; }
+
+        foreach my $databaseSpaceValue ($databaseSpaceName) {
+            print "\n\tVolume Name: $databaseSpaceValue->{'volumeName'}";
+            print "\n\tSystem Name: $databaseSpaceValue->{'name'}";
+            print "\n\tSize: $databaseSpaceValue->{'size'}";
+            print "\n\tFree: $databaseSpaceValue->{'free'}";
+            print "\n\t% Free: $databaseSpaceValue->{'percentageFree'}\n";
+        }
+    }
+}
+
+sub storeVersantManagedObjects($$$$$) {
+    my ($r_databasesInfoHash, $r_nonLiveCounts, $versantDatabaseName, $site, $date) = @_;
+    my ($siteId, $serverId);
+    my $managedObjectTableName = "mo";
+
+    setStatsDB_Debug($DEBUG);
+
+    ($dbh, $siteId) = prepareDatabase($site, $date, $managedObjectTableName);
+
+    my $timestamp1 = Time::HiRes::time;
+    my ($r_databaseNameIdMap, $r_namespaceNameIdMap, $r_managedObjectNameIdMap) = getIdMaps($r_databasesInfoHash, $versantDatabaseName, $dbh);
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = "$tmpDir/managed_object_import.bcp";
+
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $r_managedObjectDescription ( @{$r_databasesInfoHash->{'managedObjects'}} ) {
+        if ( $DEBUG > 5 ) { print "storeVersantManagedObjects: processing $versantDatabaseName\n"; }
+
+        my $plannedCount = '\N';
+        if ( defined $r_nonLiveCounts ) {
+            my $nonLiveCount = $r_nonLiveCounts->{$r_managedObjectDescription->{'namespace'}}->{$r_managedObjectDescription->{'managedObjectClassName'}};
+            if ( defined $nonLiveCount ) {
+                $plannedCount = $nonLiveCount;
+            } else {
+                $plannedCount = 0;
+            }
+        }
+
+        my @row = (
+            $date,
+            $siteId,
+            $r_databaseNameIdMap->{$versantDatabaseName},
+            $r_namespaceNameIdMap->{$r_managedObjectDescription->{'namespace'}},
+            1,
+            $r_managedObjectNameIdMap->{$r_managedObjectDescription->{'managedObjectClassName'}},
+            $r_managedObjectDescription->{'count'},
+            $plannedCount
+        );
+
+        print BULK_INSERT join("\t", @row), "\n";
+    }
+
+    close BULK_INSERT;
+
+    dbDo($dbh,"LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE $managedObjectTableName (date,siteid,vdbid,modelid,mimid,moid,count,planned)")
+    or die "Failed to load data into $managedObjectTableName from $bcpFile";
+
+    my $timestamp2 = Time::HiRes::time;
+
+    if ( $DEBUG > 3 ) { print "storeVersantManagedObjects: Time taken to insert values into mo table: " . ($timestamp2 - $timestamp1) . "\n"; }
+
+    $dbh->disconnect;
+}
+
+sub storeVersantData($$$$$) {
+    my ($r_databasesInfoHash, $r_nonLiveCounts, $versantDatabaseName, $site, $date) = @_;
+
+    storeVersantManagedObjects($r_databasesInfoHash, $r_nonLiveCounts, $versantDatabaseName, $site, $date);
+    storeVersantDatabaseSpace($r_databasesInfoHash, $versantDatabaseName, $site, $date);
+}
+
+sub prepareDatabase {
+    my ($site, $date, $databaseTableName) = @_;
+
+    $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId > -1 ) or die "Failed to get siteId for $site";
+
+    my $timestamp1 = Time::HiRes::time;
+    dbDo($dbh,"DELETE FROM $databaseTableName WHERE siteid = $siteId AND date = \'$date\'");
+    my $timestamp2 = Time::HiRes::time;
+
+    if ( $DEBUG > 3 ) { print "prepareDatabase: delete time=" . ($timestamp2 - $timestamp1) . "\n"; }
+
+    return ($dbh, $siteId);
+}
+
+sub getIdMaps {
+    my ($r_databasesInfoHash, $versantDatabaseName, $dbh) = @_;
+
+    my @versantDatabaseArray = ( $versantDatabaseName );
+    my $r_databaseNameIdMap = getIdMap($dbh, "vdb_names", "id", "name", \@versantDatabaseArray);
+
+    my %namespaceMap = ();
+    my %managedObjectMap = ();
+
+        # Iterate thru the managedObjects
+        foreach my $r_managedObjectDescription ( @{$r_databasesInfoHash->{'managedObjects'}} ) {
+            # Increment a counter for every occurrence of a specific namespace or managedObject Class
+            $namespaceMap{$r_managedObjectDescription->{'namespace'}}++;
+            $managedObjectMap{$r_managedObjectDescription->{'managedObjectClassName'}}++;
+        }
+
+    my @namespaceList = keys %namespaceMap;
+    my $r_namespaceNameIdMap = getIdMap($dbh, "model_names", "id", "name", \@namespaceList );
+
+    my @moList = keys %managedObjectMap;
+    my $r_managedObjectNameIdMap = getIdMap($dbh, "mo_names", "id", "name", \@moList );
+
+    return ($r_databaseNameIdMap, $r_namespaceNameIdMap, $r_managedObjectNameIdMap);
+}
+
+sub storeVersantDatabaseSpace {
+    my ($r_databasesInfoHash, $versantDatabaseName, $site, $date) = @_;
+    my $vdbVolumesTableName = "vdb_volumes";
+    my $versantDatabaseTableName = "vdb";
+    my ($siteId);
+
+    ($dbh, $siteId) = prepareDatabase($site, $date, $versantDatabaseTableName);
+
+    my $r_versantDatabaseNameIdMap = getIdMap($dbh, "vdb_names", "id", "name", [$versantDatabaseName]);
+    my $versantDatabaseId = $r_versantDatabaseNameIdMap->{$versantDatabaseName};
+    my $totalSizeOfVersantVolumes = getTotalVersantVolumeSize($r_databasesInfoHash);
+
+    if ( $DEBUG > 5 ) { print "storeVersantDatabaseSpace: processing $versantDatabaseName\n"; }
+
+    foreach my $r_databaseSpaceDescription ( @{$r_databasesInfoHash->{'databaseSpace'}} ) {
+        my $vdbVolumeId = getVolumeId($dbh, $r_databaseSpaceDescription, $vdbVolumesTableName);
+
+        if($r_databaseSpaceDescription->{'volumeName'} =~ /^TOTAL$/){
+                $r_databaseSpaceDescription->{'size'} = $totalSizeOfVersantVolumes;
+        }
+
+        my $sqlInsertVolumes = sprintf("INSERT INTO $versantDatabaseTableName
+            (date, siteid, vdbid, vdbvolumeid, size, free, percentagefree)
+            VALUES (\'%s\',%d,%d,%d,%d,%d,%d)",
+                $date,
+                $siteId,
+                $versantDatabaseId,
+                $vdbVolumeId,
+                $r_databaseSpaceDescription->{'size'},
+                $r_databaseSpaceDescription->{'free'},
+                $r_databaseSpaceDescription->{'percentageFree'}
+             );
+        dbDo($dbh, $sqlInsertVolumes);
+    }
+}
+
+sub getTotalVersantVolumeSize {
+    my ($r_databasesInfoHash) = @_;
+    my $totalSizeOfVersantVolumes = 0;
+
+    foreach my $r_databaseSpaceDescription ( @{$r_databasesInfoHash->{'databaseSpace'}} ) {
+        if($r_databaseSpaceDescription->{'volumeName'} !~ /^TOTAL$/ ){
+            $totalSizeOfVersantVolumes += $r_databaseSpaceDescription->{'size'};
+        }
+    }
+    return $totalSizeOfVersantVolumes;
+}
+
+sub getVolumeId {
+    my ($dbh, $r_row, $vdbVolumesTableName) = @_;
+
+    my $sqlSelectIds = sprintf("SELECT id FROM $vdbVolumesTableName
+            WHERE volumename='%s' AND sysname='%s'", $r_row->{'volumeName'}, $r_row->{'name'});
+
+    my $r_vdbVolumeId = dbSelectAllArr($dbh, $sqlSelectIds);
+
+    if(@{$r_vdbVolumeId} == 0) {
+        my $sqlInsertIds = sprintf("INSERT INTO $vdbVolumesTableName (volumename, sysname) VALUES ('%s','%s')",
+            $r_row->{'volumeName'}, $r_row->{'name'});
+
+        dbDo($dbh, $sqlInsertIds);
+        $r_vdbVolumeId = dbSelectAllArr($dbh, $sqlSelectIds);
+    }
+
+    return $r_vdbVolumeId->[0]->[0];
+}
+
+
+sub main(){
+    my ($versantLogsDirectory, $date, $site);
+
+    my $result = GetOptions(
+        "versantLogsDirectory=s" => \$versantLogsDirectory,
+        "site=s"  => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+
+    ($result == 1) or die "Invalid arguments. Usage: parseVersant --versantLogsDirectory <versantLogsDirectory> --site <site> --date <yyyy-mm-dd> [ --debug <1-10> ]";
+
+    opendir(VERSANT_LOG_DIRECTORY, $versantLogsDirectory) or die "parseVersant: Error opening file: $versantLogsDirectory";
+    my @versantFiles = readdir VERSANT_LOG_DIRECTORY;
+    closedir VERSANT_LOG_DIRECTORY;
+
+    # Versant database names are extracted from Versant logs files collected that
+    # contain the database name as the file name prefix
+    my @versantDatabaseList = getVersantDatabaseList(@versantFiles);
+
+    foreach my $versantDatabaseName (@versantDatabaseList) {
+        my $objectCountFile = $versantLogsDirectory . "/" . $versantDatabaseName . ".object_count";
+        my $databaseSpaceFile = $versantLogsDirectory . "/" . $versantDatabaseName . ".db_space";
+
+        my $r_databasesInfoHash = parseVersantData($objectCountFile, $databaseSpaceFile);
+
+        my $nonLiveFile = $versantLogsDirectory . "/nonlive.counts";
+        my $r_nonLiveCounts = undef;
+        open(FILE,$nonLiveFile);
+        if ( -r $nonLiveFile ) {
+            if ( ! grep{/error|exception/i} <FILE>){
+                $r_nonLiveCounts = parseNonLive($nonLiveFile);
+            }
+        }
+        close FILE;
+        storeVersantData($r_databasesInfoHash, $r_nonLiveCounts, $versantDatabaseName, $site, $date);
+    }
+}
+
+main();
+

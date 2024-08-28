@@ -1,0 +1,496 @@
+#!/usr/bin/env perl 
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsCommon;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($nsusersFile,$pFiles,$lsOf,$jpsFile,$outFile,$ipAddress,$nsLog);
+    my $result = GetOptions(
+        "nsusers=s"  => \$nsusersFile,
+        "pfiles=s"  => \$pFiles,
+        "lsof=s"  => \$lsOf,
+        "jps=s" => \$jpsFile,
+        "ip=s" => \$ipAddress,
+        "nslog=s" => \$nsLog,
+        "output=s" => \$outFile, 
+        "debug=s" => \$DEBUG
+        );
+    ($result == 1) or die "Invalid args"; 
+    
+    # Get the Notification Agent Type
+    my $NAType = "";
+    if ( $nsusersFile =~ 'int_nsusers\.txt$' ) {
+        $NAType = "Internal";
+    } elsif ( $nsusersFile =~ 'ext_nsusers\.txt$' ) {
+        $NAType = "External";
+    }
+
+    my @categories = ();
+    parseNsUsers($nsusersFile,\@categories);
+    
+    my %portToPid = ();
+    if ( $pFiles )
+    {
+        parsePfiles($pFiles, \%portToPid );
+    }
+    elsif ( $lsOf )
+    {
+        parseLsOf($lsOf, \%portToPid );
+    }
+
+    my %pidToName = ();
+    parseJps($jpsFile,\%pidToName);    
+
+    my $r_NsErrors;
+    if ( defined $nsLog )
+    {
+        $r_NsErrors = parseNsLog($nsLog);
+    }
+
+    open OUTPUT, ">$outFile" or die "Cannot open $outFile";
+    print OUTPUT "<html><body>\n";
+
+    # Overall page heading
+    print OUTPUT "<h1>$NAType Notification Agent<\/h1>\n";
+    # Help note on the parsing
+    print OUTPUT "<p><b>Note:<\/b> DDP attempts to map the port, which is retrieved with the IP address, to a process in both the supplier and consumer data. This is not always possible, so the <i>Consumer Identity<\/i>, which is supplied by the consumer on registration, is also retrieved. The <i>Discarded Events<\/i> and <i>Events Delivered<\/i> are also captured. These fields are presented, along with the <i>Subscriber<\/i> in the <i>Consumers<\/i> data tables below, in order to provide more information on the application that the consumer and supplier are associated with.<\/p>";
+
+    print OUTPUT "<h2>Categories<\/h2>\n";
+    print OUTPUT "<ul>\n";
+    for my $r_category ( @categories )
+    {
+        print OUTPUT " <li><a href=\"#", $r_category->{"name"}, "\">", $r_category->{"name"}, "<\/a><\/li>\n";
+    }
+    print OUTPUT "<\/ul>\n";
+    
+    for my $r_category ( @categories )
+    {
+        print OUTPUT "<h2><a name=\"", $r_category->{"name"}, "\"<\/a>", $r_category->{"name"}, "</h2>\n";
+        print OUTPUT "<p>Channel Id = ", $r_category->{"channelId"}, "<\/p>\n";
+        print OUTPUT "<p>MaxQueueLength  = ", $r_category->{"qlength"}, "<\/p>\n";
+        
+        print OUTPUT "<H3>Suppliers</H3>\n";
+        print OUTPUT "<table border>\n";
+        print OUTPUT " <tr> <th>Id</th> <th>Publisher</th> </tr>\n";
+        for my $r_supplier ( @{$r_category->{"suppliers"}} )
+        {
+            my $supplierProcessName = getProcess( $r_supplier, \%portToPid, \%pidToName, $ipAddress );
+            print OUTPUT " <tr> <td>", $r_supplier->{"id"}, "<\/td> <td>", $supplierProcessName ,
+            "<\/td> <\/tr>\n";
+        }
+        print OUTPUT "</table>\n";
+
+        print OUTPUT "<H3>Consumers</H3>\n";
+        print OUTPUT "<table border>\n";
+        print OUTPUT " <tr> <th>Id<\/th> <th>Subscriber<\/th> <th>Consumer Identity<\/th> <th>Discarded Events<\/th> <th>Events Delivered<\/th> <th>Filter<\/th> </tr>\n";
+        for my $r_consumer ( @{$r_category->{"consumers"}} )
+        {
+            print OUTPUT " <tr> <td>", $r_consumer->{"id"}, "<\/td> <td>", 
+            getProcess( $r_consumer, \%portToPid, \%pidToName, $ipAddress ),"<\/td> <td>", 
+            $r_consumer->{"ident"}, "<\/td> <td>",
+            $r_consumer->{"discardedEvents"}, "<\/td> <td>",
+            $r_consumer->{"eventsDelivered"}, "<\/td> <td>",
+            $r_consumer->{"filter"}, "<\/td> <\/tr>\n";
+        }
+        print OUTPUT "</table>\n";
+    }
+    print OUTPUT "<\/body><\/html>\n";
+    close OUTPUT;
+}
+
+
+sub parseNsLog
+{
+    my ($nsLog) = @_;
+
+    my @errors = ();
+
+    open INPUT, $nsLog or die "Failed to open $nsLog";
+    while ( my $line = <INPUT> )
+    {
+        if ( $line =~ /\#/ )
+        {
+            my ($ipAddress,$port);
+            if ( $line =~ /IOR:([0-9a-z]+)/ )
+            {
+                my $ior = "IOR:" . $1;
+                open IOR_DECODE, "ior-decode2 $ior|" or die "Failed to run ior-decode2";
+                my $address;
+                while ( my $decodeLine = <IOR_DECODE> )
+                {
+                    if ( $decodeLine =~ /^IOP_TAG_INTERNET_IOP: \S+ \S+ (\S+)/ )
+                    {
+                        $address = $1;
+                    }
+                }
+                close IOR_DECODE;
+                
+                if ( defined $address )
+                {
+                    my ($ipAddress,$port) = split /:/, $address;
+                }
+
+                $line =~ s/IOR:[0-9a-z]+/IOR/;
+            }
+
+            my $r_Error = {
+                'msg' => $line
+            };
+            if ( defined $ipAddress )
+            {
+                $r_Error->{'ipaddress'} = $ipAddress;
+                $r_Error->{'port'} = $port;
+            }
+
+            push @errors, $r_Error;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseNsLog: errors", \@errors); }
+
+    return \@errors;
+}
+
+sub parseLsOf
+{
+#             a    file access mode
+#             c    process command name (all characters from proc or
+#                  user structure)
+#             C    file structure share count
+#             d    file\u2019s device character code
+#             D    file\u2019s major/minor device number (0x<hexadecimal>)
+#             f    file descriptor
+#             F    file structure address (0x<hexadecimal>)
+#             G    file flaGs (0x<hexadecimal>; names if +fg follows)
+#             i    file\u2019s inode number
+#             k    link count
+#             l    file\u2019s lock status
+#             L    process login name
+#             m    marker between repeated output
+#             n    file name, comment, Internet address
+#             N    node identifier (ox<hexadecimal>
+#             o    file\u2019s offset (decimal)
+#             p    process ID (always selected)
+#             g    process group ID
+#             P    protocol name
+#             r    raw device number (0x<hexadecimal>)
+#             R    parent process ID
+#             s    file\u2019s size (decimal)
+#             S    file\u2019s stream identification
+#             t    file\u2019s type
+#             T    TCP/TPI information, identified by prefixes (the
+#                  \u2018=\u2019 is part of the prefix):
+#                      QR=<read queue size>
+#                      QS=<send queue size>
+#                      SO=<socket options and values> (not all dialects)
+#                      SS=<socket states> (not all dialects)
+#                      ST=<connection state>
+#                      TF=<TCP flags and values> (not all dialects)
+#                      WR=<window read size>  (not all dialects)
+#                      WW=<window write size>  (not all dialects)
+#                  (TCP/TPI information isn\u2019t reported for all supported
+#                    UNIX dialects. The -h or -? help output for the
+#                    -T option will show what TCP/TPI reporting can be
+#                    requested.)
+#             u    process user ID
+#             z    Solaris 10 and higher zone name
+#             0    use NUL field terminator character in place of NL
+#             1-9  dialect-specific field identifiers (The output
+#                  of -F? identifies the information to be found
+#                  in dialect-specific fields.)
+    my ($inFile, $r_portMap) = @_;
+    
+    open INPUT, $inFile or die "Failed to open $inFile";
+    my $currPid = 0;
+    my $tcpFd = 0;
+    my $port = 0;
+    while ( my $line = <INPUT> )
+    {
+        if ( $DEBUG > 9 ) { print "parseLsOf: line = $line"; }
+        if ( $line =~ /^p(\d+)$/ )
+        {
+            $currPid = $1;
+            if ( $DEBUG > 5 ) { print "parseLsOf: found process $currPid\n"; }
+
+            $port = 0;
+        }
+        elsif ( $line =~ /^P(.*)$/ )
+        {
+            my $proto = $1;
+            if ( $proto eq "TCP" )
+            {
+                if ( $DEBUG > 5 ) { print "parseLsOf: found protcol TCP\n"; }
+                $tcpFd = 1;
+                $port = 0;
+            }
+            else
+            {
+                $tcpFd = 0;
+            }
+        }
+        elsif ( $tcpFd && ($line =~ /^n[^:]+:(\d+)$/) )
+        {
+            $port = $1;
+            if ( $DEBUG > 5 ) { print "parseLsOf: found port $port\n"; }
+        }
+        elsif ( $tcpFd && $port && ($line =~ /^TST=(.*)/) )
+        {
+            my $state = $1;
+            if ( $DEBUG > 5 ) { print "parseLsOf: found state $state\n"; }
+            if ( $state eq "LISTEN" )
+            {
+                $r_portMap->{$port} = $currPid;
+                if ( $DEBUG > 4 ) { print "parseLsOf: found listen port $port for $currPid\n"; }
+            }
+            else
+            {
+                $tcpFd = 0;
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseLsOf r_portMap", $r_portMap); }
+
+}
+
+sub parsePfiles
+{
+    my ($inFile, $r_portMap) = @_;
+
+    open INPUT, $inFile or die "Failed to open $inFile";
+    my $currPid = 0;
+    while ( my $line = <INPUT> )
+    {
+        if ( $DEBUG > 9 ) { print "parsePfiles: line = $line"; }
+
+        if ( $line =~ /^(\d+):/ )
+        {
+            $currPid = $1;
+            if ( $DEBUG > 5 ) { print "parsePfiles: found process $currPid\n"; }
+        }
+        elsif ( $line =~ /^\s+\d+: (\S+)/ )
+        {
+            my $fdType = $1;
+            if ( $fdType eq "S_IFSOCK" )
+            {
+                if ( $DEBUG > 5 ) { print "parsePfiles: found socket for process $currPid\n"; }
+
+                do
+                {
+                    $line = <INPUT>;
+                    if ( $DEBUG > 9 ) { print "parsePfiles: line = $line"; }
+                }
+                while ( $line && ($line !~ /^\s+sockname/) );
+
+                if ( $line =~ /^\s+sockname: AF_INET 0.0.0.0  port: (\d+)/ )
+                {
+                    my $port = $1;
+                    if ( $DEBUG > 5 ) { print "parsePfiles: found listening socket on port $port for process $currPid\n"; }
+                    $r_portMap->{$port} = $currPid;
+                }
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parsePfiles r_portMap", $r_portMap); }
+}       
+
+
+sub parseNsUsers
+{
+    my ($inFile, $r_categories) = @_;
+    my ($r_currCategory,$r_currConsumer);
+
+    open INPUT, $inFile or die "Failed to open $inFile";
+    while ( my $line = <INPUT> )
+    {
+        if ( $DEBUG > 9 ) { print "parseNsUsers: line = $line"; }
+
+        if ( $line =~ /^EventChannel/ )
+        {
+            my ($channelId,$category,$qlength) = 
+                $line =~ /^EventChannel\[(\d+)\]: Category = (\S+), MaxQueueLength = (\d+)/;
+            
+            if ( $category )
+            {
+                $r_currCategory = {
+                    "name"      => $category,
+                    "channelId" => $channelId,
+                    "qlength"   => $qlength,
+                    "suppliers" => [],
+                    "consumers" => [],
+                };
+                push @{$r_categories}, $r_currCategory;
+            }
+        }
+        elsif ( $line =~ /^\s+Supplier\[/ )
+        {
+            my ($id,$location) = $line =~ /^\s+Supplier\[(\d+)\] (\S*)/;
+            my ( $ipAddress, $port );
+            if ( $location =~ /([\d\.]+):(\d+)/ )
+            {
+                $ipAddress = $1;
+                $port = $2;
+            }
+            my $r_supplier = {
+                "id" => $id,
+                "ipAddress"  => $ipAddress,
+                "port"       => $port
+            };
+            push @{$r_currCategory->{"suppliers"}}, $r_supplier;
+        }
+        elsif ( $line =~ /^\s+Consumer\[/ )
+        {
+            my ($id,$location) = $line =~ /^\s+Consumer\[(\d+)\]: (\S*)/;
+            my ( $ipAddress, $port );
+            if ( $location =~ /([\d\.]+):(\d+)/ )
+            {
+                $ipAddress = $1;
+                $port = $2;
+            }
+            $r_currConsumer = {
+                "id"               => $id,
+                "ipAddress"        => $ipAddress,
+                "port"             => $port,
+                "ident"            => "",
+                "discardedEvents"  => "",
+                "eventsDelivered"  => "",
+                "filter"           => ""
+            };
+            push @{$r_currCategory->{"consumers"}}, $r_currConsumer;
+        }
+        elsif ( $line =~ /^\s+Ident/ )
+        {
+            my ($ident) = $line =~ /^\s+Ident: (.*)/;
+            $r_currConsumer->{"ident"} = $ident;
+        }
+        # HQ76176: Capture the DiscardedEvents and EventsDelivered values
+        elsif ( $line =~ /^\s+QoS/ )
+        {
+          ($r_currConsumer->{"discardedEvents"}, $r_currConsumer->{"eventsDelivered"}) = $line =~ /^\s+QoS:\s+DiscardedEvents=(\S+)\s+EventsDelivered=(\d+)/;
+        }
+        elsif ( $line =~ /^\s+Domain/ )
+        {
+            $line = <INPUT>;
+            my ($filter) = $line =~ /^\s+(.+)/;
+            $r_currConsumer->{"filter"} = $filter;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseNsUsers r_categories", $r_categories); }
+
+}
+
+sub parseJps
+{
+    my ($inFile, $r_pidToName) = @_;
+
+    open INPUT, $inFile or die "Failed to open $inFile";
+
+    my %MAPPED_PROC_NAMES = ();
+
+    while ( my $line = <INPUT> )
+    {           
+        if ( $DEBUG > 9 ) { print "parseJps: $line"; }
+
+	# Protect against corrupt files, e.g.
+	#  7757  4-09:13       06  0.0      50    30     79     3^@^@^@...
+	if ( length($line) > 2048 ) {
+	    print "WARN: Invalid line $. in $inFile\n";
+	    next;
+	}
+
+        my ( $pid, $longName );
+        if ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+[-\d]+\s+\d+\s+\d+\s+\d+\s+\d+\s+(.*)$/ )
+        {
+            $pid = $1; $longName = $2;
+        }
+        elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+[-\d]+\s+\d+\s+\d+\s+(.*)$/ )
+        {
+            $pid = $1; $longName = $2;
+        }
+        elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+\d+\s+\d+\s+(.*)/ )
+        {
+            $pid = $1; $longName = $2;
+
+        }
+        elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+\d+\s+(.*)/ )
+        {
+            $pid = $1; $longName = $2;
+        }
+
+        if ( defined $longName ) {
+            my $shortName = $MAPPED_PROC_NAMES{$longName};
+            if ( ! defined $shortName )
+            {
+                $shortName = jpsShortName($longName);
+                $MAPPED_PROC_NAMES{$longName} = $shortName;
+            }
+            $r_pidToName->{$pid} = $shortName;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseJps r_pidToName", $r_pidToName); }
+}
+
+sub getProcess
+{
+    my ($r_target,$r_portToPid,$r_pidToName,$ipAddress) = @_;
+
+    if ( $DEBUG > 4 ) 
+    {
+        print (
+            "getProcess: ipAddress=", $r_target->{"ipAddress"}, 
+            ", port=", $r_target->{"port"}, 
+            " portToProcess=", $r_portToPid->{$r_target->{"port"}}, 
+            "\n"
+            );     
+    }
+
+    my $result = "";
+    if ( $r_target->{"ipAddress"} eq $ipAddress )
+    {
+        my $pid = $r_portToPid->{$r_target->{"port"}};
+        if ( $pid )
+        {
+            my $processName = $r_pidToName->{$pid};
+
+            if ( $processName )
+            {
+                $result = $processName;
+            }
+            else
+            {
+                $result = "Unknown process: ". $pid;
+            }
+        }
+        else
+        {
+            $result = "Unable to map port to process: " . $r_target->{"port"};
+        }
+    }
+    elsif ( $r_target->{"ipAddress"} ne "" )
+    {
+        $result = "Remote: " . $r_target->{"ipAddress"} . ":" . $r_target->{"port"} ;
+    }
+    else 
+    {
+        $result = "No match found in NADB";
+    }
+
+    if ( $DEBUG > 4 ) { print "getProcess: result=$result\n"; }
+
+    return $result;
+}

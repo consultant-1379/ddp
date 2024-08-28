@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Number of Reports Refreshed"
+>
+  <presetagg type="COUNT" interval="Per Minute"/>
+  <title value="Report Refreshed Data"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="bis_report_refresh_time">
+        <reference table="sites" condition="bis_report_refresh_time.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="DISTINCT bis_report_refresh_time.reportName" label = "Refreshed Reports"/>
+    </query>
+  </queries>
+  <size width="540" height="250"/>
+</modelledgraph>

@@ -1,0 +1,111 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub parseInputFile($) {
+    my ($inputFile) = @_;
+
+    my @results = ();
+    open INPUT, $inputFile or die "Cannot open $inputFile";
+    my $invalidLineCount = 0;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseInput: line=$line"; }
+        if ( $line =~ /^(\S+)\s+(\d+)\s+(\d+)$/ ) {
+            my $namespace = '';
+            my ($motype,$total,$nonlive) = ($1,$2,$3);
+            if ( $motype =~ /^([^@]*)@([^@]+)/ ) {
+                ($namespace,$motype) = ($1,$2);
+            } elsif ( $motype =~ /^([^:]+):([^:]+)$/ ) {
+                ($namespace,$motype) = ($1,$2);
+            }
+            if ( $DEBUG > 8 ) { print "parseInput: namespace=$namespace,motype=$motype,total=$total,nonlive=$nonlive\n"; }
+
+            if ( $total < $nonlive ) {
+                $invalidLineCount++;
+                if ( $invalidLineCount == 1 ) {
+                    print "ERROR: Invalid count found (total < nonlive): $line";
+                }
+            }
+
+            if ( $namespace !~ /^ECIM_/ ) {
+                push @results, {
+                    'namespace' => $namespace,
+                    'motype' => $motype,
+                    'total' => $total,
+                    'nonlive' => $nonlive
+                };
+            }
+        } else {
+            $invalidLineCount++;
+            if ( $invalidLineCount == 1 ) {
+                print "ERROR: Invalid line: $line";
+            }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG >  3 ) { print Dumper("parseInput: results", \@results); }
+    if ( $invalidLineCount == 0 ) {
+        return \@results;
+    } else {
+        return [];
+    }
+}
+
+sub storeData($$$) {
+    my ($site,$date,$r_counts) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId > -1 ) or die "Failed to get siteId for $site";
+
+    my %namespaces = ();
+    my %motypes = ();
+    foreach my $r_count ( @{$r_counts} ) {
+        $namespaces{$r_count->{'namespace'}} = 1;
+        $motypes{$r_count->{'motype'}} = 1;
+    }
+
+    my @namespaceList = keys %namespaces;
+    my $r_namespaceNameIdMap = getIdMap($dbh, "model_names", "id", "name", \@namespaceList );
+
+    my @moList = keys %motypes;
+    my $r_managedObjectNameIdMap = getIdMap($dbh, "mo_names", "id", "name", \@moList );
+
+    dbDo($dbh,"DELETE FROM enm_neo4j_mocounts WHERE siteid = $siteId AND date = '$date'")
+        or die "Cannot delete old data";
+    foreach my $r_count ( @{$r_counts} ) {
+        dbDo($dbh, sprintf("INSERT INTO enm_neo4j_mocounts (siteid,date,namespaceid,motypeid,total,nonlive) VALUES(%d,'%s',%d,%d,%d,%d)",
+                           $siteId, $date,
+                           $r_namespaceNameIdMap->{$r_count->{'namespace'}},
+                           $r_managedObjectNameIdMap->{$r_count->{'motype'}},
+                           $r_count->{'total'}, $r_count->{'nonlive'})
+         ) or die "Insert failed";
+    }
+    $dbh->disconnect();
+}
+sub main() {
+    my ($inputFile,$site,$date);
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_counts = parseInputFile($inputFile);
+    storeData($site,$date,$r_counts);
+}
+
+main();

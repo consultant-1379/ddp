@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="%"
+ timespan="day"
+ forcelegend="true"
+>
+  <presetagg type="AVG" interval="Daily" />
+  <title value="CPU"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="hires_server_stat"/>
+
+      <param name="serverid"/>
+      <where>hires_server_stat.serverid = %d</where>
+      <column db="iowait" label="IO Wait"/>
+      <column db="sys" label="Sys"/>
+      <column db="user" label="Usr"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="emc_filesystem_state">
+    <reference table="emc_filesystem" condition="emc_filesystem_state.fsid = emc_filesystem.id"/>
+    <reference table="emc_nas" condition="emc_filesystem_state.nasid = emc_nas.id"/>
+  </dbtables>
+
+  <param name="sysid"/>
+  <param name="date"/>
+  <where>emc_filesystem_state.sysid = %sysid% AND emc_filesystem_state.filedate = '%date%'</where>
+
+  <order columnid="used" direction="DESC"/>
+
+  <column db="emc_filesystem_state.fsid" label="fsid" id="fsid" visible="false"/>
+  <column db="emc_filesystem.name" label="Name"/>
+  <column db="emc_nas.name" label="NAS"/>
+  <column db="sizeGB" label="Size (GB)"/>
+  <column db="usedGB" label="Used (GB)" id="used"/>
+  <column db="sizeAllocatedTotalGB" label="Allocated Total (GB)"/>
+  <column db="metadataSizeAllocatedGB" label="Meta Data Allocated (GB)"/>
+  <column db="snapsSizeAllocatedGB" label="Snap Allocated (GB)"/>
+  <column db="snapCount" label="Snap Count"/>
+  <column db="dataReductionRatio" label="Data Reduction Ratio"/>
+
+  <ctxmenu keycol="fsid" targettype="modelledgraphset" multiselect="true">
+    <item id="used@common/emc_filesystem_state" label="Plot Used"/>
+    <item id="allocated@common/emc_filesystem_state" label="Plot Allocated Total"/>
+    <item id="snap@common/emc_filesystem_state" label="Plot Snap Allocated"/>
+    <item id="meta@common/emc_filesystem_state" label="Plot Metadata Allocated"/>
+  </ctxmenu>
+
+</modelledtable>

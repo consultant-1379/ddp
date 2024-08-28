@@ -1,0 +1,40 @@
+#!/usr/bin/env perl
+
+use strict;
+
+use StatsDB;
+use DBI;
+use Getopt::Long;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($site,$eniqSwVer,$date);
+    my $result = GetOptions("site=s"  => \$site,
+        "sw=s"  => \$eniqSwVer,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my @verList = ( $eniqSwVer );
+
+    my $r_verIdMap = getIdMap($dbh, "eniq_ver_names", "id", "name", \@verList );
+    my $siteId = getSiteId($dbh,$site);
+
+    $dbh->do("DELETE FROM eniq_ver WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my $names = "date,siteid,verid";
+    my $vals = "'" . $date . "'," . $siteId . "," . $r_verIdMap->{$eniqSwVer};
+
+    my $sql = "INSERT INTO eniq_ver (" . $names . ") VALUES (" . $vals . ")";
+    if ( $DEBUG > 2 ) { print "main: $sql\n"; }
+    $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+
+    $dbh->disconnect;
+}

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <table name="enm_mssnmpfm_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.fm.service.instrumentation.snmp-fm-engine:type=SnmpEngineStatistics$">
+      <metric source="trapsDiscarded" target="trapsDiscarded" delta="true" filteridle="true"/>
+      <metric source="trapsForwarded" target="trapsForwarded" delta="true" filteridle="true"/>
+      <metric source="trapsForwardedFailures" target="trapsForwardedFailures" delta="true" filteridle="true"/>
+      <metric source="trapsReceived" target="trapsReceived" delta="true" filteridle="true"/>
+      <metric source="numOfSupervisedNodes" target="numOfSupervisedNodes" filteridle="true"/>
+      <metric source="numOfSuspendedNodes" target="numOfSuspendedNodes" filteridle="true"/>
+      <metric source="numOfHBFailureNodes" target="numOfHBFailureNodes" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.fm.service.instrumentation.snmp-fm-engine:type=SnmpEngineStatisticsExt$">
+      <metric source="alarmForwardedFailures" target="alarmForwardedFailures" delta="true" filteridle="true"/>
+      <metric source="alarmsForwarded" target="alarmsForwarded" delta="true" filteridle="true"/>
+      <metric source="alarmsProcessingFailures" target="alarmsProcessingFailures" delta="true" filteridle="true"/>
+      <metric source="alarmsProcessingNotSupported" target="alarmsProcessingNotSupported" delta="true" filteridle="true"/>
+      <metric source="alarmsReceived" target="alarmsReceived" delta="true" filteridle="true"/>
+      <metric source="alarmProcessingDiscarded" target="alarmProcessingDiscarded" delta="true" filteridle="true"/>
+      <metric source="alarmProcessingInvalidRecordType" target="alarmProcessingInvalidRecordType" delta="true" filteridle="true"/>
+      <metric source="alarmProcessingLossOfTrap" target="alarmProcessingLossOfTrap" delta="true" filteridle="true"/>
+      <metric source="alarmProcessingPing" target="alarmProcessingPing" delta="true" filteridle="true"/>
+      <metric source="alarmProcessingSuccess" target="alarmProcessingSuccess" delta="true" filteridle="true"/>
+      <metric source="forwardedProcessedAlarmFailures" target="forwardedProcessedAlarmFailures" delta="true" filteridle="true"/>
+      <metric source="syncAlarmCommand" target="syncAlarmCommand" delta="true" filteridle="true"/>
+      <metric source="multiEventProcessed" target="multiEventProcessed" delta="true" filteridle="true"/>
+      <metric source="multiEventReordered" target="multiEventReordered" delta="true" filteridle="true"/>
+      <metric source="multiEventFailed" target="multiEventFailed" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.fm.service.instrumentation.snmp-fm-engine:type=SnmpEngineTimings$">
+      <metric source="processingAlarmTime" target="processingAlarmTime"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.fm.service.instrumentation.snmp-fm-engine:type=SnmpConnectorStatistics$">
+      <metric source="decryptionErrors" target="decryptionErrors" delta="true" filteridle="true"/>
+      <metric source="notInTimeWindows" target="notInTimeWindows" delta="true" filteridle="true"/>
+      <metric source="numberOfConnections" target="numberOfConnections" />
+      <metric source="snmpInTraps" target="snmpInTraps" delta="true" filteridle="true"/>
+      <metric source="snmpTrapInASNParseErrs" target="snmpTrapInASNParseErrs" delta="true" filteridle="true"/>
+      <metric source="snmpTrapInBadVersions" target="snmpTrapInBadVersions" delta="true" filteridle="true"/>
+      <metric source="unknownEngineIDs" target="unknownEngineIDs" delta="true" filteridle="true"/>
+      <metric source="unknownUserNames" target="unknownUserNames" delta="true" filteridle="true"/>
+      <metric source="unsupportedSecLevels" target="unsupportedSecLevels" delta="true" filteridle="true"/>
+      <metric source="wrongDigests" target="wrongDigests" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.mediation.handler.fm.minilinkindoor.instrumentation.mini-link-indoor-fm-target-destination:type=MiniLinkSnmpTargetDestinationBean$">
+      <metric source="noOfSnmpTargetDestinationDiscarded" target="noOfSnmpTargetDestinationDiscarded" delta="true" filteridle="true"/>
+      <metric source="noOfSnmpTargetDestinationSent" target="noOfSnmpTargetDestinationSent" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

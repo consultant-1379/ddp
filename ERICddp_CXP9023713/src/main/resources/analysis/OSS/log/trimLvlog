@@ -1,0 +1,55 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+use Time::HiRes qw(gettimeofday tv_interval);
+
+our $DEBUG = 0;
+our $dbh;
+our $bcpFile;
+our $site;
+our $date;
+
+our $MAX_ENTRY_PER_MC = 100000;
+our $MAX_ENTRY_MESSAGE = "[DDP MAX ENTRIES PER MC REACHED]";
+
+main();
+
+sub main {
+    my ($inFile,$outFile);
+    my $result = GetOptions(
+        "in=s"  => \$inFile,
+	"out=s" => \$outFile,
+        "debug=s" => \$DEBUG
+    );
+
+    open IN, $inFile or die "Failed to open $inFile";
+    open OUT, ">$outFile" or die "Faied to open $outFile";
+    my %countByMC = ();
+    while ( my $line = <IN> ) { 
+	my ($date, $time, $logType, $appName) = $line =~ 
+	    /^(\S+) (\S+) (\S+) \"([^\"]*)\" /;
+
+	if (! defined($date) ) {
+	    next;
+	}
+
+	$countByMC{$appName}++;
+	my $currCount = $countByMC{$appName};
+	if ( $currCount < $MAX_ENTRY_PER_MC ) {
+	    print OUT $line;
+	} elsif ( $currCount == $MAX_ENTRY_PER_MC ) {
+	    print "WARN: Max entry exceeded for $appName\n";
+	}	    
+    }
+    close IN;
+    close OUT;
+}  

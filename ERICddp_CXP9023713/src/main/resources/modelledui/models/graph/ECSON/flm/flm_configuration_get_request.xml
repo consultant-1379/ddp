@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="Configuration GET Requests"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="ecson_frequency_manager">
+    <reference table="sites" condition="ecson_frequency_manager.siteid = sites.id"/>
+    <reference table="servers" condition="ecson_frequency_manager.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_frequency_manager.configuration_get_request" label="Configuration GET Requests"/>
+  </query>
+ </queries>
+ <size width="800" height="400"/>
+</modelledgraph>

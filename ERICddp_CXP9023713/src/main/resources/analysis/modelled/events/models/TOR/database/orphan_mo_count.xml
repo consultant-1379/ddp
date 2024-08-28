@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_neo4j_orphan_mo_count" timecol="time">
+    <keycol name="siteid" reftable="sites"/>
+  </table>
+
+  <events>
+    <event name="orphan_mo_check">
+      <metric source="count" target="count"/>
+    </event>
+  </events>
+</modelledevents>

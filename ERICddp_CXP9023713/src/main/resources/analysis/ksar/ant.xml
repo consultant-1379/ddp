@@ -1,0 +1,46 @@
+<project name="DOSSUtil" default="dist" basedir=".">
+    <property name="src" location="${basedir}/src"/>
+    <property name="build" location="${basedir}/classes"/>
+    <property name="lib"  location="${basedir}/lib"/>
+
+    <target name="init">
+        <!-- Create the time stamp -->
+        <tstamp/>
+        <!-- Create the build directory structure used by compile -->
+        <mkdir dir="${build}"/>
+    </target>
+
+    <target name="compile" depends="init"
+        description="compile the source " >
+        <!-- Compile the java code from ${src} into ${build} -->
+        <javac srcdir="${src}"
+            destdir="${build}"
+            debug="true" debugLevel="lines,vars,source"
+            >
+            <!-- excludes="**/wega/**,**/wal/**,**/wendy/**" -->
+            <classpath>
+                <!--<pathelement path="${lib}/cello261.jar"/> -->
+                <!--<pathelement path="${basedir}/jars/wilma/nms_cif_cs.jar"/>-->
+                <pathelement path="${myclasspath}"/>
+            </classpath>
+        </javac>
+        <echo file="${build}/kSar.ver" append="false">5.0.6</echo>
+        <copy file="${src}/logo_ksar.jpg" todir="${build}" />
+    </target>
+
+    <target name="dist" depends="compile"
+        description="generate the distribution" >
+        <mkdir dir="${lib}"/>
+        <delete file="MANIFEST.MF"/>
+        <manifest file="MANIFEST.MF">
+            <attribute name="Built-By" value="${user.name} @ Ericsson Systems Expertise" />
+            <attribute name="Main-Class" value="net.atomique.ksar.Main" />
+        </manifest>
+        <jar jarfile="${lib}/kSar.jar" basedir="${build}" manifest="MANIFEST.MF" />
+    </target>
+
+    <target name="clean" description="clean up" >
+        <delete dir="${build}"/>
+    </target>
+
+</project>

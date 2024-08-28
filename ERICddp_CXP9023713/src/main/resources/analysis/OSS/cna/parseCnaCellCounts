@@ -1,0 +1,95 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $date;
+our $siteId;
+our $dbh = connect_db();
+
+sub main {
+    our ($cellFile, $bscFile, $site, $date);
+    my $result = GetOptions (
+        "bscs=s" => \$bscFile,
+        "cells=s" => \$cellFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=i" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    $siteId = getSiteId($dbh,$site);
+    if (defined($cellFile) ) { parseCells($cellFile); }
+    if (defined($bscFile) ) { parseBscs($bscFile); }
+}
+
+sub parseBscs {
+    my $file = shift;
+    open INPUT, $file or die "could not open $file: $!";
+    my %bscs = ();
+    while (my $line = <INPUT>) {
+	if ( $DEBUG > 9 ) { print "parseBscs: line=$line"; }
+        if ( $line =~ /^\s*(\S+)\s+([0-9]+)\s*$/) {
+            $bscs{$1} = $2;
+	    if ( $DEBUG > 7 ) { print "parseBscs: matched \"$1\" \"$2\""; }
+        }
+    }
+    my @bscVers = keys %bscs;
+    
+    if ( $#bscVers > -1 ) {
+	my $r_bscVers = getIdMap($dbh,"bsc_ver", "id", "name",\@bscVers);
+	my $sql = "INSERT INTO cna_bsc_counts (siteid,date,bsc_ver_id,count) VALUES ";
+	my $delim = "";
+	foreach my $bsc (@bscVers) {
+	    $sql = sprintf("%s%s(%d, \'%s\', %d, %d)", $sql, $delim, $siteId, $date, $r_bscVers->{$bsc}, $bscs{$bsc});
+	    $delim = ",";
+	}
+	dbDo($dbh,"DELETE FROM cna_bsc_counts WHERE siteid = " . $siteId . " AND date = '" . $date . "'");
+	dbDo($dbh, $sql) or die "Failed to insert data";
+    }
+}
+
+sub parseCells {
+    my $file = shift;
+    open INPUT, $file or die "could not open $file: $!";
+    my %bscs = ();
+    while (my $line = <INPUT>) {
+	if ( $DEBUG > 9 ) { print "parseCells: line=$line"; }
+
+        if ( $line =~ /^\s*(\S+)\s+([0-9]+)\s*$/) {
+            # ignore cell count for now - this can be calculated on the fly at
+            # the presentation layer
+            next if ($1 =~ /^cellcount$/);
+            $bscs{$1} = $2;
+	    if ( $DEBUG > 7 ) { print "parseCells: matched \"$1\" \"$2\""; }
+        }
+    }
+
+    my @bscNames = keys %bscs;
+    if ( $#bscNames > -1 ) { 
+	my $r_bscNames = getIdMap($dbh,"bsc_names","id", "name",\@bscNames);
+	
+	my $sql = "INSERT INTO cna_bsc_cell_counts (siteid,date,bsc_name_id,count) VALUES ";
+	my $delim = "";
+
+	foreach my $bsc (@bscNames) {
+	    $sql = sprintf("%s%s(%d, \'%s\', %d, %d)", $sql, $delim, $siteId, $date, $r_bscNames->{$bsc}, $bscs{$bsc});
+	    $delim = ",";
+	}
+	dbDo($dbh,"DELETE FROM cna_bsc_cell_counts WHERE siteid = " . $siteId . " AND date = '" . $date . "'");
+	dbDo($dbh,$sql) or die "Failed to insert data";
+    }
+}
+
+main;
+

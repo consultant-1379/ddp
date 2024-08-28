@@ -1,0 +1,120 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($date,$site);
+    my $result = GetOptions(
+			    "date=s" => \$date,
+			    "site=s" => \$site,
+			    "debug=s" => \$DEBUG,
+			    );
+
+    my %dbInfo = ();
+    while ( my $line = readLine() )
+    {
+	# ActivitySupportDatabase      2000.0 MB jmgruser                     15 Oct 05, 2005       no options set 
+	my ( $dbname, $dbsize ) = $line =~ /^\s+(\S+)\s+(\d+)/;
+	if ( $DEBUG > 5 ) { print "main: dbname=$dbname dbsize=$dbsize\n"; }
+
+	my $dataTotal = 0;
+	my $dataFree = 0;
+	my $logTotal = 0;
+	my $logFree = 0;
+	while ( ($line = readLine()) && ($line !~ /^\(return status/) )
+	{
+# datadev5                          25600.0 MB data only            Jan 23 2006  2:05PM               15384750
+# logdev1                             250.0 MB log only             Jan 23 2006  2:05PM       not applicable
+	    if ( $line =~ /data only/ )
+	    {
+		my ($dataSize,$dataFreeKB) = $line =~ /^\s+\S+\s+(\d+)\..*\s+(\d+)\s*$/;
+
+		if ( $DEBUG > 5 ) { print "main: data only dataSize=$dataSize dataFreeKB=$dataFreeKB\n"; }
+
+		$dataTotal += $dataSize;
+		$dataFree += $dataFreeKB;
+	    }
+	    elsif ( $line =~ /log only free kbytes = (\d+)/ )
+	    {
+		$logFree = $1;
+
+		if ( $DEBUG > 5 ) { print "main: log free logFree=$logFree\n"; }
+	    }
+	    elsif ( $line =~ /log only/ )
+	    {
+		my ($logSize) = $line =~ /^\s+\S+\s+(\d+)/;
+		if ( $DEBUG > 5 ) { print "main: log only logSize=$logSize\n"; }
+
+		$logTotal += $logSize;
+	    }
+	}
+
+	my $r_dbStats = {
+	    'dbsize' => $dbsize,
+	    'datasize'  => $dataTotal,
+	    'datafree'  => int($dataFree/1024),
+	    'logsize'   => $logTotal,
+	    'logfree'   => int($logFree/1024)
+	    };
+	$dbInfo{$dbname} = $r_dbStats;
+    }
+
+    if ( $site )
+    {
+	storeStats($date,$site,\%dbInfo);
+    }
+}
+
+sub readLine
+{
+    my $line = <STDIN>;
+    if ( $DEBUG > 9 ) { print "readLine: $line"; }
+    return $line;
+}
+
+sub storeStats
+{
+    my ( $date,$site, $r_dbInfo ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+ 
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) 
+    {
+	print "ERROR: Could not find siteid for $site\n";
+	return;
+    }
+
+
+    my @dbList = keys %{$r_dbInfo};    
+    my $r_dbIdMap = getIdMap($dbh, "sybase_dbnames", "id", "name", \@dbList );
+
+    $dbh->do("DELETE FROM sybase_dbspace WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    foreach my $db ( keys %{$r_dbInfo} )
+    {
+	my $sql = sprintf("INSERT INTO sybase_dbspace (date,siteid,dbid,dbsize,datasize,datafree,logsize,logfree) VALUES (\'%s\',%d,%d,%d,%d,%d,%d,%d)",
+			  $date,$siteId,$r_dbIdMap->{$db},
+			  $r_dbInfo->{$db}->{'dbsize'},
+			  $r_dbInfo->{$db}->{'datasize'},$r_dbInfo->{$db}->{'datafree'}, 
+			  $r_dbInfo->{$db}->{'logsize'}, $r_dbInfo->{$db}->{'logfree'}
+			  );
+	if ( $DEBUG > 2 ) { print "storeStats: $sql\n"; }	    
+	$dbh->do($sql) or die "Failed to insert $db " . $dbh->errstr;
+    }
+
+    $dbh->disconnect;
+}
+	

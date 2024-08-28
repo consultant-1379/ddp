@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_filetransfer_connections">
+    <reference table="sites" condition="enm_filetransfer_connections.siteid = sites.id"/>
+    <reference table="servers" condition="enm_filetransfer_connections.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_filetransfer_connections.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="IFNULL(servers.hostname,'Consolidation')" label="Instance Name"/>
+  <column db="servers.id" label="Instance" visible="false" id="InstanceId"/>
+  <column db="SUM(numOfSessions)" label="Number of Sessions"/>
+  <column db="ROUND(SUM(readSize + writeSize), 6)" label="File Transfer Size"/>
+  <column db="ROUND(SUM(readSize), 6)" label="Read"/>
+  <column db="ROUND(SUM(writeSize), 6)" label="Write "/>
+  <column db="SUM(successSessionCount)" label="Success"/>
+  <column db="SUM(numOfSessions-successSessionCount)" label="Failures"/>
+
+  <ctxmenu keycol="InstanceId" targettype="url">
+    <item id="instance" label="Plot Table"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

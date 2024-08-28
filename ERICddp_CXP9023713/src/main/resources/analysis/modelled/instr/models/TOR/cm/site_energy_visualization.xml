@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="sevserv"/>
+  </services>
+
+  <table name="enm_cm_site_energy_visualization_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.sev.ejb.metrics.site-energy-visualization-service:type=SevEnergyFlowServiceMetric$">
+      <metric source="numberOfEnergyElementAcMeterReadPerRequest" target="numberOfEnergyElementAcMeterReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementAcPhaseReadPerRequest" target="numberOfEnergyElementAcPhaseReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementBatteryReadPerRequest" target="numberOfEnergyElementBatteryReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementBatteryStringReadPerRequest" target="numberOfEnergyElementBatteryStringReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementBatteryUnitReadPerRequest" target="numberOfEnergyElementBatteryUnitReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementDcMeterReadPerRequest" target="numberOfEnergyElementDcMeterReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementDieselGeneratorReadPerRequest" target="numberOfEnergyElementDieselGeneratorReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementTankReadPerRequest" target="numberOfEnergyElementTankReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementServiceIntervalReadPerRequest" target="numberOfEnergyElementServiceIntervalReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementGridReadPerRequest" target="numberOfEnergyElementGridReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementHVACReadPerRequest" target="numberOfEnergyElementHVACReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementPowerInputGridReadPerRequest" target="numberOfEnergyElementPowerInputGridReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementPowerInputWindReadPerRequest" target="numberOfEnergyElementPowerInputWindReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementPowerInputDieselGeneratorReadPerRequest" target="numberOfEnergyElementPowerInputDieselGeneratorReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementPowerManagerReadPerRequest" target="numberOfEnergyElementPowerManagerReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementPowerSystemReadPerRequest" target="numberOfEnergyElementPowerSystemReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementRectifierReadPerRequest" target="numberOfEnergyElementRectifierReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementRectifiersReadPerRequest" target="numberOfEnergyElementRectifiersReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementSolarReadPerRequest" target="numberOfEnergyElementSolarReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementSolarConverterReadPerRequest" target="numberOfEnergyElementSolarConverterReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementWindReadPerRequest" target="numberOfEnergyElementWindReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementsReadPerRequest" target="numberOfEnergyElementsReadPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfNodeConnectionPerRequest" target="numberOfNodeConnectionPerRequest" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsEF" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedRequests" target="numberOfFailedRequestsEF" delta="true" filteridle="true"/>
+      <metric source="totalResponseTimePerRequest" target="totalResponseTimePerRequestEF"/>
+      <metric source="totalResponseSizeInKb" target="totalResponseSizeInKbEF"/>
+      <metric source="totalDataReadTimePerRequest" target="totalDataReadTimePerRequestEF"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.sev.ejb.metrics.site-energy-visualization-service:type=SevEnergyReportServiceMetric$">
+      <metric source="numberOfPmFileNotificationsReceived" target="numberOfPmFileNotificationsReceived" delta="true" filteridle="true"/>
+      <metric source="numberOfParsedPmFiles" target="numberOfParsedPmFiles" delta="true" filteridle="true"/>
+      <metric source="numberOfUnParsedPmFiles" target="numberOfUnParsedPmFiles" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementTankInPmFiles" target="numberOfEnergyElementTankInPmFiles" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementDieselGeneratorInPmFiles" target="numberOfEnergyElementDieselGeneratorInPmFiles" delta="true" filteridle="true"/>
+      <metric source="numberOfEnergyElementGridInPmFiles" target="numberOfEnergyElementGridInPmFiles" delta="true" filteridle="true"/>
+      <metric source="numberOfDbReadOperations" target="numberOfDbReadOperationsER" delta="true" filteridle="true"/>
+      <metric source="totalTimePerReadOperation" target="totalTimePerReadOperation"/>
+      <metric source="numberOfDbWriteOperations" target="numberOfDbWriteOperationsER" delta="true" filteridle="true"/>
+      <metric source="totalTimePerWriteOperation" target="totalTimePerWriteOperation"/>
+      <metric source="numberOfPmRecordsPerWriteOperation" target="numberOfPmRecordsPerWriteOperation" delta="true" filteridle="true"/>
+      <metric source="numberOfDbDeleteOperations" target="numberOfDbDeleteOperationsER" delta="true" filteridle="true"/>
+      <metric source="totalTimePerDeleteOperation" target="totalTimePerDeleteOperation"/>
+      <metric source="totalTimeTakenToParsePmFiles" target="totalTimeTakenToParsePmFiles"/>
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsER" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedRequests" target="numberOfFailedRequestsER" delta="true" filteridle="true"/>
+      <metric source="totalResponseTimePerRequest" target="totalResponseTimePerRequestER"/>
+      <metric source="totalResponseSizeInKb" target="totalResponseSizeInKbER"/>
+      <metric source="totalTimeTakenForHouseKeeping" target="totalTimeTakenForHouseKeepingER"/>
+      <metric source="numberOfDbConnections" target="numberOfDbConnections" delta="true" filteridle="true"/>
+      <metric source="totalDataReadTimePerRequest" target="totalDataReadTimePerRequestER"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.sev.ejb.metrics.site-energy-visualization-service:type=SevUserSettingsServiceMetric$">
+      <metric source="numberOfSuccessfulRequests" target="numberOfSuccessfulRequestsUS" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedRequests" target="numberOfFailedRequestsUS" delta="true" filteridle="true"/>
+      <metric source="totalResponseTimePerRequest" target="totalResponseTimePerRequestUS"/>
+      <metric source="numberOfSuccessfulUpdates" target="numberOfSuccessfulUpdates" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedUpdates" target="numberOfFailedUpdates" delta="true" filteridle="true"/>
+      <metric source="totalResponseTimePerUpdate" target="totalResponseTimePerUpdate"/>
+      <metric source="numberOfDbReadOperations" target="numberOfDbReadOperationsUS" delta="true" filteridle="true"/>
+      <metric source="totalTimeTakenToReadSettingsPerUser" target="totalTimeTakenToReadSettingsPerUser"/>
+      <metric source="numberOfDbWriteOperations" target="numberOfDbWriteOperationsUS" delta="true" filteridle="true"/>
+      <metric source="totalTimeTakenToWriteSettingsPerUser" target="totalTimeTakenToWriteSettingsPerUser"/>
+      <metric source="numberOfDbDeleteOperations" target="numberOfDbDeleteOperationsUS" delta="true" filteridle="true"/>
+      <metric source="totalTimeTakenToDeleteSettingsPerUser" target="totalTimeTakenToDeleteSettingsPerUser"/>
+      <metric source="totalTimeTakenForHouseKeeping" target="totalTimeTakenForHouseKeepingUS"/>
+      <metric source="totalResponseSizeInKb" target="totalResponseSizeInKbUS"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

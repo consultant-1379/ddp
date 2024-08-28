@@ -1,0 +1,185 @@
+#!/usr/bin/env perl
+#
+# DESCRIPTION: log file parser for GRAN CM application
+# log files. A description of the format of these files
+# can be found in the Interworking Description
+# 1/198 18-3/AOM 901 046
+#
+# Created: 2008-07-17
+# IWD Rev.: C
+#
+
+use Getopt::Long;
+use Time::Local;
+use strict;
+use warnings;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our $site;
+
+sub main() {
+    my ($logFile);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "debug=s" => \$DEBUG,
+        "site=s" =>\$site,
+    );
+    ($result == 1) or die "Invalid arguments";
+
+    processLogFile($logFile);
+}
+
+sub processLogFile() {
+    my $logFile = shift;
+    if ($DEBUG > 5) { print "Processing ", $logFile, "\n"; }
+    open LF, $logFile or die "Cannot open $logFile : $!";
+    my $activities = {};
+    my $line;
+    LINE: while ($line = <LF>) {
+        chomp $line;
+        # Example:
+        # key=<eric:1234:cnai:export:123456789>startTime=<20080128.114537>arg0=<cnai>arg1=<export>arg2=<-r>arg3=<my nice report>
+        # key=<eric:1234:cnai:export:123456789>stopTime=<20080128.114622>status=<OK>reason=<>
+        my $event = {};
+
+        # Split into key=<value pairs (separated by "=<")
+        my ($key, $timeVal, @params) = split(">", $line);
+
+        # parse key
+        if ($key =~ /^<version(.*)$/) {
+            if ($DEBUG > 5) { print ("File version", $1, "\n"); }
+            next LINE;
+        } elsif ($key =~ /^key=<(.*)$/) {
+            $key = $1;
+            my @keyVals = split(":", $1);
+            $event->{user} = shift @keyVals;
+            $event->{pid} = shift @keyVals;
+            $event->{activity} = shift @keyVals;
+            my @pathnames = split(/\//, $event->{activity});
+            $event->{activity} = pop(@pathnames);
+            if (defined($event->{activity}) && $event->{activity} eq "cnai") {
+                # cnai events use the next value to store the event type
+                $event->{activity} .= "_" . shift @keyVals;
+            }
+            $event->{startmillis} = shift @keyVals;
+        } else {
+            # invalid entry - no key
+            print "Invalid key in gran_cm log file ", $logFile, ": ", $key, "\n";
+            next LINE;
+        }
+        # parse time value - depending on this, we know how to process the rest of the data
+        if ($timeVal =~ /^startTime=<(.*)$/) {
+            if ($DEBUG > 9) { print "Got start time: ", $1, "\n"; }
+            $1 =~ /^(20[0-9][0-9])([0-1][0-9])([0-3][0-9])\.([0-2][0-9])([0-5][0-9])([0-5][0-9])$/;
+            $event->{start} = $1 . "-" . $2 . "-" . $3 . " " . $4 . ":" . $5 . ":" . $6;
+            # We just store the arguments
+            my $args = "";
+            foreach (@params) {
+                if ($_ =~ /^arg[0-9]*=<(.*)$/) {
+                    $args .= $1 . " ";
+                } else {
+                    print "Invalid argument found: ", $_, "\n";
+                }
+            }
+            if ($DEBUG > 9) { print "args: ", $args, "\n"; }
+            $event->{args} = $args;
+            # initialise the "end" values to reasonable defaults
+            $event->{status} = "INCOMPLETE";
+            $event->{end} = $event->{start};
+        } elsif ($timeVal =~ /^stopTime=<(.*)$/) {
+            if ($DEBUG > 9) { print "Got end time: ", $1, "\n"; }
+            $1 =~ /^(20[0-9][0-9])([0-1][0-9])([0-3][0-9])\.([0-2][0-9])([0-5][0-9])([0-5][0-9])$/;
+            $event->{end} = $1 . "-" . $2 . "-" . $3 . " " . $4 . ":" . $5 . ":" . $6;
+            foreach (@params) {
+                if ($_ =~ /^status=<(.*)$/) {
+                    $event->{status} = $1;
+                } elsif ($_ =~ /^reason=<(.*)$/) {
+                    if ($DEBUG > 5) { print "Got reason " . $1 . "\n"; }
+                    $event->{reason} = $1;
+                }
+            }
+            if (! defined ($event->{status}) || ! defined ($event->{reason})) {
+                print "No status and / or reason in event ", $key, "\n";
+                next LINE;
+            }
+            # have we already seen the start of this activity?
+            if (defined($activities->{$key})) {
+                $event->{args} = $activities->{$key}->{args};
+                $event->{start} = $activities->{$key}->{start};
+            } else {
+                # Create some reasonable default values for this activity
+                $event->{args} = "No start recorded";
+                $event->{start} = "1970-01-01 00:00:00";
+            }
+        }
+        # store the activity
+        $activities->{$key} = $event;
+    }
+    if ($DEBUG > 9) { print Dumper("Activities:", $activities); }
+    storeActivities(\%$activities);
+}
+
+sub storeActivities() {
+    my $data = shift;
+    if ($DEBUG > 9) { print Dumper("Activities:", $data); }
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    if ($siteId == -1) {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+    if ($DEBUG > 5) { print "SITE ID : ", $siteId, "\n"; }
+    # Store new user ids
+    my @users;
+    foreach (values(%$data)) {
+        push(@users, $_->{user});
+    }
+    if ($DEBUG > 9) { print Dumper("Users:", @users); }
+    my $userMap = getIdMap($dbh, "oss_users", "id", "name", \@users);
+    my $sql = "INSERT INTO gran_cm_activities (siteid, start, end, activity, args, status, reason, userid, pid, startMillis) VALUES ";
+    my $count = 0;
+    foreach (values(%$data)) {
+        # We are reliant on the following unique key to force the update if the entry
+        # already exists:
+            # UNIQUE INDEX startMillisUserPid (startMillis,userid,pid)
+        # this means we don't need to worry about events for which the start point was
+        # added yesterday but the finish point arrives today - we just update the
+        # entry with the new data.
+        # We do need to worry about whether we have seen the start but not the end
+        # of an event, or the end but not the start. 
+
+        # stick something into the reason so dbh->quote will stop treating it like a null
+        my $reason = "";
+        if (defined $_->{reason}) { $reason = $_->{reason}; }
+
+        my $inssql = $sql . "(" . $siteId . ",'" . $_->{start} . "','" . $_->{end} . "'," . $dbh->quote($_->{activity}) .
+            "," . $dbh->quote($_->{args}) . "," . $dbh->quote($_->{status}) . "," . $dbh->quote($reason) .
+            "," . $userMap->{$_->{user}} . "," . $_->{pid} . "," . $_->{startmillis} . ") ";
+        if ($_->{start} eq "1970-01-01 00:00:00") {
+            # We saw the end event, but not the start - just update the end, status and reason
+            # if the event was previously stored
+            $inssql .= "ON DUPLICATE KEY UPDATE end = '" . $_->{end} .
+                "', status = " . $dbh->quote($_->{status}) . ", " .
+                "reason = " . $dbh->quote($reason);
+        } elsif ($_->{status} eq "INCOMPLETE") {
+            # We saw the start event, but not the end - just update the start, activity, args
+            # if the event was previously stored
+            $inssql .= "ON DUPLICATE KEY UPDATE start = '" . $_->{start} .
+                "', activity = " . $dbh->quote($_->{activity}) . ", args = " . $dbh->quote($_->{args});
+        } else {
+            # We have seen both the start and the end in this file, so update everything
+            $inssql .= "ON DUPLICATE KEY UPDATE start = '" . $_->{start} .
+                "', activity = " . $dbh->quote($_->{activity}) . ", args = " . $dbh->quote($_->{args}) .
+                ", end = '" . $_->{end} . "', status = " . $dbh->quote($_->{status}) . ", " .
+                "reason = " . $dbh->quote($reason);
+        }
+        if ($DEBUG > 9) { print "SQL: " . $inssql . "\n"; }
+        $dbh->do($inssql) or print "Failed to insert data: " . $dbh->errstr . "\n" . $inssql . "\n";
+    }
+}
+
+main();

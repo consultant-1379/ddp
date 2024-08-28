@@ -1,0 +1,158 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+# Script  : parseReleaseIndependenceLog
+# Author  : vyshnavi (znarvys)
+# Purpose : The purpose of this script is to parse cmserv,mscm,mscmce elasticsearch logs
+#           and stores them under enm_cmconfig_services_logs table
+# Usage   : ${ANALYSIS_BIN}/TOR/cm/parseReleaseIndependenceLog --logdir ${ENMLOG_DIR} --site ${SITE} --date ${SQL_DATE}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsTime;
+use EnmServiceGroup;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+
+sub parseLogs($)
+{
+    my ( $r_fileList) = @_;
+
+    my $count=0;
+    my %cmConfigLogStats = ();
+    my %cmConfigSupportLogs = ();
+    foreach my $log (@{$r_fileList}) {
+        $log =~ /.*JBOSS\/(.*)/;
+        my $server=$1;
+        my $serverid = getServerId( $dbh, $siteId, $server );
+        open (LOG,$log) or die "Failed to open the file $log: $!";
+        while (my $logLine = <LOG>) {
+        # 2017-05-23T15:44:37.453+01:00@svc-1-mscm@JBOSS@INFO  [com.ericsson.oss.itpf.EVENT_LOGGER] (Thread-35 (HornetQ-client-global-threads-1307305246)) [NO USER DATA, RELEASE_INDEPENDENCE.ADD_CANDIDATE,
+        # DETAILED, CppAcquireModelFromNodeHandler, NodeVersion=RNC-754417434234_1016347293406_934333355552,
+        # productVersion=CXP103RI_RNC_1_RN01,neType=RNC,duration=46919,modelIdentity=2624-396-077,modelStatus=DOWNLOAD_OK,modelSize=3232567]
+
+            if( $logLine =~ /(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}).*@(.*)@.* RELEASE_INDEPENDENCE\.ADD_CANDIDATE.*productVersion=(.*),neType=(.*),duration=(.*),modelIdentity=(.*),modelStatus=(.*),modelSize=(.*)]/)
+            {
+                my $server = $3;
+                $count++;
+                $cmConfigLogStats{"$count"} = {
+                    'time'                      => $1." ".$2,
+                    'serverid'                  => $serverid,
+                    'product_version'           => $4,
+                    'netype'                    => $5,
+                    'duration'                  => $6,
+                    'model_id'                  => $7,
+                    'model_status'              => $8,
+                    'model_size'                => $9
+                };
+            }
+
+         #2017-05-24T13:39:06.196+01:00@svc-1-cmserv@JBOSS@INFO  [com.ericsson.oss.itpf.EVENT_LOGGER] (EJB async - 26) [NO USER DATA, RELEASE_INDEPENDENCE.ADD_SUPPORT,
+         #DETAILED, Rest Resource, NodeVersion, neProductVersion=CXPU102ERBS_58435_6_RA01,neType=ERBS,result=SUCCESS,numberOfNodes=2]
+
+            elsif ( $logLine =~ /(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}).*@(.*)@.*RELEASE_INDEPENDENCE\.ADD_SUPPORT.*neProductVersion=(.*),neType=(.*),result=(.*),numberOfNodes=(.*)]/)
+            {
+                my $activity = "ADD_SUPPORT";
+                $count++;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{"time"} = $1." ".$2;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{'serverid'} = $serverid;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{'activity'} = $activity;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{'product_version'} = $4;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{'netype'} = $5;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{'result'} = $6;
+                $cmConfigSupportLogs{"$activity"}{"$count"}{'numberOfNodes'} = $7;
+                if ($DEBUG > 5) { print $cmConfigSupportLogs{"$activity"}{"$count"}{'numberOfNodes'} };
+            }
+        }
+    }
+    return ( \%cmConfigLogStats, \%cmConfigSupportLogs );
+}
+
+sub storeCmConfigLogs($$$) {
+    my($cmConfigLogStats,$cmConfigSupportLogs,$date) = @_;
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    if ( scalar (keys %{$cmConfigLogStats}) > 0 ) {
+         my $bcpFileCmConfigLogs = "$tmpDir/cm_config_logs";
+         open (BCP, "> $bcpFileCmConfigLogs") or die "Failed to open $bcpFileCmConfigLogs";
+         foreach my $key (keys %{$cmConfigLogStats}) {
+             print BCP "$siteId\t$cmConfigLogStats->{$key}->{'time'}\t$cmConfigLogStats->{$key}->{'serverid'}\t$cmConfigLogStats->{$key}->{'product_version'}\t$cmConfigLogStats->{$key}->{'netype'}\t$cmConfigLogStats->{$key}->{'duration'}\t$cmConfigLogStats->{$key}->{'model_id'}\t$cmConfigLogStats->{$key}->{'model_status'}\t$cmConfigLogStats->{$key}->{'model_size'}\n";
+         }
+
+         close BCP;
+         dbDo( $dbh, "DELETE FROM enm_cmconfig_services_logs  WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'" )
+            or die "Failed to delete from enm_cmconfig_services_logs" . $dbh->errstr;
+
+         dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileCmConfigLogs' INTO TABLE enm_cmconfig_services_logs" )
+            or die "Failed to load new data from '$bcpFileCmConfigLogs' file to 'enm_cmconfig_services_logs' table" . $dbh->errstr;
+
+         unlink($bcpFileCmConfigLogs);
+    }
+    if (scalar (keys %{$cmConfigSupportLogs}) > 0) {
+        my $bcpFileCmConfigSupportLogs = "$tmpDir/cm_config_support_logs";
+        open (BCP, "> $bcpFileCmConfigSupportLogs") or die "Failed to open $bcpFileCmConfigSupportLogs";
+        foreach my $key (keys %{$cmConfigSupportLogs}->{'ADD_SUPPORT'}) {
+            print BCP "$siteId\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'time'}\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'serverid'}\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'activity'}\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'product_version'}\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'netype'}\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'result'}\t$cmConfigSupportLogs->{'ADD_SUPPORT'}->{$key}->{'numberOfNodes'}\n";
+        }
+
+        close BCP;
+        dbDo( $dbh, "DELETE FROM enm_cmconfig_support_logs  WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'" )
+            or die "Failed to delete from enm_cmconfig_support_logs" . $dbh->errstr;
+
+        dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileCmConfigSupportLogs' INTO TABLE enm_cmconfig_support_logs" )
+            or die "Failed to load new data from '$bcpFileCmConfigSupportLogs' file to 'enm_cmconfig_support_logs' table" . $dbh->errstr;
+
+        unlink($bcpFileCmConfigSupportLogs);
+    }
+
+}
+
+sub main() {
+    my ( $logDir, $date, $site );
+    my $result = GetOptions(
+        "logdir=s" => \$logDir,
+        "date=s"   => \$date,
+        "site=s"   => \$site,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+    my @services = ("mscm","cmservice","comecimmscm","conscmeditor");
+    my @fileDataset = ();
+    my $logFilePath;
+    foreach my $service(@services)
+    {
+        my $r_serverMap = enmGetServiceGroupInstances($site,$date,$service);
+        foreach my $server ( keys %{$r_serverMap} ) {
+            $logFilePath = $logDir . "/JBOSS/" . $server;
+            if ( $DEBUG > 2 ) { print "main: Checking for $logFilePath\n"; }
+            if ( -r $logFilePath ) {
+                push @fileDataset, $logFilePath;
+            }
+        }
+    }
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", \@fileDataset); }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+   ( $siteId != -1 ) or die "Failed to get siteid for $site" . $dbh->errstr;
+    my ($cmConfigLogs,$cmConfigSupportLogs) = parseLogs( \@fileDataset);
+    if( scalar (keys %{$cmConfigLogs}) > 0 || scalar (keys %{$cmConfigSupportLogs}) > 0) {
+        storeCmConfigLogs($cmConfigLogs,$cmConfigSupportLogs,$date);
+    }
+    $dbh->disconnect();
+}
+
+main();

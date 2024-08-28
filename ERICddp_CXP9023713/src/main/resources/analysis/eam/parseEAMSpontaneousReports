@@ -1,0 +1,214 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($dataDir,$dashDate);
+    my $datasets = "EHIP";
+    my @datasets;
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "data=s" => \$dataDir,
+        "datasets=s" => \$datasets,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Pull the datasets into an array
+    foreach my $dataset (split(/\,/, $datasets)) {
+        push(@datasets, uc($dataset));
+    }
+
+    if ($DEBUG > 4) { print Dumper @datasets; }
+
+    # Store the datasets via getIdMap
+    my $r_datasets = getIdMap($dbh, "eam_datasets", "id", "name", \@datasets);
+
+    # Parse the files
+    PARSE_FILES: foreach my $dataset (@datasets) {
+        my $datasetid = $r_datasets->{$dataset};
+        my $file = $dataDir . "/" . lc($dataset) . "_ac_spr_instr.log";
+        if ($DEBUG > 4) { print "Feed file: " . $file . "\n"; }
+
+        if (-e $file) {
+            processData($file, $sqlDate, $siteid, $datasetid, \%dataForStorage);
+        } else {
+            print "WARNING: No spontaneous reports instr file for '" . uc($dataset) . "' - expected file " . $file . " does not exist.\n";
+            next PARSE_FILES;
+        }
+    }
+
+    return 0;
+}
+
+sub processData() {
+    my ($file , $sqlDate, $siteid, $datasetid, $r_dataForStorage) = @_;
+    my $dbh = connect_db();
+    my @NEs;
+    my %datasetForStorage;
+    my $cnt = 0;
+
+    # Set up the spontaneous reports periods in the database
+    my $r_sprPeriods = getSPRPeriods();
+
+    if ( $DEBUG > 10) { print Dumper $r_sprPeriods; }
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+        if ($line =~ /^\s*$/) {
+            next LINE;
+        } else {
+            my ($datetime, $processName, $NE) = split(/\,/, $line);
+            my ($date, $time) = split(/ /, $datetime);
+            if ($date !~ /^$sqlDate/ || $processName eq '' || $NE eq '') {
+                next LINE;
+            }
+
+            my $isSpontaneous = $processName eq 'Spontaneous Report' ? 1 : 0;
+
+            # Parse the command record
+            push(@NEs, $NE);
+
+            # Add the record to the dataset
+            $datasetForStorage{$cnt}->{'date'} = $date;
+            $datasetForStorage{$cnt}->{'time'} = $time;
+            $datasetForStorage{$cnt}->{'process_name'} = $processName;
+            $datasetForStorage{$cnt}->{'isSpontaneous'} = $isSpontaneous;
+            $datasetForStorage{$cnt}->{'ne'} = $NE;
+
+            $cnt++;
+        }
+    }
+    close(DATA);
+
+    if ($DEBUG > 7) { print Dumper %datasetForStorage; }
+
+    # Store the groups via getIdMap
+    my $r_nes = getIdMap($dbh, "eam_ne_names", "id", "name", \@NEs);
+
+    # If there is data to store, store it
+    if ($cnt > 0) {
+        storeDataset($sqlDate, $siteid, $datasetid, \%datasetForStorage, $r_sprPeriods, $r_nes, \$cnt);
+    }
+
+    return 0;
+}
+
+sub getSPRPeriods() {
+    my $r_sprPeriods;
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/eam_spr_periods." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    # Create half hour periods, on the half hour
+    for (my $i = 0; $i < 24; $i++) {
+        my $j = 2*$i + 1;
+        my $k = $j + 1;
+
+        # Add to a hash for use later
+        for (my $l = 0; $l < 3; $l++) {
+            %{$r_sprPeriods->{sprintf("%02d\:%d", $i, $l)}} = (
+                "period" => $j,
+                "start_time" => sprintf("%02d\:00\:00", $i),
+                "end_time" => sprintf("%02d\:29\:59", $i)
+            );
+        }
+        for (my $l = 3; $l < 6; $l++) {
+            %{$r_sprPeriods->{sprintf("%02d\:%d", $i, $l)}} = (
+                "period" => $k,
+                "start_time" => sprintf("%02d\:30\:00", $i),
+                "end_time" => sprintf("%02d\:59\:59", $i)
+            );
+        }
+
+       print BULK_INSERT sprintf("%d|HALFHOUR|%02d\:00\:00|%02d\:29\:59\n%d|HALFHOUR|%02d\:30\:00|%02d\:59\:59\n", $j, $i, $i, $k, $i, $i);
+    }
+    close BULK_INSERT;
+
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM eam_spr_periods WHERE len = 'HALFHOUR'";
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear eam_spr_periods for rerun.\n";
+
+    # Write to statsdb
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE eam_spr_periods  FIELDS TERMINATED BY '|'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into with statement " . $sqlInsert . "\n";
+    $dbh->disconnect;
+
+    return $r_sprPeriods;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $datasetid, $r_datasetForStorage, $r_sprPeriods, $r_nes, $r_cnt) = @_;
+    my $dbh = connect_db();
+    my $table = "eam_spr_details";
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/eam_spr_details." . $datasetid . "." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $ind (0 .. ($$r_cnt-1)) {
+        print BULK_INSERT $sqlDate . " " . $r_datasetForStorage->{$ind}->{'time'} . "|" . $siteid . "|" . $datasetid . "|" . $r_sprPeriods->{substr($r_datasetForStorage->{$ind}->{'time'}, 0, 4)}->{'period'} . "|" . $r_datasetForStorage->{$ind}->{'isSpontaneous'} . "|" . $r_nes->{$r_datasetForStorage->{$ind}->{'ne'}} . "\n";
+    }
+    close BULK_INSERT;
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM eam_spr_details WHERE time BETWEEN '" . $sqlDate . " 00\:00\:00' AND '" . $sqlDate . " 23\:59\:59' AND siteid = " . $siteid . " AND datasetid = " . $datasetid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data eam_spr_details for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE eam_spr_details FIELDS TERMINATED BY '|'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into " . $table . " with statement " . $sqlInsert . "\n";;
+    $dbh->disconnect;
+
+    return 0;
+}
+

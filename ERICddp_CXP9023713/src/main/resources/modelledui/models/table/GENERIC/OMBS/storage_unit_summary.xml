@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ombs_activity_monitor">
+  <reference table="sites" condition="ombs_activity_monitor.siteid = sites.id"/>
+  <reference table="ombs_storage_units" condition="ombs_activity_monitor.storageUnit = ombs_storage_units.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ombs_activity_monitor.endTime BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="ombs_activity_monitor.storageUnit"/>
+ </groupby>
+
+ <order columnid="tsize" direction="DESC"/>
+ <column db="ombs_storage_units.name" label="Storage Unit"/>
+ <column db="SUM(ombs_activity_monitor.backupSize)" label="Total Data Backedup(MB)" id="tsize"/>
+ <column db="SUM(ombs_activity_monitor.numberOfBackupFiles)" label="Total Number of Files Backedup"/>
+
+</modelledtable>

@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+##Usage
+##${ANALYSIS_BIN}/DDP/parseSlowQueryLog --input ${DDP_DIR}/mysql-slowquerylog.txt --date ${SQL_DATE} --outdir ${ANALYSIS_MYSQL}
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+sub storeData($$) {
+    my ($count, $date) = @_;
+
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+
+    # Don't use db.table as this breaks replication
+    dbDo( $dbh, "use ddpadmin");
+
+    my $bcpFileName = getBcpFileName("slow_queries");
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+    printf BCP "%s\t%d\n", $date, $count;
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM slow_queries WHERE date = '$date'")
+        or die "Failed to remove data from slow_queries";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE slow_queries (date, count)")
+        or die "Failed to load data to slow_queries";
+
+    unlink $bcpFileName;
+
+    $dbh->disconnect;
+}
+
+sub formatDate($) {
+    my ($date) = @_;
+
+    if ( $date =~ /\d{6}/) {
+        my $year = "20" . substr($date,6,2);
+        my $month = substr($date,3,2);
+        my $day = substr($date,0,2);
+
+        return "$year-$month-$day";
+    }
+
+    return $date;
+}
+
+sub loadData($) {
+    my $dataDir = $_[0];
+
+    my $r_slowQuery = undef;
+    my @validLogs;
+
+    open DATA, $dataDir or die "Cannot open $dataDir";
+    while( my $line = <DATA> ) {
+        if ( $line =~ /^#\s+User\@Host:\s+(\w+)/ ) {
+            my $user = $1;
+            if ( $user eq 'statsusr' ) {
+                $r_slowQuery = [];
+                push @validLogs, $r_slowQuery;
+            } else {
+                $r_slowQuery = undef;
+            }
+        }
+        if ( defined $r_slowQuery ) {
+            push @{$r_slowQuery}, $line;
+        }
+    }
+    close DATA;
+
+    return \@validLogs;
+}
+
+sub writeToFile($$) {
+    my $outDir = $_[0];
+    my $r_data = $_[1];
+
+    my $filename = $outDir . '/filtered_slow_queries.txt';
+    open(FH, '>', $filename) or die $!;
+
+    foreach my $r_log ( @$r_data ) {
+        foreach my $line ( @$r_log ) {
+            print FH $line;
+        }
+        print FH "\n\n";
+    }
+
+    close(FH);
+}
+
+sub removeMultiDayQueries($) {
+    my $r_data = $_[0];
+    my @filteredLogs = ();
+
+    foreach my $r_log ( @$r_data ) {
+        foreach my $line ( @$r_log ) {
+            my @matches = $line =~ m/(\d{4}-\d{2}-\d{2})/g;
+            if ( @matches ) {
+                if ($matches[0] eq $matches[1]) {
+                    push @filteredLogs, $r_log;
+                }
+            }
+        }
+    }
+    return \@filteredLogs;
+}
+
+sub main() {
+    my ($dataDir, $date, $outDir);
+    my $result = GetOptions(
+                    "input=s"  => \$dataDir,
+                    "date=s" => \$date,
+                    "outdir=s" => \$outDir,
+                    "debug=n" => \$DEBUG,
+    );
+
+    $date = formatDate($date);
+    my $r_validLogs = loadData($dataDir);
+    my $r_singleDayLogs = removeMultiDayQueries($r_validLogs);
+    my $size = @{$r_singleDayLogs};
+
+    writeToFile( $outDir, $r_singleDayLogs );
+    storeData($size, $date);
+}
+
+main();

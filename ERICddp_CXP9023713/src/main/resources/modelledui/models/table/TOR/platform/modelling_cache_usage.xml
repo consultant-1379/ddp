@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_shmmodeling_instr">
+    <reference table="sites" condition="enm_shmmodeling_instr.siteid = sites.id"/>
+    <reference table="enm_servicegroup_instances" condition="enm_shmmodeling_instr.serverid = enm_servicegroup_instances.serverid"/>
+    <reference table="enm_servicegroup_names" condition="enm_servicegroup_instances.serviceid = enm_servicegroup_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+
+  <where>sites.name = '%site%' AND enm_shmmodeling_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_servicegroup_instances.siteid = sites.id AND enm_servicegroup_instances.date = '%date%'</where>
+
+  <groupby>
+    <column db="enm_servicegroup_names.name"/>
+  </groupby>
+
+  <order columnid="cnt" direction="DESC"/>
+
+  <column db="enm_servicegroup_names.name" label="Service Group (All Instances)" id="sg"/>
+  <column db="ROUND(AVG(cacheSize), 0)" label="Size (Avg)"/>
+  <column db="ROUND(AVG(cacheMisses), 0)" label="Misses (Avg)"/>
+  <column db="SUM(cacheRequests)" label="Requests (Total)"/>
+  <column db="ROUND(AVG(modelCount), 0)" label="#Models (Avg)" id="cnt"/>
+  <column db="ROUND(AVG((cacheRequests - cacheMisses)/cacheRequests * 100), 0)" label="Cache Hit % Avg"/>
+  <column db="SUM(cacheEvictions)" label="Cache Evictions (Total)"/>
+  <column db="ROUND(SUM(readWriteRatio), 0)" label="ReadWriteRatio (Total)"/>
+
+  <ctxmenu keycol="sg" targettype="url" multiselect="true">
+    <item id="plot" label="Plot"/>
+    <urltarget arg="client"/>
+  </ctxmenu>
+
+</modelledtable>

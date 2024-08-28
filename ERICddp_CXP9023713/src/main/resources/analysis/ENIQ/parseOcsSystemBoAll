@@ -1,0 +1,93 @@
+#!/usr/bin/perl
+
+
+###################################################################################################################################################
+# Description ---------   parseOcsSystemBoAll --------------------
+# This script parses the ocs System Bo All logs and store data to DB for DDP
+# @author - POOJA NAGAJE (zpoonag)
+# usage parseOcsSystemBoAll --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use Getopt::Long;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dbh, $site, $siteId, $server, $serverId, $logFile, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $r_parsedData = parseData($logFile);
+    my $table = "eniq_ocs_system_bo_all";
+    my $bcpFile = createBcpFile($r_parsedData, $siteId, $serverId);
+    removeOldData($dbh, $table, $siteId, $serverId, $date);
+    loadDb($dbh, $bcpFile, $table);
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($logFile) = @_;
+    my @systemBoAllArrayData = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( $line =~ /^"(\d+-\d+-\d+-\d+\:\d+:\d+)"\s+"(\d+.\d+)"\s+"(\d+.\d+)"/ ) {
+            my %systemBoAllData = (
+                time => $1,
+                cpu => $2,
+                ws => $3
+            );
+            push (@systemBoAllArrayData, \%systemBoAllData);
+        }
+    }
+    close FILE;
+    return (\@systemBoAllArrayData);
+}
+
+sub createBcpFile($$$) {
+    my ($r_parsedData, $siteId, $serverId) = @_;
+    my $ocsSystemBoAllBcpFile = getBcpFileName("ocs_system_bo_all");
+    open BCP, ">$ocsSystemBoAllBcpFile" or die "Cannot open BCPFile $ocsSystemBoAllBcpFile";
+    foreach my $data_element ( @$r_parsedData ) {
+        printf BCP "%s|%d|%d|%d|%d\n",
+            $data_element->{time},
+            $siteId,
+            $serverId,
+            $data_element->{cpu},
+            $data_element->{ws};
+    }
+    close BCP;
+    return $ocsSystemBoAllBcpFile;
+}
+
+sub removeOldData($$$$$) {
+    my ($dbh, $table, $siteId, $serverId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 1 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

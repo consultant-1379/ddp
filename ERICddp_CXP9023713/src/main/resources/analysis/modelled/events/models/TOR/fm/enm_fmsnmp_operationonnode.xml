@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmsnmp_operationonnode">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="mssnmpfm"/>
+  </services>
+  <events>
+<!-- OperationOnNode {\"NeType\":\"RadioNode\",\"Duplicated\":false,\"Node\":\"LTE01dg2ERBS00064\",\"SnmpSecLevel\":\"NO_AUTH_NO_PRIV\",\"SnmpSecName\":\"mediation\",\"SnmpAuthProtocol\":\"NONE\",\"ExecutionTime\":0,\"SnmpVersion\":\"SNMP_V3\",\"SnmpAgentPort\":161,\"SnmpLocalAddress\":\"141.137.239.135\",\"IpAddress\":\"10.138.4.157\",\"SnmpPrivProtocol\":\"NONE\",\"OperationType\":\"AddNode\",\"_Thread\":\"Thread-540 (HornetQ-client-global-threads-119655677)\",\"SnmpTrapPort\":162}","timestamp":"2019-11-24T11:19:37.712+00:00"}} -->
+      <event name="OperationOnNode">
+        <metric source="host" target="serverid"/>
+        <metric source="Duplicated" target="duplicated"/>
+        <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+        <metric source="SnmpSecLevel" target="snmpSecLevel"/>
+        <metric source="SnmpAuthProtocol" target="snmpAuthProtocol"/>
+        <metric source="ExecutionTime" target="executionTime"/>
+        <metric source="SnmpVersion" target="snmpVersion"/>
+        <metric source="SnmpAgentPort" target="snmpAgentPort"/>
+        <metric source="SnmpPrivProtocol" target="snmpPrivProtocol"/>
+        <metric source="OperationType" target="operationType"/>
+        <metric source="SnmpTrapPort" target="snmpTrapPort"/>
+        <metric source="SnmpReadCommunity" target="snmpReadCommunity"/>
+        <metric source="SnmpWriteCommunity" target="snmpWriteCommunity"/>
+      </event>
+  </events>
+</modelledevents>

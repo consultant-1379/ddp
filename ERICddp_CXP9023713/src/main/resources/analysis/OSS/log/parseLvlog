@@ -1,0 +1,790 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use NameTable;
+use DBI;
+
+use Time::HiRes qw(gettimeofday tv_interval);
+
+our $DEBUG = 0;
+our $dbh;
+our $bcpFile;
+our $site;
+our $date;
+
+our $MAX_ENTRY_PER_MC = 50000;
+our $MAX_ENTRY_MESSAGE = "[DDP MAX ENTRIES PER MC REACHED]";
+
+our @drilldownNames = ('log_type','application_name', 'command_name','type','severity','additional_info');    
+
+sub toGenericString($) {
+    my $str = shift;
+
+    if ( $DEBUG > 9 ) { print "toGenericString: in str=\"$str\"\n"; }
+
+    # Strip FDNs
+    $str =~ s/SubNetwork=[A-Za-z0-9_,=\-]+/[FDN]/g;
+
+    # Strip Object refs
+    $str =~ s/@[\da-f]+/:[OBJREF]/g;
+
+    # Strip numbers
+    $str =~ s/\d+/[NUM]/g;
+
+    # Strip any non-printable charactors
+    $str =~ s/[[:^print:]]//g;
+
+    # Truncate to 255 chars
+    $str = substr($str,0,255);
+
+    # Strip any trailing white space
+    $str =~ s/\s+$//;
+
+    if ( $DEBUG > 9 ) { print "toGenericString: out str=\"$str\"\n"; }
+
+    return $str;
+}
+
+sub commandName {
+    my ($cmd, $application_name, $log_type) = @_;
+
+    if ( $application_name eq "AMOS" ) { return "[STRIPPED]"; }
+
+    if ($cmd =~ /^RCVD: Error, object does not exist.*/) {return "RCVD: Error, object does not exist.";}
+    if ($cmd =~ /^RCVD: Wait!\W+(\S+).*/) {return "RCVD: Wait! $1";}
+
+    return toGenericString($cmd);
+}
+
+sub additionalInfo1($$$) {
+    my ($str,$application_name,$log_type) = @_;
+
+    if ($str =~ /^Create Planned Configuration Completed : PlannedArea =/) { return 'Create Planned Configuration Completed : [PLANNEDAREA]'; }
+
+    return $str;
+}
+
+sub additionalInfo($$$) {
+    my ($str,$application_name,$log_type) = @_;
+
+    if ( $application_name eq 'AMOS' ) { return "[STRIPPED]"; }
+    if ( $application_name eq 'cms_nead_seg' && $log_type eq 'NETWORK' ) { return '[STRIPPED]' };
+
+    if ($str =~ /^Create Planned Configuration Completed : PlannedArea =/) { return 'Create Planned Configuration Completed : [PLANNEDAREA]'; }
+    
+    if ( $str =~ /^\/(\S+) (.*)/ ) {
+	my ($file,$rest) = ($1,$2);
+	if ( $file =~ /\.(xml|XML)(\S+)$/ ) {
+	    $rest = $2 . " " . $rest;
+	}
+	$str = '[FILE] ' . $rest;	
+    }
+
+    
+    if ( $str =~ /^ListScannersTask has not responded for more than / ) { return " ListScannersTask has not responded for more than [STRIPPED]"; }
+    if ( $str =~ /^Node created: \S+$/ ) { return " Node created [NODE]"; }
+    
+    if ( $str =~ /^Update Plan Started : PlannedArea = / ) { return 'Update Plan Started : [PLAN]' };
+    if ( $str =~ /^Update Plan Completed : PlannedArea = / ) { return 'Update Plan Completed : [PLAN]' };
+    
+    if ( $str =~ /^List Changes Started : PlannedArea = / ) { return " List Changes Started : [PLAN]"; }
+    if ( $str =~ /^List Changes Completed : PlannedArea = / ) { return " List Changes Completed : [PLAN]"; }
+    
+    if ( $str =~ /^Create Planned Configuration Started : PlannedArea = / ) { return 'Create Planned Configuration Started : [PLAN]' };
+    if ( $str =~ /^Create Planned Configuration Failed : PlannedArea = / ) { return 'Create Planned Configuration Failed : [PLAN]'; }
+    if ( $str =~ /^PCA autoDelete property updated : PlannedArea = / ) { return 'PCA autoDelete property updated : [PLAN]' };
+    if ( $str =~ /^Unable to add the event for notification / ) { return 'Unable to add the event for notification'; }
+    if ( $str =~ /^The activation of planned area \S+ has succeeded/ ) { return "The activation of [PLAN] has succeeded"; }
+    if ( $str =~ /^Activating Subnetwork Second Time For the Plan/ ) { return "Activating Subnetwork Second Time For the [PLAN]"; }
+
+    if ( $str =~ /^\S+ successfully deleted the following CVs ,/ ) { return " [USER] successfully deleted the following CVs"; }
+
+    if ( $str =~ /^Executed template: \S+$/ ) { return " Executed template [TEMPLATE]"; }
+    
+    if ( $str =~ /^Committed changes on transaction: cms_snad_reg-cms_snad_reg_corba_server:SNAD_ConsistencyTransaction_/ ) { return "[COMMIT SNAD_ConsistencyTransaction]" }; 
+    if ( $str =~ /^All \S+ attempted.The following plans activated successfully:/ ) { return 'All [PLAN] attempted.The following plans activated successfully [PLAN]'; }
+			
+    if ( $str =~ /^The following file has been created: / ) { return "The following file has been created [FILE]"; }
+
+    if ( $str =~ /^SYNC Progress : \S+ Created these MOs in the CS/ ) { return " SYNC Progress : [FDN]. Created these MOs in the CS"; }
+    
+    if ($str =~ /^Planned Activation: .*/) { return "Planned Activation"; }
+    if ($str =~ /^Job ID : .*/) { return "Job Activity"; }
+    if ($str =~ /^Replacing Interrupted Thread.*/) { return "Replacing Interrupted Thread"; }
+    if ($str =~ /^ Deletion successful for MO FDN.*/) { return "Deletion successful for MO FDN"; }
+    if ($str =~ /^ Export File:.*/) { return "Export File"; }
+    if ($str =~ /^Planned Area Metrics/) { return "Planned Area Metrics"; }
+    if ($str =~ /^Planned Area Activation (\S+):/) { return "Planned Area Activation $1"; }
+    if ($str =~ /^Planned configuration (\w+)/) { return "Planned configuration $1"; }
+    if ($str =~ /^ Filter: .*/) { return "Filter"; }
+    if ($str =~ /^Information=.* CommandName=(\w+)/) { return "Information: $1"; }
+    if ($str =~ /^USER=/) { return "User-specific message"; }
+    if ($str =~ /org.omg.CORBA.([A-Z]+)/) { return "org.omg.CORBA.$1"; }
+    if ($str =~ /(\S*)Exception\./) { return toGenericString($1) . "Exception"; }
+    if ($str =~ /.* WCC consistency check (.*)/) { return "WCC consistency check $1"; }
+    if ($str =~ /.*Exception while trying to collect the file.*/) { return "Exception while trying to collect the file"; }
+    if ($str =~ /About to schedule cache refresh.*/) { return "About to schedule cache refresh"; }
+    if ($str =~ /^Activation of planned configuration.*/) { return "Activation of planned configuration"; }
+    if ($str =~ /^Added (\S+)/) { return "Added $1"; }
+    if ($str =~ /^Gui (\S+) (\S+)/) { return "Gui $1 $2"; }
+    if ($str =~ /^Adjust .* (\S+).$/) { return "Adjust: $1"; }
+    if ($str =~ /^AdmNode=.* died\./) { return "AdmNode died"; }
+    if ($str =~ /Running state from (\S+) to (\S+)/) { return "Running state from $1 to $2"; }
+    if ($str =~ /Association added .*/) { return "Association added"; }
+    if ($str =~ /^Auto integration (\S+)/) { return "Auto integration $1"; }
+    if ($str =~ /^BadNEFilePathHandler has not responded/) { return "BadNEFilePathHandler has not responded"; }
+    if ($str =~ /^CLI Import (\S+)/i) { return "Cli Import $1"; }
+    if ($str =~ /^CMS encoutered a problem/) { return "CMS encoutered a problem"; }
+    if ($str =~ /^(\S+) has not responded for more then/) { return "$1 has not responded for more then [NUM] seconds"; }
+    if ($str =~ /^Core dumps detected/) { return "Core dumps detected"; }
+    if ($str =~ /^Core.*file found in home area/) { return "Core file found in home area"; }
+    if ($str =~ /^Could not activate profile/) { return "Could not activate profile"; }
+    if ($str =~ /^Could not (\S+)/) { return "Could not $1"; }
+    if ($str =~ /^(\S+) planned configuration/) { return "$1 planned configuration"; }
+    if ($str =~ /^class com.ericsson.nms.fm.ims.eim.plugin.DsWrapper.getEntries/) { return "DsWrapper error"; }
+    if ($str =~ /^(\S+) MO of type \S+ failed/) { return "$1 MO failed"; }
+    if ($str =~ /Exception while creating the (\S+)/) { return "Exception while creating $1"; }
+    if ($str =~ /^createSession towards NE/) { return "createSession towards NE"; }
+    if ($str =~ /^DATE=/) { return "DDC Metric"; }
+    if ($str =~ /^Delete/) { return "Delete"; }
+    if ($str =~ /^Fallback area '.*' (.*)/) { return "Fallback area $1"; }
+    if ($str =~ /^Fallback restore operation/) { return "Fallback restore operation"; }
+    if ($str =~ /^Instrumentation for activation of plan/) { return "Instrumentation for activation of plan"; }
+    if ($str =~ /^Invalid NameService path string IOR/) { return "Invalid NameService path string IOR"; }
+    if ($str =~ /^Job (\S+):/) { return "Job $1"; }
+    if ($str =~ /^MODIFICATION (\S+) for MO FDN/) { return "MODIFICATION $1 for MO FDN"; }
+    if ($str =~ /^Modified (\S+)/) { return "Modified $1"; }
+    if ($str =~ /^Doing a retry/) { return "Doing a retry"; }
+    if ($str =~ /^Error in activating plan/) { return "Error in activating plan" }
+    if ($str =~ /^Error info:   OCOR:/) { return "Error info"; }
+    if ($str =~ /^Error/) { return "Error"; }
+    if ($str =~ /^Exception/) { return "Exception"; }
+    if ($str =~ /^Fail to synch a node/) { return "Fail to synch a node"; }
+    if ($str =~ /^Failed to (\S+)/) { return "Failed to $1"; }
+    if ($str =~ /^File System usage above /) { return "File System usage above X percent"; }
+    if ($str =~ /^File Systems are full/) { return "File Systems are full"; }
+    if ($str =~ /^Activated profile/) { return "Activated profile"; }
+    if ($str =~ /^Activation :/) { return "Activation"; }
+    if ($str =~ /^Activation of plan .* timed out after .* milliseconds/) { return "Activation of plan timed out"; }
+    if ($str =~ /Reinitilize: failed to find in db; there is no such fdn/) { return "Reinitilize: failed to find in db; there is no such fdn"; }
+    if ($str =~ /^Plan (\w+)/) { return "[PLAN]"; }
+    if ($str =~ /^Attached node:/) { return "Attached node"; }
+    if ($str =~ /^AttachRootMo failed:/) { return " AttachRootMo failed"; }
+    if ($str =~ /^Attempt .* to restart scanner on Node: .* failed/) { return "Attempt to restart scanner on node failed"; }
+    if ($str =~ /^BCG reported import of Bulk CM Template failed/) { return "BCG reported import of Bulk CM Template failed"; }
+    if ($str =~ /^Calling import on BCG for file:/) { return "Calling import on BCG for file: [FILE]"; }
+    if ($str =~ /^Calendar Audit is completed/) { return "Calendar Audit is completed"; }
+    if ($str =~ /CORBA Exception/) { return "CORBA Exception"; }
+    if ($str =~ /Command: .*nms_bismrs_mc/) { return "BISMRS Command"; }
+    if ($str =~ /^Commit called on the following transaction resources/) { return "Commit called on the following transaction resources"; }
+    if ($str =~ /^CREATE (\w+)/) { return "CREATE $1"; }
+    if ($str =~ /Uncaught exception in NE thread/) { return "Uncaught exception in NE thread"; }
+    if ($str =~ /^import (\w+)/) { return "import $1"; }
+    if ($str =~ /^Import command failed/) { return "Import command failed"; }
+    if ($str =~ /^ISP logs show recent (\S+) MC restarts\/problems/) { return "ISP logs show recent $1 MC restarts/problems"; }
+    if ($str =~ /^LockInfo /) { return "LockInfo"; }
+    if ($str =~ /^Job name: .*; Job failed:/) { return "Job failed"; }
+    if ($str =~ /^NE=/) { return "NE-specific message"; }
+    if ($str =~ /^new Task Created:/) { return "new Task Created"; }
+    if ($str =~ /^Task .* with ID:\S+ (\w) by/) { return "Task $1"; }
+    if ($str =~ /^Deadlocks found in /) { return "Deadlocks found in [FILE]"; }
+    if ($str =~ /^Calling Cell service to power lock:(\S+)\s+cells/) {return "Calling Cell service to power lock:$1 cells";}
+    if ($str =~ /^Response received from Cell service to power lock:(\S+)\s+cells/) {return "Response received from Cell service to power lock:$1 cells";}
+    if ($str =~ /^Unable to add the event for notification (\S+) .*/) {return "Unable to add the event for notification $1 .";}
+    if ($str =~ /^WMA Times .*/) {return "WMA Times";}
+    if ($str =~ /^SGSN name: (\S+). Reason.*/) {return "SGSN name: $1. SGEH file missing";}
+    if ($str =~ /^Modify MO UseCase in Planned Configuration .*/) {return "Modify MO UseCase in Planned Configuration.";}
+    if ($str =~ /^(\S+) Node has been added to pool MmeId.*/) { return "$1 Node has been added to pool in Cache"; }
+    if ($str =~ /^Opening incoming mail connection to.*/) {return "Opening incoming mail.";}
+    if ($str =~ /^Create MO UseCase in Planned Configuration.*/) {return "Create MO UseCase in Planned Configuration.";}
+    if ($str =~ /^Data segment usage for smlogdb database reached (\S+) of the total size (\S+)./) {return "Data segment usage for smlogdb database reached $1 of the total size $2.";}
+    if ($str =~ /^Reason : Remote file not found. Node file details : \S+ OSS file details : \S+ not collected for node .*/) {return "Remote file not found";}
+    if ($str =~ /^SYNC Ordered as inconsistencies found during Audit .*/) {return "SYNC Ordered due to inconsistencies during Audit";}
+
+    $str =~ s/^Command failed: createdMOName=\S+/Command failed: [CREATEDMONAME]/;
+    $str =~ s/^Identity 'IOR:[^']+'/Identity [IOR]/;
+    
+    $str =~ s/^Directory listing not available for \S+/Directory listing not available for  [NODE]/;
+    $str =~ s/^Committed changes: modify Attribute: \S+ set to \S+/Committed changes: modify Attribute [ATTRIBUTE] set to [VALUE]/;
+    $str =~ s/JDO PManager:PM \S+/ JDO PManager [INSTANCE]/;
+    $str =~ s/ \[id=\S+/ [ID]/;
+    $str =~ s/\/var\/\S+/[FILE]/g;
+    $str =~ s/ IOR:\S+/ [IOR]/;
+     $str =~ s/ plan\s+\S+/ [PLAN]/g;
+    $str =~ s/ Planned Area=\S+/ [PLAN]/;
+    $str =~ s/ Planned Area = \S+/ [PLAN]/;
+    $str =~ s/ PlannedArea = \S+/ [PLAN]/;    
+    $str =~ s/ Planned Configuration "([^"]+)"/ Planned Configuration [PLAN]/;
+    $str =~ s/ Plan Name\([^\)]+\)/ [PLAN]/;
+    $str =~ s/^Trace file (\S+):.*/Trace file $1/;
+    $str =~ s/ For NE::\S+/ For [NE]/;
+    $str =~ s/ Configuration with supplied name could not be found : .*/ Configuration with supplied name could not be found [PLAN]/;
+    $str =~ s/ userLabel=\S+/ [USERLABEL]/;
+    $str =~ s/ \S+Id=[^, ]+/ [MOID] /;
+    $str =~ s/ node \S+ :/ [NODE] :/;
+    $str =~ s/open import file \/S+: /open import file [FILE]:/;
+    $str =~ s/undoplan name as .*/undoplan name [PLAN]/;
+    $str =~ s/^TSS Entry for Network Object:\S+/TSS Entry for Network Object [OBJ]/;
+    $str =~ s/^TSS details are not available for: \S+ Reason: TSS failed to determine usename and password for node: \S+/TSS details are not available for [NODE] Reason: TSS failed to determine usename and password for node: [NODE]/;
+    $str =~ s/ for the plan\S+/ for the [PLAN]/;
+    $str =~ s/restartInfo=[^,]+/[RESTARTINFO],/;
+    $str =~ s/atr={[^}]+}/[ATR]/;
+    return toGenericString($str);
+}
+
+sub readIncr($) {
+    my ($logFileInc) = @_;
+
+    if ( (! defined $logFileInc) || (! -r $logFileInc) ) {
+	return undef;
+    } 
+
+    my $dumperOutput;
+    do {
+	local $/ = undef;
+	open my $fh, "<", $logFileInc
+	    or die "could not open $logFileInc";
+	$dumperOutput = <$fh>;
+	close $fh;
+    };
+    
+    if ( $DEBUG > 8 ) { print "readIncr: dumperOutput=$dumperOutput\n"; }
+    
+    my $VAR1;
+    eval($dumperOutput);
+    if ( $DEBUG > 7 ) { print Dumper("readIncr: VAR", $VAR1); }
+
+    return $VAR1;    
+}
+
+sub writeIncr($$) {
+    my ($incrFile,$r_incrData) =@_;
+
+    my $defaultIndent = $Data::Dumper::Indent;
+    $Data::Dumper::Indent = 0;
+    my $incrDataStr = Dumper($r_incrData);
+    $Data::Dumper::Indent = $defaultIndent;
+
+    open INC, ">$incrFile";
+    print INC $incrDataStr;
+    close INC;    
+}
+
+sub processLog {
+    my ($logFile, $incrFile, $today) = @_;
+
+    open LOG, $logFile or die "Cannot open $logFile";
+
+    my $r_countByMC = {};
+    my $r_rowCounts = {};
+    my $r_rateByMC = {};
+    my $r_incrData = readIncr($incrFile);
+    if ( defined $r_incrData ) {
+	$r_countByMC = $r_incrData->{'countByMC'};
+	$r_rowCounts = $r_incrData->{'rowCounts'};
+	if ( exists $r_incrData->{'rateByMC'} ) {
+	    $r_rateByMC = $r_incrData->{'rateByMC'};
+	}
+
+	if ( $DEBUG > 0 ) { print "processLog: seeking to $r_incrData->{'lastSize'}\n"; }
+	seek LOG, $r_incrData->{'lastSize'}, 0;
+    }
+
+    print "Parsing\n";
+
+    my $lineCount = 0;
+
+    while ( my $line = <LOG> ) {
+	$lineCount++;
+	if ( $DEBUG > 9 ) { print "processLog: $lineCount line=$line"; }
+	if ( $DEBUG > 0 ) { if ( ($lineCount % 5000) == 0 ) { print "processLog: " . scalar(localtime(time())) . " lineCount=$lineCount\n" } };
+
+        my ($date, $time, $logType, $appName, $rest) = $line =~ 
+	    /^(\S+) (\S+) (\S+) \"([^\"]*)\" (.*)/;
+	if (! defined($date) ) {
+	    if ( $DEBUG > 0 ) { print "processLog: failed to parse $line"; }
+	    next;
+	} elsif ( $date ne $today ) {
+	    next;
+	}
+
+	if ( $DEBUG > 8 ) { print "processLog: date=$date, time=$time, logType=$logType appName=$appName, rest=$rest\n" }
+
+	$appName = toGenericString($appName);
+
+	my ($hour,$min) = $time =~ /^(\d{2,2}):(\d{2,2})/;
+	$r_rateByMC->{($hour*60)+$min}->{$appName}++;
+
+	#
+	# Limit the amount of processing we do for MC that generate more then $MAX_ENTRY_PER_MC
+        # 
+	$r_countByMC->{$appName}++;
+	my $currCount = $r_countByMC->{$appName};
+	if ( $DEBUG > 8 ) { print "processLog: appName=$appName currCount=$currCount\n"; }
+
+	my $r_row;
+
+	# Special handling for SNAD SON logging
+	if ( ($appName eq 'cms_snad_reg') && ($logType eq 'COMMAND') && ($rest =~ /EVENT_(ANR|X2|MRO)/) ) {
+	    my $sonType = $1;
+	    $r_countByMC->{$appName}--;
+	    $r_row = {
+		"log_type" => $logType,
+		"application_name" => $appName,
+		"command_name" => "EVENT_" . $sonType,
+		"activity_id" => "",
+		"type" => "",
+		"severity" => "",
+		"additional_info" => ""
+		};	    
+	} elsif ( $currCount < $MAX_ENTRY_PER_MC )  {	    
+	    my ( $resource, $userId, $cmdName, $actId, $type, $severity, $oldState, $newState, $addInfo) = $rest =~
+            /^(\S+) \"(.*)\" \"(.*)\" \"(.*)\" \"(.*)\" (\S+) \"(.*)\" \"(.*)\" \"(.*)\"$/;
+	    if ( (!defined($resource)) || (! defined $addInfo) ) {
+		# Let's see if the resource is blank 
+		( $userId, $cmdName, $actId, $type, $severity, $oldState, $newState, $addInfo) = $rest =~
+		    /^  \"(.*)\" \"(.*)\" \"(.*)\" \"(.*)\" (\S+) \"(.*)\" \"(.*)\" \"(.*)\"$/;
+		if ( (!defined($userId)) || (! defined $addInfo) ) {
+		    if ( $DEBUG > 0 ) { print "processLog: failed to parse $line\n"; }
+		    next;
+		}
+	    }		    
+	    if ( $DEBUG > 8 ) { print "processLog: userId=$userId, cmdName=$cmdName, actId=$actId, type=$type, severity=$severity, oldState=$oldState, newState=$newState, addInfo=$addInfo\n" }
+
+
+	    $r_row = {
+		"log_type" => $logType,
+		"application_name" => $appName,
+		"command_name" => commandName($cmdName,$appName,$logType),
+		"activity_id" => $actId,
+		"type" => toGenericString($type),
+		"severity" => $severity,
+		"additional_info" => additionalInfo($addInfo,$appName, $logType)
+		};
+	    if ( $DEBUG > 9 ) { print Dumper("processLog: row", $r_row); }
+	} else {
+	    if ( $currCount == $MAX_ENTRY_PER_MC ) { 
+		print "WARN: MAX_ENTRY_PER_MC($MAX_ENTRY_PER_MC) reached for $appName, further entries will not be processed\n";
+	    }
+	    
+	    $r_row = {
+		"log_type" => "OTHER",
+		"application_name" => $appName,
+		"command_name" => "NA",
+		"type" => "NA",
+		"severity" => "OTHER",
+		"additional_info" => $MAX_ENTRY_MESSAGE
+	    };
+	}
+
+	if ( $DEBUG > 9 ) { print Dumper("processLog: r_row", $r_row); }
+
+	my $r_hash = $r_rowCounts;
+	foreach my $name ( @drilldownNames ) {
+	    $r_hash = getRef($r_hash, $r_row->{$name});
+	}
+	# When we get here $r_hash is pointing at the bottom level hash, i.e. the one keyed 
+	# by additional_info. If its not set, initialise the count to 1, otherwise increment it
+	if ( exists $r_hash->{'count'} ) {
+	    $r_hash->{'count'}++;
+	} else {
+	    $r_hash->{'count'} = 1;
+	}
+    }
+    close LOG;
+
+    if ( $DEBUG > 4 ) { print Dumper("processLog: rowCounts", $r_rowCounts); }
+
+    if ( defined $incrFile ) {
+	my @logFileStats = stat $logFile;
+	my %incrData = (
+	    'lastSize' => $logFileStats[7],
+	    'countByMC' => $r_countByMC,
+	    'rowCounts' => $r_rowCounts,
+	    'rateByMC' => $r_rateByMC
+	    );
+        writeIncr($incrFile,\%incrData);
+    }
+
+    return { 'rowCounts' => $r_rowCounts, 'rateByMC' => $r_rateByMC };
+}
+
+sub getRef {
+    my ($r_parent, $id) = @_;
+    my $r_ref = $r_parent->{$id};
+    if ( ! defined $r_ref ) {
+	$r_ref = {};
+	$r_parent->{$id} = $r_ref;
+    }
+    return $r_ref;
+}
+
+sub writeBcp($$$$$);
+sub writeBcp($$$$$) {
+    my ($dbh, $r_hash, $r_idMaps, $level, $r_values ) = @_;
+    
+    my $field = $drilldownNames[$level];
+    my $atBottom = $level == $#drilldownNames;
+    if ( $DEBUG > 7 ) { print "writeBcp: Entered level=$level field=$field atBottom=$atBottom\n"; }
+    if ( $DEBUG > 8 ) { print Dumper("writeBcp: r_values", $r_values); }
+
+    foreach my $hashKey ( keys %{$r_hash} ) {
+	my $storeValue = $hashKey;
+	# If the field is mapped to a name table the value
+	# the id 
+	if ( exists $r_idMaps->{$field} ) {
+	    $storeValue = $r_idMaps->{$field}->{$hashKey};
+	    if ( ! defined $storeValue ) {
+		print "WARN: writeBcp: failed to map \"$hashKey\" for $field\n";
+	    }
+	}
+	if ( $DEBUG > 8 ) { print "writeBcp: hashKey=$hashKey\n"; }
+	if ( $DEBUG > 8 ) { print "writeBcp: storeValue=$storeValue\n"; }
+
+	if ( $atBottom ) {
+	    my $count = $r_hash->{$hashKey}->{'count'};
+	    my $outText = sprintf("%d\t%s\t%s\t%d\t%d\t%d\t%s\t%d\t%d\n", 
+				  $r_values->{'siteid'}, $r_values->{'date'},
+				  $r_values->{'log_type'}, $r_values->{'application_name'}, $r_values->{'command_name'},
+				  $r_values->{'type'}, $r_values->{'severity'}, $storeValue,
+				  $count);
+	    
+	    if ( $DEBUG > 8 ) { print "writeBcp: outText $outText"; }
+	    print BULK_INSERT $outText;
+	} else {
+	    $r_values->{$field} = $storeValue;
+	    writeBcp($dbh, $r_hash->{$hashKey}, $r_idMaps,$level + 1, $r_values);
+	}
+    }    
+}
+
+sub getNames($$$);
+sub getNames($$$) {
+    my ($r_names,$r_hash,$index) = @_;
+
+    if ( $DEBUG > 9 ) { print "getNames: index=$index drilldownName=$drilldownNames[$index]\n"; }
+    my $r_nameMap = $r_names->{$drilldownNames[$index]};
+    if ( ! defined $r_nameMap ) {
+	$r_nameMap = {};
+	$r_names->{$drilldownNames[$index]} = $r_nameMap;
+    }
+    foreach my $key ( keys %{$r_hash} ) {
+	if ( $DEBUG > 9 ) { print "getNames: key=$key\n"; }
+	$r_nameMap->{$key}++;
+	if ( $index < $#drilldownNames ) {
+	    getNames($r_names,$r_hash->{$key},$index+1);
+	}
+    }
+}    
+
+sub storeRows ($$$) {
+    my ($r_rowCounts,$site,$date) = @_;
+    my $r_Rows = shift;
+    
+    print "Processing\n";
+
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    # Build nested hash map: log_type -> application_name -> command_name -> type -> severity -> additional_info
+	
+    my %names = (); 
+    getNames(\%names,$r_rowCounts,0);
+    if ( $DEBUG > 7 ) { print Dumper("storeRows: names",\%names); }
+
+    #
+    # Get the name table maps from the database
+    #
+    my %idMaps = ();
+    my %mapTables = (
+	"application_name" => "lvlog_application_names",
+	"command_name" => "lvlog_command_names",
+	"type" => "lvlog_types",
+	"additional_info" => "lvlog_additional_info"
+	);
+    foreach my $field ( keys %mapTables ) {
+	my @nameArr = keys %{$names{$field}};
+    my @newnameArr = grep(s/\s*$//g, @nameArr);
+    $idMaps{$field} = getIdMap($dbh, $mapTables{$field}, "id", "name", \@newnameArr);
+    }
+    if ( $DEBUG > 8 ) { print Dumper("storeRows: idMaps", \%idMaps); }
+	
+    my $siteId = getSiteId($dbh, $site);
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    $bcpFile = $tmpDir . "/lvlog_stats.bcp";
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    my %values = (
+	'siteid' => $siteId,
+	'date'   => $date );
+    writeBcp( $dbh, $r_rowCounts, \%idMaps, 0, \%values );
+
+    close BULK_INSERT;
+
+    print "Loading\n";
+
+    dbDo($dbh, "DELETE FROM lvlog_entries_by_day WHERE siteid = " . $siteId . " AND date = '" . $date . "'")
+	or die "Failed to remove old data";
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE lvlog_entries_by_day (siteid,date," . join(",",@drilldownNames) . ",count)")
+	or die "Failed to load data";
+}
+
+sub fixAddInfo($) {
+    my ($fixMode) = @_;
+
+    my $dbh = connect_db();
+
+
+    logMsg("Fetching Existing List");
+    my @addInfoNameList = ();
+    my $r_addInfoIdMap = getIdMap($dbh, "lvlog_additional_info", "id", "name", \@addInfoNameList );
+
+    logMsg("Analyse Existing AddInfo in List");
+    my %remapExisting = ();
+    my %remapNew = ();
+    my $checked = 0;
+    foreach my $addInfo ( keys %{$r_addInfoIdMap} ) {
+	$checked++;
+
+	my $newAddInfo;
+	if ( $addInfo eq "Error info" ) { # additionalInfo will try and convert this to "Error"
+	    $newAddInfo = $addInfo;
+	} else {
+	    $newAddInfo = additionalInfo($addInfo,"","");
+	}
+	if ( $newAddInfo ne $addInfo ) {
+	    if ( $DEBUG > 5 ) { print "fixAddInfo: Map $addInfo to $newAddInfo\n"; }
+	    if ( exists $r_addInfoIdMap->{$newAddInfo} ) {
+		$remapExisting{$addInfo} = $newAddInfo;
+	    } else {
+		$remapNew{$addInfo} = $newAddInfo;
+	    }
+	}
+    }
+
+    if ( $DEBUG > 2 ) { print Dumper("fixAddInfo: addInfo to remap to existing", \%remapExisting); }
+    if ( $DEBUG > 2 ) { 
+	my $fromCount = scalar(keys %remapNew);
+	my %hashTemp = map { $_ => 1 } values %remapNew;
+	my $toCount = scalar(keys %hashTemp);	
+	print Dumper("fixAddInfo: $fromCount addInfo to remap to $toCount new", \%remapNew); 
+    }
+
+    if ( $fixMode eq 'testnames' ) {
+	exit;
+    }
+    my $doUpdate = 0;
+    if ( $fixMode eq 'fix' ) {
+	$doUpdate = 1;
+    }
+
+    logMsg("**** Remap existing");
+    doRemap(\%remapExisting,$dbh,$doUpdate);
+    logMsg("****  Remap new");    
+    doRemap(\%remapNew,$dbh,$doUpdate);
+    if ( $doUpdate ) {
+       NameTable::compact($dbh, "lvlog_additional_info", "id", "name",
+                          { 'lvlog_entries_by_day' => 'additional_info' }, undef );
+    }
+}    
+
+sub doRemap() {
+    my ($r_remap,$dbh,$doUpdate) = @_;
+
+    my @fromList = keys %{$r_remap};
+    if ( $DEBUG > 1 ) { print "doRemap: num procs to be mapped = ", ($#fromList + 1), "\n"; }
+
+    #
+    # Make sure the to addInfo are in process_names
+    #
+    my @toList = values %{$r_remap};
+    my $r_idMap = getIdMap($dbh, "lvlog_additional_info", "id", "name", \@toList );
+
+    my $fromSth = $dbh->prepare("SELECT siteid, date, log_type, application_name, command_name, type, severity, count FROM lvlog_entries_by_day WHERE additional_info = ?")
+	or die "Couldn't prepare statement: " . $dbh->errstr;
+    my $toSth = $dbh->prepare("SELECT count FROM lvlog_entries_by_day USE INDEX (siteDateIdx) WHERE siteid = ? AND date = ? AND log_type = ? AND application_name = ? AND command_name = ? and type = ? AND severity = ? AND additional_info = ? ")
+	or die "Couldn't prepare statement: " . $dbh->errstr;
+
+    my $addInfoCount = 0;   
+    logMsg("Mapping rows in lvlog_entries_by_day");
+    logMsg(sprintf("%5s %5s %5s %5s %5s %5s %s", '', 'Frm Id', 'To Id', 'Up id', 'Id Ex', 'Up Ex', 'From => To'));
+    foreach my $addInfo ( sort keys %{$r_remap} )
+    {
+	my $fromId = $r_idMap->{$addInfo};
+	my $toId = $r_idMap->{$r_remap->{$addInfo}};
+
+	$addInfoCount++;
+	
+	if ( $DEBUG > 2 ) { print( "doRemap: addInfoCount=$addInfoCount looking for the addInfo=$addInfo,id=$fromId in lvlog_entries_by_day\n"); }
+
+	my $t0 = [gettimeofday()];
+        $fromSth->bind_param(1, $r_idMap->{$addInfo}, { TYPE => DBI::SQL_INTEGER });
+	$fromSth->execute()
+	    or die "Couldn't execute statement: " . $fromSth->errstr;
+	my $t1 = [gettimeofday()];
+
+	my $updateInPlace  = 0;
+	my $updateExisting = 0;
+	while ( my $r_fromRow = $fromSth->fetchrow_hashref() )
+	{
+	    if ( $DEBUG > 4 ) { print Dumper("doRemap: fromRow", $r_fromRow); }
+
+	    if ( $DEBUG > 3 ) { print( "doRemap: looking for existing mapped addInfo=", $r_remap->{$addInfo}, 
+				       ", procid=", $toId, " in process_stats\n"); }	    
+
+            $toSth->bind_param(1, $r_fromRow->{'siteid'}, { TYPE => DBI::SQL_INTEGER });
+            $toSth->bind_param(2, $r_fromRow->{'date'}, { TYPE => DBI::SQL_DATE });
+            $toSth->bind_param(3, $r_fromRow->{'log_type'});
+            $toSth->bind_param(4, $r_fromRow->{'application_name'}, { TYPE => DBI::SQL_INTEGER });
+            $toSth->bind_param(5, $r_fromRow->{'command_name'}, { TYPE => DBI::SQL_INTEGER });
+            $toSth->bind_param(6, $r_fromRow->{'type'}, { TYPE => DBI::SQL_INTEGER });
+            $toSth->bind_param(7, $r_fromRow->{'severity'});
+            $toSth->bind_param(8, $toId, { TYPE => DBI::SQL_INTEGER });
+	    $toSth->execute()
+		or die "Couldn't execute statement: " . $toSth->errstr;
+
+	    if ( my $r_toRow = $toSth->fetchrow_hashref() ) {
+		$updateExisting++;
+		my $sql = sprintf("UPDATE lvlog_entries_by_day SET count = %d WHERE " .
+				  "siteid = %d AND date = '%s' AND log_type = '%s' AND application_name = %d AND " .
+				  "command_name = %d and type = %d AND severity = '%s' AND additional_info = %d",
+				  $r_fromRow->{'count'} + $r_toRow->{'count'},
+				  $r_fromRow->{'siteid'}, $r_fromRow->{'date'}, 
+				  $r_fromRow->{'log_type'}, $r_fromRow->{'application_name'}, 
+				  $r_fromRow->{'command_name'}, $r_fromRow->{'type'}, 
+				  $r_fromRow->{'severity'}, $toId);
+		if ( $doUpdate ) { dbDo($dbh,$sql); } else { print "doRemap: updateExisting $sql\n"; }
+	    } else {
+		$updateInPlace++;
+		my $sql = sprintf("UPDATE lvlog_entries_by_day SET additional_info = %d WHERE " . 
+				  "siteid = %d AND date = '%s' AND log_type = '%s' AND application_name = %d AND " .
+				  "command_name = %d and type = %d AND severity = '%s' AND additional_info = %d",
+				  $toId,
+				  $r_fromRow->{'siteid'}, $r_fromRow->{'date'}, 
+				  $r_fromRow->{'log_type'}, $r_fromRow->{'application_name'}, 
+				  $r_fromRow->{'command_name'}, $r_fromRow->{'type'}, 
+				  $r_fromRow->{'severity'}, $fromId);
+		if ( $doUpdate ) { dbDo($dbh,$sql); } else { print "doRemap: updateInPlace $sql\n"; }
+	    }
+	}
+	
+	if ( $DEBUG > 3 ) { print "doRemap: updateExisting=$updateExisting\n"; }
+	if ( $updateExisting > 0 )
+	{
+	    my $sql = sprintf("DELETE FROM lvlog_entries_by_day WHERE additional_info = %d", $r_idMap->{$addInfo} );
+	    if ( $doUpdate ) { dbDo($dbh,$sql); }
+	}
+
+	my $sql = sprintf("DELETE FROM lvlog_additional_info WHERE id = %d", $r_idMap->{$addInfo});
+	if ( $doUpdate ) { dbDo($dbh,$sql); }
+
+	logMsg(
+	    sprintf("%5d %5d %5d %5d %5d %s", $addInfoCount, $fromId, $toId, $updateInPlace, $updateExisting,
+		    ($addInfo . " => " . $r_remap->{$addInfo}))
+	    );
+    }
+
+
+    $fromSth->finish;
+    $toSth->finish;
+}
+
+sub logMsg
+{
+    my ($msg) = @_;
+    print scalar(localtime(time())) . " ". $msg . "\n";    
+}
+
+sub checkExit() {
+    return 0;
+}
+
+sub writePlot($$$) {
+    my ($plotFile,$r_rateByMC,$date) = @_;
+
+    if ( $DEBUG > 7 ) { print Dumper("writePlot: r_rateByMC", $r_rateByMC); }
+
+    my %totalByMC = ();
+    foreach my $time ( keys %{$r_rateByMC} ) {
+	foreach my $mc ( keys %{$r_rateByMC->{$time}} ) {
+	    $totalByMC{$mc} += $r_rateByMC->{$time}->{$mc};
+	}
+    }
+    if ( $DEBUG > 5 ) { print Dumper("writePlot: totalByMC", \%totalByMC); }
+
+    my @mcList = sort { $totalByMC{$b} <=> $totalByMC{$a} } keys %totalByMC;
+    if ( $DEBUG > 5 ) { print Dumper("writePlot: mcList", \@mcList); }
+
+    if ( $#mcList > 7 ) {
+	splice(@mcList,7);
+    }
+    if ( $DEBUG > 5 ) { print Dumper("writePlot: truncated mcList", \@mcList); }
+    
+    open PLOT, ">$plotFile" or die "Cannot write to $plotFile";
+    print PLOT "tt;minute;" . join(";",@mcList) . ";Other\n";
+    foreach my $time ( sort { $a <=> $b } keys %{$r_rateByMC} ) {
+	printf PLOT "%s:%02d:%02d:00", $date,$time / 60, $time % 60;
+	foreach my $mc ( @mcList ) {
+	    my $mcValue = delete $r_rateByMC->{$time}->{$mc};
+	    if ( ! defined $mcValue ) { 
+		$mcValue = 0;
+	    }	   
+	    printf PLOT " %d", $mcValue;
+	}
+	my $other = 0;
+	foreach my $otherMcValue ( values %{$r_rateByMC->{$time}} ) {
+	    $other += $otherMcValue;
+	}
+	printf PLOT " %d\n", $other;
+    }
+
+    print PLOT "\nplot;sb;Entries Per MC/Minute;Time;Log Entries\n";
+    close PLOT;    
+}
+	    
+sub main {
+    my ($logFile,$incrFile,$fixMode,$plotFile);
+    my $result = GetOptions(
+        "input=s"  => \$logFile,
+        "date=s" => \$date,
+        "site=s" => \$site,
+	"incr=s" => \$incrFile,
+	"plot=s" => \$plotFile,
+	"fix=s" => \$fixMode,
+        "debug=s" => \$DEBUG
+    );
+    if ( $fixMode ) {
+	fixAddInfo($fixMode);
+	exit 1;
+    }
+
+    $Data::Dumper::Indent = 1;
+
+    # Sanity check input
+    die "You must provide a valid date in the format YYYY-MM-DD" unless $date =~ /^20[0-9][0-9]-[0-1][0-9]-[0-3][0-9]$/;
+
+    my $r_results = processLog($logFile,$incrFile, $date);
+    my $r_rowCounts = $r_results->{'rowCounts'};
+
+    if ( defined $site ) {
+	storeRows($r_rowCounts,$site,$date);
+    }
+
+    if ( defined $plotFile ) {
+	writePlot($plotFile,$r_results->{'rateByMC'},$date);
+    }
+}
+
+main();
+
+

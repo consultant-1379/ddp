@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_eshistory_indices_stats">
+    <reference table="sites" condition="enm_eshistory_indices_stats.siteid = sites.id"/>
+    <reference table="enm_es_index_names" condition="enm_eshistory_indices_stats.indexId = enm_es_index_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_eshistory_indices_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="enm_es_index_names.name"/>
+  </groupby>
+
+  <column db="enm_es_index_names.name" label="Index" id="cname"/>
+  <column db="MAX(numIndex)" label="Number Of Index(Max)"/>
+  <column db="MAX(noOfDocs)" label="Docs Count(Max)"/>
+  <column db="AVG(noOfDocs)" label="Docs Count(Avg)"/>
+  <column db="MAX(noOfDocsDeleted)" label="Docs Deleted(Max)"/>
+  <column db="AVG(noOfDocsDeleted)" label="Docs Deleted(Avg)"/>
+  <column db="MAX(sizeOfIndex)" label="Size (MB)(Max)"/>
+  <column db="AVG(sizeOfIndex)" label="Size (MB)(Avg)"/>
+
+  <ctxmenu keycol="cname" targettype="url">
+    <item id="indexdata" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

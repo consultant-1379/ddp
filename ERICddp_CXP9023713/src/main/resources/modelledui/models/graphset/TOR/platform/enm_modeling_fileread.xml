@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" forcelegend="true">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_modeling_fileread_instr">
+      <reference table="sites" condition="enm_modeling_fileread_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_modeling_fileread_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverids"/>
+    <where>sites.name = '%s' AND enm_modeling_fileread_instr.serverid IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="repoReads" type="tsc" ylabel="Count">
+      <title value="Number of Repo Reads"/>
+      <column db="repoReads" label = "Number of Repo Reads"/>
+    </graph>
+    <graph name="repoReadTime" type="tsc" ylabel="Time (msec)">
+      <title value="Repo Read Time"/>
+      <column db="repoReadTime" label = "Repo Read Time"/>
+    </graph>
+    <graph name="maxRepoReadTime" type="tsc" ylabel="Time(msec)">
+      <title value="Repo Read Time (Max)"/>
+      <column db="maxRepoReadTime" label = "Repo Read Time (Max)"/>
+    </graph>
+    <graph name="avgModelReadTime" type="tsc" ylabel="Time(msec)">
+      <title value="Model Read Time (Avg)"/>
+      <column db="avgModelReadTime" label = "Model Read Time (Avg)"/>
+    </graph>
+    <graph name="maxModelReadTime" type="tsc" ylabel="Time(msec)">
+      <title value="Model Read Rime (Max)"/>
+      <column db="maxModelReadTime" label = "Model Read Rime (Max)"/>
+    </graph>
+
+  </graphs>
+
+  <groups>
+    <group name="fileRead">
+      <member>repoReads</member>
+      <member>repoReadTime</member>
+      <member>maxRepoReadTime</member>
+      <member>avgModelReadTime</member>
+      <member>maxModelReadTime</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

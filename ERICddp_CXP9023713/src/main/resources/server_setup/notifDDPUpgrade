@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## Script  : notifDDPUpgrade
+## Author  : Sayyad Shaik (xsaysha)
+## Purpose : The purpose of this script is to send mail to DDP Admins
+##           when DDP Upgrade happens
+## Usage   :  /data/ddp/current/server_setup/notifDDPUpgrade --instance ${INSTANCE} --subject "${INSTANCE} Upgrade from ${CURR_DDP_VER} to ${NEW_DDP_VER} ${RESULT}" --tomail "${EMAIL_ADDRESS}" --contentfile "${UPGRADE_LOG}"
+##=====================================================================
+
+use strict;
+use warnings;
+use lib '/data/ddp/current/analysis/common';
+use Data::Dumper;
+use Getopt::Long;
+our $DEBUG = 0;
+require SendEmail;
+
+sub main() {
+    my ($instance, $subject, $tomail, $contentfile, $versions);
+    my $result = GetOptions(
+        "instance=s" => \$instance,
+        "subject=s" => \$subject,
+        "tomail=s" => \$tomail,
+        "contentfile=s" => \$contentfile,
+        "versions=s" => \$versions,
+        "debug=s" => \$DEBUG
+    );
+
+    my ($mailtxt, @lines);
+
+    if ( $DEBUG > 5 ) {
+        print "notifDDPUpgrade: contentfile=$contentfile\t";
+    }
+
+    if ( -r $contentfile ) {
+        open(FILE, "<$contentfile") or die "Cannot open $contentfile: $!";;
+        @lines=<FILE>;
+        close(FILE);
+    }
+
+    foreach my $line (@lines) {
+        chomp($line);
+        $mailtxt .= "$line<br>";
+    }
+
+    my $link = "<a href='https://$instance.athtem.eei.ericsson.se/adminui/upgrades.php?ug=$versions' target='_blank'\>Upgrade Details<br></a>";
+
+    if ( defined $mailtxt ) {
+         sendMail($mailtxt, $instance, $subject, $link, $tomail);
+    }
+}
+
+main();
+
+sub sendMail($$$$$) {
+    my ($mailtxt, $instance, $subject, $link, $tomail) =  @_;
+    my $CurrTime = localtime();
+
+    my $message = "Please find the $instance upgrade status below.<br><br>";
+    $message .= "Instance: $instance<br>";
+    $message .= "Date: $CurrTime<br>";
+
+    if ( defined $mailtxt ) {
+        $message .= "<br>$mailtxt";
+    }
+    $message .= $link;
+
+    SendEmail::sendEmail($subject, $message, $tomail, 'localhost');
+}
+

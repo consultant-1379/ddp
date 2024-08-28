@@ -1,0 +1,450 @@
+#!/usr/bin/env perl
+use strict;
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+our $STARTUP_TIME = 900;
+our $SYSTEM_RESTART_COUNT = 10;
+our $SYSTEM_RESTART_TIME = 120;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($analysisType,$ssrEventFile,$tableFile,$dataFile,$theMonth,$site,$segment);
+    my $result = GetOptions("type=s" => \$analysisType,
+			    "ssr=s"  => \$ssrEventFile,
+			    "table=s"  => \$tableFile,
+			    "data=s"  => \$dataFile,
+			    "month=s" => \$theMonth,
+			    "site=s" => \$site,
+			    "segment=s" => \$segment,
+			    "debug=s" => \$DEBUG
+			    );
+
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+    ( ($analysisType eq "daily") or ($analysisType eq "monthly") ) or printUsageAndExit("Invalid type for analysis");
+    if ( $analysisType eq "monthly" )
+    {
+	if ( ! $dataFile )
+	{
+	    printUsageAndExit("No data file specified");
+	}
+	elsif ( ! $theMonth )
+	{
+	    printUsageAndExit("No month specified");
+	}
+    }	
+    
+
+    my $mc = "";
+    my $disableSeqCount = 0;
+    my $disableSeqStartTime = 0;
+
+    my %restartedMCs = ();
+    readSsrEventFile($ssrEventFile,$segment,\%restartedMCs);
+    
+    if ( $DEBUG > 2 ) { print Dumper("main: restartedMCs", \%restartedMCs); }
+
+    if ( $analysisType eq "daily" )
+    {
+	if ( $tableFile )
+	{
+	    daily($tableFile,\%restartedMCs);
+	}
+	
+	if ( $site )
+	{
+	    store($site,\%restartedMCs);
+	}
+    }
+}
+
+#
+# Construct a map, restartedMCs  mc name -> array of RestartInfo
+# Each time the MC restarts (stop & stop), add a RestartInfo to
+# the array
+# RestartInfo contains the time the MC was stopped and the length
+# of time it was down
+#
+sub readSsrEventFile
+{
+    my ($ssrEventFile,$segment,$r_restartedMCs) = @_;
+
+    my $segCS = $segment . "_CS";
+    my $disableSeqCount = 0;
+    my $disableSeqStartTime = 0;
+    my %disabledMCs = ();
+    my $systemStartTime = 0;
+
+
+    open SSR, "$ssrEventFile" or die "Could not open ssr Event File";
+    while ( my $line = <SSR> )
+    {    
+	chop $line;
+	my ($time,$mc,$oldState,$newState,$reason,$restart_reason,$restart_reason_txt,$user) = split /::/, $line;
+
+	if ( $mc eq $segCS )
+	{
+	    $mc = "Segment_CS";
+	}
+
+	if ( $DEBUG > 2 ) 
+	{
+	    print "$line\n";
+	    print "$time,$mc,$oldState,$newState,$reason,$restart_reason,$restart_reason_txt,$user\n";
+	}
+
+	if ( $reason =~ /^SYSTEM/ )
+	{
+	    # System start/stop
+	    #
+	    # Stop the downtime clock on any disabled MCs
+	    #
+	    foreach my $mc ( sort keys %disabledMCs )
+	    {
+		my $downtime = $time - $disabledMCs{$mc}->{'stoptime'};
+		# MCs disabled within the last 300 secs are probably
+		# disabled due to the server shutdown and and so this 
+		# doesn't count as an MC restart
+		if ( $downtime > $SYSTEM_RESTART_TIME ) 
+		{		    
+		    addRestart($r_restartedMCs,
+			       $mc,
+			       $disabledMCs{$mc}->{'stoptime'},
+			       $downtime,
+			       $disabledMCs{$mc}->{'stopreason'},
+                   $disabledMCs{$mc}->{'restart_reason'},
+                   $disabledMCs{$mc}->{'restart_reason_txt'},
+                   $disabledMCs{$mc}->{'user'}
+			       );
+		}
+		
+		delete $disabledMCs{$mc};
+	    }				
+
+	    next;
+	}
+
+	if ( $newState eq "Enabled" )
+	{
+	    # Normal flow, MC going enabled after being disabled
+	    if ( exists $disabledMCs{$mc} )
+	    {
+		my $downtime = $time - $disabledMCs{$mc}->{'stoptime'};	    
+		addRestart($r_restartedMCs,
+			   $mc,
+			   $disabledMCs{$mc}->{'stoptime'},
+			   $downtime,
+			   $reason,
+               $disabledMCs{$mc}->{'restart_reason'},
+               $disabledMCs{$mc}->{'restart_reason_txt'},
+               $disabledMCs{$mc}->{'user'}
+           );
+		delete $disabledMCs{$mc};
+	    }	    
+	    #
+	    # If this is a Enabled after we detected a system shutdown, then
+	    # mark this as the system start time. Note this handling is for
+	    # before CIF included the reasons SYSTEM_START
+	    #
+	    elsif ( $disableSeqCount >= $SYSTEM_RESTART_COUNT )
+	    {
+		$systemStartTime = $time;
+	    }
+	    #
+	    # Abnormal flow, i.e. we didn't detect the event that disabled
+	    # this MC. Add a check for ignoring starts during SYSTEM_STARTUP
+	    # where the reason isn't SYSTEM_STARTUP
+	    #
+	    elsif ( ($time - $systemStartTime) > $STARTUP_TIME )
+	    {
+		print timeStr($time), " $mc Enabled without Disable\n";
+		addRestart($r_restartedMCs,
+			   $mc,
+			   $time,
+			   0,
+			   $reason,
+               "",
+               "",
+               ""
+           );
+	    }
+
+	    # Reset disableSeq as we got an MC going enabled which doesn't
+	    # happen during a system shutdown
+	    $disableSeqCount = 0;
+	    $disableSeqStartTime = 0;
+	}
+	elsif ( $newState eq "Disabled" )
+	{
+	    #
+	    # Here we try and detect a system restart by counting the number
+	    # of MC sequentially going disabled within a specific time frame
+	    #
+	    if ( $disableSeqCount == 0 )
+	    {
+		# Start the clock
+		$disableSeqStartTime = $time;
+	    }
+	    # If this disable is within the SYSTEM_RESTART_TIME, include it
+	    if ( ($time  - $disableSeqStartTime) < $SYSTEM_RESTART_TIME )
+	    {
+		$disableSeqCount++;
+	    }
+	    # otherwise, the sequnce has been broken so reset the clock/count
+	    else
+	    {
+		$disableSeqCount = 0;
+		$disableSeqStartTime = 0;
+	    }
+	    
+
+	    if ( $disableSeqCount >= $SYSTEM_RESTART_COUNT )
+	    {		
+		if ( $disableSeqCount == $SYSTEM_RESTART_COUNT )
+		{
+		    print "System shutdown detected\n";
+		}
+		
+		#
+		# Stop the downtime clock on any disabled MCs
+		#
+		foreach my $mc ( sort keys %disabledMCs )
+		{
+		    my $downtime = $time - $disabledMCs{$mc}->{'stoptime'};
+		    # MCs disabled within the last 300 secs are probably
+		    # disabled due to the server shutdown and and so this 
+		    # doesn't count as an MC restart
+		    if ( $downtime > $SYSTEM_RESTART_TIME ) 
+		    {		    
+			addRestart($r_restartedMCs,
+				   $mc,
+				   $disabledMCs{$mc}->{'stoptime'},
+				   $downtime,
+				   $reason,
+                   $disabledMCs{$mc}->{'restart_reason'},
+                   $disabledMCs{$mc}->{'restart_reason_txt'},
+                   $disabledMCs{$mc}->{'user'}
+               );
+		    }
+		    
+		    delete $disabledMCs{$mc};
+		}				
+	    }
+	    elsif ( $disabledMCs{$mc} )
+	    {		
+		print timeStr($time), "$mc disabled again\n";		
+		$disabledMCs{$mc}->{'stoptime'} = $time;
+	    }
+	    else
+	    {
+        # the only time we will see a restart_reason, restart_reason_txt is during disable
+		if ( $DEBUG > 7 ) { print "readSsrEventFile: tagging $mc as disabled at $time reason $reason\n"; }
+
+		$disabledMCs{$mc}->{'stoptime'} = $time;
+		$disabledMCs{$mc}->{'stopreason'} = $reason;
+        $disabledMCs{$mc}->{'restart_reason'} = $restart_reason;
+        $disabledMCs{$mc}->{'restart_reason_txt'} = $restart_reason_txt;
+        $disabledMCs{$mc}->{'user'} = $user;
+	    }
+	}
+    }
+}
+
+sub getDaysInMonth
+{
+    my ($theMonth) = @_;
+
+    # Figure out how many days in this month    
+    my ($thisMonth,$thisYear) = $theMonth =~ /^(\d{2,2})(\d{2,2})$/;
+    my $numDaysInMonth = 28;   
+    my $theTime = timelocal(0, 0, 0, $numDaysInMonth, $thisMonth - 1, $thisYear + 100);
+
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst);
+    do
+    {
+	$theTime += (60 * 60 * 24);
+	($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($theTime);
+	if ( $mday > $numDaysInMonth )
+	{
+	    $numDaysInMonth = $mday;
+	}
+    }
+    while ( $numDaysInMonth == $mday );   
+
+    return $numDaysInMonth;
+}
+
+
+sub daily
+{
+    my ($tableFile,$site,$r_restartedMCs) = @_;
+
+    open TABLE, ">$tableFile" or die "Cannot open $tableFile";
+    my $counter = 0;
+    my %restartsByTime = ();
+    foreach my $mc ( sort keys %{$r_restartedMCs} )
+    {
+	my $r_RestartInfoList = $r_restartedMCs->{$mc};
+	foreach my $r_RestartInfo ( @{$r_RestartInfoList} )
+	{
+	    $counter++;
+	    my $uniqueTime = sprintf "%d%04d", $r_RestartInfo->{"stopTime"}, $counter;
+	    $restartsByTime{$uniqueTime} = {
+		'mc' => $mc,
+		'downTime' => $r_RestartInfo->{"downTime"},
+                'reason' => $r_RestartInfo->{"reason"}
+	    };
+	}
+    }
+
+    foreach my $uniqueTime ( sort by_number keys %restartsByTime )
+    {
+	my ($time) = $uniqueTime =~ /^(\d+)\d{4,4}$/;
+	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($time);
+	my $timeStr = sprintf "%02d:%02d:%02d", $hour, $min, $sec;
+	printf TABLE "<tr> <td>%s</td> <td>%s</td> <td>%d</td> <td>%s</td> </tr>\n", $timeStr, $restartsByTime{$uniqueTime}->{"mc"}, $restartsByTime{$uniqueTime}->{"downTime"}, $restartsByTime{$uniqueTime}->{"reason"};
+    }
+    
+    close TABLE;
+}
+
+sub printUsageAndExit
+{
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseRestart --type daily --ssr ssrEventFile --table restartTableFile\n";
+    print "       parseRestart --type montly --ssr ssrEventFile --table restartTableFile --data dataFile\n";
+    exit 1;
+}
+
+sub by_number {
+    if ($a < $b) {
+        return -1;
+    } elsif ($a == $b) {
+        return 0;
+    } elsif ($a > $b) {
+        return 1;
+    }
+}
+
+sub timeStr
+{
+    my $time = shift @_;
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($time);
+    sprintf "%02d-%02d-%02d %02d:%02d:%02d", $year - 100, $mon + 1, $mday, $hour, $min, $sec;
+}
+
+sub addRestart
+{
+    my ($r_restartedMCs,$mc,$stopTime,$downTime,$reason,$restart_reason,$restart_reason_txt,$user) = @_;
+
+    if ( $DEBUG > 5 ) { print "addRestart: mc=$mc stopTime=$stopTime downTime=$downTime, reason=$reason\n"; }
+
+    my $r_RestartInfo = {
+	"stopTime" => $stopTime,
+	"downTime" => $downTime,
+	"reason" => $reason,
+    "restart_reason" => $restart_reason,
+    "restart_reason_txt" => $restart_reason_txt,
+    "user" => $user
+	};		   
+    if ( ! exists $r_restartedMCs->{$mc} )
+    {
+	$r_restartedMCs->{$mc} = [];
+    }
+    push @{$r_restartedMCs->{$mc}}, $r_RestartInfo;
+}
+
+sub store
+{
+    my ($site,$r_restartedMCs) = @_;
+    
+    my @mclist = keys %{$r_restartedMCs};
+    if ( $#mclist == -1 )
+    {
+	return;
+    }
+
+    my %restartTypes = ();
+    my %restartUsers = ();
+    my $minTime = 9999999999;
+    my $maxTime = -1;
+
+    foreach my $mc ( sort keys %{$r_restartedMCs} )
+    {
+	my $r_RestartInfoList = $r_restartedMCs->{$mc};
+	foreach my $r_RestartInfo ( @{$r_RestartInfoList} )
+	{
+	    if ( $r_RestartInfo->{"stopTime"} < $minTime )
+	    {
+		$minTime = $r_RestartInfo->{"stopTime"};
+	    }
+	    if ( $r_RestartInfo->{"stopTime"} > $maxTime )
+	    {
+		$maxTime = $r_RestartInfo->{"stopTime"};
+	    }
+
+	    $restartTypes{$r_RestartInfo->{"reason"}} = 1;
+        $restartUsers{$r_RestartInfo->{"user"}} = 1;
+	}
+    }
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+
+    #
+    # Get map of MC name to id, insert any missing names
+    #
+    my @mcNames = keys %{$r_restartedMCs};
+    my $r_nameMap = getIdMap($dbh,"mc_names", "id", "name", \@mcNames );
+
+    my @restartTypeNames = keys %restartTypes;
+    my $r_typeMap = getIdMap($dbh, "mc_restart_types", "id", "type", \@restartTypeNames );
+
+    my @restartUsersStrings = keys %restartUsers;
+    my $r_restartUsersMap = getIdMap($dbh, "oss_users", "id", "name", \@restartUsersStrings );
+    
+    # Remove any existing row
+    $dbh->do("DELETE FROM mc_restarts WHERE siteid = $siteId AND time >= \'" . sqlTimeStr($minTime) . "\' AND time <= \'" . sqlTimeStr($maxTime) . "\'");
+
+
+    foreach my $mc ( sort keys %{$r_restartedMCs} )
+    {
+	my $r_RestartInfoList = $r_restartedMCs->{$mc};
+	foreach my $r_RestartInfo ( @{$r_RestartInfoList} )
+	{
+	    my $sql = sprintf("INSERT INTO mc_restarts (time,siteid,nameid,duration,typeid,restart_reason,restart_reason_txt,userid) VALUES (\'%s\', %d, %d, %d, %d, %s, %s, %d)",
+			      sqlTimeStr($r_RestartInfo->{"stopTime"}),
+			      $siteId,
+			      $r_nameMap->{$mc},
+			      $r_RestartInfo->{"downTime"},
+			      $r_typeMap->{$r_RestartInfo->{"reason"}},
+                  lc($dbh->quote($r_RestartInfo->{"restart_reason"})),
+                  $dbh->quote($r_RestartInfo->{"restart_reason_txt"}),
+                  $r_restartUsersMap->{$r_RestartInfo->{"user"}}
+			      );
+	    if ( $DEBUG > 2 ) { print "store: $sql\n"; }
+	    $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+	}
+    }
+
+    $dbh->disconnect;
+}
+
+sub sqlTimeStr
+{
+    my $time = shift @_;
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($time);
+    sprintf "%04d-%02d-%02d %02d:%02d:%02d", $year + 1900, $mon + 1, $mday, $hour, $min, $sec;
+}

@@ -1,0 +1,196 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+
+use StatsTime;
+
+our $DEBUG=0;
+
+#foreach my $count ( @counts )
+#{
+#   print "$count\n";
+#}
+
+sub getLine() {
+    my $line = <EVENTS>;
+    if ( $DEBUG > 9 ) { print "getLine: $line"; }
+    return $line;
+}
+
+sub readEvents($$) {
+    my ($eventsFile, $oss) = @_;
+
+    my $currHour = 0;
+
+    my $HEADER_PATTERN = '^\d+-\d+-\d+:\d+:\d+:\d+\.\d+ RANOS ConfigurationIRP NOTIFY_ATTRIBUTE_VALUE_CHANGED MeContext';
+    if ( $oss eq "OSS" )
+    {
+        $HEADER_PATTERN = '^\d+-\d+-\d+:\d+:\d+:\d+\.\d+ OSS 0c1A ATTRIBUTE_VALUE_CHANGE VALID';
+    }
+    if ( $DEBUG > 9 ) { print "readEvents: pattern = \"$HEADER_PATTERN\"\n"; }
+
+    my @events = ();
+
+    open EVENTS, "$eventsFile" or die "Cannot open $eventsFile";
+    while ( my $line = getLine() )
+    {
+        if ( $line =~ /$HEADER_PATTERN/o )
+        {
+            my ($currDate, $currMonth, $currYear, $hour, $min,$sec, $ms) = $line =~ /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d+):(\d+):(\d+)\.(\d+)/;
+            if ( (! $currYear) || (!$currMonth) )
+            {
+                print "Invalid Event header: $line";
+                next;
+            }
+
+            if ( $currHour > $hour )
+            {
+                $currDate++;
+            }
+            $currHour = $hour;
+            my $node = "notSet";
+            my $state = -1;
+            my $mcFdn = "";
+
+            if ( $oss eq "OSS" )
+            {
+                getLine(); # time
+                my $moc = getLine();
+                if ( $moc !~ /MeContext/ )
+                {
+                    next;
+                }
+
+                ($mcFdn) = getLine() =~ /^\s+moi=\"?([^\"\n]+)\"?$/;
+                if ( $DEBUG > 5 ) { print "readEvents: mcFdn = $mcFdn\n"; }
+
+                getLine(); # mim_name
+                getLine(); # mim_version
+                getLine(); # cs_name
+                getLine(); # host_name
+            }
+            else # RANOS
+            {
+                # MOC="MeContext"
+                # MOI="SubNetwork=Utran1,SubNetwork=vstru24,MeContext=rbs40646"
+                # Time="1078701467171"
+                #        connectionStatus: Disconnected (3)->Connected (2)
+
+                getLine(); # MOC, we already know this is a MeContext event from the header
+                ($mcFdn) = getLine() =~ /^\s+MOI=\"([^\"]*)\"$/;
+                getLine(); # Time
+            }
+
+            my $nodeName = "";
+            if ( $mcFdn =~ /^SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=(.*)/ )
+            {
+                my ($rns,$mc) = $mcFdn =~ /^SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=(.*)/;
+                $nodeName = $rns . "," . $mc;
+            }
+            else
+            {
+                ($nodeName) = $mcFdn =~ /,MeContext=(.*)$/;
+            }
+            if ( $DEBUG > 5 ) { print "readEvents: nodeName = $nodeName\n"; }
+
+            while ( ($line = getLine()) =~ /\S+/ )
+            {
+                my ($attrib,$change) = $line =~ /^\s+([^:]+): (.*)/;
+                if ( $DEBUG > 5 ) { print "attrib = $attrib, change = $change\n"; }
+
+                if ( defined $attrib && $attrib eq "connectionStatus" )
+                {
+                    my ($connectionStatus) = $change =~ /(\d)\)$/;
+                    if ( $DEBUG > 5 ) { print "readEvents: connectionStatus = $connectionStatus\n"; }
+
+                    my $r_Event = {
+                        'timestamp'        => $currDate . "-" . $currMonth . "-" . $currYear. ":" . $hour . ":" . $min . ":" . $sec,
+                        'timems'           => $ms,
+                        'node'             => $nodeName,
+                        'connectionStatus' => $connectionStatus
+                        };
+                    push @events, $r_Event;
+                }
+            }
+        }
+    }
+    close EVENTS;
+
+    return \@events;
+}
+
+
+sub main() {
+    my ($eventsFile,$tableFile,$oss,$plot);
+    my $result = GetOptions("events=s"  => \$eventsFile,
+                            "table=s"  => \$tableFile,
+                            "oss=s"  => \$oss,
+                            "plot=s" => \$plot,
+                            "debug=s" => \$DEBUG,
+                            );
+    ($result == 1) or die "Invalid args";
+    $oss or die "No oss specified";
+
+
+    my $r_Events = readEvents($eventsFile, $oss);
+
+    my %nodeMap = (); # Maps node name to number, gives position in graph
+    my @nodes = ();   # List of nodes, postion in array = value in nodeMap, contains counters for conn/disc
+    my $hasConnectEvents = 0;
+    my @discLines = ();
+
+    my %series = ( 'conn' => [], 'disc' => [] );
+    foreach my $r_Event ( @{$r_Events} ) {
+        if ( $DEBUG > 6 ) { print Dumper("main: r_Event", $r_Event); }
+
+        my $nodeNumber = $nodeMap{$r_Event->{'node'}};
+        if ( ! $nodeNumber ) {
+            my $r_Node = {
+                'name' => $r_Event->{'node'},
+                'conn' => 0,
+                'disc' => 0
+                };
+            push @nodes, $r_Node;
+
+            $nodeNumber = $#nodes + 1;
+            $nodeMap{$r_Event->{'node'}} = $nodeNumber;
+
+            if ( $DEBUG > 3 ) { print "Assigning $nodeNumber to $r_Event->{'node'}\n"; }
+        }
+
+        if ( $r_Event->{'connectionStatus'} == 2 )
+        {
+            $nodes[$nodeNumber-1]->{'conn'}++;
+	    push @{$series{'conn'}},
+                [ parseTime($r_Event->{'timestamp'}, $StatsTime::TIME_DDMMYY_HMS) * 1000, $nodeNumber ];
+	} elsif ( $r_Event->{'connectionStatus'} == 3 ){
+            $nodes[$nodeNumber-1]->{'disc'}++;
+	    push @{$series{'disc'}},
+                [ parseTime($r_Event->{'timestamp'}, $StatsTime::TIME_DDMMYY_HMS) * 1000, $nodeNumber ];
+        } else {
+            print Dumper("unknown connectionStatus", $r_Event);
+        }
+    }
+
+    open OUTPUT, ">$plot";
+    print OUTPUT encode_json( [ { 'name' => 'Connect', 'data' => $series{'conn'} },
+				{ 'name' => 'Disconnect', 'data' => $series{'disc'} } ] );
+    close OUTPUT;
+
+    open TABLE, ">$tableFile" or die "Cannot open $tableFile";
+    for ( my $i = 0; $i <= $#nodes; $i++ )
+    {
+        my $r_Node = $nodes[$i];
+
+        printf TABLE " <tr> <td>%d</td> <td>%s</td> <td>%d</td> <td>%d</td> </tr>\n",
+        $i + 1, $r_Node->{name}, $r_Node->{conn}, $r_Node->{disc};
+    }
+    close TABLE;
+}
+
+main();

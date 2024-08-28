@@ -1,0 +1,74 @@
+#!/bin/sh
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+NS=$1
+DASH_DATE=$2
+DATA_DIR=$3
+OUTPUT_DIR=$4
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+# old-style or new-style instr? Can handle the same, just need to look at a different file
+if [ -f ${DATA_DIR}/instr.txt ] ; then
+    LOGFILE=${DATA_DIR}/instr.txt
+elif [ -f ${DATA_DIR}/instr/instr.txt ] ; then
+    LOGFILE=${DATA_DIR}/instr/instr.txt
+else
+    echo "ERROR: no instr file at ${DATA_DIR}/instr.txt or ${DATA_DIR}/instr/instr.txt"
+    exit 0
+fi
+
+grep PT_${NS} ${LOGFILE} | egrep -v '^ERROR' | sed -e "s/ PT_${NS}//" -e 's/\.[0-9]* / /' -e "s/^${DASH_DATE} /${DASH_DATE}:/" > ${TMP_DIR}/${NS}.txt
+NUM_LINES=`wc -l ${TMP_DIR}/${NS}.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -eq 0 ] ; then
+    echo "WARNING: No data found for ${NS}"
+    exit 1
+fi
+NCOLS=`tail -1 ${TMP_DIR}/${NS}.txt | wc -w | awk '{print $1}'`
+
+#EventsReceived,EventsDelivered,EventsAwaitingDelivery,SequenceProxyPushSuppliers,StructuredProxyPushSuppliers,StructuredProxyPushConsumers,JVM.TotalMemory,JVM.FreeMemory,SequenceProxyPushConsumers
+${ANALYSIS_BIN}/common/deltaInstr --in ${TMP_DIR}/${NS}.txt --out ${TMP_DIR}/${NS}_delta.txt --cols 1 2
+
+cat > ${TMP_DIR}/${NS}_plot.cmd <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set format x "%H:%M"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set yrange [ 0: ]
+set terminal jpeg medium size 800,400
+
+set output "${OUTPUT_DIR}/events_rec.jpg"
+set title "Events Received"
+plot "${TMP_DIR}/${NS}_delta.txt" using 1:2 notitle with lines
+
+set output "${OUTPUT_DIR}/events_del.jpg"
+set title "Events Delivered"
+plot "${TMP_DIR}/${NS}_delta.txt" using 1:3 notitle with lines
+
+set output "${OUTPUT_DIR}/events_await.jpg"
+set title "Events Awaiting Delivery"
+plot "${TMP_DIR}/${NS}_delta.txt" using 1:4 notitle with lines
+
+set output "${OUTPUT_DIR}/current_events.jpg"
+set title "Current Events"
+plot "${TMP_DIR}/${NS}_delta.txt" using 1:10 notitle with lines
+
+set output "${OUTPUT_DIR}/consum.jpg"
+set title "Consumer Proxies"
+plot "${TMP_DIR}/${NS}_delta.txt" using 1:5 title 'Sequence' with lines, "${TMP_DIR}/${NS}_delta.txt" using 1:6 title 'Structured' with lines
+
+set output "${OUTPUT_DIR}/supp.jpg"
+set title "Supplier Proxies"
+plot "${TMP_DIR}/${NS}_delta.txt" using 1:11 title 'Sequence' with lines, "${TMP_DIR}/${NS}_delta.txt" using 1:7 title 'Structured' with lines
+exit
+EOF
+
+gnuplot < ${TMP_DIR}/${NS}_plot.cmd
+
+#cat ${DATA_DIR}/instr.txt | awk '{print $1, $2, $3, ($10 * 1024), ($11 * 1024)}' > ${TMP_DIR}/${NS}_heap.txt
+grep "PT_${NS}" ${LOGFILE} | awk '{print $1, $2, $3, ($10 * 1024), ($11 * 1024)}' > ${TMP_DIR}/${NS}_heap.txt
+${ANALYSIS_BIN}/server/plotHeap ${TMP_DIR}/${NS}_heap.txt PT_${NS} ${DASH_DATE} ${OUTPUT_DIR}/heap.jpg

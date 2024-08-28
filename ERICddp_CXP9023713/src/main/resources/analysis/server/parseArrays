@@ -1,0 +1,229 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use POSIX;
+
+our $DEBUG = 0;
+
+our %DISK_SPEED =
+(
+ 'SEAGATE ST373307LSUN72G' => 10000,
+ 'SEAGATE ST373307FSUN72G' => 10000,
+ 'SEAGATE ST373207FSUN72G' => 10000,
+ 'SEAGATE ST373307FC'      => 10000,
+ 'SEAGATE ST373405FSUN72G' => 10000,
+ 'SEAGATE ST373453FSUN72G' => 15000,
+ 'SEAGATE ST373454FSUN72G' => 15000,
+
+ 'SEAGATE ST314670FSUN146G' => 10000,
+ 'SEAGATE ST314680FSUN146G' => 10000,
+ 'SEAGATE ST314685FSUN146G' => 15000,
+          
+ 'FUJITSU MAP3735F SUN72G'  => 10000,
+ 'FUJITSU MAP3735N SUN72G'  => 10000,
+ 'FUJITSU MAS3735F SUN72G'  => 15000,
+ 'FUJITSU MAT3073F SUN72G'  => 10000,
+ 'FUJITSU MAT3073N SUN72G'  => 10000,
+ 'FUJITSU MAU3073FCSUN72G'  => 15000,
+ 'FUJITSU MAW3073FCSUN72G'  => 10000,
+ 'FUJITSU MAX3073FCSUN72G'  => 15000,
+
+ 'FUJITSU MAT3147F SUN146G' => 10000,
+ 'FUJITSU MAW3147FCSUN146G' => 10000,
+ 'FUJITSU MAX3147FCSUN146G' => 15000,
+
+ 'HITACHI DK32EJ72FSUN72G'  => 10000,
+ 'HITACHI HUS1073FASUN72G'  => 10000,
+ 'HITACHI DK32EJ14FSUN146G' => 10000,
+ 'HITACHI HUS1014FASUN146G' => 10000
+);
+
+
+main();
+
+sub main
+{
+    my ($inputFile,$tableFile);
+    my $result = GetOptions(
+			    "input=s" => \$inputFile,
+	                    "table=s" => \$tableFile,
+			    "debug=s" => \$DEBUG,
+			    ); 
+     ($result == 1) or die "Invalid args";		
+
+    my $r_Arrays = readArrays($inputFile);
+
+    if ( $DEBUG > 3 ) { print Dumper("main: r_Arrays", $r_Arrays ); }
+
+    if ( $tableFile )
+    {
+	printTable($r_Arrays,$tableFile);
+    }
+}
+
+sub printTable
+{
+    my ($r_Arrays, $tableFile) = @_;
+    
+    open TABLE, ">$tableFile" or die "Cannot open $tableFile";
+    print TABLE "<table border=1>\n";
+    print TABLE " <tr> <th>Device</th> <th>Array Type</th> <th>Firmware</th> <th>Num Ctrl</th> <th>Cache Mode</th> <th>Cache Opt</th> <th>Disk Speed</th> <tr>\n";
+    foreach my $r_Array ( @{$r_Arrays} )
+    {
+	if ( $DEBUG > 5 ) { print Dumper("printTable: r_Array", $r_Array); }
+
+	my $diskSpeed = $DISK_SPEED{$r_Array->{'disks'}->[0]->{'type'}};
+	my $line = sprintf " <tr> <td>%s</td> <td>%s</td> <td>%s</td> <td>%d</td> <td>%s</td> <td>%s</td> <td>%s</td> </tr>\n",
+	$r_Array->{'device'}, $r_Array->{'product'}, $r_Array->{'revision'}, $r_Array->{'ctrl'}, $r_Array->{'cache_state'}, $r_Array->{'cache_opt'}, $diskSpeed;
+	if ( $DEBUG > 4 ) { print "printTable: line=$line"; }
+
+	printf TABLE $line;
+    }
+    print TABLE "</table>\n";
+}
+       
+sub readArrays
+{
+    my ($inputFile) = @_;
+
+    open ARRAY_FILE, $inputFile or die "Cannot open $inputFile";
+
+    my @arrayList = ();
+
+    my $IDLE  = 0;
+    my $INQ   = 1;
+    my $DISKS = 2;
+    my $FRU   = 3;
+    my $CACHE = 4;
+
+    my $state = $IDLE;
+    
+    while ( my $line = <ARRAY_FILE> )
+    {
+	if ( $DEBUG > 9 ) { print "readArrays: state=$state line=$line"; }
+
+	# New format where show configuration is used
+	if ( $line =~ /^\* (\S+)/ )
+	{
+	    my $sectionName = $1;
+	    if ( $sectionName eq "inquiry-data" )
+	    {
+		$state = $INQ;
+	    }
+	    elsif ( $sectionName eq 'disks' )
+	    {
+		$state = $DISKS;
+	    }
+	    elsif ( $sectionName eq 'FRUs' )
+	    {
+		$state = $FRU;
+	    }
+	    elsif ( $sectionName eq 'cache-parameters' )
+	    {
+		$state = $CACHE;
+	    }
+	    else 
+	    {
+		$state = $IDLE;
+	    }
+	}
+	elsif ( $state == $IDLE )
+	{
+	    if ( $line =~ /^BEGIN (\S+)/ )
+	    {
+		my $sectionName = $1;
+		if ( $sectionName eq "ARRAY" )
+		{
+		    my ($arrayName) = $line =~ /^BEGIN ARRAY \/dev\/rdsk\/(\S+)/;
+		    my $r_array = {
+			'device' => $arrayName,
+			'ctrl'   => 0,
+			'disks'  => []
+		    };
+		    push @arrayList, $r_array;
+		}
+		elsif ( $sectionName eq "INQ" )
+		{
+		    $state = $INQ;
+		}
+		elsif ( $sectionName eq "DISKS" )
+		{
+		    $state = $DISKS;
+		}
+		elsif ( $sectionName eq "FRU" )
+		{
+		    $state = $FRU;
+		}
+		elsif ( $sectionName eq "CACHE" )
+		{
+		    $state = $CACHE;
+		}
+	    }
+	}
+	elsif ( $line =~ /^END/ )
+	{
+	    $state = $IDLE;
+	}
+	elsif ( $state == $INQ )
+	{
+	    if ( $line =~/ Product: (.*)/ )
+	    {
+		$arrayList[$#arrayList]->{'product'} = $1;
+	    }
+	    elsif ( $line =~ /^ Revision: (.*)/ )
+	    {
+		$arrayList[$#arrayList]->{'revision'} = $1;
+	    }
+	}
+	elsif ( $state == $DISKS )
+	{
+	    #2(3)   0  136.73GB   200MB  ld0    ONLINE     SEAGATE ST314685FSUN146G 042D 
+	    if ( $line =~ /^\s+\S+\s+\d+\s+(\S+)\s+\S+\s+\S+\s+(\S+)\s+(.*)/ )
+	    {
+		my ($size,$status,$type) = ($1,$2,$3);
+		if ( $DEBUG > 5 ) { print "readArrays: disk size,status,type=$size,$status,$type\n"; }
+
+		$type =~ s/\s+\S+\s+$//;
+		$type =~ s/\s+$//;
+		$type =~ s/^M //;
+		if ( $DEBUG > 5 ) { print "readArrays: stripped type=$type\n"; }
+
+
+		my $r_disk = {
+		    'size'   => $size,
+		    'status' => $status,
+		    'type'   => $type
+		};
+		push @{$arrayList[$#arrayList]->{'disks'}}, $r_disk;
+	    }
+	}
+	elsif ( $state  == $FRU )
+	{
+	  if ( $line =~ /FC_RAID_IOM/ )
+	  {
+	      $arrayList[$#arrayList]->{'ctrl'}++;
+	  }
+	}
+	elsif ( $state == $CACHE )
+	{
+	    if ( $line =~ /optimization: (\S+)/ )
+	    {
+		$arrayList[$#arrayList]->{'cache_opt'} = $1;
+	    }
+	    elsif ( $line =~ /current-global-write-policy: (\S+)/ )
+	    {
+		$arrayList[$#arrayList]->{'cache_state'} = $1;
+	    }
+	}
+	       
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("readArrays: arrayList", \@arrayList ); }
+			
+    return \@arrayList;
+}
+
+	    
+	    

@@ -1,0 +1,22 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_infrastructure_monitor">
+    <reference table="sites" condition="enm_infrastructure_monitor.siteid = sites.id"/>
+    <reference table="servers" condition="enm_infrastructure_monitor.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_infrastructure_monitor.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(AVG(mspmPullFilesSessionCreationTime))),'NA')" label="Average SFTP/FTPES Connection Time (HH:MM:SS)"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(AVG(mspmPullFilesTransferTime))),'NA')" label="Average Bytes Transfer Time (HH:MM:SS)"/>
+  <column db="SUM(mspmPullFilesBytesTransfered / 1024)" label="Total Bytes Transfer (GB)"/>
+  <column db="SUM(mspmPullFilesStoredFS)" label="Total Files Stored"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(AVG(mspmPullFilesWriteTimeFS))),'NA')" label="Average File Write Time (HH:MM:SS)"/>
+  <column db="SUM(mspmPullFilesBytesStoredFS / 1024)" label="Total File Bytes Stored (GB)"/>
+</modelledtable>

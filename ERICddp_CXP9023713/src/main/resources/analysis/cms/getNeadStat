@@ -1,0 +1,187 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+
+our $DEBUG=0;
+our $NOT_SET = -1;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+main();
+
+sub main()
+{
+    my $scale = 1;
+    my $disableMissing = 0;
+    my ($input,$output,$statsStr,$plotFile,$plotArg,$isBcp,$siteid);
+    my $result = GetOptions(
+			    "input=s"  => \$input,
+			    "output=s"  => \$output,
+			    "scale=s" => \$scale,
+			    "disableMissing=s" => \$disableMissing,
+			    "stats=s" => \$statsStr,
+			    "plot=s"  => \$plotFile,
+			    "plotarg=s"  => \$plotArg,
+	                    "bcp" => \$isBcp,
+	                    "siteid=s" => \$siteid,
+			    "debug=n" => \$DEBUG,
+			    );
+
+    ($result == 1) or die "Invalid args"; 
+    $statsStr or die "Invalid args"; 
+    my @statNames = split(/,/, $statsStr);
+    my %statsMap = ();
+    for ( my $i = 0; $i <= $#statNames; $i++ ) 
+    {
+	$statsMap{$statNames[$i]} = $i;
+	if ( $DEBUG > 5 ) { print "Assigned $i to $statNames[$i]\n"; }
+    }
+
+    if ( $input eq "-" )
+    {
+	open(INPUT,  "<&=STDIN")  or die "Couldn't alias STDIN : $!";
+    }
+    else
+    {
+	open INPUT, $input or die  "Cannot open input $input";
+    }
+    open OUTPUT, ">$output" or die  "Cannot open input $output";
+
+    if ( $plotFile )
+    {
+	open PLOT_FILE, ">$plotFile" or die "Cannot open plot file $plotFile";
+	print PLOT_FILE "tsc;second";
+	foreach my $statName ( @statNames )
+	{
+	    print PLOT_FILE ";$statName";
+	}
+	print PLOT_FILE "\n";
+    }
+
+    my ($month, $date, $time, $year);
+    my @statValue = ();
+    while ( my $line = getLine() )
+    {
+	if ( $line =~ /^DUMP START/o )
+	{
+	    ($month, $date, $time, $year) = $line =~ /^DUMP START \S+ (\S+) (\d+) (\S+) \S+ (\d+)/o;
+	    $year -= 2000;
+	    $month = $monthMap{$month};
+	    
+	    #
+	    # Intialise counter values
+	    #
+	    for ( my $i = 0; $i <= $#statNames; $i++ )
+	    {	 
+		$statValue[$i] = $NOT_SET;
+	    }
+
+	    my $endOfDump = 0;
+	    my $numMatched = 0;
+	    while ( (! $endOfDump) && ($numMatched <= $#statNames) && ($line = getLine()) )
+	    {
+		if ( $line =~ /^DUMP STOP/ )
+		{
+		    $endOfDump = 1;
+		}
+		else
+		{
+		    my $matched = 0;
+		    chop $line;
+		    my @parts = split / /, $line;
+	
+		    if ( $DEBUG > 6 ) { print "Current = $parts[0] = $parts[2]\n"; }
+		    
+		    if ( exists $statsMap{$parts[0]} )
+		    {
+			my $sIndex = $statsMap{$parts[0]};
+			$statValue[$sIndex] = $parts[2];
+			$numMatched++;
+			if ( $DEBUG > 5 ) { print "Matched sIndex=$sIndex numMatched=$numMatched stat=$parts[0] value=$parts[2]\n"; }
+		    }
+		}
+	    }
+
+	    if ( $isBcp ) 
+	    {
+		printf OUTPUT "20%02d-%02d-%02d %s\t%d", $year, $month, $date, $time, $siteid;
+	    }
+	    else
+	    {
+		printf OUTPUT "%02d-%02d-%02d:%s", $date, $month, $year, $time;
+	    }		
+
+	    if ( $plotFile )
+	    {
+		printf PLOT_FILE "20%02d-%02d-%02d:%s", $year, $month, $date,  $time;
+	    }
+	    
+	    for ( my $i = 0; $i <= $#statNames; $i++ )
+	    {
+		my $value;
+		if ( $statValue[$i] > $NOT_SET )
+		{
+		    $value = $statValue[$i]/$scale;
+		}
+		elsif ( ($statValue[$i] == $NOT_SET) && !$disableMissing )
+		{
+		    $value = 0;
+		}		
+
+		if ( $DEBUG > 5 ) { print "stat=$statNames[$i] statValue=$statValue[$i] value=$value\n"; }
+
+		if ( $isBcp )
+		{
+		    print OUTPUT "\t$value"; 
+		}
+		else
+		{
+		    print OUTPUT " $value"; 
+		}
+
+		if ( $plotFile )
+		{
+		    print PLOT_FILE " $value"; 
+		}
+	    }
+
+	    print OUTPUT "\n";
+	    if ( $plotFile )
+	    {
+		print PLOT_FILE "\n"; 
+	    }
+	}
+    }
+    
+    close INPUT;
+    close OUTPUT;
+
+    if ( $plotFile )
+    {
+	print PLOT_FILE "\nplot;tsc;$plotArg\n";
+    close PLOT_FILE;
+    }
+}
+
+sub getLine()
+{
+    my $line = <INPUT>;
+    if ( $DEBUG > 9 ) { print "getLine: line = $line"; }
+    return $line;
+}
+    

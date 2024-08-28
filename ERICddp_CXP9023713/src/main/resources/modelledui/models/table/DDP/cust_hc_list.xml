@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="ddpadmin.ddp_custom_reports"/>
+  <where>0=0</where>
+
+  <column db="id" label="Id" id="id" visible="false"/>
+  <column db="reportname" label="Report Name"/>
+  <column db="site_type" label="Site Type"/>
+  <column db="signum" label="Owner"/>
+  <column db="access" label="Access"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="false">
+    <item id="seeSub" label="See Subscribers"/>
+    <item id="deleteReport" label="Delete this report"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

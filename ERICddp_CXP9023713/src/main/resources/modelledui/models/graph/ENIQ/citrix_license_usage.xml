@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Count"
+>
+
+  <title value="Citrix License Usage"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_ocs_license_usage_details">
+        <reference table="sites" condition="eniq_ocs_license_usage_details.siteId = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="totalLicenses" label="Total Licenses"/>
+      <column db="licenseUsage" label="Used Licenses "/>
+    </query>
+  </queries>
+  <size width="800" height="250"/>
+</modelledgraph>
+

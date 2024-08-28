@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cm_import_ntn"/>
+
+  <services>
+    <service name="importexportservice"/>
+  </services>
+
+  <events>
+      <!-- BULK_CMIMPORT.ntnDetails {\"ntnNumberOfPartialEvents\":0,\"numberOfComNoResources\":0,\"averageEventWaitTime\":0,\"ntnMosDeleted\":0,\"jobId\":2,\"maxEventWaitTime\":0,\"ntnMosModified\":0,\"numberOfNtnResultEvents\":0,\"ntnNumberOfFailedEvents\":0,\"numberOfPartitionsWithBscmChanges\":1,\"_Thread\":\"Batch Thread - 5\",\"ntnMosCreated\":0,\"totalEventWaitTime\":0}" -->
+      <event name="BULK_CMIMPORT.ntnDetails">
+        <metric source="jobId" target="jobid"/>
+        <metric source="numberOfPartitionsWithBscmChanges" target="numberOfPartitionsWithBscmChanges"/>
+        <metric source="ntnMosCreated" target="ntnMosCreated"/>
+        <metric source="ntnMosModified" target="ntnMosModified"/>
+        <metric source="ntnMosDeleted" target="ntnMosDeleted"/>
+        <metric source="numberOfNtnResultEvents" target="numberOfNtnResultEvents"/>
+        <metric source="ntnNumberOfPartialEvents" target="ntnNumberOfPartialEvents"/>
+        <metric source="ntnNumberOfFailedEvents" target="ntnNumberOfFailedEvents"/>
+        <metric source="averageEventWaitTime" target="averageEventWaitTime"/>
+        <metric source="totalEventWaitTime" target="totalEventWaitTime"/>
+        <metric source="maxEventWaitTime" target="maxEventWaitTime"/>
+        <metric source="numberOfComNoResources" target="numberOfComNoResources"/>	
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="hires_server_stat">
+  <reference table="sites" condition="hires_server_stat.siteid = sites.id"/>
+  <reference table="servers" condition="hires_server_stat.serverid = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="serverids"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND hires_server_stat.serverid IN ( %serverids% ) AND hires_server_stat.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="hires_server_stat.serverid"/>
+ </groupby>
+
+ <column db="hires_server_stat.serverid" label="serverid" id="serverid" visible="false"/>
+ <column db="servers.hostname" id="hostname" label="Hostname" formatter="formatHostname"/>
+ <column db="ROUND(AVG(iowait+sys+user+IFNULL(steal,0)),0)" label="Avg CPU(%)"/>
+ <column db="ROUND(MAX((memused - membuffers - memcached)/1024),0)" label="Max Mem(GB)"/>
+ <column db="ROUND(AVG(iowait),0)" label="Avg IO Wait(%)"/>
+
+ <ctxmenu keycol="serverid" targettype="modelledgraph" multiselect="true">
+  <item id="common/hires_server_stat_cpu" label="Plot Total CPU"/>
+  <item id="common/hires_server_stat_iowait" label="Plot IO Wait"/>
+  <item id="common/hires_server_stat_mem_nocache" label="Plot Memory"/>
+ </ctxmenu>
+
+</modelledtable>

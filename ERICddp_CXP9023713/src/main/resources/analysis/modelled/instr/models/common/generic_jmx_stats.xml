@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="(?&lt;!-lr)-jmx@genjmx_(\S+)$">
+
+  <table name="generic_jmx_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <hooks module="common::JvmMetrics">
+    <hook>prestore</hook>
+  </hooks>
+
+  <metricgroups>
+    <metricgroup name="^\S+-jvm-memory$">
+      <metric source="HeapMemoryUsage-committed" target="hp_committed" scale="1048576"/>
+      <metric source="HeapMemoryUsage-init" target="hp_init" scale="1048576"/>
+      <metric source="HeapMemoryUsage-max" target="hp_max" scale="1048576"/>
+      <metric source="HeapMemoryUsage-used" target="hp_used" scale="1048576"/>
+      <metric source="NonHeapMemoryUsage-committed" target="nh_committed" scale="1048576"/>
+      <metric source="NonHeapMemoryUsage-init" target="nh_init" scale="1048576"/>
+      <metric source="NonHeapMemoryUsage-max" target="nh_max" scale="1048576"/>
+      <metric source="NonHeapMemoryUsage-used" target="nh_used" scale="1048576"/>
+    </metricgroup>
+
+    <metricgroup name="^\S+-threads$">
+      <metric source="PeakThreadCount" target="peakthreadcount"/>
+      <metric source="ThreadCount" target="threadcount"/>
+    </metricgroup>
+
+    <metricgroup name="^\S+-os$">
+      <metric source="ProcessCpuTime" target="cputime" scale="1000000000" delta="true"/>
+      <metric source="OpenFileDescriptorCount" target="fd"/>
+    </metricgroup>
+
+    <metricgroup name="^\S+-nio-memory-mapped$">
+      <metric source="MemoryUsed" target="nio_mem_mapped" scale="1048576"/>
+    </metricgroup>
+
+    <metricgroup name="^\S+-nio-memory-direct$">
+      <metric source="MemoryUsed" target="nio_mem_direct" scale="1048576"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%$" providername="%1%-jvmgc">
+      <metric source="young-count" target="gc_youngcount" delta="true"/>
+      <metric source="young-time" target="gc_youngtime" delta="true"/>
+      <metric source="old-count" target="gc_oldcount" delta="true"/>
+      <metric source="old-time" target="gc_oldtime" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

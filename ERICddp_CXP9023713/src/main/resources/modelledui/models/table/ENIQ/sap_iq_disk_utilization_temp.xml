@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_data_layer_sap_iq">
+    <reference table="sites" condition="eniq_data_layer_sap_iq.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_data_layer_sap_iq.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="timeStamp"/>
+  <where>sites.name = '%site%' AND eniq_data_layer_sap_iq.time IN ( '%timeStamp%' )</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instances" id="diskTempUtilInstance"/>
+  <column db="eniq_data_layer_sap_iq.tempDbFiles" label="TempDB Files"/>
+  <column db="eniq_data_layer_sap_iq.tempDbSizeInGb" label="TempDB Size(GB)"/>
+  <column db="eniq_data_layer_sap_iq.tempDbUsagePercentage" label="TempDB Usage(%)"/>
+
+  <ctxmenu keycol="diskTempUtilInstance" targettype="url" >
+    <item id="diskTempUtilInstance" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

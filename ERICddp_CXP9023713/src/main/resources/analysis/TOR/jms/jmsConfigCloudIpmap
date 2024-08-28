@@ -1,0 +1,25 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use StatsTime;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use JSON;
+
+sub main() {
+    my ($membersFile, $ipMapFile);
+    my $result = GetOptions("membersFile=s" => \$membersFile,
+                            "ipmap=s" => \$ipMapFile
+                 );
+
+    # Creating ipmap.txt file using the host details of cloud members.txt
+    `cat $membersFile | awk '{if (NR!=1) {print}}' |awk '{print \$2 \" \" \$1}' | sed 's/\:.* / /g' | sed "s/ /' => '/" | sed "s/^/    '/" | sed "s/\$/',/" | gawk 'BEGIN{print "\$VAR1 = {"} {print \$0}' | sed '\$ s/,\$//g' | gawk 'END{print "}"} {print \$0}'>& $ipMapFile`;
+
+}
+
+main();
+

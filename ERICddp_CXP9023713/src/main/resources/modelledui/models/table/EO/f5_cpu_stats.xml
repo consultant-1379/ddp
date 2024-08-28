@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="f5_cpu_stats">
+  <reference table="sites" condition="f5_cpu_stats.siteid = sites.id"/>
+  <reference table="f5_cpu_names" condition="f5_cpu_stats.cpuid = f5_cpu_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND f5_cpu_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="f5_cpu_names.name"/>
+ </groupby>
+
+
+ <column db="f5_cpu_stats.cpuid" id="cpuid" label="cpuid" visible="false"/>
+ <column db="f5_cpu_names.name" label="F5 CPU"/>
+ <column db="AVG(user)" label="User"/>
+ <column db="AVG(system)" label="System"/>
+ <column db="AVG(iowait)" label="IO Wait"/>
+
+ <ctxmenu keycol="cpuid" targettype="url" multiselect="true">
+  <item id="cpustats" label="Plot"/>
+  <urltarget arg="plot"/>
+ </ctxmenu>
+</modelledtable>

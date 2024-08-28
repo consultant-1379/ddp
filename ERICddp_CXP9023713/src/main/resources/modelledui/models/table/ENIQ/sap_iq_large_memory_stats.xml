@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_data_layer_sap_iq">
+    <reference table="sites" condition="eniq_data_layer_sap_iq.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_data_layer_sap_iq.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="timeStamp"/>
+  <where>sites.name = '%site%' AND eniq_data_layer_sap_iq.time IN ( '%timeStamp%' )</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instances" id="memoryInstance" />
+  <column db="eniq_data_layer_sap_iq.largeMemoryFlexiblePercentage" label="Flexible(%)"/>
+  <column db="eniq_data_layer_sap_iq.largeMemoryInflexiblePercentage" label="Inflexible(%)"/>
+
+  <ctxmenu keycol="memoryInstance" targettype="url" >
+    <item id="memoryInstance" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

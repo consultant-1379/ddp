@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_flow_automation_flows_log">
+    <keycol name="siteid" reftable="sites"/>
+  </table>
+
+  <services>
+    <service name="flowautomation"/>
+  </services>
+
+  <events>
+    <event name="FLOW_AUTOMATION_FLOWS">
+      <metric source="FlowId" target="FlowId"/>
+      <metric source="FlowVersion" target="FlowVersion"/>
+      <metric source="FlowType" target="FlowType"/>
+      <metric source="EventType" target="EventType"/>
+      <metric source="FlowName" target="FlowName"/>
+    </event>
+  </events>
+</modelledevents>

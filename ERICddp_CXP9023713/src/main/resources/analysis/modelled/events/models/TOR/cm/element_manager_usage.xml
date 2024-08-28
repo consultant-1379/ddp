@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cm_element_manager_usage">
+    <keycol name="siteid" reftable="sites"/>
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="elementmanager"/>
+    <service name="remotedesktop"/>
+  </services>
+
+  <events>
+    <event name="elementmanager_resource_usage">
+      <metric source="host" target="serverid"/>
+      <metric source="MemoryUsed" target="memoryused"/>
+      <metric source="SessionCount" target="sessioncount"/>
+    </event>
+    <event name="remotedesktop_resource_usage">
+      <metric source="host" target="serverid"/>
+      <metric source="MemoryUsed" target="memoryused"/>
+      <metric source="SessionCount" target="sessioncount"/>
+    </event>
+  </events>
+</modelledevents>

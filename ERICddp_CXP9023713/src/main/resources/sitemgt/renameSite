@@ -1,0 +1,75 @@
+#!/bin/bash
+
+GREP=/bin/grep
+ID=/usr/bin/id
+MV=/bin/mv
+SED=/bin/sed
+
+DATAROOT=/data/stats/oss
+ANALYSIS_DIR=$(dirname $0)/../analysis
+
+while getopts o:n: name ; do
+    case $name in
+        o) OLD_SITE="${OPTARG}";;
+        n) NEW_SITE="${OPTARG}";;
+    esac
+done
+
+usage() {
+    if [ ! -z "${1}" ] ; then
+        echo "$1"
+    fi
+    echo "USAGE: $0 -o <original site> -n <new site>"
+    exit 1
+}
+
+if [ -z "${OLD_SITE}" ] ; then
+    usage "Must supply an original site name"
+fi
+if [ -z "${NEW_SITE}" ] ; then
+    usage "Must supply a new site name"
+fi
+
+# Must be running as statsadm or root
+ME=$(${ID} -un)
+if [ "${ME}" != "statsadm" ] && [ "${ME}" != "root" ] ; then
+    usage "This script must be run as statsadm or root"
+fi
+
+# 0. Verify new site does not exist
+${GREP} ":${NEW_SITE}$" ${DATAROOT}/sitelist.txt > /dev/null 2>&1
+if [ $? -eq 0 ] ; then
+    usage "Site already exists: ${NEW_SITE}"
+fi
+if [ -d "${DATAROOT}/${NEW_SITE}" ] ; then
+    usage "Site directory already exists for ${NEW_SITE}"
+fi
+SITE_ID=$(echo "SELECT id FROM sites WHERE name = '${NEW_SITE}'" | ${ANALYSIS_DIR}/sql/runSql)
+if [ ! -z ${SITE_ID} ] ; then
+    usage "A site with name ${NEW_SITE} already exists in the database"
+fi
+
+# 1. Verify old site exists
+${GREP} ":${OLD_SITE}$" ${DATAROOT}/sitelist.txt > /dev/null 2>&1
+if [ $? -ne 0 ] ; then
+    usage "No such site: ${OLD_SITE}"
+fi
+if [ ! -d "${DATAROOT}/${OLD_SITE}" ] ; then
+    usage "Data directory for ${OLD_SITE} does not exist"
+fi
+# Don't worry about the database - if the site id doesn't exist no update will be made.
+
+# 2. Change the second string in the sitelist.txt
+${SED} 's/:'${OLD_SITE}'$/:'${NEW_SITE}'/' ${DATAROOT}/sitelist.txt > /tmp/$$_sitelist.txt
+${MV} /tmp/$$_sitelist.txt ${DATAROOT}/sitelist.txt
+
+# 3. Move the data and analysis directories
+${MV} ${DATAROOT}/${OLD_SITE} ${DATAROOT}/${NEW_SITE}
+
+# 4. Update the database
+${ANALYSIS_DIR}/sql/runSql <<EOF
+UPDATE sites SET name = '${NEW_SITE}' WHERE name = '${OLD_SITE}'
+EOF
+
+echo "DONE"
+

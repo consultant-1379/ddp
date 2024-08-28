@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+     <service name="kpiservice"/>
+     <service name="conskpiserv"/>
+  </services>
+
+  <table name="kpiserv_reststatistics_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.dashboardapp.rest.resource.CellStatusRestResource.myservice-test:type=getCellStatusData\(class java.lang.String_class java.lang.String_class java.lang.String_interface java.util.List\)$">
+      <metric source="executionTimeTotalMillis" target="getCellStatusDataexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="getCellStatusDatamethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.networkstatus.rest.resources.NetworkStatusRestResource.network-status-service:type=getNeTypeOpStateCount\(class java.lang.String_class com.ericsson.oss.services.networkstatus.request.NetworkStatusRequest\)$">
+      <metric source="executionTimeTotalMillis" target="getNeTypeOpStateCountexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="getNeTypeOpStateCountmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.dashboardapp.rest.resource.KpiViewerRestResource.myservice-test:type=getKpiViewerData\(class com.ericsson.oss.services.kpi.kpiservice.query.KpiQueryObject\)$">
+      <metric source="executionTimeTotalMillis" target="getKpiViewerDataexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="getKpiViewerDatamethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.dashboardapp.rest.resource.BreachSummaryRestResource.myservice-test:type=getKpiBreachSummary\(class java.lang.String_class com.ericsson.oss.presentation.server.nhm.dashboardapp.dto.KpiBreachSummaryRequest\)$">
+      <metric source="executionTimeTotalMillis" target="getKpiBreachSummaryexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="getKpiBreachSummarymethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.dashboardapp.rest.resource.WorstPerformersRestResource.myservice-test:type=getWorstPerformers\(class java.lang.String_class java.lang.String_class java.lang.String\)$">
+      <metric source="executionTimeTotalMillis" target="getWorstPerformersexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="getWorstPerformersmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.networkstatus.ejb.handler.NodeStateChangeHandlerBean.network-status-service:type=processNeStateChange\(interface java.util.Collection\)$">
+      <metric source="executionTimeTotalMillis" target="processNeStateChangeexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="processNeStateChangemethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.networkstatus.ejb.handler.MoStateChangeHandlerBean.network-status-service:type=processStateChangeEvent\(class com.ericsson.oss.itpf.datalayer.dps.notification.event.DpsAttributeChangedEvent\)$">
+      <metric source="executionTimeTotalMillis" target="processStateChangeEventexecutionTimeMillis" delta="true"/>
+      <metric source="methodInvocations" target="processStateChangeEventmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpi.kpiservice.resources.NbiKpiValueRestService.kpi-service:type=fetchKpiValues\(class java.lang.String_class com.ericsson.oss.services.kpi.kpiservice.dto.KpiQueryRequest\)$">
+      <metric source="executionTimeTotalMillis" target="getfetchKpiValuesexecutionTimeTotalMillis" delta="true"/>
+      <metric source="methodInvocations" target="getfetchKpiValuesmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpi.kpiservice.resources.NbiKpiValueRestService.kpi-service:type=fetchHistoricalKpiValues\(class java.lang.String_class com.ericsson.oss.services.kpi.kpiservice.dto.KpiQueryRequest\)$">
+      <metric source="executionTimeTotalMillis" target="getfetchHistoricalKpiValuesexecutionTimeTotalMillis" delta="true"/>
+      <metric source="methodInvocations" target="getfetchHistoricalKpiValuesmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpi.kpiservice.ejb.metric.kpi-service:type=FetchKpiValuesForLastRopMetrics$">
+      <metric source="responseTime" target="getfetchKpiValuesexecutionTimeTotalMillis" delta="true"/>
+      <metric source="totalRequestReceived" target="getfetchKpiValuesmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpi.kpiservice.ejb.metric.kpi-service:type=FetchKpiValuesForLastFourRopsMetrics$">
+      <metric source="responseTime" target="getfetchHistoricalKpiValuesexecutionTimeTotalMillis" delta="true"/>
+      <metric source="totalRequestReceived" target="getfetchHistoricalKpiValuesmethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=GetActivationStatusNbiKpiMetrics$">
+      <metric source="responseTime" target="getActivationStatusresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getActivationStatustotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=GetNbiKpiInstanceCapabilitiesMetrics$">
+      <metric source="responseTime" target="getKpiInstanceCapabilitiesresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getKpiInstanceCapabilitiestotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=ActivateOrDeactivateNbiKpiMetrics$">
+      <metric source="responseTime" target="getActivateOrDeactivateKpiresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getActivateOrDeactivateKpitotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=DeleteNbiKpiMetrics$">
+      <metric source="responseTime" target="getDeleteKpiresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getDeleteKpitotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=ListNbiKpiMetrics$">
+      <metric source="responseTime" target="getListKpiresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getListKpitotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=CreateNbiKpiMetric$">
+      <metric source="responseTime" target="getCreateKpiresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getCreateKpitotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=ReadNbiKpiMetric$">
+      <metric source="responseTime" target="getReadKpiDefinitionresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getReadKpiDefinitiontotalRequestReceived" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.nhm.kpispecification.rest.metrics.kpi-specification-service:type=UpdateNbikpiMetric$">
+      <metric source="responseTime" target="getUpdateKpiresponseTime" delta="true"/>
+      <metric source="totalRequestReceived" target="getUpdateKpitotalRequestReceived" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.networkstatus.ejb.handler.NodeStateChangeHandlerBean.network-status-service:type=processNeStateChange\(interface java.util.Collection\)$">
+      <metric source="executionTimeInMillisForNodeStateChange" target="processNeStateChangeexecutionTimeMillis" delta="true"/>
+      <metric source="totalRequestReceivedForNodeStateChange" target="processNeStateChangemethodInvocations" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.networkstatus.ejb.handler.MoStateChangeHandlerBean.network-status-service:type=processStateChangeEvent\(class com.ericsson.oss.itpf.datalayer.dps.notification.event.DpsAttributeChangedEvent\)$">
+      <metric source="executionTimeInMillisForMoStateChange" target="processStateChangeEventexecutionTimeMillis" delta="true"/>
+      <metric source="totalRequestReceivedForMoStateChange" target="processStateChangeEventmethodInvocations" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_pmic_fs_usage"/>
+
+  <services>
+    <service name="fls"/>
+  </services>
+
+  <events>
+    <!-- PMIC_FS_USAGE_STATISTICS {"PM_MOUNT_PATH":"/ericsson/pmic1","PM_FILE_SYSTEM_USAGE":135,"PM_FILE_SYSTEM_CAPACITY":10240,"PM_FILE_SYSTEM_USAGE_PERCENTAGE":2} -->
+    <event name="PMIC_FS_USAGE_STATISTICS">
+      <metric source="PM_MOUNT_PATH" target="path"/>
+      <metric source="PM_FILE_SYSTEM_CAPACITY" target="fsCapacity" scale="1048576"/>
+      <metric source="PM_FILE_SYSTEM_USED_SPACE" target="fsUsage" scale="1048576"/>
+      <metric source="PM_FILE_SYSTEM_AVAILABLE_SPACE" target="fsAvailable" scale="1048576"/>
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_winfiol_commands">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ops"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="host"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="n_commands" type="count"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <!-- OPS_Command {"state":"Sent", "neId":"AP04", "command":"exit"} -->
+      <event name="OPS_WinFIOL_Command">
+        <metric source="host" target="serverid"/>
+        <metric source="n_commands" target="n_commands"/>
+      </event>
+  </events>
+
+</modelledevents>

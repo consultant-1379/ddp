@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_jboss_threadpools_nonstandard">
+      <reference table="sites" condition="enm_jboss_threadpools_nonstandard.siteid = sites.id"/>
+      <reference table="servers" condition="enm_jboss_threadpools_nonstandard.serverid = servers.id"/>
+      <reference table="enm_sg_specific_threadpool_names" condition="enm_jboss_threadpools_nonstandard.threadpoolid = enm_sg_specific_threadpool_names.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="srvids"/>
+    <param name="tp"/>
+    <where>sites.name = '%s' AND enm_jboss_threadpools_nonstandard.serverid IN ( %s ) AND enm_sg_specific_threadpool_names.name = '%s'</where>
+  </query>
+  <graphs>
+    <graph name="queueSize" type="sb">
+      <title value="queueSize"/>
+      <column db="queueSize" label="queueSize"/>
+    </graph>
+    <graph name="busytaskThreadcount" type="sb">
+      <title value="busytaskThreadcount"/>
+      <column db="busytaskThreadcount" label="busytaskThreadcount"/>
+    </graph>
+  </graphs>
+  <groups>
+    <group name="threadpools">
+      <member>queueSize</member>
+      <member>busytaskThreadcount</member>
+    </group>
+  </groups>
+</modelledgraphset>

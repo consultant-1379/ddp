@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@jboss_threadpools">
+
+  <table name="enm_sg_specific_threadpool">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="threadpoolid" reftable="enm_sg_specific_threadpool_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>threadpoolid</multi>
+
+    <metricgroup name="defaultthreadpool">
+      <metric source="jboss_threads_default_completedtaskcount" target="completedTaskCount" delta="true" filteridle="true"/>
+      <metric source="jboss_threads_default_activecount" target="activeCount" filteridle="true"/>
+      <metric source="jboss_threads_default_queuesize" target="queueSize" filteridle="true"/>
+      <metric source="jboss_threads_default_rejectedtaskcount" target="rejectedCount" delta="true"  filteridle="true"/>
+       <property name="threadpoolid" xsi:type="fixedproperty" value="default"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

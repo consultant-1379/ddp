@@ -1,0 +1,32 @@
+{
+    "queries": [
+        {
+            "sql": "SELECT k8s_pod.pod, servers.hostname, k8s_pod_app_names.name FROM k8s_pod JOIN servers ON k8s_pod.serverid = servers.id LEFT OUTER JOIN k8s_pod_app_names ON k8s_pod.appid = k8s_pod_app_names.id WHERE k8s_pod.siteid = 1 AND k8s_pod.date = '2022-01-01'",
+            "results": [
+                [
+                    "ftspod-abcd",
+                    "ftppod-01",
+                    "filetransferservice"
+                ],
+                [
+                    "ngixpod-abcd",
+                    "ngixpod-01",
+                    "eric-oss-ingress-controller-nx"
+                ],
+                [
+                    "otherpod-abcd",
+                    "otherpod-01",
+                    null
+                ]
+            ]
+        },
+        {
+            "sql": "SELECT id, lhost, lport, rhost, rport, proto FROM enm_lvs",
+            "results": [
+            ]
+        }
+    ],
+    "dbDo": [
+        "INSERT INTO enm_lvs (lhost,lport,rhost,rport,proto) VALUES ('vip-01', 1, 'otherpod-01', 1, 'tcp')"
+    ]
+}

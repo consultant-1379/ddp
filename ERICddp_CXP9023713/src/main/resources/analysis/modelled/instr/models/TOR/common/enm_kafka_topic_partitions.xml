@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^kafka-lr@kafka$"
+  sampleinterval="1800"
+>
+
+  <table name="enm_kafka_topic_partitions">
+    <keycol name="serverid" reftable="servers" />
+    <keycol name="topicid" reftable="kafka_topic_names" />
+  </table>
+
+  <metricgroups>
+    <multi>topicid</multi>
+    <multi>partnum</multi>
+
+    <metricgroup name="^kafka_lr-LogEndOffset-(\w+)-(\d+)$">
+      <metric source="Value" target="logOffset" delta="true" />
+      <property name="topicid" xsi:type="nameproperty" index="1" />
+      <property name="partnum" xsi:type="nameproperty" index="2" />
+    </metricgroup>
+
+    <metricgroup name="^kafka_lr-ReplicasCount-(\w+)-(\d+)$">
+      <metric source="Value" target="NONE" store="false" filtervalue="2" />
+      <property name="topicid" xsi:type="nameproperty" index="1" />
+      <property name="partnum" xsi:type="nameproperty" index="2" />
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

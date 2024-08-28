@@ -1,0 +1,61 @@
+#!/bin/bash
+
+PRIMARY=$1
+if [ -z "${PRIMARY}" ] ; then
+    echo "Usage: $0 <ddpname>"
+    exit 1
+fi
+
+PRIMARY_IP=$(getent hosts ${PRIMARY}-db | awk '{print $1}')
+mysql --user=repl --password=_repl --host=${PRIMARY_IP} ddpadmin --batch --silent <<EOF > /tmp/replusers.txt
+SELECT signum, mysql_passwd FROM ddpusers WHERE use_sql=1 AND mysql_passwd IS NOT NULL;
+EOF
+if [ $? -ne 0 ] ; then
+    echo "ERROR: Fail to get sql users"
+    exit 1
+fi
+
+if [ -r /tmp/update_users.sql ] ; then
+    /bin/rm /tmp/update_users.sql
+fi
+
+# Remove any user that shouldn't exist
+mysql --defaults-file=/etc/my_repl_${PRIMARY}.cnf mysql --batch --silent -e "SELECT user,host FROM user" > /tmp/existing_users.txt
+while read LINE ; do
+    USER=$(echo "${LINE}" | awk '{print $1}')
+    HOST=$(echo "${LINE}" | awk '{print $2}')
+    if [ "${USER}" != "root" ] && [ "${USER}" != "repladm" ] ; then
+        grep --silent -w "${USER}"  /tmp/replusers.txt
+        if [ $? -ne 0 ] ; then
+            echo "WARN: Invalid user found ${USER} @ ${HOST}, dropping"
+            echo "DROP USER '${USER}'@'${HOST}';" >> /tmp/update_users.sql
+        fi
+    fi
+done < /tmp/existing_users.txt
+
+NUM_USERS=$(wc -l /tmp/replusers.txt | awk '{print $1}')
+if [ ${NUM_USERS} -gt 0 ] ; then
+    while read LINE ; do
+        USER=$(echo "${LINE}" | awk '{print $1}')
+        PASSWD=$(echo "${LINE}" | awk '{print $2}')
+        grep --silent -w "${USER}" /tmp/existing_users.txt
+        if [ $? -ne 0 ] ; then
+            if [ -z "${PASSWD}" ] ; then
+                echo "WARN: Empty password for ${USER}"
+            else
+                echo "INFO: Adding user ${USER}"
+                cat >> /tmp/update_users.sql <<EOF
+GRANT SELECT ON statsdb.* TO '${USER}'@'%' IDENTIFIED BY PASSWORD '${PASSWD}';
+EOF
+            fi
+        fi
+    done < /tmp/replusers.txt
+fi
+
+if [ -s /tmp/update_users.sql ] ; then
+    mysql --defaults-file=/etc/my_repl_${PRIMARY}.cnf -u root < /tmp/update_users.sql
+    if [ $? -eq 0 ] ; then
+      rm -f /tmp/replusers.txt  /tmp/existing_users.txt /tmp/update_users.sql
+    fi
+fi
+

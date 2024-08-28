@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="Connections"/>
+ <queries>
+  <query timecol="time" multiseries="f5_pool_names.name">
+  <dbtables main="f5_pool_stats">
+   <reference table="sites" condition="f5_pool_stats.siteid = sites.id"/>
+   <reference table="f5_pool_names" condition="f5_pool_stats.poolid = f5_pool_names.id"/>
+  </dbtables>
+
+   <param name="site"/>
+   <param name="poolids"/>
+   <where>sites.name = '%s' AND f5_pool_names.id IN ( %s )</where>
+   <column db="f5_pool_stats.connections" label="Connections"/>
+  </query>
+ </queries>
+ <size width="600" height="240"/>
+</modelledgraph>

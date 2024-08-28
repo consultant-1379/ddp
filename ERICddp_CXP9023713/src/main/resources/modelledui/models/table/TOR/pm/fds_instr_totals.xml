@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_pm_file_del_stats_instr">
+    <reference table="sites" condition="enm_pm_file_del_stats_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_pm_file_del_stats_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="filter"/>
+  <where>sites.name = '%site%' AND enm_pm_file_del_stats_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_pm_file_del_stats_instr.filter = '%filter%'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="enm_pm_file_del_stats_instr.filter" id="filter" visible="false" label="filter"/>
+  <column db="servers.hostname" label="Hostname"/>
+  <column db="SUM(expiredFilesCount)" label="Total Files to be Deleted"/>
+  <column db="SUM(filesDeletedCount)" label="Total File Count "/>
+  <column db="SEC_TO_TIME(ROUND(SUM(filesDeletedTime)/1000))" label="Total Deletion Time (HH:MM:SS)" formatter="ddpFormatTime"/>
+  <column db="SUM(filesDeletionFailedCount)" label="Failed File Deletion Count"/>
+
+
+  <ctxmenu keycol="filter" targettype="url" multiselect="false">
+    <item id="fdsGraphs" label="Show graphs"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

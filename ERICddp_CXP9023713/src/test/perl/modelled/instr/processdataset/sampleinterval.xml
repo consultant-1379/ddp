@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@opendj_ldap_stats"
+  sampleinterval="120">
+
+  <table name="opendj_ldap_stats">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <multi>port</multi>
+
+    <metricgroup name="^bind:(.*)">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="bind_cnt" delta="true" filteridle="true">
+        <labelfilter name="type" value="^bind$"/>
+      </metric>
+      <property name="port" xsi:type="multilabelproperty" label="ldap_handler" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

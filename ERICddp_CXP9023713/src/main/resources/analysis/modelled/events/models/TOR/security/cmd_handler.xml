@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cmd_handler_statistics">
+    <keycol name="siteid" reftable="sites"/>
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="securityservice"/>
+    <service name="security"/>
+  </services>
+
+  <events>
+  <!-- 2023-04-05 09:45:12,976 INFO  [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] (default task-2) NODE_SECURITY.COMMAND_HANDLER_COMPLETED {"COMMAND_ID":"LDAP_PROXY_ENABLE","COMMAND_NUM_SUCCESS_ITEMS":1,"COMMAND_NUM_ITEMS":2,"COMMAND_DURATION":1,"COMMAND_NUM_ERROR_ITEMS":1}  -->
+    <event name="NODE_SECURITY.COMMAND_HANDLER_COMPLETED">
+      <metric source="host" target="serverid"/>
+      <metric source="COMMAND_DURATION" target="commandDuration"/>
+      <metric source="COMMAND_ID" target="commandType"/>
+      <metric source="COMMAND_NUM_ITEMS" target="numOfItems"/>
+      <metric source="COMMAND_NUM_SUCCESS_ITEMS" target="numOfSuccessItems"/>
+      <metric source="COMMAND_NUM_ERROR_ITEMS" target="numOfErrorItems"/>
+    </event>
+  </events>
+</modelledevents>

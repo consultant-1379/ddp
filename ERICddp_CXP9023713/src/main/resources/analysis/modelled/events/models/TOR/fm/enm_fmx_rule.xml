@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmx_rule" timecol="startTime">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid" />
+  </table>
+
+  <services>
+    <service name="fmx" />
+    <service name="fmx-engine" />
+  </services>
+
+  <hooks module="TOR::FMX">
+    <hook>preprocess</hook>
+  </hooks>
+
+  <events>
+    <!-- fmx_rule
+    {\"engine\":1,\"blockType\":\"UPDATE-TRIGGER\",\"moduleName\":\"WRX_IUB_disturbances\",\"ruleName\":\"UtranCell_InternalResourceUnavailable\",\"blockID\":37,\"blockName\":\"UtranCell_InternalResourceUnavailable_alarm\",\"count\":0} -->
+    <event name="fmx_rule">
+      <metric source="host" target="serverid" />
+      <metric source="engine" target="engine" />
+      <metric source="blockType" target="blockType" />
+      <metric source="moduleName" target="moduleName" />
+      <metric source="ruleName" target="ruleName" />
+      <metric source="blockID" target="blockID" />
+      <metric source="blockName" target="blockkName" />
+      <metric source="count" target="count" filteridle="true" />
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="elasticsearch_tp_names.name">
+    <dbtables main="elasticsearch_tp">
+      <reference table="sites" condition="elasticsearch_tp.siteid = sites.id"/>
+      <reference table="elasticsearch_tp_names" condition="elasticsearch_tp.tpid = elasticsearch_tp_names.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="servicetype"/>
+    <where>sites.name = '%s' AND elasticsearch_tp.servicetype = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="completed" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Completed"/>
+      <column db="completed" label = "Completed"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="comp">
+      <member>completed</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

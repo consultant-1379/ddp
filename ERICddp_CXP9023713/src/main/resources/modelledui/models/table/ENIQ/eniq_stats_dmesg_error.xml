@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_stats_dmesg">
+    <reference table="sites" condition="eniq_stats_dmesg.siteId = sites.id"/>
+    <reference table="servers" condition="eniq_stats_dmesg.serverId = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverId"/>
+  <where>sites.name = '%site%' AND servers.id = '%serverId%' AND eniq_stats_dmesg.date = '%date%'</where>
+
+  <column db="DISTINCT eniq_stats_dmesg.timeStamp" label="Time Stamp"/>
+  <column db="eniq_stats_dmesg.errorMesg" label="Error Message"/>
+</modelledtable>

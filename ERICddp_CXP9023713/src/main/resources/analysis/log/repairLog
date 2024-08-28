@@ -1,0 +1,97 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Time::Local;
+
+our $DEBUG = 0;
+my ($input,$output);
+my $result = GetOptions(
+			"input=s"  => \$input,
+			"output=s"  => \$output,
+			"debug" => \$DEBUG
+			);
+($result == 1) or die "Invalid args"; 
+
+open INPUT, $input or die "Cannot open $input";
+open OUTPUT, ">$output" or die "Cannot open $output";
+
+my ($lastEvent,$lastEventTime);
+while ( my $line = <INPUT> )
+{
+    if ( $line =~ /^\d+/ )    
+    {
+	$_ = $line;
+	my ($year,$month,$day,$hour,$min,$sec,$logMsg) =
+	    /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2}) (.*)/;    
+	my $eventTime = timelocal($sec, $min, $hour, $day, $month - 1, $year);
+
+	if ( $lastEvent )
+	{
+	    if ( $eventTime < $lastEventTime )
+	    {
+		print "Log entry out of sequnce\n";
+		print $line;
+		print " is older then\n";
+		print $lastEvent;
+		
+		findNext($lastEvent);
+		next;
+	    }
+	}
+	
+	$lastEvent = $line;
+	$lastEventTime = $eventTime;
+    }
+
+    if ( $line =~ /^Log has being cleared/ )
+    {
+	if ( $lastEvent )
+	{
+	    findNext($lastEvent);
+	}
+    }
+
+    print OUTPUT $line;
+}
+
+close INPUT;
+close OUTPUT;
+
+sub findNext
+{
+    my ($entry) = @_;
+    $_ = $entry;
+
+    #2004-03-12 16:32.16
+    my $logMsg;
+
+    my ($year,$month,$day,$hour,$min,$sec,$logMsg) =
+	/^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2}) (.*)/;    
+    my $searchTime = timelocal($sec, $min, $hour, $day, $month - 1, $year);
+
+    if ( $DEBUG ) { print "Searching for $searchTime $logMsg\n"; }
+
+    my $nextFound = 0;
+    while ( (my $line = <INPUT> ) && ! $nextFound )
+    {
+	$_ = $line;
+	my ($year,$month,$day,$hour,$min,$sec,$thisLogMsg) =
+	    /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2}) (.*)/;    
+	my $thisTime = timelocal($sec, $min, $hour, $day, $month - 1, $year);
+
+	if ( $DEBUG ) { print "Testing  $thisTime $thisLogMsg\n"; }
+	
+	if ( $thisTime > $searchTime )
+	{
+	    $nextFound = 1;
+	}
+	elsif ( ($thisTime == $searchTime) && ($thisLogMsg eq $logMsg) )
+	{
+	    $nextFound = 1;
+	}
+    }
+}
+
+
+

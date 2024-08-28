@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_cm_total_notifications" timecol="time">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="comecimmscm"/>
+    <service name="mscmip"/>
+    <service name="mscmapg"/>
+  </services>
+
+  <events>
+    <!-- @svc-3-mscmce@JBOSS@[com.ericsson.oss.itpf.EVENT_DATA_LOGGER] TOTAL_NOTIFICATIONS {"Received":31483,"Processed":31483}  -->
+    <event name="TOTAL_NOTIFICATIONS">
+      <metric source="host" target="serverid"/>
+      <metric source="Received" target="received"/>
+      <metric source="Processed" target="processed"/>
+    </event>
+  </events>
+</modelledevents>

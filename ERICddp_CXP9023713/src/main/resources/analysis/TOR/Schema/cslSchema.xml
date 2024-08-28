@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<instr>
+    <createdBy>Soumya Mondal</createdBy>
+    <DbTable>csl_file_output_adaptar</DbTable>
+    <MetricSet>
+       <metric>count</metric>
+       <metric>mean_rate</metric>
+       <metric>m1</metric>
+       <metric>m5</metric>
+       <metric>m15</metric>
+    </MetricSet>    
+</instr>   

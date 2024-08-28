@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_modeling_fileread_instr">
+    <reference table="sites" condition="enm_modeling_fileread_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_modeling_fileread_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where> sites.name = '%site%' AND enm_modeling_fileread_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <order columnid="timecol" direction="DESC"/>
+
+  <column db="enm_modeling_fileread_instr.time" label="Time" id="timecol" visible="false"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="enm_modeling_fileread_instr.repoReads" label="Repo Reads" id="repoReads"/>
+  <column db="enm_modeling_fileread_instr.repoReadTime" label="Repo Read Time in (ms)" id="repoReadTime"/>
+  <column db="enm_modeling_fileread_instr.maxRepoReadTime" label="Repo Read Time (Max)" id="maxRepoReadTime"/>
+  <column db="enm_modeling_fileread_instr.avgModelReadTime" label="Model Read Time (Avg)" id="avgModelReadTime"/>
+  <column db="enm_modeling_fileread_instr.maxModelReadTime" label="Model Read Time (Max)" id="maxModelReadTime"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="modelFile" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,181 @@
+#!/bin/bash
+
+usage() {
+    echo "usage: $0 -s <srcdir> -d <dstdir> [-y years] [-S <sites>] [-D]"
+}
+
+fail() {
+    echo "ERROR: $*"
+    usage
+    exit 1
+}
+
+warn() {
+    echo "WARN: $*"
+}
+
+debug() {
+    if [ ! -z "$DEBUG" ] ; then
+        echo "DEBUG: $*"
+    fi
+}
+
+NUM_CHILDREN=5
+while getopts s:d:y:c:S:D opt ; do
+    case ${opt} in
+        s)
+        SRCDIR=$OPTARG
+        ;;
+        d)
+        DSTDIR=$OPTARG
+        ;;
+        y)
+        YEARS=$OPTARG
+        ;;
+	c)
+	CHILD_FILE=$OPTARG
+        ;;
+        D)
+        DEBUG=true
+        ;;
+    esac
+done
+
+if [ -z "${SRCDIR}" ] || [ ! -d "${SRCDIR}" ] ; then
+    fail "no source directory: ${SRCDIR}"
+elif [ -z "${DSTDIR}" ] || [ ! -d "${DSTDIR}" ] ; then
+    fail "no destination directory: ${DSTDIR}"
+fi
+if [ -z "${YEARS}" ] ; then
+    fail "We need to know what years to migrate"
+fi
+
+for year in ${YEARS} ; do
+        # year should be in the format "[0-9][0-9]"
+    echo ${year} | egrep "^[0-9][0-9]$" > /dev/null
+    if [ $? -ne 0 ] ; then
+        fail "Year $year is not a valid year, skipping"
+    fi
+done
+
+moveSite() {
+    SITE_DIR=$1
+
+    debug "Checking $SITE_DIR"
+    if [ ! -d "${SITE_DIR}" ] ; then	
+	return
+    fi
+
+    site=`basename ${SITE_DIR}`
+    ossdir=`dirname ${SITE_DIR}`
+    oss=`basename ${ossdir}`
+
+    for year in ${YEARS} ; do
+        YEARDIR=${DSTDIR}/20${year}
+        OSS_DEST=${YEARDIR}/${oss}
+	
+	for ad in analysis data ; do
+            if [ ! -d "${SITE_DIR}/${ad}" ] ; then continue ; fi
+            TO_MOVE=$(cd ${SITE_DIR}/${ad} ; ls | egrep "[0-9][0-9][0-9][0-9]${year}")
+            if [ ! -z "${TO_MOVE}" ] ; then
+                # Create relevant directories if required
+                if [ ! -d "${OSS_DEST}/${site}" ] ; then
+                    mkdir ${OSS_DEST}/${site}
+                    [ $? -ne 0 ] && fail "Could not create ${OSS_DEST}/${site}"
+                fi
+                TARGET_DIR=${OSS_DEST}/${site}/${ad}
+                if [ ! -d "${TARGET_DIR}" ] ; then
+                    mkdir ${TARGET_DIR}
+                    [ $? -ne 0 ] && fail "Could not create ${TARGET_DIR}"
+                fi
+                for mvdir in ${TO_MOVE} ; do
+                    debug "Moving ${SITE_DIR}/${ad}/${mvdir} to ${TARGET_DIR}"
+                    mv ${SITE_DIR}/${ad}/${mvdir} ${TARGET_DIR}
+                    if [ $? -ne 0 ] ; then
+                        fail "Error moving ${mvdir} to ${TARGET_DIR}"
+                    fi
+                done
+            fi
+        done
+    done
+
+    for ad in analysis data ; do	
+	REMAINING=$(cd ${SITE_DIR}/${ad} ; ls)
+	if [ -z "${REMAINING}" ] ; then
+	    rm -rf ${SITE_DIR}/${ad}
+	fi
+    done
+    REMAINING=$(cd ${SITE_DIR} ; ls)
+    if [ -z "${REMAINING}" ] ; then
+	rm -rf ${SITE_DIR}
+    fi    
+}
+
+if [ -z ${CHILD_FILE} ] ; then
+    #
+    # Parent Mode
+    #
+
+    # Make sure target directory structure exists
+    BASEDIRS=$(cd ${SRCDIR} ; ls)
+    for oss in ${BASEDIRS} ; do
+	debug "Check target directory for ${oss}"
+	OSS_BASE=${SRCDIR}/${oss}
+
+	for year in ${YEARS} ; do
+            YEARDIR=${DSTDIR}/20${year}
+	    
+            if [ ! -d "${YEARDIR}" ] ; then
+		debug "making directory ${YEARDIR}"
+		mkdir ${YEARDIR}
+		[ $? -ne 0 ] && fail "Could not create ${YEARDIR}"
+            fi
+	    
+            OSS_DEST=${YEARDIR}/${oss}
+            if [ ! -d "${OSS_DEST}" ] ; then
+		debug "making directory ${OSS_DEST}"
+		mkdir ${OSS_DEST}
+		[ $? -ne 0 ] && fail "Could not create ${OSS_DEST}"
+            fi
+	done
+    done
+
+   # Remove any existing list files
+    CHILD_INDEX=1
+    while [ ${CHILD_INDEX} -le ${NUM_CHILDREN} ] ; do
+	rm -f /tmp/list.${CHILD_INDEX} > /dev/null 2>&1
+	CHILD_INDEX=`expr ${CHILD_INDEX} + 1`
+    done
+    CHILD_INDEX=1
+
+    for oss in ${BASEDIRS} ; do
+	debug "Scanning source directory structure for ${oss}"
+	OSS_BASE=${SRCDIR}/${oss}
+	
+	SITES=$(cd ${OSS_BASE} ; ls)
+		
+	for site in ${SITES} ; do
+	    echo ${OSS_BASE}/${site} >> /tmp/list.${CHILD_INDEX}
+	    CHILD_INDEX=`expr ${CHILD_INDEX} + 1`
+	    if [ ${CHILD_INDEX} -gt ${NUM_CHILDREN} ] ; then
+		CHILD_INDEX=1
+	    fi
+	done
+    done
+
+
+    CHILD_INDEX=1
+    while [ ${CHILD_INDEX} -le ${NUM_CHILDREN} ] ; do
+	$0 "$@" -c /tmp/list.${CHILD_INDEX} > /tmp/move.${CHILD_INDEX}.log 2>&1 &
+	CHILD_INDEX=`expr ${CHILD_INDEX} + 1`
+    done
+    wait
+else
+    #
+    # Child Mode
+    #
+    SITE_DIR_LIST=`cat ${CHILD_FILE}`    
+    for site_dir in ${SITE_DIR_LIST} ; do
+	moveSite $site_dir
+    done
+fi

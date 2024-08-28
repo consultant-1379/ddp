@@ -1,0 +1,13 @@
+{
+    "default": {
+        "normal": 1,
+        "long": 12
+    },
+
+    "long": [
+        "table2"
+    ],
+
+    "table3": 2,
+    "table4": 3
+}

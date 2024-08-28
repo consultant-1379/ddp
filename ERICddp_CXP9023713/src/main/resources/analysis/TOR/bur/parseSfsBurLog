@@ -1,0 +1,221 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use PerlIO::gzip;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ($burDir, $site, $date, $keyword);
+    my $result = GetOptions("site=s"  => \$site,
+                            "date=s"  => \$date,
+                            "dir=s"   => \$burDir,
+                            "debug=s" => \$DEBUG
+                            );
+
+    my %burBosLogFiles = ();
+    opendir(my $dh, $burDir) || die "can't opendir bur dir: $!";
+    while ( my $file = readdir($dh) ) {
+        if ( $file =~ /^\./ ) {
+            next;
+        }
+        elsif ( $file =~ /^bos.log(?:.gz)?\.?(\d*)/ ) {
+            if ( $1 ne '' ) {
+                $burBosLogFiles{$1} = $burDir . "/" . $file;
+            }
+            else {
+                $burBosLogFiles{0} = $burDir . "/" . $file;
+            }
+        }
+        elsif ( $file =~ /^bos.log/ ) {
+            print "main: Invalid BUR bos log file name - $burDir/$file\n";
+        }
+    }
+
+    my @burBosLogs = ();
+    foreach (sort {$b <=> $a} keys %burBosLogFiles) {
+        push (@burBosLogs, $burBosLogFiles{$_});
+    }
+    if ( $DEBUG > 5 ) { print Dumper("main: burBosLogs ", \@burBosLogs); }
+
+    my $burStageStats = parseBurBosLogs(\@burBosLogs);
+    storeBurStageData($site, $date, $burStageStats);
+}
+
+sub parseBurBosLogs($) {
+    my ($burBosLogs) = @_;
+    my @burStageStats = ();
+
+    foreach my $r_burFile ( @{$burBosLogs} ) {
+        if ( $r_burFile =~ /gz$/ ) {
+            open INPUT, "<:gzip", "$r_burFile" or die "Cannot open $r_burFile: $!";
+        }
+        else {
+            open INPUT, $r_burFile or die "Cannot open $r_burFile";
+        }
+
+        while ( my $line = <INPUT> ) {
+            #'2017-03-04 00:01:26,433 - __main__ - INFO - KEYWORD: ENM_con1e2lms1-bu_20170304000126'
+            #'2017-03-04 00:02:03,094 - bos.BOSOperationHandler - INFO - ==> Starting operation: BOSdeploy_brs_to_sfsOperation'
+            #'2017-03-04 00:02:07,577 - bos.BOSOperationHandler - INFO - Finished 'BOSdeploy_brs_to_sfsOperation' successfully in 0 hrs 00 mins 04 secs keyword: ENM_con1e2lms1-bu_20170304000126 policy: ENM_USERDEFINED_con1e2lms1-bu'
+            if ( $line =~ /.*__main__ - INFO - KEYWORD:\s*(.*)'/ ) {
+                push (@burStageStats, {'keyword' => $1});
+            }
+            elsif ( $line =~ /__main__ - INFO - --keyword option is used - KEYWORD is now\s*(.*)'/ ) {
+                push (@burStageStats, {'keyword' => $1});
+            } 
+            elsif ( $line =~ /(\d{4}-\d{2}-\d{2}).(\d{2}:\d{2}:\d{2}).*Starting operation:\s*(.*)'/ ) {
+                my $start_time = $1 . ' ' . $2;
+                my $backup_stage = $3;
+
+                my $index = scalar @burStageStats - 1;
+                next if ( $index < 0 );
+
+                # Add the start of a backup stage, only if there exists a backup keyword
+                if ( exists $burStageStats[$index]->{'keyword'} ) {
+                    my $statsHash = {
+                        'start_time' => $start_time,
+                        'end_time'   => '\N',
+                        'status'     => '',
+                        'duration'   => '\N'
+                    };
+
+                    if ( ! exists $burStageStats[$index]->{$backup_stage} ) {
+                        $burStageStats[$index]->{$backup_stage} = [];
+                    }
+
+                    push (@{$burStageStats[$index]->{$backup_stage}}, $statsHash);
+                }
+            }
+            elsif ( $line =~ /(\d{4}-\d{2}-\d{2}).(\d{2}:\d{2}:\d{2}).*Finished\s*'(.*?)'\s*(.*?)\s*in\s*(.*)\s*hrs\s*(.*)\s*mins\s*(.*)\s*secs.*/ ) {
+                my $end_time = $1 . ' ' . $2;
+                my $backup_stage = $3;
+                my $backup_status = $4;
+                my $duration = ($5 * 3600) + ($6 * 60) + $7;
+
+                my $index = scalar @burStageStats - 1;
+                next if ( $index < 0 );
+
+                # Add the end of a backup stage, only if its corresponding start already exists
+                if ( exists $burStageStats[$index]->{$backup_stage} ) {
+                    my $sIndex = scalar @{$burStageStats[$index]->{$backup_stage}} - 1;
+                    next if ( $sIndex < 0 );
+
+                    $burStageStats[$index]->{$backup_stage}->[$sIndex]->{'end_time'} = $end_time;
+
+                    if ( $backup_status =~ /success/ ) {
+                        $burStageStats[$index]->{$backup_stage}->[$sIndex]->{'status'} = 'Success';
+                    }
+                    elsif ( $backup_status =~ /error/ ) {
+                        $burStageStats[$index]->{$backup_stage}->[$sIndex]->{'status'} = 'Failed with Errors';
+                    }
+                    else {
+                        $burStageStats[$index]->{$backup_stage}->[$sIndex]->{'status'} = $backup_status;
+                    }
+
+                    $burStageStats[$index]->{$backup_stage}->[$sIndex]->{'duration'} = $duration;
+                }
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseBurBosLogs: burStageStats ", \@burStageStats); }
+
+    return \@burStageStats;
+}
+
+sub storeBurStageData($$$) {
+    my ($site, $date, $burStageStats) = @_;
+
+    if ( scalar @{$burStageStats} == 0 ) {
+        return;
+    }
+
+    # Establish DB connection
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    # Get the site ID
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    # Get ID maps for backup keyword, stages and statuses
+    my %backupKeywords = ();
+    my %backupStages   = ();
+    my %backupStatuses = ();
+    foreach my $backup (@{$burStageStats}) {
+        if ( exists $backup->{'keyword'} ) {
+            $backupKeywords{$backup->{'keyword'}} = 1;
+
+            foreach my $backupStage (keys %{$backup}) {
+                if ( $backupStage eq 'keyword' ) {
+                    next;
+                }
+
+                foreach my $stageStats (@{$backup->{$backupStage}}) {
+                    if ( exists $stageStats->{'start_time'} ) {
+                        $backupStages{$backupStage} = 1;
+                        $backupStatuses{$stageStats->{'status'}} = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    my @backupKeywords = keys %backupKeywords;
+    my @backupStages   = keys %backupStages;
+    my @backupStatuses = keys %backupStatuses;
+
+    my $keywordIdMap = getIdMap($dbh, 'enm_bur_backup_keywords', 'id', 'backup_keyword', \@backupKeywords);
+    my $stageIdMap = getIdMap($dbh, 'enm_bur_backup_stage_names', 'id', 'backup_stage_name', \@backupStages);
+    my $statusIdMap = getIdMap($dbh, 'enm_bur_backup_stage_statuses', 'id', 'backup_stage_status_name', \@backupStatuses);
+
+    if ( $DEBUG > 9 ) { print Dumper("storeBurStageData: keywordIdMap ", $keywordIdMap); }
+    if ( $DEBUG > 9 ) { print Dumper("storeBurStageData: stageIdMap ", $stageIdMap); }
+    if ( $DEBUG > 9 ) { print Dumper("storeBurStageData: statusIdMap ", $statusIdMap); }
+
+    # Write the backup stage stats to 'enm_bur_backup_stage_stats.bcp' file
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFile = "$tmpDir/sfs_bur_backup_stage_stats.bcp";
+
+    open (BCP, "> $bcpFile");
+    foreach my $backup (@{$burStageStats}) {
+        if ( exists $backup->{'keyword'} ) {
+            foreach my $backupStage (keys %{$backup}) {
+                if ( $backupStage eq 'keyword' ) {
+                    next;
+                }
+
+                foreach my $stageStats (@{$backup->{$backupStage}}) {
+                    if ( exists $stageStats->{'start_time'} ) {
+                        print BCP "$siteId\t" . $stageStats->{'start_time'} . "\t" .
+                                  $stageStats->{'end_time'} . "\t" . $stageIdMap->{$backupStage} . "\t" .
+                                  $statusIdMap->{$stageStats->{'status'}} . "\t" .
+                                  $stageStats->{'duration'} . "\t" . $keywordIdMap->{$backup->{'keyword'}} . "\n";
+                    }
+                }
+            }
+        }
+    }
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM sfs_bur_backup_stage_stats WHERE siteid = $siteId AND start_time BETWEEN '$date 00:00:00' AND '$date 23:59:59'")
+        or die "Failed to remove old data from 'sfs_bur_backup_stage_stats' table";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE sfs_bur_backup_stage_stats
+                 (siteid, start_time, end_time, backup_stage_id, backup_stage_status_id, duration, backup_keyword_id)" )
+        or die "Failed to load new data from '$bcpFile' file to 'sfs_bur_backup_stage_stats' table";
+
+    $dbh->disconnect();
+    unlink $bcpFile;
+}
+
+main();

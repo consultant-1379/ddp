@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ ylabel="Time(millisec)"
+ forcelegend="true"
+>
+ <title value="Audit Processing Time"/>
+ <queries>
+  <query timecol="time" multiseries="ne_types.name">
+   <dbtables main="enm_smrsaudit_instr">
+     <reference table="sites" condition="enm_smrsaudit_instr.siteid = sites.id"/>
+     <reference table="servers" condition="enm_smrsaudit_instr.serverid = servers.id"/>
+     <reference table="ne_types" condition="enm_smrsaudit_instr.netypeid = ne_types.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="nodetypeid"/>
+   <where>sites.name = '%s' AND enm_smrsaudit_instr.netypeid IN ( %s ) </where>
+   <column db="enm_smrsaudit_instr.auditProcessingTime" label="Audit Processing Time"/>
+  </query>
+ </queries>
+ <size width="560" height="320"/>
+</modelledgraph>

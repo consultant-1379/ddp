@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_perf_service_stats">
+    <reference table="sites" condition="eo_perf_service_stats.siteid = sites.id"/>
+    <reference table="eo_perf_service_names" condition="eo_perf_service_stats.serviceid = eo_perf_service_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_perf_service_names.name LIKE 'EOC%' AND eo_perf_service_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="SUBSTRING_INDEX(eo_perf_service_names.name, '-', -1)"/>
+  </groupby>
+
+  <column db="eo_perf_service_stats.serviceid" id="serviceid" label="serviceid" visible="false"/>
+  <column db="SUBSTRING_INDEX(eo_perf_service_names.name, '-', -1)" label="Method"/>
+  <column db="SUM(CASE WHEN eo_perf_service_names.name LIKE 'EOCcom%' THEN eo_perf_service_stats.count  ELSE 0  END)" label="Completed"/>
+  <column db="SUM(CASE WHEN eo_perf_service_names.name LIKE 'EOCwar%' THEN eo_perf_service_stats.count  ELSE 0  END)" label="Warning"/>
+  <column db="SUM(CASE WHEN eo_perf_service_names.name LIKE 'EOCerr%' THEN eo_perf_service_stats.count  ELSE 0  END)" label="Error"/>
+  <column db="SUM(eo_perf_service_stats.count)" label="Total Orders"/>
+
+</modelledtable>

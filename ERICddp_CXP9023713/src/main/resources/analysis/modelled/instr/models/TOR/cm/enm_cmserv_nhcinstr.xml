@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="cmservice"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <table name="enm_cmserv_nhcinstr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.hc.instrumentation.hc-service-ejb:type=NumberOfOngoingRequestsBean$">
+      <metric source="numberOfRequests" target="numberOfRequests" delta="true"/>
+      <metric source="numberOfResponses" target="numberOfResponses" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

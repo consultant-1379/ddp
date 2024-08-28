@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<instr xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="/opt/ericsson/ERICddc/util/etc/instr/schemas/instr.xsd">
+  <createdBy>Test</createdBy>
+  <profile name="simpleprofile">
+    <description></description>
+    <pollInterval>60</pollInterval>
+    <provider type="jmx" name="simpleprov">
+      <ipService jmxurl="service:jmx:remote+http://127.0.0.1:9990" />
+      <metricGroup name="simplemg">
+        <mbeanName>com.ericsson.oss.simple:component=simple,type=Simple</mbeanName>
+        <metric name="simple_source" />
+      </metricGroup>
+    </provider>
+  </profile>
+</instr>

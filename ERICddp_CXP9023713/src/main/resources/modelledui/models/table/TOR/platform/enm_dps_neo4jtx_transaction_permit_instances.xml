@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_dps_neo4jtx">
+    <reference table="sites" condition="enm_dps_neo4jtx.siteid = sites.id"/>
+    <reference table="servers" condition="enm_dps_neo4jtx.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="sids"/>
+  <where>sites.name = '%site%' AND enm_dps_neo4jtx.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND servers.id IN ('%sids%')</where>
+
+  <groupby>
+    <column db="inst"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance" id="inst"/>
+  <column db="SUM(acquiredTxPermitsCount)" label="Acquired Tx Permits Count"/>
+  <column db="SUM(failedToAcquireTxPermitsCount)" label="Failed Tx Permits Count"/>
+  <column db="SUM(failureOrTimeoutCount)" label="Failure Timeout Count"/>
+  <column db="SUM(totalDuration)" label="Total Duration"/>
+  <column db="SUM(txPermitsProcedureCount)" label="Permits Procedure Count"/>
+
+</modelledtable>

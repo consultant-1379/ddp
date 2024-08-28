@@ -1,0 +1,39 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+INPUT_DIR=$1
+OUTPUT_DIR=$2
+
+if [ ! -d ${OUTPUT_DIR}/rsd ]; then
+    mkdir ${OUTPUT_DIR}/rsd
+fi
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+${ANALYSIS_BIN}/pm/parseRsdLoaded --log ${INPUT_DIR}/rsdloaded.txt --data ${TMP_DIR}/rsd.txt -table ${OUTPUT_DIR}/rsd/RncNotLoaded.html
+
+
+gnuplot <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M"
+set format x "%H:%M"
+set terminal jpeg
+set size 1,0.5
+set style fill solid
+set output "${OUTPUT_DIR}/rsd/rbs_loaded.jpg"
+set title "Number of RBSs loaded"
+plot "${TMP_DIR}/rsd.txt" using 1:2 notitle with boxes
+set output "${OUTPUT_DIR}/rsd/rnc_loaded.jpg"
+set title "Number of RNCs loaded"
+plot "${TMP_DIR}/rsd.txt" using 1:3 notitle with boxes
+EOF
+
+if [ $? -ne 0 ]; then
+    rm ${TMP_DIR}/rsd.txt
+fi
+

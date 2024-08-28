@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-JMS-QUEUE@jmsqueuejmx_\S+$">
+  <table name="enm_jmsqueue">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="queueid" reftable="enm_jmsqueue_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>queueid</multi>
+
+    <metricgroup name="^%1%-JmsQueue-(\S+)">
+      <metric source="consumerCount" target="consumerCount"/>
+      <metric source="deliveringCount" target="deliveringCount"/>
+      <metric source="messageCount" target="messageCount" filteridle="true"/>
+      <metric source="messagesAdded" target="messagesAdded" delta="true" filteridle="true"/>
+      <metric source="scheduledCount" target="scheduledCount"/>
+      <property name="queueid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

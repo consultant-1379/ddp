@@ -1,0 +1,131 @@
+#!/usr/bin/env perl
+# This script parses the int_nsusers and ext_nsusers text files
+# and stores the resulting data in the database. This script
+# is intended to supercede the previous script which stores
+# the data as a flat file.
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $date;
+our $service;
+our $DEBUG = 0;
+
+sub main {
+    my ($file);
+    my $result = GetOptions (
+        "date=s" => \$date,
+        "site=s" => \$site,
+        "file=s" => \$file,
+        "service=s" => \$service,
+        "debug=s" => \$DEBUG
+    );
+    my $r_data = parseFile($file);
+    print Dumper($r_data);
+}
+
+sub parseFile {
+    my $file = shift;
+    open FP, $file or die "Could not open $file: $!";
+    my @channels = ();
+    my @consumers = ();
+    my @suppliers = ();
+    # Store a reference to the current consumer / channel (no need to track suppliers as they only
+    # use a single line
+    my $r_channel;
+    my $r_consumer;
+    # are we currently in a Consumer block?
+    my $inConsumer = 0;
+    my $filter = 0;
+    while (my $line = <FP>) {
+        chomp $line;
+        if ($line =~ /^EventChannel\[[0-9]+\]: Category = ([A-Za-z0-9]+), MaxQueueLength = ([0-9]+), MaxEventsPerConsumer=([0-9]+), MaxReconnectAttempts=([0-9]+)$/) {
+            # don't process consumer lines
+            $inConsumer = 0;
+            # start a new channel
+            my %newChannel = (
+                "category" => $1,
+                "nconsumers" => 0,
+                "nsuppliers" => 0,
+                "events_received" => 0,
+                "events_delivered" => 0,
+                "nconsumers_with_discarded_events" => 0,
+                "max_queue_length" => $2,
+                "max_events_per_consumer" => $3,
+                "max_reconnect_attempts" => $4,
+            );
+            # update our reference to the new channel
+            $r_channel = \%newChannel;
+            # store the channel in the channels array
+            push(@channels, \%newChannel);
+            if ($DEBUG > 5) {
+                print "Channel $1: mql: $2, mepc: $3, mra: $4\n";
+                print Dumper(\%newChannel);
+            }
+        }
+        elsif ($line =~ /^\s+Supplier\[[0-9]+\] \S+ EventsReceived=([0-9]+) Id=[0-9]+ Ident=(\S+)$/) {
+            # Supplier[31] 10.44.90.6:50040 EventsReceived=250 Id=2533274796443663 Ident=CIFSSR
+            my %supplier = (
+                "category" => $r_channel->{"category"},
+                "ident" => $2,
+                "events_received" => $1,
+            );
+            $r_channel->{"events_received"} += $1;
+            push(@suppliers, \%supplier);
+        }
+        elsif ($line =~ /^\s+Consumer\[[0-9]+\]: (.*)$/) {
+            # Start a new consumer
+            my %consumer = (
+                "category" => $r_channel->{"category"},
+                "ident" => "",
+                "remote_addr" => $1,
+                "discarded_events" => "false",
+                "events_delivered" => 0,
+                "filter" => ""
+            );
+            $r_consumer = \%consumer;
+            push (@consumers, \%consumer);
+            # indicate we are actively processing a consumer
+            $inConsumer = 1;
+        }
+        elsif ($inConsumer eq 1) {
+            if ($line =~ /^\s+QoS:\s+DiscardedEvents=(\S+) EventsDelivered=([0-9]+)$/) {
+                $r_consumer->{"discarded_events"} = $1;
+                $r_consumer->{"events_delivered"} = $2;
+                $r_channel->{"events_delivered"} += $2;
+                if ($1 =~ /^true$/) {
+                    $r_channel->{"nconsumers_with_discarded_events"} += 1;
+                }
+            }
+            elsif ($line =~ /^\s+Ident: (\S+)$/) {
+                $r_consumer->{"ident"} = $1;
+            }
+            elsif ($line =~ /^\s+Domain: \* Type: \*$/) {
+                # next line is the filter
+                $filter = 1;
+            }
+            elsif ($filter eq 1) {
+                $r_consumer->{"filter"} = $line =~ s/^\s+//;
+                $filter = 0;
+            }
+        }
+    }
+    #print Dumper("CHANNELS: ", \@channels);
+    #print "\n\n";
+    #print Dumper("SUPPLIERS: ", \@suppliers);
+    #print "\n\n";
+    #print Dumper("CONSUMERS: ", \@consumers);
+    my %data = (
+        "channels" => \@channels,
+        "suppliers" => \@suppliers,
+        "consumers" => \@consumers
+    );
+    return \%data;
+}
+
+main;

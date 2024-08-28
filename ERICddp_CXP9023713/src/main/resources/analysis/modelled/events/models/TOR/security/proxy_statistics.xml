@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_proxy_statistics">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="secserv"/>
+    <service name="securityservice"/>
+  </services>
+
+  <events>
+    <event name="IDENTITY_MGMT_SERVICES.PROXY_ACCOUNT_GLOBAL_COLLECT">
+      <metric source="host" target="serverid"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_LOCKABLE" target="numTotalProxyAccountLockable"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_LEGACY" target="numTotalProxyAccountLegacy"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_ENABLED_LOCKABLE" target="numTotalProxyAccountEnabledLockable"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_ENABLED_LEGACY" target="numTotalProxyAccountEnabledLegacy"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_DISABLED_LOCKABLE" target="numTotalProxyAccountDisabledLockable"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_DISABLED_LEGACY" target="numTotalProxyAccountDisabledLegacy"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_INACTIVE_LOCKABLE_BY_30DAYS" target="numTotalProxyAccountInactiveLocable"/>
+      <metric source="NUM_TOTAL_PROXY_ACCOUNT_INACTIVE_LEGACY_BY_30DAYS" target="numTotalProxyAccountInactiveLegacy"/>
+      <metric source="MAX_NUM_TOT_PROXY_ACCOUNT_THRESHOLD" target="maxNumTotProxyAccountThreshold"/>
+    </event>
+  </events>
+</modelledevents>

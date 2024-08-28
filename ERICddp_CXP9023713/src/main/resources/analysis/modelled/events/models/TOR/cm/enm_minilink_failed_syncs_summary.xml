@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_minilink_failed_syncs_summary">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="mssnmpcm"/>
+  </services>
+
+  <events>
+    <!--2021-10-17 19:21:57,820 INFO [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] (Thread-31 (HornetQ-client-global-threads-1800150222)) SNMP_CM_FLOWS. SNMPCMSYNCFAILURES{"networkElement":"CORE23MLTN001","_Thread":"Thread-31 (HornetQ-client-global-threads-1800150222)","neType":"MINI-LINK-Indoor"}-->
+    <event name="SNMP_CM_FLOWS.SNMPCMSYNCFAILURES">
+      <metric source="host" target="serverid"/>
+      <metric source="neType" target="netypeid"/>
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="ebsstream"/>
+    <service name="ebsm"/>
+  </services>
+
+  <table name="enm_ebsn_fdn_mos">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_CUCP_GNBCUCPFunction_Mos$">
+      <metric source="Count" target="numberOfNRCUCP_GNBCUCPFunction_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_CUCP_NRCellCU_Mos$">
+      <metric source="Count" target="numberOfNRCUCP_NRCellCU_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_CUUP_GNBFunction_Mos$">
+      <metric source="Count" target="numberOfNRCUCP_GNBFunction_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_CUUP_LINK_Mos$">
+      <metric source="Count" target="numberOfNRCUUP_LINK_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_DU_GNBDUFunction_Mos$">
+      <metric source="Count" target="numberOfNRDU_GNBDUFunction_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_DU_NRCellDU_Mos$">
+      <metric source="Count" target="numberOfNRDU_NRCellDU_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_EUTRANCellRelation_Mos$">
+      <metric source="Count" target="numberOfNR_EUTRANCellRelation_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_NRCellRelation_Mos$">
+      <metric source="Count" target="numberOfNR_NRCellRelation_Mos" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_fm_instr">
+    <reference table="sites" condition="enm_aim_fm_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_fm_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_fm_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(totalAlarmsDroppedBecauseOfScopeFiltering)" label="totalAlarmsDroppedBecauseOfScopeFiltering"/>
+  <column db="SUM(totalAlarmsDroppedDueToInvalidData)" label="totalAlarmsDroppedDueToInvalidData"/>
+  <column db="SUM(totalAlarmsDroppedForOtherReasons)" label="totalAlarmsDroppedForOtherReasons"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="fm-all" label="Plot All"/>
+    <item id="fm-totalAlarmsDroppedBecauseOfScopeFiltering" label="Plot totalAlarmsDroppedBecauseOfScopeFiltering"/>
+    <item id="fm-totalAlarmsDroppedDueToInvalidData" label="Plot totalAlarmsDroppedDueToInvalidData"/>
+    <item id="fm-totalAlarmsDroppedForOtherReasons" label="Plot totalAlarmsDroppedForOtherReasons"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+
+</modelledtable>

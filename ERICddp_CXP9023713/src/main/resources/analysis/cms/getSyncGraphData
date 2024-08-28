@@ -1,0 +1,60 @@
+#!/usr/bin/env perl
+
+open INPUT_DATA, "$ARGV[0]" or die "Cannot open $ARGV[0]";
+open OUTPUT_RBS_DATA, ">$ARGV[1]" or die "Cannot open $ARGV[1]";
+open OUTPUT_RNC_DATA, ">$ARGV[2]" or die "Cannot open $ARGV[2]";
+open OUTPUT_RANAG_DATA, ">$ARGV[3]" or die "Cannot open $ARGV[3]";
+while ( $_ = <INPUT_DATA> )
+{    
+# 05-03-03:23:30:10.017 RNC201,RNC201 0 0 13589 11415 0 0 846 6751 72 7670 
+    ($time,$ne,$numRead,$numWritten,$timeRead,$timeWrite) =
+	/^ (\S+)\.?\d* (\S+) \d+ \d+ (\d+) (\d+) \d+ \d+ (\d+) (\d+)/;
+    if ( $ne =~ /^([^,]*),([^,]*)$/ )
+    {
+	$_ = $ne;
+	($rns,$mc) = /^([^,]*),([^,]*)$/;
+    }
+    else
+    {
+	$rns = "";
+	$mc = $ne;
+    }
+
+    #($time) = /^ (\S+)/;
+    
+    if ( $numRead > 0 )
+    {
+	$readRate = int (($timeRead*1000)/$numRead);
+    }
+    else
+    {
+	$readRate = 0;
+    }
+    if ( $numWritten > 0 )
+    {
+	$writeRate = int (($timeWrite*1000)/$numWritten);
+    }
+    else
+    {
+	$writeRate = 0;
+    }
+	
+
+    if ( $rns eq $mc ) 
+    {
+	print OUTPUT_RNC_DATA $time, " ", $readRate, " ", $writeRate, "\n";
+    }
+    elsif ( $rns ne "" )
+    {
+	print OUTPUT_RBS_DATA $time, " ", $readRate, " ", $writeRate, "\n";
+    }
+    else
+    {
+	print OUTPUT_RANAG_DATA $time, " ", $readRate, " ", $writeRate, "\n";
+    }
+}
+close INPUT_DATA;
+close OUTPUT_RBS_DATA;
+close OUTPUT_RNC_DATA;
+close OUTPUT_RANAG_DATA;
+

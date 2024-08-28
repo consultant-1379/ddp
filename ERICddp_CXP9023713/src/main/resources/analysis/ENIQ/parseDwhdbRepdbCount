@@ -1,0 +1,98 @@
+#!/usr/bin/env perl
+
+###################################################################################################################################################
+# Description ---------   parseDwhdbRepdbCount -----------
+# This script parses the dwhdb and repdb- file for DDP
+# and store data to Db
+# @author - AYUSH KABRA (xayukab)
+# usage ${ANALYSIS_BIN}/ENIQ/parseDwhdbRepdbCount --repdbCount ${REPDB_LOG_FILE} --dwhdbCount ${DWHDB_LOG_FILE} --site ${SITE} --date ${SQL_DATE}
+##################################################################################################################################################
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+our $date;
+main();
+
+sub main {
+    my ($dwhdbCountFile, $repdbCountFile, $site);
+    my $result = GetOptions (
+        "dwhdbCount=s" => \$dwhdbCountFile,
+        "repdbCount=s" => \$repdbCountFile,
+        "site=s"       => \$site,
+        "date=s"       => \$date,
+        "debug=s"      => \$DEBUG
+    );
+
+    ( -r $dwhdbCountFile ) or die "Cannot read log file $dwhdbCountFile";
+    ( -r $repdbCountFile ) or die "Cannot read log file $repdbCountFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 1 ) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my $bcpdwhdb = dwh_repdb_count($dwhdbCountFile, "dwhdb");
+    my $bcprepdb = dwh_repdb_count($repdbCountFile, "repdb");
+    removeOldData();
+    loadDb($bcpdwhdb, $bcprepdb);
+    $dbh->disconnect();
+    if( $DEBUG > 1 ) {
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub dwh_repdb_count{
+    my ($logFile, $dbtype) = @_;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "$tmpDir/${dbtype}_count.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    open FILE, "<$logFile" or die "Cannot open file to read $logFile";
+    while ( my $line = <FILE> ){
+        my ($time, $dbName, $dbCount) = $line =~ /.*\(.*?,\"(.*)\.\d+\",\"(\w+)\",(\d+)/g;
+        printf BCP "%s|%d|%s|%d\n",
+        $time, $siteId, $dbName, $dbCount;
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my $deleteDwhdbSql = "DELETE FROM eniq_stats_dwhdb_count WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    my $deleteRepdbSql = "DELETE FROM eniq_stats_repdb_count WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 2 ) {
+        print "SQL query for removal of old data of Dwhdb: $deleteDwhdbSql \n";
+        print "SQL query for removal of old data of Repdb: $deleteRepdbSql \n";
+    }
+    dbDo($dbh, $deleteDwhdbSql) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteRepdbSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($bcpdwhdb, $bcprepdb) = @_;
+    my $loadDwhdbSql = "LOAD DATA LOCAL INFILE \'$bcpdwhdb\' INTO TABLE eniq_stats_dwhdb_count FIELDS TERMINATED BY \'|\'";
+    my $loadRepdbSql = "LOAD DATA LOCAL INFILE \'$bcprepdb\' INTO TABLE eniq_stats_repdb_count FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) {
+        print "SQL query for inserting data of Dwhdb: $loadDwhdbSql \n";
+        print "SQL query for inserting data of repdb: $loadRepdbSql \n";
+    }
+    dbDo($dbh, $loadDwhdbSql) or die "Failed to load Data".$dbh->errstr."\n";
+    dbDo($dbh, $loadRepdbSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpdwhdb, $bcprepdb);
+}

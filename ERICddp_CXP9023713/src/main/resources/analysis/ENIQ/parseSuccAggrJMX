@@ -1,0 +1,237 @@
+#!/usr/bin/perl
+
+######################################################################
+#       Description ---------   parseSuccAggrJMX -----------
+#       This script parses the instr.txt LOG file for success aggregation data
+#       and store data to Db
+#       @author - Bhagyashree Jain (xjaibha)
+#        usage  ${ANALYSIS_BIN}/server/parseSuccAggrJMX --cfg ${INSTRCFG} --data ${INSTRFILE} --site ${SITE} --server ${SERVER}
+######################################################################
+
+use warnings;
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Instr;
+our $site;
+our $DEBUG = 0;
+our $tableName= "event_notification_succ_aggr_jmx_stats";
+our $dataFile = "";
+
+main();
+
+sub main {
+    my ($instrData,$instrCfg,$hostname);
+    my $result = GetOptions(
+    "cfg=s" => \$instrCfg,
+    "data=s" => \$instrData,
+    "site=s" => \$site,
+    "server=s" => \$hostname,
+    "debug=s" => \$DEBUG);
+
+    setInstr_Debug($DEBUG);
+    setStatsDB_Debug($DEBUG);
+
+    my %allProfiles = ();
+    my @allNames = ();
+    my $tmpDir = "/data/tmp";
+    my $dataDir = "/data/stats/eniq/$site/analysis/test/";
+    my %unique = ();
+    my @nameIds = ();
+
+    if (! -d $dataDir) {
+        $dataDir = mkdir $dataDir;
+    }
+
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+
+    my $bcpFile = "$tmpDir/succ_aggr.bcp";
+    # Connect to Database
+    my $dbh = connect_db();
+
+    # Get site id
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_cfg = parseConfig($instrCfg);
+    if ( $DEBUG > 1 ) { print Dumper("main: r_cfg", $r_cfg); }
+    foreach my $profileName ( keys %{$r_cfg} ) {
+        $allProfiles{$profileName} = $r_cfg->{$profileName};
+    }
+    if ($DEBUG > 2) { print Dumper("main allProfiles", \%allProfiles); }
+    my $r_data = parseDataForCfg(\%allProfiles, $instrData, 0);
+    if ($DEBUG > 3) { print Dumper("main r_data", $r_data); }
+
+    # Store keys as JMX names
+    my @tmpNames = keys(%{$r_data});
+
+    # Extract values from profile name
+    foreach my $name (@tmpNames){
+        my @tmpJmxName = $name =~ /^(\S+)-(\S+)$/;
+        push @allNames, $tmpJmxName[0];
+    }
+
+    # Ensure names are unique
+    foreach my $item (@allNames) {
+        $unique{$item} ++;
+    }
+
+    my @names = keys %unique;
+    my $idMap = getIdMap($dbh, "jmx_names", "id", "name", \@names );
+
+    my %dbFieldMap = (
+        '3gjmsqueue-MsgBytesIn'             => '3g_jms_msg_bytes_in',
+        '3gjmsqueue-NumMsgs'                => '3g_jms_num_msgs',
+        '3gjmsqueue-NumMsgsIn'              => '3g_jms_num_msgs_in',
+        '3gradiojmsqueue-MsgBytesIn'        => '3g_radio_jms_msg_bytes_in',
+        '3gradiojmsqueue-NumMsgs'           => '3g_radio_jms_num_msgs',
+        '3gradiojmsqueue-NumMsgsIn'         => '3g_radio_jms_num_msgs_in',
+        '4gjmsqueue-MsgBytesIn'             => '4g_jms_msg_bytes_in',
+        '4gjmsqueue-NumMsgs'                => '4g_jms_num_msgs',
+        '4gjmsqueue-NumMsgsIn'              => '4g_jms_num_msgs_in',
+        'eventqueue-FourGQueueSize'         => 'eventqueue_4g_queue_size',
+        'eventqueue-MssQueueSize'           => 'eventqueue_mss_queue_size',
+        'eventqueue-ThreeGQueueSize'        => 'eventqueue_3g_queue_size',
+        'eventqueue-ThreeGRadioQueueSize'   => 'eventqueue_3g_radio_queue_size',
+        'eventqueue-TotalFourGEvents'       => 'eventqueue_total_4g_events',
+        'eventqueue-TotalMssEvents'         => 'eventqueue_total_mss_events',
+        'eventqueue-TotalThreeGEvents'      => 'eventqueue_total_3g_events',
+        'eventqueue-TotalThreeGRadioEvents' => 'eventqueue_total_3g_radio_events',
+        'mssqueue-MsgBytesIn'               => 'mss_msg_bytes_in',
+        'mssqueue-NumMsgs'                  => 'mss_num_msgs',
+        'mssqueue-NumMsgsIn'                => 'mss_num_msgs_in'
+    );
+
+    my @valueNames = sort keys %dbFieldMap;
+    my @requiredDatatypes = ( "4gjmsqueue", "3gradiojmsqueue", "3gjmsqueue", "mssqueue", "eventqueue" );
+
+    # Process and write to BCP
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+    my $dataTypeMinTime = undef;
+    my $dataTypeMaxTime = undef;
+    foreach my $name (@tmpNames) {
+        if ( $DEBUG > 4 ) { print "main: name=$name\n"; }
+        my ($currentName, $currentDatatype) = $name =~ /^(\S+)-(\S+)$/;
+        if  ( ! grep( /$currentDatatype/, @requiredDatatypes ) ) {
+            next;
+        }
+        my $r_metrics = $r_data->{$name};
+        my $nameId = $idMap->{$currentName};
+        push @nameIds, $nameId;
+
+        # Define mintime based on min time in instr timestamp
+        my $thisMinTime = instr2unixTime($r_metrics->[0]->{'timestamp'});
+        if ( (! defined $dataTypeMinTime) || ($thisMinTime < $dataTypeMinTime) ) {
+            $dataTypeMinTime = $thisMinTime;
+        }
+
+        # Define maxtime based on max time in instr timestamp
+        my $thisMaxTime = instr2unixTime($r_metrics->[-1]->{'timestamp'});
+        if ( (! defined $dataTypeMaxTime) || ($thisMaxTime > $dataTypeMaxTime) ) {
+            $dataTypeMaxTime = $thisMaxTime;
+        }
+        foreach my $r_sample (@{$r_metrics}) {
+            my $toWrite=0;
+            my $line = sprintf("%s, %d, %d", instr2mysqlTime($r_sample->{'timestamp'}),$siteId, $nameId);
+            foreach my $valueName ( @valueNames ) {
+                my $shortName = (split(/\-/,$valueName))[1];
+                $dataFile = "$dataDir/$currentDatatype.$shortName.txt";
+                if ( ( exists $r_sample->{$shortName} ) && ( $valueName =~ /^$currentDatatype-/ ) ) {
+                    my $prevValue=0;
+                    my $ptime="";
+                    my $prevtime="";
+                    if ( -f $dataFile ) {
+                        open(FILE, $dataFile) || die("Could not open file!");
+                        my $line=<FILE>;
+                        close(FILE);
+                        ($prevValue,$ptime)= $line =~ /^(\d+),((\d\d)-(\d\d)-(\d\d)(\s)(\d\d):(\d\d):(\d\d).(\d\d\d))$/;
+                        if ( !defined $ptime || $ptime eq ''){
+                            open FILE, ">$dataFile" or die $!;
+                            print FILE "$r_sample->{$shortName},$r_sample->{'timestamp'}\n";
+                            close FILE;
+                            next;
+                        }
+                        $prevtime =instr2mysqlTime($ptime);
+                        chomp $prevValue;
+                        chomp $prevtime;
+                    }
+                    my $valueToInsert = calcDelta($r_sample->{$shortName},$r_sample->{'timestamp'},$prevValue,$prevtime) ;
+                    if ( $valueToInsert == $r_sample->{$shortName}  && (-f $dataFile)){
+
+                        if ($prevtime lt instr2mysqlTime($r_sample->{'timestamp'}) ){
+                            $line .= sprintf(",%d", $valueToInsert);
+                            open FILE, ">$dataFile" or die $!;
+                            print FILE "$r_sample->{$shortName},$r_sample->{'timestamp'}\n";
+                            close FILE;
+
+                        }
+                        else{
+                            $toWrite = 1;
+                            next;
+                        }
+                    }
+                    else {
+                       $line .= sprintf(",%d", $valueToInsert);
+
+                       #Storing current values for subtracting it from the next value
+                       open FILE, ">$dataFile" or die $!;
+                       print FILE "$r_sample->{$shortName},$r_sample->{'timestamp'}\n";
+                       close FILE;
+                    }
+
+                } else {
+                    $line .= ',0';
+                }
+            }
+            if ( $DEBUG > 5 ) { print "main: line to write=$line\n"; }
+            if ($toWrite==0){
+                print BULK_INSERT $line, "\n";
+            }
+        }
+    }
+    close BULK_INSERT;
+    loadDB($dbh, $siteId, \%dbFieldMap, $bcpFile, $dataTypeMinTime, $dataTypeMaxTime, \@nameIds);
+    $dbh->disconnect;
+}
+
+sub loadDB {
+    my ($dbh, $siteId, $dbFieldMap, $bcpFile, $dataTypeMinTime, $dataTypeMaxTime, $nameIds) = @_;
+
+    #Debug Load DB
+    #print "Debug Load DB $nameIds \n";
+
+    if (defined $dataTypeMinTime && defined $dataTypeMaxTime) {
+    my $fieldNameStr = "time,siteid,nameid";
+    foreach my $valueName ( sort keys %{$dbFieldMap} ) {
+        $fieldNameStr .= "," . $dbFieldMap->{$valueName};
+    }
+
+    dbDo($dbh,sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' (%s)",
+         $bcpFile, $tableName, $fieldNameStr))
+         or die "Failed to load new stats";
+    }
+    unlink($bcpFile);
+}
+
+sub calcDelta {
+    my $currValue = shift;
+    my $ctime  = shift;
+    my $prevValue = shift;
+    my $prevtime  = shift;
+    my $currtime = instr2mysqlTime($ctime);
+    my $deltaValue = $currValue;
+    if ( -f $dataFile ) {
+        if ($currtime lt $prevtime && $currValue gt $prevValue){
+            return $deltaValue;
+        }
+        if ( $currValue >= $prevValue ) {
+            $deltaValue = $currValue - $prevValue;
+        }
+    }
+        return $deltaValue;
+}

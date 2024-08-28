@@ -1,0 +1,140 @@
+#!/usr/bin/perl
+######################################################################
+#       Description ---------   parseEDELinkFiles -----------
+#       This script is to parse EDE File based Link files.
+#       @author - Bhagyashree Jain (xjaibha)
+#       usage  parseEDELinkFiles --logdir <logdir> --site <site> --instance <ede instance name>
+######################################################################
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $siteId = "";
+our $dbh = "";
+our $sourceIdMap;
+our $firstTimestamp;
+our $lastTimestamp;
+our @sourceList = ();
+our $instance;
+our $edeTable = "ede_linkfile_details";
+
+sub main {
+    my ($site, $logdir);
+    my $result = GetOptions(
+        "logdir=s"   => \$logdir,
+        "instance=s" => \$instance,
+        "site=s"     => \$site,
+        "debug=s"    => \$DEBUG
+        );
+    ( -r $logdir ) or die "Cannot read log dir $logdir";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 0 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $temporaryLogfile = "/$tmpDir/temp_ede_linkfiles";
+    `grep -h "Succesfully linked" $logdir/linkFiles* > $temporaryLogfile`;
+    my $r_data = parseData($temporaryLogfile);
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $sourceIdMap = getIdMap($dbh, "data_source_id_mapping", "id", "data_source", \@sourceList);
+    my $bcpFile = createBcpFile($r_data);
+    loadDb($bcpFile);
+    if( $DEBUG > 0 ){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my $logfile = shift;
+    my ($y, $m, $d, $h, $M, $time);
+    my @r_data = ();
+    open FILE, "<$logfile" or die "Can't open file to read $logfile\n";
+    while (my $line = <FILE>) {
+        if ( $line =~ /(\d{4}_\d{2}_\d{2}_\d{2}:\d{2}:\d{2}).*(\d{12})_processed .* (.*)/ ) {
+            my $timestamp = $1;
+            my $ropTime = $2;
+            my $source = $3;
+            ($y, $m, $d, $time) = $timestamp =~ /(\d{4})_(\d{2})_(\d{2})_(.*)/;
+            $timestamp = "$y-$m-$d $time";
+            ($y, $m, $d, $h, $M) = $ropTime =~ /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/;
+            $ropTime = "$y-$m-$d $h:$M:00";
+            my $currentTime = parseTime( $timestamp, $StatsTime::TIME_SQL );
+            if (( ! defined $firstTimestamp ) || ( $currentTime < $firstTimestamp )) {
+                $firstTimestamp = $currentTime;
+            }
+            if (( ! defined $lastTimestamp ) || ( $currentTime > $lastTimestamp )) {
+                $lastTimestamp = $currentTime;
+            }
+            my %r_dataForLine = (
+                timestamp => "$timestamp",
+                source    => "$source",
+                ropTime  => "$ropTime"
+            );
+            push (@r_data, \%r_dataForLine);
+            push (@sourceList, $source);
+        }
+    }
+    close FILE;
+    unlink($logfile);
+    if ( $DEBUG >= 2 ) { print '@r_data: ' . Dumper \@r_data; }
+    return (\@r_data);
+}
+
+sub createBcpFile {
+    my $parsed_data = shift;
+    my $bcpFile = "$tmpDir/edeLinkFiles.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open bcpFile";
+        foreach my $data_element ( @$parsed_data ) {
+            printf BCP "%s|%d|%s|%d|%s\n",
+                $data_element->{timestamp},
+                $siteId,
+                $instance,
+                $sourceIdMap->{$data_element->{'source'}},
+                $data_element->{ropTime};
+        }
+    if ($DEBUG >= 3) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $bcpFile");
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $edeTable FIELDS TERMINATED BY \'|\'";
+    removeOldData();
+    if ($DEBUG >= 5) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql\n";
+    }
+    dbDo($dbh,$loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+sub removeOldData {
+    $firstTimestamp = formatTime( $firstTimestamp, $StatsTime::TIME_SQL );
+    $lastTimestamp = formatTime( $lastTimestamp, $StatsTime::TIME_SQL );
+    my $deleteSql = "DELETE FROM $edeTable WHERE siteid = $siteId AND ede_instance = '$instance' AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ($DEBUG >= 4) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql\n";
+    }
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main();

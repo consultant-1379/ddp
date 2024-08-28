@@ -1,0 +1,119 @@
+#!/usr/bin/env perl
+# This script parses ActiveMQ queue and topic data as collected by JMX via the instr2
+# utility. 
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+our $bcpFile;
+
+sub main {
+    my ($amqInstrCfg, $amqInstrData);
+    my $result = GetOptions (
+        "cfg=s" => \$amqInstrCfg,
+        "data=s" => \$amqInstrData,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+
+    my $startParseTime = time();
+    my $r_data = parseData($amqInstrCfg, $amqInstrData);
+    my $endParseTime = time();
+    if ( $DEBUG > 1 ) { print "main: parseData took " + ($endParseTime - $startParseTime) + " seconds\n"; }
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my $doLoad = 1;
+    if ( defined $bcpFile ) {
+        $doLoad = 0;
+    } else {
+        $bcpFile = $tmpDir . "/amq_oss_loggingbroker_queue_stats.bcp";
+    }
+
+    # ActiveMQ_OSS_LoggingBroker (CIFLogServiceQueue ActiveMQ-CIFLogServiceTopic)
+    my @queueNames = ();
+    foreach my $queue (keys %{$r_data}) {
+        $queue =~ s/^ActiveMQ_OSS_LoggingBroker-//;
+        push @queueNames, $queue;
+    }
+    my $r_nameMap = getIdMap($dbh, "jmx_names", "id", "name", \@queueNames);
+    my $startTime;
+    my $endTime;
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+    foreach my $queue (keys %{$r_data}) {
+        my @queueData = @{$r_data->{$queue}};
+        my $r_lastVals;
+        my $jmxName = $queue;
+        $jmxName =~ s/^ActiveMQ_OSS_LoggingBroker-//;
+        foreach my $r_ts (@queueData) {
+            if (! defined ($r_lastVals) || ! defined ($r_lastVals->{"timestamp"})) {
+                # Use the first entry to set up the initial datapoints - we store the
+                # delta, so the first datapoint is used to calculate the delta for
+                # the second timestamp.
+                $r_lastVals = $r_ts;
+                next;
+            }
+            my $time = instr2mysqlTime($r_ts->{'timestamp'});
+
+            my $timeSec = instr2unixTime($r_ts->{'timestamp'});
+            if ( ! (defined $startTime) || ($timeSec < $startTime) ) {
+                print "Updating time to " . $timeSec . "\n";
+                $startTime = $timeSec;
+            }
+            if ( ! (defined $endTime) || ($timeSec > $endTime) ) {
+                $endTime = $timeSec;
+            }
+
+            my %info = ();
+            # Some metrics are snapshots
+            $info{'TotalConsumerCount'} = $r_ts->{'TotalConsumerCount'};
+            $info{'TemporaryQueues.length'} = $r_ts->{'TemporaryQueues.length'};
+            $info{'Topics.length'} = $r_ts->{'Topics.length'};
+            # others are deltas
+            foreach my $k ('TotalDequeueCount','TotalEnqueueCount','TotalMessageCount') {
+                if ($DEBUG > 9) {
+                    print "calculating key " . $k . " from " . $r_ts->{$k} . " and " . $r_lastVals->{$k} . "\n";
+                }
+                if ($r_ts->{$k} >= $r_lastVals->{$k}) {
+                    $info{$k} = $r_ts->{$k} - $r_lastVals->{$k};
+                } else {
+                    # assume a restart of AMQ
+                    $info{$k} = $r_ts->{$k};
+                }
+            }
+            $r_lastVals = $r_ts;
+            printf BULK_INSERT "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+            $time,$siteId,$r_nameMap->{$jmxName},$info{'TemporaryQueues.length'},$info{'Topics.length'},
+            $info{'TotalConsumerCount'},$info{'TotalDequeueCount'},$info{'TotalEnqueueCount'},$info{'TotalMessageCount'};
+        }
+    }
+
+    my $list;
+    foreach my $test (@queueNames){ $list.="$r_nameMap->{$test} "; }
+    
+    close BULK_INSERT;
+    if (defined($startTime) && defined($endTime)) {
+        my $sql = "DELETE FROM activemq_cexbroker_stats WHERE siteid = " . $siteId .
+            " AND time BETWEEN '" . formatTime($startTime, $StatsTime::TIME_SQL)  . "' AND '" . 
+            formatTime($endTime, $StatsTime::TIME_SQL) . "' AND nameid in (" . $list . ")";
+            dbDo($dbh,$sql);
+            dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE activemq_cexbroker_stats");
+        }
+        $dbh->disconnect;
+    }
+
+    main;

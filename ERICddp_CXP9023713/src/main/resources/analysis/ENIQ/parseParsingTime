@@ -1,0 +1,163 @@
+#!/usr/bin/perl -w
+
+#============================================================================================
+# Script  : parseParsingTime
+# Author  : Ayush Kabra (xayukab)
+# Purpose : The purpose of this script is to parse the statsAdapterSession.log file
+#           and store the source name[adapter name], parsing session end time, roptime
+#           and parsing duration for each source in DB.
+# Usage   : ${ANALYSIS_BIN}/ENIQ/parseParsingTime --site ${SITE}
+#           --date ${SQL_DATE} --log ${DATADIR}/ENIQ/statsAdapterSession.log
+#==============================================================================================
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our $log;
+our $dbh;
+our $siteId;
+our $date;
+our $tmpDir = "/data/tmp";
+
+sub main{
+    my ($site);
+    my $result = GetOptions(
+        "log=s"   => \$log,
+        "site=s"  => \$site,
+        "date=s"  => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    if ( exists $ENV{'TMP_DIR'} )
+    {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $r_parseSessions = parseSessions($log);
+    my $r_grpdParseSession = groupSession($r_parseSessions, $date);
+    my $fileName = storeData($r_grpdParseSession);
+    removeOldData();
+    loadDb($fileName);
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM eniq_stats_parsing_duration WHERE siteid = $siteId AND ropTime BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ($DEBUG >= 7) {
+        print "Sql statement for deleting old data: $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($fileName) = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE '$fileName' INTO TABLE eniq_stats_parsing_duration";
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    if ($DEBUG >= 8) {
+        print "Sql statement for loading data into the database.$loadSql\n";
+    }
+    $dbh->disconnect();
+    unlink($fileName);
+}
+
+sub groupSession($$) {
+    my ($r_sessions, $date) = @_;
+    my @groupedSessions = ();
+    my $midnight = parseTime( "$date:00:00:00", $StatsTime::TIME_YYYYMDHMS );
+    my $currTime = $midnight - 900;
+    my $r_timeSlot;
+    my $duration;
+    foreach my $r_session ( @{$r_sessions} ) {
+        my $sessStart = parseTime($r_session->{'min_start'}, $StatsTime::TIME_YYYYMDHMS);
+        my $sessEnd   = parseTime($r_session->{'max_end'},  $StatsTime::TIME_YYYYMDHMS);
+
+        while ( $sessStart >= ($currTime + 900) ) {
+            $currTime += 900;
+            if ( $DEBUG > 3 ) { print "groupSession: moving currTime to " . formatTime( $currTime, $StatsTime::TIME_SQL ) . "\n"; }
+            $r_timeSlot = {
+            'sources' => {}
+            };
+            push @groupedSessions, $r_timeSlot;
+    }
+
+    my $r_sourceStats = $r_timeSlot->{'sources'}->{$r_session->{'source'}};
+    if ( ! defined $r_sourceStats ) {
+        $r_sourceStats = {
+        'max_end' => $currTime,
+        'duration' => undef,
+        'ropStartTime' => $currTime
+        };
+        $r_timeSlot->{'sources'}->{$r_session->{'source'}} = $r_sourceStats;
+    }
+
+    if ( $DEBUG > 4 ) { print "groupSession: sessEnd=$sessEnd",  . $r_sourceStats->{'max_end'} ."\n"; }
+    if ( $sessEnd > $r_sourceStats->{'max_end'} ) {
+        $r_sourceStats->{'max_end'} = $sessEnd;
+    }
+    $r_sourceStats->{'duration'} = $r_sourceStats->{'max_end'} - $currTime;
+    }
+    if ( $DEBUG > 5 ) { print Dumper("groupSession groupedSessions", \@groupedSessions); }
+
+    my @results = ();
+    foreach $r_timeSlot ( @groupedSessions ) {
+        foreach my $source ( keys %{$r_timeSlot->{'sources'}} ) {
+            my $r_sourceStats = $r_timeSlot->{'sources'}->{$source};
+            push @results, {
+            'source' => $source,
+            'max_end'   => formatTime( $r_sourceStats->{'max_end'}, $StatsTime::TIME_SQL ),
+            'duration' => $r_sourceStats->{'duration'},
+            'ropStartTime' => formatTime( $r_sourceStats->{'ropStartTime'}, $StatsTime::TIME_SQL )
+            };
+        }
+    }
+    if ( $DEBUG > 6 ) { print Dumper("groupSession results", \@results); }
+    return \@results;
+}
+
+sub storeData($) {
+    my ($r_parseSessions) = shift;
+    my $fileName = $tmpDir . "/stats_adaptor_parseTime.bcp";
+    open BCP, ">$fileName" or die "Cannot open $fileName";
+    foreach my $r_parseSession ( @{$r_parseSessions} ) {
+        printf BCP "%d\t%s\t%s\t%d\t%s\n",
+        $siteId,
+        $r_parseSession->{'source'},
+        $r_parseSession->{'max_end'},
+        $r_parseSession->{'duration'},$r_parseSession->{'ropStartTime'}
+    };
+    close BCP;
+    return ($fileName);
+}
+
+sub parseSessions($) {
+    my ($logFile) = @_;
+    my @records = ();
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseSessions: line=$line"; }
+        chop $line;
+        my @fields = split(/;/, $line);
+        if ( $#fields >= 5  ) {
+            my $r_record = {
+            'source'    => $fields[2],
+            'min_start' => $fields[3],
+            'max_end'   => $fields[4],
+            };
+            if ( $DEBUG > 8 ) { print Dumper("parseSessions: r_record", $r_record ); }
+            push @records, $r_record;
+        } else {
+            if ( $DEBUG > 0 ) { print "WARN: Number of fields is $#fields for line $line, it should be greater than or equal to 5"; }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 7 ) { print Dumper("parseSessions: records", \@records ); }
+    return \@records;
+}
+
+main();

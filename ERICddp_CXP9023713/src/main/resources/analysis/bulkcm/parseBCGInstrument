@@ -1,0 +1,442 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($dataDir,$dashDate);
+    my $result = GetOptions(
+        "data=s" => \$dataDir,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Some BCG Instrumentation to database field maps
+    
+    # Map of the field names in the BCG Instrumentation data to the corresponding field names in statsdb
+    # There are two main data tables: bcg_instr_import & bcg_instr_export, while the data for other operations
+    # is stored in the bcg_instr_other_operations table, as there are several "other operations" for each
+    # import/export.
+    my %dbFieldMap;
+
+    # bcg_instr_import
+    $dbFieldMap{'bcg_instr_import'}->{'BCG Instrumentation for activityID'} = 'activityid';
+    $dbFieldMap{'bcg_instr_import'}->{'Start Time of the Import'} = 'start_time';
+    $dbFieldMap{'bcg_instr_import'}->{'End Time of the Import'} = 'end_time';
+    $dbFieldMap{'bcg_instr_import'}->{'Total Number of Commands'} = 'num_commands';
+    $dbFieldMap{'bcg_instr_import'}->{'Total Number of Successful Commands'} = 'num_successful_commands';
+    $dbFieldMap{'bcg_instr_import'}->{'Total Number of Failed Commands'} = 'num_failed_commands';
+    $dbFieldMap{'bcg_instr_import'}->{'The Number of Transactions used for the import'} = 'num_import_trans';
+    $dbFieldMap{'bcg_instr_import'}->{'The Number of Transactions used for the retries'} = 'num_retries_trans';
+    $dbFieldMap{'bcg_instr_import'}->{'The Number of  retries which were required because of locks'} = 'num_retries_for_locks';
+    $dbFieldMap{'bcg_instr_import'}->{'OverAll Import Status is'} = 'overall_import_status';
+
+    # bcg_instr_export
+    $dbFieldMap{'bcg_instr_export'}->{'BCG Instrumentation for activityID'} = 'activityid';
+    $dbFieldMap{'bcg_instr_export'}->{'Start Time of the export'} = 'start_time';
+    $dbFieldMap{'bcg_instr_export'}->{'End Time of the export'} = 'end_time';
+    $dbFieldMap{'bcg_instr_export'}->{'Total Number of MOs exported'} = 'total_num_mo_exports';
+    $dbFieldMap{'bcg_instr_export'}->{'Number of Nodes from where MO(s) successfully exported'} = 'num_mo_successful_exports';
+    $dbFieldMap{'bcg_instr_export'}->{'Number of Nodes from where MO(s) were not exported'} = 'num_mo_failed_exports';
+    $dbFieldMap{'bcg_instr_export'}->{'MO/Sec for Export'} = 'mo_per_sec_export';
+
+    # bcg_instr_mo_types
+    $dbFieldMap{'bcg_instr_mo_types'}->{'MO Type Command'} = 'mo_type_command';
+    $dbFieldMap{'bcg_instr_mo_types'}->{'MO Type'} = 'mo_type';
+    $dbFieldMap{'bcg_instr_mo_types'}->{'Number of Instances'} = 'num_instances';
+    $dbFieldMap{'bcg_instr_mo_types'}->{'Cumulative MO/Sec'} = 'cumulative_mo_per_sec';
+    $dbFieldMap{'bcg_instr_mo_types'}->{'Total Time'} = 'total_time';
+
+    # bcg_instr_other_operations
+    $dbFieldMap{'bcg_instr_other_operations'}->{'Number of hits'} = 'num_hits';
+    $dbFieldMap{'bcg_instr_other_operations'}->{'Call/Sec'} = 'calls_per_sec';
+    $dbFieldMap{'bcg_instr_other_operations'}->{'Total Time'} = 'total_time';
+    $dbFieldMap{'bcg_instr_other_operations'}->{'FDN'} = 'fdn';
+    $dbFieldMap{'bcg_instr_other_operations'}->{'CS Export XML File'} = 'cs_export_xml_file';
+
+    my %dbFieldOrder = (
+        "import" => ['Start Time of the Import', 'End Time of the Import', 'Total Number of Commands', 'Total Number of Successful Commands', 'Total Number of Failed Commands', 'The Number of Transactions used for the import', 'The Number of Transactions used for the retries', 'The Number of  retries which were required because of locks', 'OverAll Import Status is'],
+        "export" => ['Start Time of the export', 'End Time of the export', 'Total Number of MOs exported', 'Number of Nodes from where MO(s) successfully exported', 'Number of Nodes from where MO(s) were not exported', 'MO/Sec for Export'], 
+        "motype" => ['MO Type Command', 'Number of Instances', 'Cumulative MO/Sec', 'Total Time'],
+        "other" => ['Number of hits', 'Call/Sec', 'Total Time', 'FDN', 'CS Export XML File']
+    );
+
+    if ($DEBUG > 9) { print Dumper %dbFieldMap; }
+
+    processData('import', $dataDir, \%dbFieldMap, \%dbFieldOrder, $sqlDate, $siteid);
+    processData('export', $dataDir, \%dbFieldMap, \%dbFieldOrder, $sqlDate, $siteid);
+
+    return 0;
+}
+
+sub processData() {
+    my ($operation, $dataDir, $r_dbFieldMap, $r_dbFieldOrder, $sqlDate, $siteid) = @_;
+    my (%datasetForStorage, $bcpFile);
+    my $activityid;
+
+    my $dataFilesDir = $dataDir . "/" . $operation;
+
+    if($DEBUG > 5) { print "Checking in directory: " . $dataFilesDir . "\n"; }
+
+    opendir(DIR, $dataFilesDir);
+    PROCESS_FILES: foreach my $file (readdir(DIR)) {
+        if ( $file eq "." || $file eq ".." || ($file !~ /.*\.txt$/ && $file !~ /.*\.txt\.bak$/) ) {
+            next PROCESS_FILES;
+        }
+        $file = $dataFilesDir . "/" . $file;
+
+        my @operationTypes;
+        my @MOTypes;
+        my @otherOperationsMOTypes;
+        my @systemMOTypes;
+        my %dataMainRecord;
+        my $r_dataMOTypesRecord;
+        my $currentMOTypeOperation;
+        my $r_dataOtherOperationsRecord;
+        my $currentOtherOperation;
+        my $otherOperationInd = 0;
+
+        open DATA, $file or die "Could not open data file: $!";
+        LINE: while (my $line = <DATA>) {
+            if($DEBUG > 4) { print $line . "\n"; }
+            if ($operation eq 'import') {
+                if ($line =~ /^\s.$/) {
+                    next LINE;
+                } elsif (!defined($currentMOTypeOperation)) {
+                    if ($line =~ /\=/ && $line !~ /\[.*\]/) {
+                        my ($metric, $value) = $line =~ /^\s*(\w.*\w)\s*\=\s*(\S+)\s*$/ ;
+			if ( defined $metric ) {
+			    $dataMainRecord{$metric} = $value;
+			} else {
+			    if ( $DEBUG > 0 ) { print "processData: Failed to parse Metric line $line"; }
+			}
+                    } elsif ($line =~ /BCG Instrumentation for activityID/) {
+                        ($activityid) = $line =~ /^\s*BCG Instrumentation for activityID (\S+)\s*$/;
+                        ($dataMainRecord{"BCG Instrumentation for activityID"}) = $activityid;
+                        ($dataMainRecord{"Date"}) = $sqlDate;
+                    } elsif ($line =~ /OverAll Import Status is/) {
+                        ($dataMainRecord{"OverAll Import Status is"}) = $line =~ /^\s*OverAll Import Status is\s*(\S+)\s*$/;
+                    } elsif ($line =~ /^\s*\w+\s+MO Type/) {
+                        ($dataMainRecord{"MO Type Command"}, $dataMainRecord{"MO Type"}) = $line =~ /^\s*(\S+)\s*MO Type\s*\[(\S+)\]\s*$/;
+                    } elsif ($line =~ /MO\/Sec for all Commands\/Import\s*$/) {
+                        $currentMOTypeOperation = "";
+                    }
+                } elsif (defined($currentMOTypeOperation) && !defined($currentOtherOperation)) {
+                    if ($line =~ /^\s*\w+\s+MO Type/) {
+                        my ($command, $MOType) = $line =~ /^\s*(\S+)\s*MO Type\s*\[(\S+)\]\s*$/;
+                        $currentMOTypeOperation = $command . " MO Type [" . $MOType . "]";
+                        $r_dataMOTypesRecord->{$currentMOTypeOperation}{"MO Type Command"} = $command;
+                        $r_dataMOTypesRecord->{$currentMOTypeOperation}{"MO Type"} = $MOType;
+                        push(@MOTypes, $MOType);
+                    } elsif ($line =~ /\=/ && $line !~ /\[.*\]/) {
+                        my ($metric, $value) = $line =~ /^\s*(\w.*\w)\s*\=\s*(\S+)\s*$/ ;
+			if ( defined $metric ) {
+			    $r_dataMOTypesRecord->{$currentMOTypeOperation}{$metric} = $value;
+			} else {
+                            if ( $DEBUG > 0 ) { print "processData: Failed to extract metric from $line\n"; }
+                        }
+
+                    } elsif ($line =~ /Operation\:$/) {
+                        my ($newCurrentOtherOperation) = $line =~ /^\s*(\w+\s.*)\:$/;
+                        $currentOtherOperation = $newCurrentOtherOperation . $otherOperationInd;
+                        $otherOperationInd++;
+                        push(@operationTypes,$newCurrentOtherOperation);
+                    }
+                } else {
+                ##################
+                # Get the other operations...
+                # There can be multiple instances of multiple operations. Therefore, tag an incrementing number ($otherOperationInd) onto the Operation Type
+                # to cater for this. e.g. The first instance of "CS Filter Export Operation" will be "CS Filter Export Operation0" in the parsed data structure,
+                # the next will be "CS Filter Export Operation1" etc. When loading back in, this number tag is taken off in order to get the ID that is mapped
+                # to an Operation in the database by the getIdMap function acting on the @operationTypes array.
+                ##################
+                    if ($line =~ /Operation\:$/) {
+                        my ($newCurrentOtherOperation) = $line =~ /^\s*(\w+\s.*)\:$/;
+                        $currentOtherOperation = $newCurrentOtherOperation . $otherOperationInd;
+                        $otherOperationInd++;
+                        push(@operationTypes,$newCurrentOtherOperation);
+                    } else {
+                        if ($line =~ /\=/ && $line !~ /\[.*\]/) {
+                            my ($metric, $value) = $line =~ /^\s*(\w.*\w)\s*\=\s*(\S+)\s*$/ ;
+			    if ( defined $metric ) {
+				$r_dataOtherOperationsRecord->{$currentOtherOperation}{$metric} = $value;
+			    } else {
+				if ( $DEBUG > 0 ) { print "processData: Failed to extract metric from $line\n"; }
+			    }				    
+                        } elsif ($line =~ /^\s*\w+.*\[.*\].*/) {
+                            my ($metric, $value) = $line =~ /^\s*(\w+.*)\s*\[(\S+)\]\s*$/;
+			    if ( defined $metric ) {
+				$metric =~ s/\s*$//;
+				$r_dataOtherOperationsRecord->{$currentOtherOperation}{$metric} = $value;
+				if ($metric eq 'MO Type') {
+				    push(@otherOperationsMOTypes, $value);
+				}
+			    }
+                        }
+                    }
+                }
+            } else {
+                if ($line =~ /^\s.$/) {
+                    next LINE;
+                } elsif (!defined($currentOtherOperation)) {
+                    if ($line =~ /\=/ && $line !~ /\[.*\]/) {
+                        my ($metric, $value) = $line =~ /^\s*(\w.*\w)\s*\=\s*(\S+)\s*$/ ;
+			if ( defined $metric ) {
+			    $dataMainRecord{$metric} = $value;
+			} else {
+			    if ( $DEBUG > 0 ) { print "Failed to parse metric from $line"; }
+			}
+                    } elsif ($line =~ /BCG Instrumentation for activityID/) {
+                        ($activityid) = $line =~ /^\s*BCG Instrumentation for activityID (\S+)\s*$/;
+                        ($dataMainRecord{"BCG Instrumentation for activityID"}) = $activityid;
+                        ($dataMainRecord{"Date"}) = $sqlDate;
+                    } elsif ($line =~ /OverAll Import Status is/) {
+                        ($dataMainRecord{"OverAll Import Status is"}) = $line =~ /^\s*OverAll Import Status is\s*(\S+)\s*$/;
+                    } elsif ($line =~ /^\s*\w+\s+MO Type/) {
+                        ($dataMainRecord{"MO Type Command"}, $dataMainRecord{"MO Type"}) = $line =~ /^\s*(\S+)\s*MO Type\s*\[(\S+)\]\s*$/;
+                    } elsif ($line =~ /Operation\:$/) {
+                        my ($newCurrentOtherOperation) = $line =~ /^\s*(\w+\s.*)\:$/;
+                        $currentOtherOperation = $newCurrentOtherOperation . $otherOperationInd;
+                        $otherOperationInd++;
+                        push(@operationTypes,$newCurrentOtherOperation);
+                    }
+                } else {
+                ##################
+                # Get the other operations...
+                # There can be multiple instances of multiple operations. Therefore, tag an incrementing number ($otherOperationInd) onto the Operation Type
+                # to cater for this. e.g. The first instance of "CS Filter Export Operation" will be "CS Filter Export Operation0" in the parsed data structure,
+                # the next will be "CS Filter Export Operation1" etc. When loading back in, this number tag is taken off in order to get the ID that is mapped
+                # to an Operation in the database by the getIdMap function acting on the @operationTypes array.
+                ##################
+                    if ($line =~ /Operation\:$/) {
+                        my ($newCurrentOtherOperation) = $line =~ /^\s*(\w+\s.*)\:$/;
+                        $currentOtherOperation = $newCurrentOtherOperation . $otherOperationInd;
+                        $otherOperationInd++;
+                        push(@operationTypes,$newCurrentOtherOperation);
+                    } else {
+                        if ($line =~ /\=/ && $line !~ /\[.*\]/) {
+                            my ($metric, $value) = $line =~ /^\s*(\w.*\w)\s*\=\s*(\S+)\s*$/ ;
+			    if ( defined $metric ) {
+				$r_dataOtherOperationsRecord->{$currentOtherOperation}{$metric} = $value;
+			    } else {
+				if ( $DEBUG > 0 ) { print "Failed to parse metric from $line"; }
+			    }			       
+                        } elsif ($line =~ /^\s*\w+.*\[.*\].*/) {
+                            my ($metric, $value) = $line =~ /^\s*(\w+.*)\s*\[(\S+)\]\s*$/;
+                            $metric =~ s/\s*$//;
+                            $r_dataOtherOperationsRecord->{$currentOtherOperation}{$metric} = $value;
+                        }
+                    }
+                }
+            }
+        }
+        close(DATA);
+
+        # Merge the 'Other Operations' data into the main data set
+        $dataMainRecord{"MO/Sec for all Commands/Import"} = $r_dataMOTypesRecord;
+        $dataMainRecord{"Instrumentation of Other Operations"} = $r_dataOtherOperationsRecord;
+        $datasetForStorage{$dataMainRecord{"BCG Instrumentation for activityID"}} = \%dataMainRecord;
+
+        # Update the bcg_instr_system_mo_names, mo_names & bcg_instr_operation_types tables via the getIdMap function
+        my $dbh = connect_db();
+        my $r_MOTypesMap = getIdMap($dbh, "mo_names", "id", "name", \@MOTypes);
+        my $r_OperationTypesMap = getIdMap($dbh, "bcg_instr_operation_types", "id", "name", \@operationTypes);
+
+        # Determine the system generated MO Types
+        foreach my $otherOperationsMOType (@otherOperationsMOTypes) {
+            if (!defined($r_MOTypesMap->{$otherOperationsMOType})) {
+                push(@systemMOTypes, $otherOperationsMOType);
+            }
+        }
+
+        my $r_systemMOTypesMap = getIdMap($dbh, "bcg_instr_system_mo_names", "id", "name", \@systemMOTypes);
+
+        # Store the data
+        storeDataset($operation, \%datasetForStorage, $r_dbFieldMap, $r_dbFieldOrder, $r_MOTypesMap, $r_systemMOTypesMap, $r_OperationTypesMap, $sqlDate, $siteid, $activityid);
+    }
+    closedir(DIR);
+
+    if ($DEBUG > 4) { print Dumper %datasetForStorage; }
+}
+
+sub storeDataset() {
+    my ($operation, $r_datasetForStorage, $r_dbFieldMap, $r_dbFieldOrder, $r_MOTypesMap, $r_systemMOTypesMap, $r_OperationTypesMap, $sqlDate, $siteid, $activityid) = @_;
+    my $table = "bcg_instr_" . $operation;
+    my $dbh = connect_db();
+
+    ################################################################################
+    # There are two steps here:
+    # i)   Load up the main data into the bcg_instr_import or bcg_instr_export table. This will just be a simple INSERT.
+    # ii)  If we are dealing with an "import", populate the bcg_instr_mo_types table. As there are multiple records, this will be a BULK_INSERT.
+    # iii) Load the Other Operations data into the bcg_other_operations table. There is a one-to-many relationship between records in the main table and the bcg_other_operations. As there are several records, which may or not have values populated, this will be a BULK_INSERT.
+    ################################################################################
+
+    ###########################
+    # bcg_instr_<import|export>
+    ###########################
+
+    # Set up the INSERT statement
+    my $sqlInsertMain = "INSERT INTO " . $table . " (date,siteid,activityid,";
+    my $valuesListMain = " VALUES ('" . $sqlDate . "'," . $siteid . "," . $activityid . ",";
+    # Add the field names
+    foreach my $field (@{$r_dbFieldOrder->{$operation}}) {
+        if (defined($r_datasetForStorage->{$activityid}->{$field})) {
+            $sqlInsertMain .= $r_dbFieldMap->{$table}{$field} . ",";
+            if ($field =~ m/[Start|End] Time/ || $r_datasetForStorage->{$activityid}->{$field} =~ m/[A-Za-z]/) {
+                $valuesListMain .= "'" . $r_datasetForStorage->{$activityid}->{$field} . "',";
+            } else {
+                $valuesListMain .= $r_datasetForStorage->{$activityid}->{$field} . ",";
+            }
+        }
+    }
+    # Replace the final comma with a closing round bracket
+    $sqlInsertMain =~ s/\,$/)/;
+    $valuesListMain =~ s/\,$/)/;
+    # Add the values for insertion
+    $sqlInsertMain .= $valuesListMain;
+
+    if ($DEBUG > 4) { print "INSERT SQL: " . $sqlInsertMain . "\n"; }
+
+    runStoreToDB($table, $sqlInsertMain, $r_datasetForStorage, $r_dbFieldMap, $r_dbFieldOrder, $sqlDate, $siteid, $activityid);
+
+    #################################################
+    # bcg_instr_mo_types & bcg_instr_other_operations
+    #################################################
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    ####################
+    # bcg_instr_mo_types
+    ####################
+    if ($operation eq 'import') {
+        my $bcpFileMOTypes = $tmpDir . "/" . "bcg_instr_mo_types" . $activityid . ".bcp";
+
+        # Set up the bulk insert file
+        if ($DEBUG > 4) { print "Writing to " . $bcpFileMOTypes . "\n"; }
+        open BULK_INSERT, ">$bcpFileMOTypes" or die "Could not open bulk insert file $bcpFileMOTypes";
+
+        # Set up the BULK_INSERT statement
+        foreach my $r_MOTypeOperations ($r_datasetForStorage->{$activityid}->{'MO/Sec for all Commands/Import'}) {
+            foreach my $r_MOTypeOperation (keys(%$r_MOTypeOperations)) {
+                my ($r_MOType) = $r_MOTypeOperation =~ /^\s*\S+\s*MO Type\s*\[(\S+)\]\s*$/;
+    
+                my $record = '\N' . "|" . $sqlDate . "|" . $siteid . "|" . $activityid . "|" . $r_MOTypesMap->{$r_MOType} . "|";
+            foreach my $field (@{$r_dbFieldOrder->{'motype'}}) {
+                        if (defined($r_datasetForStorage->{$activityid}->{'MO/Sec for all Commands/Import'}->{$r_MOTypeOperation}->{$field})) {
+                        $record .= $r_datasetForStorage->{$activityid}->{'MO/Sec for all Commands/Import'}->{$r_MOTypeOperation}->{$field} . "|";
+                    } else {
+                        $record .= '\N|';
+                    }
+                }
+                $record =~ s/\|$//;
+                print BULK_INSERT $record . "\n";
+            }
+        }
+        close BULK_INSERT;
+
+        my $sqlInsertMOTypes = "LOAD DATA LOCAL INFILE \'$bcpFileMOTypes\' INTO TABLE bcg_instr_mo_types FIELDS TERMINATED BY '|'";
+        if ($DEBUG > 4) { print "INSERT SQL: " . $sqlInsertMOTypes . "\n"; }
+
+        runStoreToDB('bcg_instr_mo_types', $sqlInsertMOTypes, $r_datasetForStorage, $r_dbFieldMap, $r_dbFieldOrder, $sqlDate, $siteid, $activityid);
+    }
+
+    ############################
+    # bcg_instr_other_operations
+    ############################
+
+    # BCP file
+    my $bcpFile = $tmpDir . "/" . "bcg_instr_other_operations" . $activityid . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    # Set up the BULK_INSERT statement
+    foreach my $r_otherOperations ($r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}) {
+        foreach my $r_otherOperation (keys(%$r_otherOperations)) {
+            my ($r_otherOperationType) = $r_otherOperation =~ m/(.*Operation)\d+$/;
+            my $record = '\N' . "|" . $sqlDate . "|" . $siteid . "|" . $activityid . "|" . $r_OperationTypesMap->{$r_otherOperationType} . "|" . $operation . "|";
+
+            # Add the MO Type ID
+            if ($operation eq 'import' && defined($r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{'MO Type'})) {
+                    if (defined($r_MOTypesMap->{$r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{'MO Type'}})) {
+                        $record .= $r_MOTypesMap->{$r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{'MO Type'}} . "|";
+                    } else {
+                        $record .= "0|";
+                    }
+
+                    # Add the system generated MO Type ID if necessary
+                    if (!defined($r_MOTypesMap->{$r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{'MO Type'}}) && defined($r_systemMOTypesMap->{$r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{'MO Type'}})) {
+                    $record .= $r_systemMOTypesMap->{$r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{'MO Type'}} . "|";
+                    } else {
+                        $record .= "0|";
+                    }
+            } else {
+                    $record .= "0|0|";
+            }
+
+            foreach my $field (@{$r_dbFieldOrder->{'other'}}) {
+                if (defined($r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{$field})) {
+                    $record .= $r_datasetForStorage->{$activityid}->{'Instrumentation of Other Operations'}->{$r_otherOperation}->{$field} . "|";
+                } else {
+                    $record .= '\N|';
+                }
+            }
+            $record =~ s/\|$//;
+            print BULK_INSERT $record . "\n";
+        }
+    }
+    close BULK_INSERT;
+
+    my $sqlInsertOther = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE bcg_instr_other_operations FIELDS TERMINATED BY '|'";
+    if ($DEBUG > 4) { print "INSERT SQL: " . $sqlInsertOther . "\n"; }
+
+    runStoreToDB('bcg_instr_other_operations', $sqlInsertOther, $r_datasetForStorage, $r_dbFieldMap, $r_dbFieldOrder, $sqlDate, $siteid, $activityid);
+    return 0;
+}
+
+sub runStoreToDB() {
+    my ($table, $sqlInsert, $r_datasetForStorage, $r_dbFieldMap, $r_dbFieldOrder, $sqlDate, $siteid, $activityid) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM " . $table . " WHERE date = '" . $sqlDate . "' AND siteid = " . $siteid . " AND activityid = " . $activityid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into " . $table . " with statement " . $sqlInsert . "\n";;
+    $dbh->disconnect;
+
+    return 0;
+}

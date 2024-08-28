@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_housekeeping_function_details" timecol="time">
+    <keycol name="siteid" reftable="sites"/>
+    <keycol name="netypeId" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="shmservice"/>
+  </services>
+
+  <events>
+    <!-- SHM.SOFTWARE_PACKAGE_HOUSEKEEPING_DETAILS {"_Thread":"EJB async - 31","neTypeCountMap":{"UNLOCKED":2,"LOCKED":1,"NETWORK_LOCKED":1,"DELETED":1,"neType":"RadioNode"}{color}}-->
+    <!-- TORF-620001 disabling parsing for this event temporarily as it is breaking ddp parsing due to exposing multiple value for netype in comma separated -->
+    <event name="SHM.SOFTWARE_PACKAGE_HOUSEKEEPING_DETAILS_disabled">
+      <metric source="neType" target="netypeId"/>
+      <metric source="NETWORK_LOCKED" target="networkLocked"/>
+      <metric source="LOCKED" target="locked"/>
+      <metric source="UNLOCKED" target="unlocked"/>
+      <metric source="DELETED" target="deleted"/>
+    </event>
+  </events>
+</modelledevents>

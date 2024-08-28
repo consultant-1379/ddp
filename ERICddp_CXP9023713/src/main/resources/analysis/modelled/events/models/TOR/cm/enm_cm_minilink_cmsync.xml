@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_minilink_cmsync">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="mssnmpcm"/>
+  </services>
+
+  <events>
+    <!--SNMP_CM_FLOWS.SNMPCMSYNCHRONIZATIONHANDLER {\"cmDataTransformTime\":1318,\"syncTime\":43841,\"NetworkElement\":\"CORE82MLTN02\",\"numberOfMOsSynched\":443,\"cmDataRetrievalTime\":29843,\"numberOfMOsCreatedOrUpdated\":443,\"model\":\"UNRM\",\"cmDataWriterTime\":8538,\"_Thread\":\"Thread-25 (HornetQ-client-global-threads-2001463692)\",\"numberOfMOsDeleted\":0,\"neType\":\"MINI-LINK-Indoor\",\"syncStatus\":\"SYNCHRONIZED\"} -->
+    <event name="SNMP_CM_FLOWS.SNMPCMSYNCHRONIZATIONHANDLER">
+      <metric source="host" target="serverid"/>
+      <metric source="syncTime" target="duration"/>
+      <metric source="cmDataTransformTime" target="cmDataTransformTime"/>
+      <metric source="NetworkElement" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="numberOfMOsSynched" target="mo_synced"/>
+      <metric source="cmDataRetrievalTime" target="cmDataRetrievalTime"/>
+      <metric source="numberOfMOsCreatedOrUpdated" target="mo_createdUpdated"/>
+      <metric source="cmDataWriterTime" target="cmDataWriterTime"/>
+      <metric source="numberOfMOsDeleted" target="mo_deleted"/>
+      <metric source="model" target="model"/>
+      <metric source="cliDataRetrievalTime" target="cliDataRetrievalTime"/>
+      <metric source="numberOfCliMOsSynched" target="numberOfCliMOsSynched"/>
+    </event>
+  </events>
+</modelledevents>

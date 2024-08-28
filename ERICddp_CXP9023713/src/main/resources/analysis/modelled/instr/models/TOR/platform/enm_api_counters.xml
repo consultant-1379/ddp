@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <table name="enm_api_counters">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <services>
+    <service name="vnflaf-service"/>
+  </services>
+
+
+  <metricgroups>
+      <metricgroup name="^%1%-com.ericsson.oss.itpf.enmdeploymentworkflows.serviceframework.enmdeploymentworkflows-workflows-war-(\d+):type=OpenStackApiCounter$">
+          <metric source="cinderv2ApiCount" target="cinderv2ApiCount" delta="true" filteridle="true"/>
+          <metric source="cinderv3ApiCount" target="cinderv3ApiCount" delta="true" filteridle="true"/>
+          <metric source="glanceApiCount" target="glanceApiCount" delta="true" filteridle="true"/>
+          <metric source="heatApiCount" target="heatApiCount" delta="true" filteridle="true"/>
+          <metric source="keystoneApiCount" target="keystoneApiCount" delta="true" filteridle="true"/>
+          <metric source="neutronApiCount" target="neutronApiCount" delta="true" filteridle="true"/>
+          <metric source="novaApiCount" target="novaApiCount" delta="true" filteridle="true"/>
+      </metricgroup>
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_jgroup_view_mismatch">
+    <reference table="sites" condition="enm_jgroup_view_mismatch.siteid = sites.id" />
+    <reference table="enm_jgroup_clusternames"
+      condition="enm_jgroup_view_mismatch.clusterid = enm_jgroup_clusternames.id" />
+  </dbtables>
+
+  <param name="site" />
+  <param name="date" />
+  <where>sites.name = '%site%' AND enm_jgroup_view_mismatch.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="enm_jgroup_clusternames.name" />
+  </groupby>
+
+  <column db="enm_jgroup_clusternames.id" label="cid" id="cid" visible="false" />
+  <column db="enm_jgroup_clusternames.name" label="Cluster" />
+  <column db="COUNT(*)" label="Samples " />
+
+  <ctxmenu keycol="cid" targettype="modelledgraph" multiselect="true">
+    <item id="TOR/platform/enm_jgroup_view_mismatch" label="Plot" />
+  </ctxmenu>
+
+</modelledtable>

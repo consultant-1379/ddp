@@ -1,0 +1,122 @@
+#! /usr/bin/env perl
+
+#=====================================================================================================#
+# Usage: perl parseConfluenceHelpPage --ddpfqdn ${DDP_FQDN} --helpdir /data/ddp/current/help_content/ #
+#=====================================================================================================#
+
+use strict;
+use warnings;
+
+use StatsDB;
+use DBI;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use XML::Simple qw(:strict);
+require MarkDownHelp;
+
+our $DEBUG = 0;
+
+sub parseOldConfData($$$) {
+    my ( $r_helpRows, $helpDir, $ddpfqdn ) = @_;
+
+    opendir DIR,$helpDir;
+    my @dirEntries = readdir(DIR);
+    close DIR;
+
+    foreach my $dirEntry ( @dirEntries ) {
+        if ( $dirEntry =~ /.html$/ ) {
+            open my $fh, '<', "$helpDir/$dirEntry" or die "Can't open file $!";
+            my $file_content = do { local $/; <$fh> };
+
+            my $helpText = "";
+            my $duplicatesFlag = 0;
+
+            while($file_content =~ m/&lt;(DDP_Bubble\S+?)&gt;(.*?)&lt;\/(\1)&gt;/gs ) {
+                my ($help_id,$content) = ($1,$2);
+                if ( $DEBUG > 8 ) { print Dumper("main: help_id=$help_id content=$content\n"); }
+                # Strip the </p> off the start of the content
+                $content =~ s/^<\/p>//;
+                $content =~ s/<p>$//;
+                if ( defined $ddpfqdn ) {
+                    $content =~ s/DDP_FQDN/$ddpfqdn/g;
+                }
+
+                # Make sure there's no div in the content
+                if ( $content !~ /<div/ ) {
+                    my $xml = "<html>" . $content . "</html>";
+                    my $config = eval { XMLin($xml,ForceArray => 1,KeyAttr => {}) };
+                    if ( ! defined $config ) {
+                        print "ERROR: $help_id content is not well formed\n";
+                    } else {
+                        if (exists($r_helpRows->{$help_id})){
+                            $duplicatesFlag = 1;
+                            print "ERROR: HelpBubble Id $help_id is duplicated\n";
+                        }
+                        $r_helpRows->{$help_id} = $content;
+                    }
+                } else {
+                    print "ERROR: $help_id contains a div\n";
+                }
+            }
+            if ($duplicatesFlag){
+                exit 1;
+            }
+        }
+    }
+}
+
+sub storeHelp($) {
+    my ( $r_helpRows ) = @_;
+    my $dbh = connect_db() or die "Couldn't connect to DB";
+    # New to switch to ddpadmin, using INSERT ddpadmin.help_bubble_texts breaks replication
+    dbDo( $dbh, "use ddpadmin")
+        or die "Failed to switch to ddpadmin";
+
+    dbDo( $dbh, "TRUNCATE help_bubble_texts" )
+        or die "Failed to remove old data from 'ddpadmin.help_bubble_texts' table";
+
+    my $sth = $dbh->prepare('INSERT INTO help_bubble_texts (help_id, content) VALUES (?, ?)');
+
+    while ( my ($helpId, $helpContent) = each %{$r_helpRows} ) {
+        my @values = ($helpId, $helpContent);
+        $sth->execute(@values) or die "Failed to insert $helpId, $helpContent";
+    }
+
+    $sth->finish();
+
+    my $helpCount = keys %{$r_helpRows};
+    $dbh->disconnect();
+
+    printf "%d help records updated\n", ($helpCount);
+}
+
+sub main {
+    my $ddpfqdn = undef;
+    my $helpDir = undef;
+    my $result = GetOptions(
+        "ddpfqdn=s" => \$ddpfqdn,
+        "helpdir=s" => \$helpDir,
+        "debug=s"  => \$DEBUG
+        );
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my %helpRows = ();
+
+    if ( defined $helpDir ) {
+        parseOldConfData( \%helpRows, "$helpDir/html/", $ddpfqdn );
+        MarkDownHelp::parseMarkDownDir("$helpDir/markdown/", \%helpRows);
+    } else {
+        die("helpDir is undefined");
+    }
+
+    if ( $DEBUG > 3 ) {
+        print Dumper("main: helpRows", %helpRows);
+    }
+
+    storeHelp(\%helpRows);
+}
+
+main();

@@ -1,0 +1,101 @@
+#!/usr/bin/env perl
+# This script parses Versant Statistics as collected by Versant via the instr2
+# utility. 
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+our $bcpFile;
+
+sub main {
+    my ($vrsntInstrCfg, $vrsntInstrData);
+    my $result = GetOptions (
+        "cfg=s" => \$vrsntInstrCfg,
+        "data=s" => \$vrsntInstrData,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+
+    setStatsDB_Debug($DEBUG);
+    setInstr_Debug($DEBUG);
+
+    # Parse instr data & get siteId
+    my $r_data = parseData($vrsntInstrCfg, $vrsntInstrData);
+    if ( $DEBUG > 10 ) { print Dumper("main: r_data", $r_data); }
+
+    my %counterMap = (
+	'data_located' => 'located',
+	'data_reads'   => 'datareads',
+	'data_writes'  => 'datawrites',
+        'bf_llog_bytes_written' => 'llogwrite',
+        'bf_plog_bytes_written' => 'plogwrite',
+        'lock_timeouts' => 'lktimeout',
+        'lock_waits' => 'lkwait',
+	'xact_active' => 'xactactive',
+        'xact_committed' => 'xactcommit',
+        'xact_rolled_back' => 'xactrollback',
+        'checkpoints' => 'checkpts',
+        'bf_llog_full' => 'llogfull',
+        'bf_llog_end' => 'llogend',
+	'running_threads' => 'threads'
+	);
+    my @absolute_counters = ( 'running_threads', 'xact_active' );
+    
+    # Now figure out if the columns are from OSS-RC or ENM
+    # Versant in ENM uses lower case and doesn't have the STAT_
+    # i.e. STAT_DB_DATA_LOCATED is db_data_located in ENM
+    # For now, hardcode the ENM name
+    my %absolute = ();
+    foreach my $counterName ( @absolute_counters ) {
+	$absolute{$counterName} = 1;
+    }
+    my @deltaCounterNames = ();
+    my %columnMap = ();
+    my $isENM = exists $r_data->{'dps_integration'};
+    if ( $DEBUG > 0 ) { print "main: isENM=$isENM\n"; }
+    foreach my $counterName ( keys %counterMap ) {	
+	my $srcCounterName = 'db_' . $counterName;
+	if ( ! $isENM ) {
+	    $srcCounterName = uc('stat_' . $srcCounterName);
+	}	
+	if ( $DEBUG > 7 ) { print "main: mapped $counterName to $srcCounterName\n"; }	
+	if ( ! exists $absolute{$counterName} ) {
+		push @deltaCounterNames, $srcCounterName;
+	}	
+	$columnMap{$srcCounterName} = $counterMap{$counterName};
+    }
+
+    if ( $DEBUG > 5 ) {
+	print Dumper("main: deltaCounterNames", \@deltaCounterNames);
+	print Dumper("main: columnMap", \%columnMap);
+    }
+	
+    # Get ids for the databases
+    my $dbh = connect_db();    
+    my @vdbNames = keys %{$r_data};
+    my $r_nameMap = getIdMap($dbh, "vdb_names", "id", "name", \@vdbNames);
+    
+    # Get stats for each Versant DB
+    foreach my $vdb (keys %{$r_data}) {
+        my $r_samples = $r_data->{$vdb};
+        deltaSamples( $r_data->{$vdb}, \@deltaCounterNames );
+        foreach my $r_sample ( @{$r_samples} ) {
+            my $sampleTimeString = $r_sample->{'timestamp'};
+            $sampleTimeString =~ s/ /:/;
+            $sampleTimeString =~ s/\.(\d{3,3})$//;
+            $r_sample->{'time'} = parseTime($sampleTimeString, $StatsTime::TIME_DDMMYY_HMS);
+        }               
+        instrStoreData("vdb_stats", $site, { 'vdbid' => $r_nameMap->{$vdb} }, $r_samples, \%columnMap );
+    }
+    
+    $dbh->disconnect;
+}
+
+main;

@@ -1,0 +1,68 @@
+#!/bin/bash
+
+TMP_DIR=$1
+ANALYSIS_OUTPUT=$2
+DASH_DATE=$3
+OSS_VER=$4
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd $ANALYSIS_BIN ; cd .. ; pwd)
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+if [ -z "${INCR_DIR}" ] ; then
+    INCR_DIR=${TMP_DIR}
+fi
+
+if [ ! -d ${ANALYSIS_OUTPUT}/event_rates ] ; then
+    mkdir ${ANALYSIS_OUTPUT}/event_rates
+fi
+
+EVENT_CH_LIST=$(ls ${TMP_DIR}/events | egrep -v "SMO|SWH")
+EVENT_TOTALS=""
+if [ "${OSSVER}" = "P21" ] || [ "${OSSVER}" = "P20" ]; then
+    SOURCE_TAG="RANOS"
+else
+    SOURCE_TAG="OSS"
+fi
+
+TOTALS_FILE=${ANALYSIS_OUTPUT}/event_rates/Event_Totals_Table.html
+rm -f ${TOTALS_FILE}
+for EVENT_CH in ${EVENT_CH_LIST}; do
+    PREV_COUNT=0
+    OFFSET=0
+    if [ -r ${INCR_DIR}/${EVENT_CH}.plotAllEventRates ] ; then
+	OFFSET=$(cat ${INCR_DIR}/${EVENT_CH}.plotAllEventRates | awk -F: '{print $1}')
+	PREV_COUNT=$(cat ${INCR_DIR}/${EVENT_CH}.plotAllEventRates | awk -F: '{print $2}')
+    fi
+    tail --bytes=+${OFFSET} ${TMP_DIR}/events/${EVENT_CH} | egrep '^[0-9]' | egrep "^[^ ]* ${SOURCE_TAG} ${EVENT_CH}" > ${TMP_DIR}/${EVENT_CH}_${DASH_DATE}.events
+    
+    EVENT_COUNT=$(wc -l ${TMP_DIR}/${EVENT_CH}_${DASH_DATE}.events | awk '{print $1}')
+    EVENT_COUNT=$(expr ${EVENT_COUNT} + ${PREV_COUNT})
+    echo " <tr> <td>${EVENT_CH}</td> <td>${EVENT_COUNT}</td> </tr>" >> ${TOTALS_FILE}
+
+    if [ ${EVENT_COUNT} -ne 0 ]; then
+	if [ -r ${INCR_DIR}/${EVENT_CH}.plotAllEventRates.rate ] ; then
+	    cat ${INCR_DIR}/${EVENT_CH}.plotAllEventRates.rate > ${TMP_DIR}/${EVENT_CH}.1.in
+	    ${ANALYSIS_BIN}/events/getEventRate --interval 1 --input ${TMP_DIR}/${EVENT_CH}_${DASH_DATE}.events --output ${TMP_DIR}/${EVENT_CH}.1.new
+	    cat ${TMP_DIR}/${EVENT_CH}.1.new >> ${TMP_DIR}/${EVENT_CH}.1.in
+            ${ANALYSIS_BIN}/events/plotEventRate ${TMP_DIR}/${EVENT_CH}.1.in ${DASH_DATE} ${ANALYSIS_OUTPUT}/event_rates/sec_${EVENT_CH}.jpg "${EVENT_CH} Events/Sec" 1 lines YES ${TMP_DIR}/${EVENT_CH}.1
+	else
+            ${ANALYSIS_BIN}/events/plotEventRate ${TMP_DIR}/${EVENT_CH}_${DASH_DATE}.events ${DASH_DATE} ${ANALYSIS_OUTPUT}/event_rates/sec_${EVENT_CH}.jpg "${EVENT_CH} Events/Sec" 1 lines NO ${TMP_DIR}/${EVENT_CH}.1
+	fi
+        # HQ76176: Calculate the rates per minute as well. [BG 2013-01-04]
+	# First run will have grouped the events to per sec in ${TMP_DIR}/eventRate.txt, use this instead of the events file to speed up processing
+        ${ANALYSIS_BIN}/events/plotEventRate ${TMP_DIR}/${EVENT_CH}.1 ${DASH_DATE} ${ANALYSIS_OUTPUT}/event_rates/min_${EVENT_CH}.jpg "${EVENT_CH} Events/Min" 60 lines YES ${TMP_DIR}/${EVENT_CH}.60
+        ${ANALYSIS_BIN}/events/plotEventRate ${TMP_DIR}/${EVENT_CH}.60 ${DASH_DATE} ${ANALYSIS_OUTPUT}/event_rates/hour_${EVENT_CH}.jpg "${EVENT_CH} Events/Hour" 3600 boxes YES ${TMP_DIR}/${EVENT_CH}.3600
+        if [ $? -ne 0 ]; then
+            echo "WARN: plotEventRate failed for ${EVENT_CH}"
+        fi
+    fi
+    
+    SIZE=$(ls -l ${TMP_DIR}/events/${EVENT_CH} | awk '{print $5}')
+    echo "${SIZE}:${EVENT_COUNT}" > ${INCR_DIR}/${EVENT_CH}.plotAllEventRates
+    cp ${TMP_DIR}/${EVENT_CH}.1 ${INCR_DIR}/${EVENT_CH}.plotAllEventRates.rate
+
+    /bin/rm -f ${TMP_DIR}/${EVENT_CH}_${DASH_DATE}.events 	
+done

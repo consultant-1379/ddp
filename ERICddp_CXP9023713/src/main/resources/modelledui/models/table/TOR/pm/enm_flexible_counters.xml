@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_flexible_controller">
+    <reference table="sites" condition="enm_flexible_controller.siteid = sites.id"/>
+    <reference table="servers" condition="enm_flexible_controller.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_flexible_controller.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(numberOfFlexibleCountersCreated)" label="Total number of Generated Flexible Counters"/>
+  <column db="MAX(numberOfFlexibleCountersCreated)" label="Maximum number of Generated Flexible Counters"/>
+  <column db="IFNULL(ROUND(AVG(NULLIF(numberOfFlexibleCountersCreated,0))),0)" label="Average number of Generated Flexible Counters"/>
+  <column db="SUM(numberOfRequestForCreateEndpoint)" label="Total Create Request Count"/>
+  <column db="SUM(numberOfRequestsForUpdateEndpoint)" label="Total Update Request Count"/>
+  <column db="SUM(numberOfRequestForImportEndpoint)" label="Total Import Request Count"/>
+  <column db="SUM(numberOfRequestsForDeleteEndpoint)" label="Total Delete Request Count"/>
+  <column db="SUM(numberOfBatchesAddedToQueue)" label="Total number of Batches added to the Queue"/>
+  <column db="SUM(numberOfBatchesRemovedFromQueue)" label="Total number of Batches removed from the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersAddedToQueue)" label="Total number of Flexible Counters added to the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersRemovedFromQueue)" label="Total number of Flexible Counters removed from the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersInCreationAddedToQueue)" label="Total number of Flexible Counters in Creation added to the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersInCreationRemovedFromQueue)" label="Total number of Flexible Counters in Creation removed from the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersInUpdateAddedToQueue)" label="Total number of Flexible Counters in Update added to the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersInUpdateRemovedFromQueue)" label="Total number of Flexible Counters in Update removed from the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersInDeletionAddedToQueue)" label="Total number of Flexible Counters in Deletion added to the Queue"/>
+  <column db="SUM(numberOfFlexibleCountersInDeletionRemovedFromQueue)" label="Total number of Flexible Counters in Deletion removed from the Queue"/>
+</modelledtable>

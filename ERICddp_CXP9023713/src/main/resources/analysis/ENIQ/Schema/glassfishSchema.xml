@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<instr>
+    <DbTable>glassfish_stats</DbTable>
+    <MetricSet>
+        <metric>hostip</metric>
+        <metric>userid</metric>
+        <metric>urlid</metric>
+        <metric>time_dimension</metric>
+        <metric>type</metric>
+        <metric>node</metric>
+        <metric>imsi</metric>
+        <metric>tac</metric>
+        <metric>msisdn</metric>
+        <metric>groupname</metric>
+        <metric>display</metric>
+        <metric>tzOffset</metric>
+        <metric>maxRows</metric>
+        <metric>response_status</metric>
+        <metric>response_length</metric>
+        <metric>response_time</metric>
+        <metric>cookie</metric>
+        <metric>user_agent_id</metric>
+        <metric>browserid</metric>
+        <metric>browser_version</metric>
+        <metric>http_version</metric>
+    </MetricSet>
+</instr>

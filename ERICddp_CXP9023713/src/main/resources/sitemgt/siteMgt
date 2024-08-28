@@ -1,0 +1,269 @@
+#!/bin/bash
+# Script to handle filesystem modifications during site creation,
+# modification and deletion. Database updates are handled
+# separately - in the adminui/createsite.php and
+# adminui/editsite.php pages.
+
+DIR=`dirname $0`
+SITEMGT_DIR=`cd ${DIR}; pwd`
+
+ADD_SITE=0
+MOD_SITE=0
+DEL_SITE=0
+SITE_REPROCESS=0
+
+# Rollback data
+DIRS_CREATED=""
+usage() {
+    cat <<EOF
+$1
+Usage: $0 -a|-m|-r|-d -t <site type> -s <site> [-S <new site>] [-f ftpaccount] [-F <new ftpaccount>] [-c configfile] [-N <nasfilepath>] [-O <ftprootfilepath>]
+
+EOF
+    exit 1
+}
+
+createDir() {
+    DIR=$1
+    if [ -d $DIR ] ; then
+        ERROR="Directory $DIR already exists"
+        return 1
+    fi
+    mkdir $DIR
+    if [ $? -ne 0 ] ; then
+        ERROR="Could not create $DIR"
+        return 1
+    fi
+    DIRS_CREATED="${DIRS_CREATED} ${DIR}"
+    return 0
+}
+
+cleanup() {
+    echo $1
+    echo "Cleaning up ..."
+    for dir in ${DIRS_CREATED} ; do
+        if [ -d  ${dir} ] ; then
+            echo " Removing ${dir}"
+            rm -rf ${dir}
+        fi
+    done
+    exit 1
+}
+
+#
+# Check that we are running on the processing host
+#
+if [ ! -d /data/stats ] ; then
+    CMD=$(basename $0)
+    exec ssh prochost /data/ddp/current/sitemgt/${CMD} $*
+fi
+
+
+# Check user
+# Must be running as statsadm
+id | grep statsadm
+ME=$(id | sed 's/^uid=[0-9]*(\([a-z].*\)) gid=.*$/\1/')
+if [ "${ME}" != "statsadm" ] ; then
+    CMD=$(basename $0)
+    exec /usr/bin/sudo -u statsadm ${SITEMGT_DIR}/${CMD} $*
+fi
+
+while getopts amdrt:T:f:F:s:S:c:N:O: name
+do
+    case $name in
+        a) ADD_SITE=1;;
+        m) MOD_SITE=1;;
+        d) DEL_SITE=1;;
+        t) SITE_TYPE="${OPTARG}";;
+        T) NEW_SITE_TYPE="${OPTARG}";;
+        s) SITE_NAME="${OPTARG}";;
+        S) NEW_SITE_NAME="${OPTARG}";;
+        f) FTP_DIR="${OPTARG}";;
+        F) NEW_FTP_DIR="${OPTARG}";;
+        c) CONFIG="${OPTARG}";;
+        r) SITE_REPROCESS=1;;
+        N) NAS_FILE="${OPTARG}";;
+        O) FTP_FILE="${OPTARG}";;
+    esac
+done
+
+# Only one action allowed
+if [ $(expr ${ADD_SITE} + ${MOD_SITE} + ${DEL_SITE} + ${SITE_REPROCESS}) -ne 1 ] ; then
+    usage "You must supply a single option - add, delete, modify or reprocess"
+fi
+
+NAS_ARCHIVE_DIR="/nas/archive"
+if [ $SITE_REPROCESS -eq 1 ] ; then
+        if [ -z "${NAS_FILE}" ] ; then
+            usage "You must supply the file to be reprocessed"
+        fi
+
+        if [ -z "${FTP_FILE}" ] ; then
+            usage "You must supply destination file for reprocess"
+        fi
+        mv ${NAS_FILE} ${FTP_FILE}
+        if [ $? -ne 0 ] ; then
+            echo "Failed to move ${NAS_FILE} to ${FTP_FILE}"
+            exit 1
+        fi
+        exit 0
+fi
+
+if [ -z ${SITE_NAME} ] ; then
+    usage "You must supply a site name"
+fi
+
+if [ -z ${SITE_TYPE} ] ; then
+    usage "You must supply a site type"
+fi
+
+if [ -z "${CONFIG}" ] ; then
+    CONFIG=/data/stats/config
+fi
+
+if [ ! -f ${CONFIG} ] ; then
+    cleanup "Invalid configuration file: ${CONFIG}"
+fi
+
+. ${CONFIG}
+if [ ! -d ${DATA_DIR}/${SITE_TYPE} ] ; then
+    usage "Invalid site type : ${SITE_TYPE}"
+fi
+
+if [ $ADD_SITE -eq 1 ] ; then
+    if [ -z "${FTP_DIR}" ] ; then
+        usage "You must supply an FTP dir name"
+    fi
+
+    echo "Creating FTP dir ${INCOMING_ROOT}/${FTP_DIR}"
+    createDir ${INCOMING_ROOT}/${FTP_DIR}
+    if [ $? -ne 0 ] ; then
+        cleanup "Error creating FTP directory: $ERROR"
+        exit 1
+    fi
+    chgrp statsuser ${INCOMING_ROOT}/${FTP_DIR}
+    if [ $? -ne 0 ] ; then
+        cleanup "Could not change group on ${INCOMING_ROOT}/${FTP_DIR}"
+    fi
+    chmod 775 ${INCOMING_ROOT}/${FTP_DIR}
+    if [ $? -ne 0 ] ; then
+        cleanup "Could not change permissions on ${INCOMING_ROOT}/${FTP_DIR}"
+    fi
+
+    echo "Creating site directories"
+    for dir in ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME} ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME}/data ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME}/analysis ; do
+        createDir ${dir}
+        if [ $? -ne 0 ] ; then
+            cleanup "Error creating site directory: ${dir}"
+        fi
+    done
+
+    # We will get rid of the sitelist.txt sometime ...
+    if [ -w ${DATA_DIR}/sitelist.txt ] ; then
+        echo "${FTP_DIR}:${SITE_NAME}" >> ${DATA_DIR}/sitelist.txt
+    fi
+    exit 0
+elif [ $MOD_SITE -eq 1 ] ; then
+    if [ ! -z "${NEW_FTP_DIR}" ] ; then
+        if [ -z "${FTP_DIR}" ] ; then
+            usage "You must supply both old and new FTP dir names to change the FTP directory"
+        fi
+        echo "Changing FTP directory from ${FTP_DIR} to ${NEW_FTP_DIR}"
+        if [ -d "${INCOMING_ROOT}/${NEW_FTP_DIR}" ] ; then
+            cleanup "A directory called ${INCOMING_ROOT}/${NEW_FTP_DIR} already exists"
+        fi
+        if [ ! -d ${INCOMING_ROOT}/${FTP_DIR} ] ; then
+            cleanup "The FTP directory ${INCOMING_ROOT}/${FTP_DIR} does not exist"
+        fi
+        mv ${INCOMING_ROOT}/${FTP_DIR} ${INCOMING_ROOT}/${NEW_FTP_DIR}
+        if [ $? -ne 0 ] ; then
+            cleanup "Could not move FTP directory"
+        fi
+        if [ -w ${DATA_DIR}/sitelist.txt ] ; then
+            sed 's/^'${FTP_DIR}':/'${NEW_FTP_DIR}':/' ${DATA_DIR}/sitelist.txt > ${DATA_DIR}/sitelist.txt.tmp
+            mv ${DATA_DIR}/sitelist.txt.tmp ${DATA_DIR}/sitelist.txt
+        fi
+    fi
+
+    if [ ! -z "${NEW_SITE_NAME}" ] ; then
+        # Already checked for a SITE_NAME
+        echo "Changing Site Name from ${SITE_NAME} to ${NEW_SITE_NAME}"
+        if [ ! -d ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME} ] ; then
+            echo "Original site directory does not exist:  ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME}"
+            exit 1
+        fi
+        if [ -d ${DATA_DIR}/${SITE_TYPE}/${NEW_SITE_NAME} ] ; then
+            echo "New site directory already exists: ${DATA_DIR}/${SITE_TYPE}/${NEW_SITE_NAME}"
+            exit 1
+        fi
+        mv ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME} ${DATA_DIR}/${SITE_TYPE}/${NEW_SITE_NAME}
+        if [ $? -ne 0 ] ; then
+            echo "Could not move site directory"
+            exit 1
+        fi
+
+        if [ -d "${ARCHIVE_DIR}" ] ; then
+            if [ ! -d "${ARCHIVE_DIR}/${SITE_NAME}" ] ; then
+                echo "Original site directory does not exist: ${ARCHIVE_DIR}/${SITE_NAME}"
+                exit 0
+            fi
+            if [ -d "${ARCHIVE_DIR}/${NEW_SITE_NAME}" ] ; then
+               echo "New site directory already exists: ${ARCHIVE_DIR}/${NEW_SITE_NAME}"
+               exit 1
+            fi
+            mv "${ARCHIVE_DIR}/${SITE_NAME}" "${ARCHIVE_DIR}/${NEW_SITE_NAME}"
+        fi
+
+        NAS_ARCHIVE_YEAR_DIRS=$(find ${NAS_ARCHIVE_DIR} -maxdepth 1 -type d -name "[0-9][0-9][0-9][0-9]")
+        if [ ! -z "${NAS_ARCHIVE_YEAR_DIRS}" ] ; then
+            for ARCHIVE_YEAR_DIR in ${NAS_ARCHIVE_YEAR_DIRS} ; do
+                if [ -d ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${SITE_NAME} ] ; then
+                    mv ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${SITE_NAME} ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${NEW_SITE_NAME}
+                fi
+            done
+        fi
+
+        if [ -w ${DATA_DIR}/sitelist.txt ] ; then
+            sed 's/:'${SITE_NAME}'$/:'${NEW_SITE_NAME}'/' ${DATA_DIR}/sitelist.txt > ${DATA_DIR}/sitelist.txt.tmp
+            mv ${DATA_DIR}/sitelist.txt.tmp ${DATA_DIR}/sitelist.txt
+        fi
+    fi
+
+    if [ ! -z "${NEW_SITE_TYPE}" ] ; then
+        echo "Change Site Type from ${SITE_TYPE} to ${NEW_SITE_TYPE} for ${SITE_NAME}"
+        if [ ! -d ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME} ] ; then
+            cleanup "Original site directory does not exist:  ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME}"
+        fi
+        if [ -d ${DATA_DIR}/${NEW_SITE_TYPE}/${SITE_NAME} ] ; then
+            cleanup "New site directory already exists: ${DATA_DIR}/${NEW_SITE_TYPE}/${SITE_NAME}"
+        fi
+        mv ${DATA_DIR}/${SITE_TYPE}/${SITE_NAME} ${DATA_DIR}/${NEW_SITE_TYPE}/${SITE_NAME}
+        if [ $? -ne 0 ] ; then
+            cleanup "Could not move site directory"
+        fi
+
+        NAS_ARCHIVE_YEAR_DIRS=$(find ${NAS_ARCHIVE_DIR} -maxdepth 1 -type d -name "[0-9][0-9][0-9][0-9]")
+        if [ ! -z "${NAS_ARCHIVE_YEAR_DIRS}" ] ; then
+            for ARCHIVE_YEAR_DIR in ${NAS_ARCHIVE_YEAR_DIRS} ; do
+                if [ -d ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${SITE_NAME} ] ; then
+                    if [ ! -d ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE}/${SITE_NAME} ] ; then
+                        if [ -d ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE} ] ; then
+                            mv ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${SITE_NAME} ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE}/${SITE_NAME}
+                        else
+                            if mkdir ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE} ; then
+                                mv ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${SITE_NAME} ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE}/${SITE_NAME}
+                            else
+                                echo "Failed to create ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE} directory"
+                            fi
+                        fi
+                    else
+                        echo "Skipping moving ${ARCHIVE_YEAR_DIR}/${SITE_TYPE}/${SITE_NAME} as ${ARCHIVE_YEAR_DIR}/${NEW_SITE_TYPE}/${SITE_NAME} already exists"
+                    fi
+                fi
+            done
+        fi
+    fi
+    exit 0
+elif [ $DEL_SITE -eq 1 ] ; then
+    cleanup "Can't delete sites yet"
+fi

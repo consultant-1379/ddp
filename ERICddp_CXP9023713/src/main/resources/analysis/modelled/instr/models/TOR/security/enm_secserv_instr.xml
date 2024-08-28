@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="securityservice"/>
+    <service name="security"/>
+  </services>
+
+  <table name="enm_secserv_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.nms.security.nscs.instrumentation.node-security:type=NscsInstrumentationBean">
+      <metric source="numOfFailedDistributedTrustedCertificates" target="numOfFailedDistributedTrustedCertificates" delta="true"/>
+      <metric source="numOfFailedEnrolledCertificates" target="numOfFailedEnrolledCertificates" delta="true"/>
+      <metric source="numOfFailedGeneratedISCFFiles" target="numOfFailedGeneratedISCFFiles" delta="true"/>
+      <metric source="numOfFailedGeneratedSSHKeys" target="numOfFailedGeneratedSSHKeys" delta="true"/>
+      <metric source="numOfFailedWorkflows" target="numOfFailedWorkflows" delta="true"/>
+      <metric source="numOfRunningWorkflows" target="numOfRunningWorkflows"/>
+      <metric source="numOfSuccesfulGeneratedISCFFiles" target="numOfSuccesfulGeneratedISCFFiles" delta="true"/>
+      <metric source="numOfSuccessfulDistributedTrustedCertificates" target="numOfSuccessfulDistributedTrustedCertificates" delta="true"/>
+      <metric source="numOfSuccessfulEnrolledCertificates" target="numOfSuccessfulEnrolledCertificates" delta="true"/>
+      <metric source="numOfSuccessfulGeneratedSSHKeys" target="numOfSuccessfulGeneratedSSHKeys" delta="true"/>
+      <metric source="numOfSuccessfulWorkflows" target="numOfSuccessfulWorkflows" delta="true"/>
+      <metric source="SL2InitCertEnrollmentFailures" target="SL2InitCertEnrollmentFailures" delta="true"/>
+      <metric source="SL2InstallTrustedCertificateFailures" target="SL2InstallTrustedCertificateFailures" delta="true"/>
+      <metric source="activateSL2Failures" target="activateSL2Failures" delta="true"/>
+      <metric source="activateSL2Invocations" target="activateSL2Invocations" delta="true"/>
+      <metric source="deActivateSL2Failures" target="deActivateSL2Failures" delta="true"/>
+      <metric source="deActivateSL2Invocations" target="deActivateSL2Invocations" delta="true"/>
+      <metric source="activateIpsecFailures" target="activateIpsecFailures" delta="true"/>
+      <metric source="activateIpsecInvocations" target="activateIpsecInvocations" delta="true"/>
+      <metric source="ipsecInitCertEnrollmentFailures" target="ipsecInitCertEnrollmentFailures" delta="true"/>
+      <metric source="ipsecInstallTrustedCertificateFailures" target="ipsecInstallTrustedCertificateFailures" delta="true"/>
+      <metric source="deActivateIpsecFailures" target="deActivateIpsecFailures" delta="true"/>
+      <metric source="deActivateIpsecInvocations" target="deActivateIpsecInvocations" delta="true"/>
+      <metric source="numOfSuccessfulIscfInvocations" target="numOfSuccessfulIscfInvocations" delta="true"/>
+      <metric source="numOfFailedIscfInvocations" target="numOfFailedIscfInvocations" delta="true"/>
+      <metric source="numOfErroredWorkflows" target="numOfErroredWorkflows" delta="true"/>
+      <metric source="numOfTimedOutWorkflows" target="numOfTimedOutWorkflows" delta="true"/>
+      <metric source="numOfPendingWorkflows" target="numOfPendingWorkflows"/>
+      <metric source="numOfSuccessfulSSHKeyGenerationWorkflows" target="numOfSuccessfulSSHKeyGenerationWorkflows" delta="true"/>
+      <metric source="numOfTimedOutSSHKeyGenerationWorkflows" target="numOfTimedOutSSHKeyGenerationWorkflows" delta="true"/>
+      <metric source="numOfErroredSSHKeyGenerationWorkflows" target="numOfErroredSSHKeyGenerationWorkflows" delta="true"/>
+      <metric source="numOfFailedSSHKeyGenerationWorkflows" target="numOfFailedSSHKeyGenerationWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppSL2ActivateWorkflows" target="numOfSuccessfulCppSL2ActivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppSL2ActivateWorkflows" target="numOfTimedOutCppSL2ActivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppSL2ActivateWorkflows" target="numOfErroredCppSL2ActivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppSL2ActivateWorkflows" target="numOfFailedCppSL2ActivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppSL2DeactivateWorkflows" target="numOfSuccessfulCppSL2DeactivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppSL2DeactivateWorkflows" target="numOfTimedOutCppSL2DeactivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppSL2DeactivateWorkflows" target="numOfErroredCppSL2DeactivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppSL2DeactivateWorkflows" target="numOfFailedCppSL2DeactivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppIpSecActivateWorkflows" target="numOfSuccessfulCppIpSecActivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppIpSecActivateWorkflows" target="numOfTimedOutCppIpSecActivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppIpSecActivateWorkflows" target="numOfErroredCppIpSecActivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppIpSecActivateWorkflows" target="numOfFailedCppIpSecActivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppIpSecDeactivateWorkflows" target="numOfSuccessfulCppIpSecDeactivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppIpSecDeactivateWorkflows" target="numOfTimedOutCppIpSecDeactivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppIpSecDeactivateWorkflows" target="numOfErroredCppIpSecDeactivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppIpSecDeactivateWorkflows" target="numOfFailedCppIpSecDeactivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppCertificateEnrollmentWorkflows" target="numOfSuccessfulCppCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppCertificateEnrollmentWorkflows" target="numOfTimedOutCppCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfErroredCppCertificateEnrollmentWorkflows" target="numOfErroredCppCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfFailedCppCertificateEnrollmentWorkflows" target="numOfFailedCppCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimCertificateEnrollmentWorkflows" target="numOfSuccessfulEcimCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimCertificateEnrollmentWorkflows" target="numOfTimedOutEcimCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimCertificateEnrollmentWorkflows" target="numOfErroredEcimCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimCertificateEnrollmentWorkflows" target="numOfFailedEcimCertificateEnrollmentWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppTrustDistributeWorkflows" target="numOfSuccessfulCppTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppTrustDistributeWorkflows" target="numOfTimedOutCppTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfErroredCppTrustDistributeWorkflows" target="numOfErroredCppTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfFailedCppTrustDistributeWorkflows" target="numOfFailedCppTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimTrustDistributeWorkflows" target="numOfSuccessfulEcimTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimTrustDistributeWorkflows" target="numOfTimedOutEcimTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimTrustDistributeWorkflows" target="numOfErroredEcimTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimTrustDistributeWorkflows" target="numOfFailedEcimTrustDistributeWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppTrustRemoveWorkflows" target="numOfSuccessfulCppTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppTrustRemoveWorkflows" target="numOfTimedOutCppTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfErroredCppTrustRemoveWorkflows" target="numOfErroredCppTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfFailedCppTrustRemoveWorkflows" target="numOfFailedCppTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimTrustRemoveWorkflows" target="numOfSuccessfulEcimTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimTrustRemoveWorkflows" target="numOfTimedOutEcimTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimTrustRemoveWorkflows" target="numOfErroredEcimTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimTrustRemoveWorkflows" target="numOfFailedEcimTrustRemoveWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimLdapConfigureWorkflows" target="numOfSuccessfulEcimLdapConfigureWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimLdapConfigureWorkflows" target="numOfTimedOutEcimLdapConfigureWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimLdapConfigureWorkflows" target="numOfErroredEcimLdapConfigureWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimLdapConfigureWorkflows" target="numOfFailedEcimLdapConfigureWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppCRLCheckWorkflows" target="numOfSuccessfulCppCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppCRLCheckWorkflows" target="numOfTimedOutCppCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfErroredCppCRLCheckWorkflows" target="numOfErroredCppCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfFailedCppCRLCheckWorkflows" target="numOfFailedCppCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimCRLCheckWorkflows" target="numOfSuccessfulEcimCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimCRLCheckWorkflows" target="numOfTimedOutEcimCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimCRLCheckWorkflows" target="numOfErroredEcimCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimCRLCheckWorkflows" target="numOfFailedEcimCRLCheckWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppOnDemandCRLDownloadWorkflows" target="numOfSuccessfulCppOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppOnDemandCRLDownloadWorkflows" target="numOfTimedOutCppOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfErroredCppOnDemandCRLDownloadWorkflows" target="numOfErroredCppOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfFailedCppOnDemandCRLDownloadWorkflows" target="numOfFailedCppOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimOnDemandCRLDownloadWorkflows" target="numOfSuccessfulEcimOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimOnDemandCRLDownloadWorkflows" target="numOfTimedOutEcimOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimOnDemandCRLDownloadWorkflows" target="numOfErroredEcimOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimOnDemandCRLDownloadWorkflows" target="numOfFailedEcimOnDemandCRLDownloadWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulSetCiphersWorkflows" target="numOfSuccessfulSetCiphersWorkflows" delta="true"/>
+      <metric source="numOfTimedOutSetCiphersWorkflows" target="numOfTimedOutSetCiphersWorkflows" delta="true"/>
+      <metric source="numOfErroredSetCiphersWorkflows" target="numOfErroredSetCiphersWorkflows" delta="true"/>
+      <metric source="numOfFailedSetCiphersWorkflows" target="numOfFailedSetCiphersWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppRTSELActivateWorkflows" target="numOfSuccessfulCppRTSELActivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppRTSELActivateWorkflows" target="numOfTimedOutCppRTSELActivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppRTSELActivateWorkflows" target="numOfErroredCppRTSELActivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppRTSELActivateWorkflows" target="numOfFailedCppRTSELActivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppRTSELDeleteWorkflows" target="numOfSuccessfulCppRTSELDeleteWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppRTSELDeleteWorkflows" target="numOfTimedOutCppRTSELDeleteWorkflows" delta="true"/>
+      <metric source="numOfErroredCppRTSELDeleteWorkflows" target="numOfErroredCppRTSELDeleteWorkflows" delta="true"/>
+      <metric source="numOfFailedCppRTSELDeleteWorkflows" target="numOfFailedCppRTSELDeleteWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppHTTPSActivateWorkflows" target="numOfSuccessfulCppHTTPSActivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppHTTPSActivateWorkflows" target="numOfTimedOutCppHTTPSActivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppHTTPSActivateWorkflows" target="numOfErroredCppHTTPSActivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppHTTPSActivateWorkflows" target="numOfFailedCppHTTPSActivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppHTTPSDeactivateWorkflows" target="numOfSuccessfulCppHTTPSDeactivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppHTTPSDeactivateWorkflows" target="numOfTimedOutCppHTTPSDeactivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppHTTPSDeactivateWorkflows" target="numOfErroredCppHTTPSDeactivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppHTTPSDeactivateWorkflows" target="numOfFailedCppHTTPSDeactivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppHTTPSGetWorkflows" target="numOfSuccessfulCppHTTPSGetWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppHTTPSGetWorkflows" target="numOfTimedOutCppHTTPSGetWorkflows" delta="true"/>
+      <metric source="numOfErroredCppHTTPSGetWorkflows" target="numOfErroredCppHTTPSGetWorkflows" delta="true"/>
+      <metric source="numOfFailedCppHTTPSGetWorkflows" target="numOfFailedCppHTTPSGetWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimFTPESActivateWorkflows" target="numOfSuccessfulEcimFTPESActivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimFTPESActivateWorkflows" target="numOfTimedOutEcimFTPESActivateWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimFTPESActivateWorkflows" target="numOfErroredEcimFTPESActivateWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimFTPESActivateWorkflows" target="numOfFailedEcimFTPESActivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulEcimFTPESDeactivateWorkflows" target="numOfSuccessfulEcimFTPESDeactivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutEcimFTPESDeactivateWorkflows" target="numOfTimedOutEcimFTPESDeactivateWorkflows" delta="true"/>
+      <metric source="numOfErroredEcimFTPESDeactivateWorkflows" target="numOfErroredEcimFTPESDeactivateWorkflows" delta="true"/>
+      <metric source="numOfFailedEcimFTPESDeactivateWorkflows" target="numOfFailedEcimFTPESDeactivateWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppLaadDistributeWorkflows" target="numOfSuccessfulCppLaadDistributeWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppLaadDistributeWorkflows" target="numOfTimedOutCppLaadDistributeWorkflows" delta="true"/>
+      <metric source="numOfErroredCppLaadDistributeWorkflows" target="numOfErroredCppLaadDistributeWorkflows" delta="true"/>
+      <metric source="numOfFailedCppLaadDistributeWorkflows" target="numOfFailedCppLaadDistributeWorkflows" delta="true"/>
+      <metric source="numOfSuccessfulCppRTSELDeactivateWorkflows" target="numOfSuccessfulCppRTSELDeactivateWorkflows" delta="true"/>
+      <metric source="numOfTimedOutCppRTSELDeactivateWorkflows" target="numOfTimedOutCppRTSELDeactivateWorkflows" delta="true"/>
+      <metric source="numOfErroredCppRTSELDeactivateWorkflows" target="numOfErroredCppRTSELDeactivateWorkflows" delta="true"/>
+      <metric source="numOfFailedCppRTSELDeactivateWorkflows" target="numOfFailedCppRTSELDeactivateWorkflows" delta="true"/>
+
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

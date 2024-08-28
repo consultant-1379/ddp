@@ -1,0 +1,46 @@
+#!/bin/bash
+
+logMsg() {
+    echo "$(date "+%Y-%m-%d %H:%M:%S") $*"
+}
+
+while getopts a:m: opt ; do
+    case ${opt} in
+        m)
+            COMPRESS_AFTER=${OPTARG}
+            ;;
+        a)
+            ARCHIVE_DIR=${OPTARG}
+            ;;
+    esac
+done
+
+START_OF_CURRENT_MONTH=$(date "+%Y-%m-01")
+OLDEST_UNCOMPRESSED=$(date --date="${START_OF_CURRENT_MONTH} ${COMPRESS_AFTER} months ago" "+%y%m%d")
+
+logMsg "Compressing directories older then ${OLDEST_UNCOMPRESSED}"
+for YEAR in $(ls ${ARCHIVE_DIR}) ; do
+    YEAR_DIRECTORY_CONTENT=$(ls ${ARCHIVE_DIR}/${YEAR})
+    for SITE_TYPE_DIR in ${YEAR_DIRECTORY_CONTENT} ; do
+        SITE_TYPE_DIRECTORY_CONTENT=$(ls ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR})
+        for SITE in ${SITE_TYPE_DIRECTORY_CONTENT} ; do
+            for DIR in analysis data ; do
+                if [ -d ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR} ] ; then
+                    logMsg "Checking ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR}"
+                    DIR_CONTENT=$(ls ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR} | grep -v '.tar.gz')
+                    for DATE_DIR in ${DIR_CONTENT} ; do
+                        COMPARE_DIR=$(echo ${DATE_DIR} | sed 's/^\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)$/\3\2\1/g')
+                        if [ ${COMPARE_DIR} -lt ${OLDEST_UNCOMPRESSED} ] ; then
+                            logMsg "Compressing ${DATE_DIR}"
+                            tar --create --file ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR}/${DATE_DIR}.tar.gz --gzip --directory ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR} ${DATE_DIR}
+                            if [ $? -eq 0 ] ; then
+                                chown user500:grp500 ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR}/${DATE_DIR}.tar.gz
+                                /bin/rm -rf ${ARCHIVE_DIR}/${YEAR}/${SITE_TYPE_DIR}/${SITE}/${DIR}/${DATE_DIR}
+                            fi
+                        fi
+                    done
+                fi
+            done
+        done
+    done
+done

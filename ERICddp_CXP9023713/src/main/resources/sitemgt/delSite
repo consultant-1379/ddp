@@ -1,0 +1,86 @@
+#!/bin/sh
+
+DIR=`dirname $0`
+SITEMGT_DIR=`cd ${DIR}; pwd`
+
+CONFIG=/data/stats/oss/config
+
+while getopts w: name
+  do
+  case $name in
+      w) WEB_DIR="${OPTARG}";;
+      c) CONFIG="${OPTARG}";;
+  esac
+done
+
+if [ -z "${WEB_DIR}" ]; then
+   echo "Usage $0 -w WebDir"
+fi
+
+. ${CONFIG}
+
+#
+# sitelist.txt
+#
+ACCOUNT_LINE=`egrep ":${WEB_DIR}$" ${DATA_DIR}/sitelist.txt`
+if [ -z "${ACCOUNT_LINE}" ] ; then
+    echo "ERROR: No match for ${WEB_DIR}"
+    exit 1
+fi
+cp ${DATA_DIR}/sitelist.txt ${DATA_DIR}/sitelist.txt.old
+cat ${DATA_DIR}/sitelist.txt.old | egrep -v ":${WEB_DIR}$" > ${DATA_DIR}/sitelist.txt
+
+
+FTP_ACCOUNT=`echo ${ACCOUNT_LINE} | awk -F: '{print $1}'`
+
+#
+# passwd.ftp
+#
+FTP_PASSWD_FILE=/data/conf/passwd.ftpd
+chmod 644 ${FTP_PASSWD_FILE}
+if [ $? -ne 0 ] ; then
+    echo "ERROR: Failed to make ${FTP_PASSWD_FILE} writable"
+    exit 1
+fi
+
+egrep "^${FTP_ACCOUNT}:" ${FTP_PASSWD_FILE} > /dev/null
+if [ $? -eq 0 ] ; then
+    echo "Removing ${FTP_ACCOUNT} from passwd file"
+    cp ${FTP_PASSWD_FILE} ${FTP_PASSWD_FILE}.old
+    egrep -v "^${FTP_ACCOUNT}:" ${FTP_PASSWD_FILE}.old > ${FTP_PASSWD_FILE}
+else
+    echo "WARN: Could not find ${FTP_ACCOUNT} in ${FTP_PASSWD_FILE}"
+fi
+
+#
+# ftproot
+# 
+if [ -d ${INCOMING_ROOT}/${FTP_ACCOUNT} ] ; then
+    echo "Delete ${INCOMING_ROOT}/${FTP_ACCOUNT}"
+    rm -rf ${INCOMING_ROOT}/${FTP_ACCOUNT}
+else
+    echo "WARN: ${INCOMING_ROOT}/${FTP_ACCOUNT} does not exist"
+fi
+
+#
+# oss dir
+#
+if [ -d ${DATA_DIR}/${WEB_DIR} ] ; then
+    echo "Delete ${DATA_DIR}/${WEB_DIR}"
+    rm -rf ${DATA_DIR}/${WEB_DIR}
+else
+    echo "WARN: ${DATA_DIR}/${WEB_DIR} does not exist"
+fi
+
+#
+# DB
+#
+echo "Delete data for ${WEB_DIR} from DB"
+mysqldump --no-data --user=statsadm --password=_sadm statsdb > /tmp/statsdb.ddl
+if [ $? -ne 0 ] ; then
+    echo "ERROR: Failed to get db schema"
+    exit 1
+fi
+export PERL5OPT="-I/data/tools/analysis/common"
+/data/tools/analysis/sql/deleteSite --site ${WEB_DIR} --ddl /tmp/statsdb.ddl
+

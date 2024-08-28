@@ -1,0 +1,14 @@
+{
+    "queries": [
+        {
+            "sql": "SELECT enm_servicegroup_names.name AS sg, servers.hostname AS host, servers.id AS srvid FROM enm_servicegroup_instances, enm_servicegroup_names, servers, sites WHERE enm_servicegroup_instances.siteid = sites.id AND sites.name = 'TestSite' AND enm_servicegroup_instances.date = '2022-01-01' AND enm_servicegroup_instances.serverid = servers.id AND enm_servicegroup_instances.serviceid = enm_servicegroup_names.id ORDER BY enm_servicegroup_names.name, servers.hostname",
+            "results": [
+                {
+                    "sg": "thesg",
+                    "host": "thehost",
+                    "srvid": 1
+                }
+            ]
+        }
+    ]
+}

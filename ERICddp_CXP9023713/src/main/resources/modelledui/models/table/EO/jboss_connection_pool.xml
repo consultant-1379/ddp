@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_jboss_connection_pool">
+    <reference table="sites" condition="eo_jboss_connection_pool.siteid = sites.id"/>
+    <reference table="eo_jboss_connection_pool_names" condition="eo_jboss_connection_pool.poolid = eo_jboss_connection_pool_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_jboss_connection_pool.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="eo_jboss_connection_pool.poolid"/>
+  </groupby>
+
+  <column db="eo_jboss_connection_pool.poolid" id="poolid" label="poolid" visible="false"/>
+  <column db="eo_jboss_connection_pool_names.name" label="Connection Pool Name"/>
+  <column db="SUM(createdCount)" label="Total Connections Created"/>
+  <column db="SUM(destroyedCount)" label="Total Connections Destroyed"/>
+  <column db="SUM(blockingFailureCount)" label="Total Blocking Failures"/>
+  <column db="SUM(timedOut)" label="Total Timed Out"/>
+  <column db="SUM(totalBlockingTime)" label="Total Blocking Time"/>
+  <column db="SUM(totalCreationTime)" label="Total Creation Time"/>
+  <column db="SUM(waitCount)" label="Total in Wait request"/>
+
+  <ctxmenu keycol="poolid" targettype="url">
+    <item id="jbossConnection" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

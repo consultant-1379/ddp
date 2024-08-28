@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="test1" timecol="time">
+  </table>
+
+  <events>
+      <event name="EventTypeA">
+        <metric source="metricA" target="metricA"/>
+      </event>
+  </events>
+</modelledevents>

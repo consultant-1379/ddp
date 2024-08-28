@@ -1,0 +1,54 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Time::Local;
+use StatsDB;
+use DBI;
+use Data::Dumper;
+use PlannedArea;
+
+# Get input parameters
+my ($sqlDate,$site,$outdir,$DEBUG);
+my $result = GetOptions(
+    "date=s"  => \$sqlDate,
+    "site=s" => \$site,
+    "outdir=s" => \$outdir,
+    "debug=s"   => \$DEBUG
+);
+($result == 1) or die "Invalid args";
+
+# Declare variables
+my (%imports,%importDetails,%moIds,%all_imports);
+my ($file,$duration,$actId,$mosec,$starttime,$endtime,$r_moNameIds);
+
+# Initialize variables
+my $lvlog="$outdir/lvlog.log";
+my $importPerfLog="$outdir/importperf.txt";
+
+# Adjust date parameters
+if($sqlDate !~ /^\d{4}-\d{2}-\d{2}$/) { 
+    die ("Invalid date format provided");
+}
+
+my ($yy,$mm,$dd) = $sqlDate =~ /^\d{2}(\d{2})-(\d{2})-(\d{2})$/;
+my $date = "$dd$mm$yy";
+
+# Get Site ID
+my $dbh = connect_db();
+my $siteId = getSiteId($dbh,$site);
+
+# Get Import Parameters
+%all_imports = getImportValues($siteId,$importPerfLog,$lvlog,$DEBUG);
+if ( $DEBUG > 8) { print Dumper("getImportValues: %all_imports", \%all_imports); }
+
+# Import parameters to sql tables: pa_import
+storeImportValues($sqlDate,$siteId,$DEBUG,%all_imports);
+
+%all_imports=getImportId("pa_import",$DEBUG,%all_imports);
+if ( $DEBUG > 8) { print Dumper("getImportValues: %all_imports", \%all_imports); }
+
+# Import parameters to sql tables: pa_import_details
+storeImportDetailsValues($sqlDate,$siteId,$DEBUG,%all_imports);
+
+# END OF SCRIPT

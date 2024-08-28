@@ -1,0 +1,397 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+
+sub splitLine($) {
+    my ($line) = @_;
+
+    my @parts = split /\|/, $line;
+    foreach ( my $index = 0; $index <= $#parts; $index++ ) {
+        $parts[$index] =~ s/^\s+//;
+        $parts[$index] =~ s/\s+$//;
+    }
+
+    return \@parts;
+}
+
+sub isUUID($) {
+    my ($mbr) = @_;
+
+    my $is_uuid = $mbr =~ /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    return $is_uuid;
+}
+
+sub viewMismatchCheck($$$) {
+    my ($r_cluster, $r_response, $r_sample) = @_;
+
+    if ( $DEBUG ) { printf "viewMismatchCheck: checking duplicate for %s\n", $r_response->{'cluster'}; }
+    # Now we need to check if this is a case of the same cluster being reported multiple times or
+    # it's view mismatch
+    if ( $r_cluster->{'membersstr'} eq $r_response->{'view'}->{'membersstr'} ) {
+        return;
+    }
+
+    # Now need to check for false positive case where the view has a uuid instead of the logical name
+    if ( $r_cluster->{'membercount'} == $r_response->{'view'}->{'membercount'} ) {
+        my $memberMismatch = 0;
+
+        for ( my $index = 0; $index < $r_cluster->{'membercount'}; $index++ ) {
+            my $clusterMember = $r_cluster->{'members_seq'}->[$index];
+            my $responseMember = $r_response->{'view'}->{'members'}->[$index];
+            if ($clusterMember ne $responseMember) {
+                if ( (!isUUID($clusterMember)) && (!isUUID($responseMember)) ) {
+                    $memberMismatch = 1;
+                }
+            }
+        }
+
+        if ( $memberMismatch == 0 ) {
+            printf "INFO: Discarding mismatch in %s due to UUID\n", $r_response->{'cluster'};
+            return;
+        }
+    }
+
+    my $key = $r_cluster->{'name'} . '@' . $r_response->{'view'}->{'membersstr'};
+    if ( ! exists $r_sample->{'mismatches'}->{$key} ) {
+        printf "WARN: Mismatch detected for %s\n", $key;
+        my %misMatch = (
+            'cluster' => $r_response->{'cluster'},
+            'a' => $r_cluster->{'membersstr'},
+            'b' => $r_response->{'view'}->{'membersstr'}
+        );
+        $r_sample->{'mismatches'}->{$key} = \%misMatch;
+    }
+
+}
+
+sub parseUdpLog($) {
+    my ($inFile) = @_;
+
+    my @samples = ();
+    my $r_sample = undef;
+    my $r_response = undef;
+    open INPUT, $inFile or die "Cannot open $inFile";
+    while ( my $line = <INPUT> ) {
+        $line =~ s/\r$//;
+        if ( $DEBUG > 9 ) { print "parseUdpLog: line $.=$line"; }
+
+        chop $line;
+        if ( $line =~ /^BEGIN ([\d:]{12,12})$/ ) {
+            my $timestamp = $1;
+            if ( $DEBUG > 6 ) { print "parseUdpLog: timestamp=$timestamp\n"; }
+            $r_sample = {
+                'timestamp' => formatTime( parseTime($timestamp, $StatsTime::TIME_DDMMYY_HM),
+                                           $StatsTime::TIME_SQL ),
+                'clusters' => {},
+                'mismatches' => {}
+            };
+            push @samples, $r_sample;
+            $line = <INPUT>;
+            chop $line;
+        }
+        # Next message
+        elsif ( $line =~ /^#\d+/ ) {
+            $r_response = {};
+        }
+        elsif ( $line =~ /^local_addr=(\S+)/ ) {
+            $r_response->{'local_addr'} = $1;
+        }
+        elsif ( $line =~ /^cluster=(\S+)/ ) {
+            $r_response->{'cluster'} = $1;
+        }
+        elsif ( $line =~ /^(UDP|TCP)=\{(.*)\}/ || $line =~ /^jmx=(UDP|TCP)=\{(.*)\}/ ) {
+            my @stats = split(/, /, $2);
+            if ( $DEBUG > 6 ) { print Dumper("parseUdpLog: udp stats", \@stats); }
+
+            foreach my $stat ( @stats ) {
+                my ($name,$value) = $stat =~ /([a-z_]+)=(\d+)/;
+                if ( defined $value ) {
+                    $r_response->{'udp'}->{$name} = $value;
+                }
+            }
+        }
+        elsif ( $line =~ /^view=\[(.*)\]/ ) {
+            my $viewStr = $1;
+            $viewStr =~ s/ \(, payload=\d+ bytes\)//g;
+            $viewStr =~ s/ \.\.\.$//g;
+
+            if ( $DEBUG > 6 ) { print "parseUdpLog: viewStr: $viewStr\n"; }
+
+            my ($coordinator,$memberCount,$membersStr);
+            if ( $viewStr =~ /(\S+)\s+\((\d+)\)\s+\[(.*)/ ) {
+                ($coordinator,$memberCount,$membersStr) = ($1,$2,$3);
+            } elsif ( $viewStr =~ /(\S+)\s+\[(.*)/ ) {
+                ($coordinator,$membersStr) =  ($1,$2);
+                $memberCount = 0;
+            }
+            $coordinator =~ s/\|\d+\]//;
+            my @members = split(/, /, $membersStr);
+            if ( $DEBUG > 5 ) { print "parseUdpLog: view coordinator=$coordinator memberCount=$memberCount\n"; }
+            if ( $DEBUG > 6 ) { print Dumper("parseUdpLog: members",\@members); }
+            $r_response->{'view'} = {
+                'coordinator' => $coordinator,
+                'membercount' => $memberCount,
+                'members' => \@members,
+                'membersstr' => $membersStr
+            };
+        }
+        elsif ( $line =~ /^version=/ && defined $r_response ) {
+            if ( $r_response->{'cluster'} eq "null" ) {
+                printf "WARN: Dropping response for cluster=null from %s\n", $r_response->{'local_addr'};
+                next;
+            }
+
+            my $r_cluster = $r_sample->{'clusters'}->{$r_response->{'cluster'}};
+            if ( defined $r_cluster ) {
+                viewMismatchCheck($r_cluster, $r_response, $r_sample);
+            } else {
+                $r_cluster = {
+                    'name' => $r_response->{'cluster'},
+                    'coordinator' => $r_response->{'view'}->{'coordinator'},
+                    'membercount' => $r_response->{'view'}->{'membercount'},
+                    'members' => {},
+                    'membersstr' => $r_response->{'view'}->{'membersstr'},
+                    'members_seq' => $r_response->{'view'}->{'members'}
+                };
+                foreach my $member ( @{$r_response->{'view'}->{'members'}} ) {
+                    $r_cluster->{'members'}->{$member} = undef;
+                }
+
+                $r_sample->{'clusters'}->{$r_response->{'cluster'}} = $r_cluster;
+            }
+
+            if ( ! exists $r_cluster->{'members'}->{$r_response->{'local_addr'}} ) {
+                if ( $DEBUG > 3 ) { print "parseUdpLog: adding missing member $r_response->{'local_addr'} for $r_response->{'cluster'}\n"; }
+                $r_cluster->{'members'}->{$r_response->{'local_addr'}} = undef;
+            }
+
+            $r_cluster->{'members'}->{$r_response->{'local_addr'}} = $r_response->{'udp'};
+
+            $r_response = undef;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 4 ) { print Dumper("parseUdpLog: samples", \@samples); }
+
+    return \@samples;
+}
+
+sub deltaUdp($) {
+    my ($r_samples) = @_;
+
+    my %deltasByCluster = ();
+    my %lastStatsByMember = ();
+    foreach my $r_sample ( @{$r_samples} ) {
+        foreach my $cluster ( keys %{$r_sample->{'clusters'}} ) {
+            if ( ! exists $deltasByCluster{$cluster} ) {
+                $deltasByCluster{$cluster} = [];
+            }
+
+            my %delta = ( 'timestamp' => $r_sample->{'timestamp'}, 'members' => {} );
+            my $hasStats = 0;
+            foreach my $member ( keys %{$r_sample->{'clusters'}->{$cluster}->{'members'}} ) {
+                my $r_currStats = $r_sample->{'clusters'}->{$cluster}->{'members'}->{$member};
+                my $r_prevStats = $lastStatsByMember{$member};
+                my %memberDelta = ();
+                if ( defined $r_prevStats && defined $r_currStats ) {
+                    foreach my $stat ( keys %{$r_currStats} ) {
+                        if ( ! defined $r_currStats->{$stat} ) {
+                            print Dumper("deltaUdp: undefined value for $stat for $member in $cluster @ $r_sample->{'timestamp'}", $r_currStats);
+                        }
+                        if ( ! defined $r_prevStats->{$stat} ) {
+                            print Dumper("deltaUdp: undefined value for $stat for $member in $cluster @ sample prev to $r_sample->{'timestamp'}", $r_prevStats);
+                        }
+
+                        $memberDelta{$stat} = $r_currStats->{$stat} - $r_prevStats->{$stat};
+                    }
+                    $delta{'members'}{$member} = \%memberDelta;
+                    $hasStats = 1;
+                }
+                $lastStatsByMember{$member} = $r_currStats;
+            }
+            if ( $hasStats ) {
+                push @{$deltasByCluster{$cluster}}, \%delta;
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("deltaUdp: deltasByCluster", \%deltasByCluster); }
+    return \%deltasByCluster;
+}
+
+sub groupMembers($) {
+    my ($r_deltasByCluster) = @_;
+
+    foreach my $cluster ( keys %{$r_deltasByCluster} ) {
+        if ( $DEBUG > 8 ) { print "groupMembers: processing cluster $cluster\n"; }
+        foreach my $r_sample ( @{$r_deltasByCluster->{$cluster}} ) {
+            my @memberNames = keys %{$r_sample->{'members'}};
+            if ( $DEBUG > 8 ) { print "groupMembers: r_sample memberNames: " . join(",",@memberNames ) . "\n"; }
+            my %groupedMembers = ();
+            foreach my $memberName ( @memberNames ) {
+                my $r_stats = $r_sample->{'members'}->{$memberName};
+
+                my $groupedMemberName = $memberName;
+                if ( $memberName =~ /(.*)-\d+$/ ) {
+                    $groupedMemberName = $1;
+                } elsif ( $memberName =~ /(.*)\/\S+$/ ) {
+                    $groupedMemberName = $1;
+                }
+                my $r_groupedMemberStats = $groupedMembers{$groupedMemberName};
+                if ( defined $r_groupedMemberStats ) {
+                    $r_groupedMemberStats->{'count'}++;
+                    foreach my $stat ( keys %{$r_stats} ) {
+                        $r_groupedMemberStats->{$stat} += $r_stats->{$stat};
+                    }
+                } else {
+                    $r_groupedMemberStats = { 'count' => 1 };
+                    $groupedMembers{$groupedMemberName} = $r_groupedMemberStats;
+                    foreach my $stat ( keys %{$r_stats} ) {
+                        $r_groupedMemberStats->{$stat} = $r_stats->{$stat};
+                    }
+                }
+                if ( $DEBUG > 8 ) { printf("groupMembers: member=%s groupedMember=%s r_groupedMemberStats count %d\n", $memberName, $groupedMemberName, $r_groupedMemberStats->{'count'}); }
+            }
+            if ( $DEBUG > 8 ) { print Dumper("groupMembers: groupMembers", \%groupedMembers); }
+            $r_sample->{'members'} = \%groupedMembers;
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("groupedMembers: r_deltasByCluster", $r_deltasByCluster); }
+}
+
+sub storeStats($$$$) {
+    my ($site,$date,$r_deltasByCluster,$r_misMatches) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    dbDo($dbh,"DELETE FROM enm_jgroup_udp_stats WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'")
+        or die "Failed to remove old data";
+
+    my @clusters = keys %{$r_deltasByCluster};
+    my $r_clusterIdMap = getIdMap($dbh, "enm_jgroup_clusternames", "id", "name",  \@clusters );
+
+    my %serverIdMap = ();
+    foreach my $r_row ( @{dbSelectAllHash($dbh, "SELECT hostname, id from servers where siteid = $siteId")} ) {
+        $serverIdMap{$r_row->{'hostname'}} = $r_row->{'id'};
+    }
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = "$tmpDir/enm_jgroup_udp_stats.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    my @columns = ( 'count',
+                    'num_bytes_received', 'num_single_msgs_sent', 'num_single_msgs_received', 'num_batches_sent', 'num_rejected_msgs',
+                    'num_bytes_sent', 'num_msgs_sent', 'num_internal_msgs_received', 'num_oob_msgs_received', 'num_batches_received',
+                    'num_incoming_msgs_received', 'num_msgs_received' );
+
+    foreach my $cluster ( @clusters ) {
+        my $clusterId = $r_clusterIdMap->{$cluster};
+        foreach my $r_deltas ( @{$r_deltasByCluster->{$cluster}} ) {
+            if ( $DEBUG > 8 ) { print Dumper("groupMembers: r_deltas for $cluster", $r_deltas); }
+            my %groupedMembers = ();
+            foreach my $member ( keys %{$r_deltas->{'members'}} ) {
+                my $serverId = $serverIdMap{$member};
+                if ( defined $serverId ) {
+                    my @row = ( $r_deltas->{'timestamp'}, $siteId, $clusterId, $serverId );
+                    my $r_stats = $r_deltas->{'members'}->{$member};
+                    foreach my $column ( @columns ) {
+                        if ( exists $r_stats->{$column} ) {
+                            push @row, $r_stats->{$column};
+                        } else {
+                            push @row, '\N';
+                        }
+                    }
+                    print BCP join("\t",@row), "\n";
+                }
+            }
+        }
+    }
+    close BCP;
+
+
+    dbDo( $dbh, sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE enm_jgroup_udp_stats (time,siteid,clusterid,serverid,%s)",
+                        $bcpFileName,join(",",@columns)))
+      or die "Failed to load data in $bcpFileName into enm_jgroup_udp_stats";
+
+
+    dbDo( $dbh, "DELETE FROM enm_jgroup_view_mismatch WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'")
+        or die "Failed to remove old data";
+    foreach my $r_misMatch ( @{$r_misMatches} ) {
+        dbDo(
+            $dbh,
+            sprintf(
+                "INSERT INTO enm_jgroup_view_mismatch (siteid,time,clusterid,viewCount) VALUES (%d,'%s',%d,%d)",
+                $siteId,
+                $r_misMatch->{'timestamp'},
+                $r_clusterIdMap->{$r_misMatch->{'cluster'}},
+                $r_misMatch->{'count'}
+            )
+        ) or die "Failed to insert to enm_jgroup_view_mismatch";
+
+    }
+    $dbh->disconnect();
+
+
+}
+
+sub getMisMatches($) {
+    my ($r_samples) = @_;
+    my @results = ();
+
+    foreach my $r_sample ( @{$r_samples} ) {
+        my %mismatchCount = ();
+        foreach my $r_misMatch ( values %{$r_sample->{'mismatches'}} ) {
+            my $count = $mismatchCount{$r_misMatch->{'cluster'}};
+            if ( ! defined $count ) {
+                $count = 2;
+            } else {
+                $count++;
+            }
+            $mismatchCount{$r_misMatch->{'cluster'}} = $count;
+        }
+        while ( my ($cluster,$count) = each %mismatchCount ) {
+            push @results, { 'timestamp' => $r_sample->{'timestamp'}, 'cluster' => $cluster, 'count' => $count};
+        }
+    }
+
+    if ( $DEBUG > 1 ) { print Dumper("getMisMatches: results",\@results); }
+
+    return \@results;
+}
+
+sub main() {
+    my ($udpLog, $site, $date, );
+    my $result = GetOptions("udplog=s"  => \$udpLog,
+        "date=s" => \$date,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_samples = parseUdpLog($udpLog);
+    my $r_deltaStats = deltaUdp($r_samples);
+    groupMembers($r_deltaStats);
+    my $r_misMatches = getMisMatches($r_samples);
+    storeStats($site,$date,$r_deltaStats, $r_misMatches);
+}
+
+
+main();

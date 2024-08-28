@@ -1,0 +1,217 @@
+{
+    "queries": [
+        {
+            "sql": "SELECT COUNT(*) FROM proc_stats WHERE procid = 2",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM proc_stats WHERE procid = 1",
+            "results": [[0]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM sum_proc_stats WHERE procid = 2",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM sum_proc_stats WHERE procid = 1",
+            "results": [[0]]
+        },
+
+        {
+            "sql": "SELECT COUNT(*) FROM proc_stats WHERE procid = 4",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM proc_stats WHERE procid = 3",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM sum_proc_stats WHERE procid = 4",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM sum_proc_stats WHERE procid = 3",
+            "results": [[1]]
+        },
+
+        {
+            "sql": "SELECT COUNT(*) FROM proc_stats WHERE procid = 6",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM proc_stats WHERE procid = 5",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM sum_proc_stats WHERE procid = 6",
+            "results": [[1]]
+        },
+        {
+            "sql": "SELECT COUNT(*) FROM sum_proc_stats WHERE procid = 5",
+            "results": [[1]]
+        }
+    ],
+    "dbDo": [
+        "UPDATE proc_stats SET procid = 1 WHERE procid = 2",
+        "UPDATE sum_proc_stats SET procid = 1 WHERE procid = 2",
+        "UPDATE crontabs SET process_name_id = 1 WHERE process_name_id = 2",
+        "DELETE FROM process_names WHERE id = 2",
+
+        "UPDATE proc_stats SET cpu = 25,mem = 20,fd = 40 WHERE time = '2023-01-01 01:05:00' AND serverid = 2 AND procid = 3",
+        "DELETE FROM proc_stats WHERE procid = 4",
+        "UPDATE sum_proc_stats SET cpu = 25,mem = 20,fd = 40 WHERE date = '2023-01-01' AND serverid = 2 AND procid = 3",
+        "DELETE FROM sum_proc_stats WHERE procid = 4",
+        "UPDATE crontabs SET process_name_id = 3 WHERE process_name_id = 4",
+        "DELETE FROM process_names WHERE id = 4",
+
+        "UPDATE proc_stats SET procid = 5 WHERE time = '2023-01-01 01:05:00' AND serverid = 3 AND procid = 6",
+        "UPDATE sum_proc_stats SET procid = 5 WHERE date = '2023-01-01' AND serverid = 3 AND procid = 6",
+        "UPDATE crontabs SET process_name_id = 5 WHERE process_name_id = 6",
+        "DELETE FROM process_names WHERE id = 6"
+    ],
+    "idmaps": {
+        "process_names": {
+            "cmd1": 1,
+            "cmd2": 2,
+            "cmd3": 3,
+            "cmd4": 4,
+            "cmd5": 5,
+            "cmd6": 6
+        }
+    },
+    "prepstmt": {
+        "SELECT time, serverid, cpu, mem, thr, fd, rss FROM proc_stats WHERE procid = ?": [
+            {
+                "param": [ 2 ],
+                "rows": [
+                    {
+                        "time": "2023-01-01 01:05:00",
+                        "serverid": 1,
+                        "cpu": 10,
+                        "mem": 20,
+                        "thr": 30,
+                        "fd":  40,
+                        "rss": 50
+                    }
+                ]
+            },
+            {
+                "param": [ 4 ],
+                "rows": [
+                    {
+                        "time": "2023-01-01 01:05:00",
+                        "serverid": 2,
+                        "cpu": 10,
+                        "mem": 20,
+                        "thr": 30,
+                        "fd":  40,
+                        "rss": 50
+                    }
+                ]
+            },
+            {
+                "param": [ 6 ],
+                "rows": [
+                    {
+                        "time": "2023-01-01 01:05:00",
+                        "serverid": 3,
+                        "cpu": 10,
+                        "mem": 20,
+                        "thr": 30,
+                        "fd":  40,
+                        "rss": 50
+                    }
+                ]
+            }
+        ],
+        "SELECT cpu, mem, thr, fd, rss FROM proc_stats WHERE time = ? AND serverid = ? AND procid = ?": [
+            {
+                "param": [ "2023-01-01 01:05:00", 1, 1 ],
+                "rows": []
+            },
+            {
+                "param": [ "2023-01-01 01:05:00", 2, 3 ],
+                "rows": [
+                    {
+                        "cpu": 15,
+                        "mem": 5,
+                        "thr": 35,
+                        "fd":  5,
+                        "rss": 55
+                    }
+                ]
+            },
+            {
+                "param": [ "2023-01-01 01:05:00", 3, 5 ],
+                "rows": []
+            }
+        ],
+        "SELECT date, serverid, cpu, mem, thr, fd, rss FROM sum_proc_stats WHERE procid = ?": [
+            {
+                "param": [ 2 ],
+                "rows": [
+                        {
+                            "date": "2023-01-01",
+                            "serverid": 1,
+                            "cpu": 10,
+                            "mem": 20,
+                            "thr": 30,
+                            "fd":  40,
+                            "rss": 50
+                        }
+                ]
+            },
+            {
+                "param": [ 4 ],
+                "rows": [
+                    {
+                        "date": "2023-01-01",
+                        "serverid": 2,
+                        "cpu": 10,
+                        "mem": 20,
+                        "thr": 30,
+                        "fd":  40,
+                        "rss": 50
+                    }
+                ]
+            },
+            {
+                "param": [ 6 ],
+                "rows": [
+                    {
+                        "date": "2023-01-01",
+                        "serverid": 3,
+                        "cpu": 10,
+                        "mem": 20,
+                        "thr": 30,
+                        "fd":  40,
+                        "rss": 50
+                    }
+                ]
+            }
+        ],
+        "SELECT cpu, mem, thr, fd, rss FROM sum_proc_stats WHERE date = ? AND serverid = ? AND procid = ?": [
+            {
+                "param": [ "2023-01-01", 1, 1 ],
+                "rows": []
+            },
+            {
+                "param": [ "2023-01-01", 2, 3 ],
+                "rows": [
+                    {
+                        "cpu": 15,
+                        "mem": 5,
+                        "thr": 35,
+                        "fd":  5,
+                        "rss": 55
+                    }
+                ]
+            },
+            {
+                "param": [ "2023-01-01", 3, 5 ],
+                "rows": []
+            }
+        ]
+
+    }
+}

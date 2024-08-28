@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="sb"
+  timespan="day"
+  forcelegend="true"
+  ylabel="Count"
+>
+  <title value="FM NBI Incidents"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_fm_nbi_lifecycle_instr">
+        <reference table="sites" condition="enm_fm_nbi_lifecycle_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_fm_nbi_lifecycle_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="inst"/>
+      <where>sites.name = '%s' AND servers.hostname = "%s"</where>
+      <column db="pmOnlyIncidentsSentToFm" label="pmOnlyIncidentsSentToFm"/>
+      <column db="fmOnlyIncidentsSentTOFm" label="fmOnlyIncidentsSentTOFm"/>
+      <column db="fmAndPmIncidentsSentToFm" label="fmAndPmIncidentsSentToFm"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

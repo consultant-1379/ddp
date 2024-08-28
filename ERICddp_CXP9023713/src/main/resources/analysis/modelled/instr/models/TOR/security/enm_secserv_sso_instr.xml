@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <table name="enm_secserv_sso_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <services>
+    <service name="securityservice"/>
+    <service name="security"/>
+  </services>
+
+  <metricgroups>
+  <metricgroup name="^%1%-com.ericsson.oss.itpf.security.sso.ejb.beans.instrumentation.sso-utilities-service:type=SSOUtilsInstrumentationBean">
+      <metric source="enmEniqCitrixIdtSuccess" target="enmEniqCitrixIdtSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixNetworkAnalyticsServerSuccess" target="enmEniqCitrixNetworkAnalyticsServerSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixUdtSuccess" target="enmEniqCitrixUdtSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixWircSuccess" target="enmEniqCitrixWircSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqWebBoBilaunchpadSuccess" target="enmEniqWebBoBilaunchpadSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqWebBoCmcSuccess" target="enmEniqWebBoCmcSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqWebNetanWebplayerSuccess" target="enmEniqWebNetanWebplayerSuccess" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixIdtFailure" target="enmEniqCitrixIdtFailure" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixNetworkAnalyticsServerFailure" target="enmEniqCitrixNetworkAnalyticsServerFailure" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixUdtFailure" target="enmEniqCitrixUdtFailure" delta="true" filteridle="true"/>
+      <metric source="enmEniqCitrixWircFailure" target="enmEniqCitrixWircFailure" delta="true" filteridle="true"/>
+      <metric source="enmEniqWebBoBilaunchpadFailure" target="enmEniqWebBoBilaunchpadFailure" delta="true" filteridle="true"/>
+      <metric source="enmEniqWebBoCmcFailure" target="enmEniqWebBoCmcFailure" delta="true" filteridle="true"/>
+      <metric source="enmEniqWebNetanWebplayerFailure" target="enmEniqWebNetanWebplayerFailure" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="emc_nfsv4_ops.op">
+    <dbtables main="emc_nfsv4_ops"/>
+    <param name="sysid"/>
+    <param name="oplist"/>
+    <where>emc_nfsv4_ops.sysid = %d AND emc_nfsv4_ops.op IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="calls_a" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Calls SP A"/>
+      <column db="calls_a" label = "Calls SP A"/>
+    </graph>
+    <graph name="calls_b" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Calls SP B"/>
+      <column db="calls_b" label = "Calls SP A"/>
+    </graph>
+    <graph name="srvt_a" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Service Time SP A"/>
+      <column db="srvt_a" label = "Service Time SP A"/>
+    </graph>
+    <graph name="srvt_b" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Service Time SP B"/>
+      <column db="srvt_b" label = "Service Time SP B"/>
+    </graph>
+    <graph name="failures_a" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Failures SP A"/>
+      <column db="failures_a" label = "Failures SP A"/>
+    </graph>
+    <graph name="failures_b" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Failures SP B"/>
+      <column db="failures_b" label = "Failures SP B"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>calls_a</member>
+      <member>calls_b</member>
+      <member>srvt_a</member>
+      <member>srvt_b</member>
+      <member>failures_a</member>
+      <member>failures_b</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_pm_smrs_housekeeping">
+    <reference table="sites" condition="enm_pm_smrs_housekeeping.siteid = sites.id"/>
+    <reference table="ne_types" condition="enm_pm_smrs_housekeeping.netypeid = ne_types.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_pm_smrs_housekeeping.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time - INTERVAL ROUND(procTime/1000) SECOND" label="HouseKeeping Start Time" formatter="ddpFormatTime"/>
+  <column db="ne_types.name" label="Node Type"/>
+  <column db="procTime" label="HouseKeeping Processing Time(ms)"/>
+  <column db="filesDeleted" label="Total Number Of Files Deleted"/>
+
+</modelledtable>
+

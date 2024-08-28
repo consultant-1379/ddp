@@ -1,0 +1,493 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use Archive::Zip qw( :ERROR_CODES :CONSTANTS );
+
+use StatsTime;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub getStringValue($) {
+    my ($in) = @_;
+
+    my ($value) = $in =~ /^\d+=\"([^\"]+)\"$/;
+    return $value;
+}
+
+sub getLoids($$) {
+    my ($loidStr,$r_loids) = @_;
+
+    my $end = 0;
+    if ( $loidStr =~ /\)\s*$/ ) {
+        $end = 1;
+        $loidStr =~ s/\s*\)\s+$//;
+    }
+
+    my @parts = split(/ /, $loidStr);
+    my @loids = ();
+    foreach my $part ( @parts ) {
+        my ($loid) = $part =~ /\[(\d\.\d+\.\d+):\]/;
+        if ( defined $loid ) {
+            push @{$r_loids}, $loid;
+        } else {
+            print "WARN: Failed to get loid from $part\n";
+        }
+    }
+
+    if ( $DEBUG > 8 ) { print "getLoids: end=$end loidStr=$loidStr\n"; }
+
+    return $end;
+}
+
+sub readLoidList($) {
+    my ($firstLine) = @_;
+
+    my @loids = ();
+
+    my ($count,$loidStr) = $firstLine =~ /\s+(\d+)=\( (.*)/;
+    my $atEnd = getLoids($loidStr,\@loids);
+    while ( (! $atEnd) && (my $line = <INPUT>) ) {
+        my ($index,$loidStr2) = $line =~ /^##\s+(\d+)\.\.\. (.*)/;
+        $atEnd = getLoids($loidStr2,\@loids);
+    }
+
+    return \@loids;
+}
+
+
+our @digits = ( '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z' );
+our @digitTens = ( '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '2', '2', '2', '2', '2', '2', '2', '2', '2', '2', '3', '3', '3', '3', '3', '3', '3', '3', '3', '3', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '5', '5', '5', '5', '5', '5', '5', '5', '5', '5', '6', '6', '6', '6', '6', '6', '6', '6', '6', '6', '7', '7', '7', '7', '7', '7', '7', '7', '7', '7', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '9', '9', '9', '9', '9', '9', '9', '9', '9', '9' );
+our @digitOnes = ( '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' );
+
+sub getChars($) {
+    my ($i) = @_;
+
+    my $buf = "";
+    while ($i > 2147483647) {
+        my $q = int($i / 100);
+        my $r = ($i - (($q << 6) + ($q << 5) + ($q << 2)));
+        $i = $q;
+
+        $buf = $digitTens[$r] . $digitOnes[$r] . $buf;
+    }
+    my $i2 = $i;
+    while ($i2 >= 65536) {
+      my $q2 = int($i2 / 100);
+
+      my $r = $i2 - (($q2 << 6) + ($q2 << 5) + ($q2 << 2));
+      $i2 = $q2;
+
+      $buf = $digitTens[$r] . $digitOnes[$r] . $buf;
+    }
+
+    for (;;) {
+        my $q2 = $i2 * 52429 >> 19 & 0x1FFF;
+        my $r = $i2 - (($q2 << 3) + ($q2 << 1));
+        $buf = $digits[$r] . $buf;
+        $i2 = $q2;
+        if ($i2 == 0) {
+            last;
+        }
+    }
+
+    return $buf;
+}
+
+sub toLoid($) {
+    my ($long) = @_;
+
+    my $result = sprintf("%s.%s.%s",
+                         getChars($long >> 48),
+                         getChars(($long >> 32) & 0xFFFF),
+                         getChars($long & 0xFFFFFFFF)
+        );
+
+    return $result;
+}
+
+sub parseVersantFile($$$) {
+    my ($subFile,$r_attributes,$checkLive) = @_;
+
+    open INPUT, $subFile or die "Cannot open $subFile     ";
+
+    my @objects = ();
+    my $r_object = undef;
+    my $loid = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseVersantFile: line $.=$line"; }
+
+        if ( $line =~/^## L \S+ #0x[a-f\d+]+\[(\d+\.\d+\.\d+):/ ) {
+            $loid = $1;
+            if ( ! $checkLive ) {
+                $r_object = {};
+                push @objects, $r_object;
+                if ( defined $loid ) {
+                    $r_object->{'loid'} = $loid;
+                }
+            } else {
+                $r_object = undef;
+            }
+        } elsif ( $checkLive && $line =~/^##\s+bucketName\s+(\S+)/ ) {
+            my $live = $1 eq '5="Live"';
+            if ( $live ) {
+                $r_object = {};
+                push @objects, $r_object;
+                if ( defined $loid ) {
+                    $r_object->{'loid'} = $loid;
+                }
+            } else {
+                $r_object = undef;
+            }
+        } elsif ( defined $r_object ) {
+            my ($name,$value) = $line =~ /^##\s+(\S+)\s+(.*)/;
+            if ( ! defined $value ) {
+                next;
+            }
+
+            my $type = $r_attributes->{$name};
+            if ( ! defined $type ) {
+                next;
+            }
+
+            # Strip at_ from the name
+            $name =~ s/^at_//;
+
+            # Strip any trailing spaces from the value
+            $value =~ s/\s+$//;
+            if ( $type eq 'raw' ) {
+                $r_object->{$name} = $value;
+            } elsif ( $type eq 'string' ) {
+                $r_object->{$name} = getStringValue($value);
+            } elsif ( $type eq 'loidlist' ) {
+                $r_object->{$name} = readLoidList($line);
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 8 ) { print Dumper("parseVersantFile: objects",\@objects); }
+    return \@objects;
+}
+
+sub parseVersant($) {
+    my ($dir) = @_;
+
+    if ( $DEBUG ) { print "parseVersant: dir=$dir\n"; }
+
+    my %subAttributes = (
+        'name' => 'string',
+        'at_administrationState' => 'string',
+        'at_description' => 'string',
+        'at_rop' => 'string',
+        'at_type' => 'string',
+        'at_ropInfo' => 'raw',
+        'at_numberOfNodes' => 'raw',
+        # 'rel_nodes' => 'loidlist',
+        'at_events' => 'loidlist',
+        'at_counters' => 'loidlist'
+    );
+    my $r_subscriptions = parseVersantFile($dir . "/pmic/Subscription",\%subAttributes, 1);
+
+    # Add info from the scanners (state/errorcode)
+    my %subscriptionsByLoid = ();
+    foreach my $r_subscription ( @{$r_subscriptions} ) {
+        $subscriptionsByLoid{$r_subscription->{'loid'}} = $r_subscription;
+    }
+    my %scannerAttriubtes = (
+        'at_errorCode' => 'raw',
+        'at_status' => 'string',
+        'at_subscriptionId' => 'string'
+    );
+    my $r_scanners = parseVersantFile($dir . "/pmic/PMICScannerInfo", \%scannerAttriubtes, 1);
+    my %poid2Sub = ();
+    my %missingSubs = ();
+    foreach my $r_scanner ( @{$r_scanners} ) {
+        my $subId = $r_scanner->{'subscriptionId'};
+        if ( $subId != 0 ) {
+            my $r_subscription = $poid2Sub{$subId};
+            if ( ! defined $r_subscription ) {
+                my $loid = toLoid($subId);
+                $r_subscription = $subscriptionsByLoid{$loid};
+                if ( defined $r_subscription ) {
+                    $poid2Sub{$subId} = $r_subscription;
+                }
+            }
+
+            if ( defined $r_subscription ) {
+                $r_subscription->{'scannerStates'}->{$r_scanner->{'status'}}++;
+                my $errorCode = $r_scanner->{'errorCode'};
+                if ( $errorCode > 0 ) {
+                    $r_subscription->{'scannerErrorCodes'}->{$errorCode}++;
+                }
+            } else {
+                $missingSubs{$subId}++;
+            }
+        }
+    }
+    $r_scanners = undef;
+    while ( my ($id,$count) = each %missingSubs ) {
+        print "WARNING: Found $count PMICScannerInfo refering to non existant subscription $id\n";
+    }
+
+    # Add in the events
+    my %eventAttributes = (
+        'at_groupName' => 'string',
+        'at_name' => 'string'
+    );
+    my $r_eventInfos = parseVersantFile($dir . "/pmic/EventInfo", \%eventAttributes, 0);
+    my %eventInfoByLoid = ();
+    foreach my $r_eventInfo ( @{$r_eventInfos} ) {
+        $eventInfoByLoid{$r_eventInfo->{'loid'}} = $r_eventInfo;
+    }
+    foreach my $r_subscription ( @{$r_subscriptions} ) {
+        my $r_events = delete $r_subscription->{'events'};
+        if ( defined $r_events ) {
+            my @events = ();
+            foreach my $eventInfoLoid ( @{$r_events} ) {
+                my $r_eventInfo = $eventInfoByLoid{$eventInfoLoid};
+                if ( defined $r_eventInfo ) {
+                    push @events, $r_eventInfo->{'groupName'} . ":" . $r_eventInfo->{'name'};
+                } else {
+                    print "WARN: Cannot find event info for $eventInfoLoid in $r_subscription->{'name'}\n";
+                }
+            }
+            if ( $#events != -1 ) {
+                $r_subscription->{'content'} = \@events;
+            }
+        }
+    }
+    $r_eventInfos = undef;
+    %eventInfoByLoid = ();
+
+    # Add in the counters
+    my %counterAttributes = (
+        'at_moClassType' => 'string',
+        'at_name' => 'string'
+    );
+    my $r_counterInfos = parseVersantFile($dir . "/pmic/CounterInfo", \%counterAttributes, 0);
+    my %counterInfoByLoid = ();
+    foreach my $r_counterInfo ( @{$r_counterInfos} ) {
+        $counterInfoByLoid{$r_counterInfo->{'loid'}} = $r_counterInfo;
+    }
+    foreach my $r_subscription ( @{$r_subscriptions} ) {
+        my $r_counters = delete $r_subscription->{'counters'};
+        if ( defined $r_counters ) {
+            my @counters = ();
+            foreach my $counterInfoLoid ( @{$r_counters} ) {
+                my $r_counterInfo = $counterInfoByLoid{$counterInfoLoid};
+                if ( defined $r_counterInfo ) {
+                    push @counters, $r_counterInfo->{'moClassType'} . ":" . $r_counterInfo->{'name'};
+                } else {
+                    print "WARN: Cannot find counter info for $counterInfoLoid in $r_subscription->{'name'}\n";
+                }
+            }
+
+            if ( $#counters != -1 ) {
+                $r_subscription->{'content'} = \@counters;
+            }
+        }
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("parseVersant: subscriptions", $r_subscriptions); }
+    return $r_subscriptions;
+}
+
+sub readJSON($) {
+    my ($filename) = @_;
+
+    my $json;
+    {
+        local $/; #Enable 'slurp' mode
+        open my $fh, "<", $filename;
+        $json = <$fh>;
+        close $fh;
+    }
+    my $r_data = decode_json($json);
+
+    if ( $DEBUG > 8 ) { print Dumper("parseNeo4j: filename=$filename, r_data", $r_data); }
+    return $r_data;
+}
+
+sub getColumnIndex($) {
+    my ($r_columns) = @_;
+
+    my %colIndex = ();
+    my $index = 0;
+    foreach my $columnName ( @{$r_columns} ) {
+        $colIndex{$columnName} = $index;
+        $index++;
+    }
+    return \%colIndex;
+}
+
+sub parseNeo4j($) {
+    my ($dir) = @_;
+
+    if ( $DEBUG ) { print "parseNeo4j: dir=$dir\n"; }
+
+    my $r_rawSubscriptions = readJSON($dir . "/pmic/Subscription");
+    my $r_subColIndex = getColumnIndex($r_rawSubscriptions->{'columns'});
+    my $ebsCountersIndex = $r_subColIndex->{"m.` _s:ebsCounters`"};
+    my %subscriptionsById = ();
+    foreach my $r_subscription ( @{$r_rawSubscriptions->{'data'}} ) {
+        my $r_rawContent = $r_subscription->[$r_subColIndex->{"m.` _s:events`"}];
+        my $r_ebsCountersContent = undef;
+        if ( defined $ebsCountersIndex ) {
+            $r_ebsCountersContent = $r_subscription->[$ebsCountersIndex];
+        }
+
+        if ( ! defined $r_rawContent ) {
+            $r_rawContent = $r_subscription->[$r_subColIndex->{"m.` _s:counters`"}];
+        }
+
+        my $r_content = undef;
+
+        if ( defined $r_rawContent ) {
+            foreach my $r_part ( @{$r_rawContent} ) {
+                push @{$r_content}, $r_part->[0] . ":" . $r_part->[1];
+            }
+        }
+        if ( defined $r_ebsCountersContent ){
+            foreach my $r_ebsPart ( @{$r_ebsCountersContent} ) {
+                push @{$r_content}, $r_ebsPart->[0] . ":" . $r_ebsPart->[1];
+            }
+        }
+        $subscriptionsById{$r_subscription->[$r_subColIndex->{"m.` _internalId`"}]} = {
+            'name' => $r_subscription->[$r_subColIndex->{"m.` _name`"}],
+            'rop'  => $r_subscription->[$r_subColIndex->{"m.`rop`"}],
+            'type'  => $r_subscription->[$r_subColIndex->{"m.`type`"}],
+            'administrationState' => $r_subscription->[$r_subColIndex->{"m.`administrationState`"}],
+            'numberOfNodes' => $r_subscription->[$r_subColIndex->{"m.`numberOfNodes`"}],
+            'cellTypes' => $r_subscription->[$r_subColIndex->{"m.`cellTraceCategory`"}],
+            'content' => $r_content
+        };
+    }
+
+    my %missingSubs = ();
+    my $r_scanners = readJSON($dir . "/pmic/PMICScannerInfo");
+    my $r_scannerColIndex = getColumnIndex($r_scanners->{'columns'});
+    foreach my $r_scanner ( @{$r_scanners->{'data'}} ) {
+        my $subId = $r_scanner->[$r_scannerColIndex->{"m.`subscriptionId`"}];
+        if ( $subId != 0 ) {
+            my $r_subscription = $subscriptionsById{$subId};
+            if ( defined $r_subscription ) {
+                $r_subscription->{'scannerStates'}->{$r_scanner->[$r_scannerColIndex->{"m.`status`"}]}++;
+                my $errorCode = $r_scanner->[$r_scannerColIndex->{"m.`errorCode`"}];
+                if ( $errorCode > 0 ) {
+                    $r_subscription->{'scannerErrorCodes'}->{$errorCode}++;
+                }
+            } else {
+                $missingSubs{$subId}++;
+            }
+        }
+    }
+    while ( my ($id,$count) = each %missingSubs ) {
+        print "WARNING: Found $count PMICScannerInfo refering to non existant subscription $id\n";
+    }
+
+    my @subscriptions = values %subscriptionsById;
+    if ( $DEBUG > 7 ) { print Dumper("parseNeo4j: subscriptions", \@subscriptions); }
+    return \@subscriptions;
+}
+
+sub store($$$) {
+    my ($site, $date, $r_subscriptions) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh, $site);
+    dbDo( $dbh, "DELETE FROM enm_pmic_subs WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to remove old data";
+    foreach my $r_subscription ( @{$r_subscriptions} ) {
+        my @cols = ( 'siteid', 'date' );
+        my @vals = ( $siteId, $dbh->quote($date) );
+        foreach my $col ( 'name', 'rop', 'type', 'administrationState', 'cellTypes' ) {
+            my $value = $r_subscription->{$col};
+            if ( defined $value ) {
+                push @cols, $col;
+                push @vals, $dbh->quote($value);
+            }
+        }
+
+        foreach my $col ( 'numberOfNodes' ) {
+            my $value = $r_subscription->{$col};
+            if ( defined $value ) {
+                push @cols, $col;
+                push @vals, $value;
+            }
+        }
+
+        foreach my $mapField ( 'scannerStates', 'scannerErrorCodes' ) {
+            my $r_map = $r_subscription->{$mapField};
+            if ( defined $r_map ) {
+                my @parts = ();
+                while ( my ($name,$value) = each %{$r_map} ) {
+                    push @parts, "$name: $value";
+                }
+                push @cols, $mapField;
+                push @vals, $dbh->quote(join(", ", @parts));
+            }
+        }
+
+        dbDo($dbh, sprintf("INSERT INTO enm_pmic_subs (%s) VALUES (%s)",
+                           join(",", @cols), join(",",@vals)) )
+            or die "Failed to insert";
+    }
+
+    $dbh->disconnect();
+}
+
+sub writeContent($$) {
+    my ($r_subscriptions, $contentFile) = @_;
+
+    my $zip = Archive::Zip->new();
+    foreach my $r_subscription ( @{$r_subscriptions} ) {
+        if ( $DEBUG > 1) { printf "writeContent: %s\n", $r_subscription->{'name'} };
+        my $r_content = $r_subscription->{'content'};
+        if ( defined $r_content ) {
+            if ( $DEBUG > 1) { printf "writeContent: adding content for %s\n", $r_subscription->{'name'} };
+            $zip->addString(join(",", @{$r_content}), $r_subscription->{'name'} )->desiredCompressionMethod( COMPRESSION_DEFLATED );
+        }
+    }
+
+    if ( $DEBUG > 1) { printf "writeContent: writing %s\n", $contentFile };
+    $zip->writeToFileNamed($contentFile);
+}
+
+sub main() {
+    my ( $dpsProvider, $dpsProviderDir, $site, $date, $contentFile );
+
+    my $result = GetOptions(
+        "dpsprov=s" => \$dpsProvider,
+        "dir=s" => \$dpsProviderDir,
+        "site=s"   => \$site,
+        "date=s" => \$date,
+        "content=s" => \$contentFile,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+    if ( $DEBUG ) { print "main: dpsprov=$dpsProvider\n"; }
+
+    my $r_subscriptions = undef;
+    if ( $dpsProvider eq 'versant' ) {
+        $r_subscriptions = parseVersant($dpsProviderDir);
+    } elsif ( $dpsProvider eq 'neo4j' ) {
+        $r_subscriptions = parseNeo4j($dpsProviderDir);
+    }
+
+    if ( defined $r_subscriptions && $#{$r_subscriptions} > -1 ) {
+        writeContent($r_subscriptions, $contentFile);
+        store($site,$date,$r_subscriptions);
+    }
+}
+
+main();

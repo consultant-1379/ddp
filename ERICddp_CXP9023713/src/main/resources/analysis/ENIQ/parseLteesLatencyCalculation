@@ -1,0 +1,143 @@
+#!/usr/bin/perl
+#####################################################################################################
+#  Description --------- parseLteesLatencyCalculation -----------
+#  This script parses the ltees latency log file for DDP and store data to Db
+#  @author : Ayush kabra (xayukab)
+#  usage   : ${ANALYSIS_BIN}/ENIQ/parseLteesLatencyCalculation --logfile ${LOG_FILE} --site <site>
+#####################################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $siteId;
+our $logfile;
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $table = "eniq_ltees_latency";
+
+sub main {
+    my $site;
+    my $result = GetOptions(
+        "logfile=s"  => \$logfile,
+        "site=s"     => \$site,
+        "debug=s"    => \$DEBUG
+        );
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 0 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my ($latencyRecordList, $firstTimeStamp, $lastTimeStamp) = parseData();
+    if( $#{$latencyRecordList} > -1 ) {
+        my $lteesBcpFile = createBcpFile($latencyRecordList);
+        removeOldData($firstTimeStamp, $lastTimeStamp);
+        loadDb($lteesBcpFile);
+    }
+    $dbh->disconnect();
+    if( $DEBUG > 0 ){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub convertInSqlFormat {
+    my %mon2num = qw(
+                    jan 01  feb 02  mar 03  apr 04  may 05  jun 06
+                    jul 07  aug 08  sep 09  oct 10 nov 11 dec 12
+                  );
+    my ($month, $day, $time, $date, $ropStartHourMin, $ropEndHourMin) = @_;
+    my ($ropStartHour, $ropStartMin) = $ropStartHourMin =~ /(\d{2})(\d{2})/;
+    my ($ropEndHour, $ropEndMin) = $ropEndHourMin =~ /(\d{2})(\d{2})/;
+    my ($year, $ropMonth, $ropDay) = $date =~ /(\d{4})(\d{2})(\d{2})/;
+    my $mon = $mon2num{lc $month};
+    if ($day < 10) {
+        $day = "0".$day;
+    }
+    my $fileCreationTime = ("$year-$mon-$day $time:00");
+    my $ropStartTime = ("$year-$ropMonth-$ropDay $ropStartHour:$ropStartMin:00");
+    my $ropEndTime = ("$year-$mon-$day $ropEndHour:$ropEndMin:00");
+    my $latencyCalculation = (parseTime( $fileCreationTime, $StatsTime::TIME_SQL ) - parseTime( $ropEndTime, $StatsTime::TIME_SQL ))/60;
+    return ($fileCreationTime, $ropStartTime, $ropEndTime, $latencyCalculation);
+}
+
+sub parseData {
+    my @latencyRecordList = ();
+    my $firstLine = "true";
+    my $firstTimeStamp = "";
+    my $lastTimeStamp = "";
+    open FILE, "<$logfile" or die "Can't open file to read $logfile";
+    while(my $line = <FILE>) {
+        $line =~ /(\d+) (\w+) (\d+) (\d{2}:\d{2}) \w(\d{8})\.(\d+)[-+]\d+-(\d+)[+-]\d+_(.*)_osscounterfile.*/;
+        chomp ($line);
+        my $lteesFileSize = ($1/1024);
+        my ($fileCreationTime, $ropStartTime, $ropEndTime, $latency) = convertInSqlFormat($2, $3, $4, $5, $6, $7);
+        if ($firstLine eq "true") {
+            $firstTimeStamp = $fileCreationTime;
+            $firstLine = "false";
+        }
+        $lastTimeStamp = $fileCreationTime;
+        my %latencyRecord = (
+            lteesFileSize    => "$lteesFileSize",
+            fileCreationTime => "$fileCreationTime",
+            ropStartTime     => "$ropStartTime",
+            ropEndTime       => "$ropEndTime",
+            fdnName          => "$8",
+            latency          => "$latency"
+        );
+        push (@latencyRecordList, \%latencyRecord);
+    }
+    close FILE;
+    if ( $DEBUG > 1 ) { print Dumper ("Parsed Data", \@latencyRecordList); }
+    return (\@latencyRecordList, $firstTimeStamp, $lastTimeStamp);
+}
+
+sub createBcpFile {
+    my $parsedData = shift;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "${tmpDir}/latencyLog.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open bcpFile";
+    foreach my $dataElement ( @$parsedData ) {
+        printf BCP "%d|%s|%s|%s|%s|%s|%d\n",
+            $siteId,
+            $dataElement->{fileCreationTime},
+            $dataElement->{ropStartTime},
+            $dataElement->{ropEndTime},
+            $dataElement->{lteesFileSize},
+            $dataElement->{fdnName},
+            $dataElement->{latency};
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($firstTimeStamp, $lastTimeStamp) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND fileCreationTime BETWEEN '$firstTimeStamp' AND '$lastTimeStamp'";
+    if ( $DEBUG > 2 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

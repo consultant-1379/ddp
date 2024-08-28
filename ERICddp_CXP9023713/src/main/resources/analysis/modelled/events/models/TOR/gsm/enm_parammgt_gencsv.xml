@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_parammgt_gencsv"/>
+
+  <services>
+      <service name="cmutilities"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <events>
+      <!-- GENERATE_CSV_FILE {"fileWriteDurationInMs":7364,"totalPoIds":6,"totalAttributes":11,"_Thread":"ajp-executor-threads - 2","fileSize":7822} -->
+      <event name="GENERATE_CSV_FILE">
+        <metric source="fileWriteDurationInMs" target="fileWriteDurationInMs"/>
+        <metric source="fileSize" target="fileSize"/>	
+        <metric source="totalPoIds" target="n_poids"/>
+        <metric source="totalAttributes" target="n_attributes"/>
+      </event>
+  </events>
+
+</modelledevents>

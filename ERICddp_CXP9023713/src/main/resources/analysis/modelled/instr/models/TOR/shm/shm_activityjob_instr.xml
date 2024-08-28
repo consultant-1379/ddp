@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="shmcoreservice"/>
+      <service name="consshm"/>
+  </services>
+
+  <table name="shm_activityjob_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.shm.es.instrumentation.impl.cppinventorysynchservice:type=ActivityInstrumentationBean$">
+      <metric source="cppBackupCreateCVs" target="cppBackupCreateCVs"/>
+      <metric source="cppBackupExportCVs" target="cppBackupExportCVs"/>
+      <metric source="cppBackupSetCVAsStartables" target="cppBackupSetCVAsStartables"/>
+      <metric source="cppBackupSetCVFirstInRollbackLists" target="cppBackupSetCVFirstInRollbackLists"/>
+      <metric source="cppDeleteBackup" target="cppDeleteBackup"/>
+      <metric source="cppDeleteUpgradePackages" target="cppDeleteUpgradePackages"/>
+      <metric source="cppLicenseInstalls" target="cppLicenseInstalls"/>
+      <metric source="cppRestoreConfirmCVs" target="cppRestoreConfirmCVs"/>
+      <metric source="cppRestoreDownloadCVs" target="cppRestoreDownloadCVs"/>
+      <metric source="cppRestoreInstallCVs" target="cppRestoreInstallCVs"/>
+      <metric source="cppRestoreRestores" target="cppRestoreRestores"/>
+      <metric source="cppRestoreVerifyCVs" target="cppRestoreVerifyCVs"/>
+      <metric source="cppUpgradeConfirms" target="cppUpgradeConfirms"/>
+      <metric source="cppUpgradeInstalls" target="cppUpgradeInstalls"/>
+      <metric source="cppUpgradeUpgrades" target="cppUpgradeUpgrades"/>
+      <metric source="cppUpgradeVerifies" target="cppUpgradeVerifies"/>
+      <metric source="ecimBackupCreateBackups" target="ecimBackupCreateBackups"/>
+      <metric source="ecimBackupUploads" target="ecimBackupUploads"/>
+      <metric source="ecimDeleteBackups" target="ecimDeleteBackups"/>
+      <metric source="ecimDeleteUpgradePackages" target="ecimDeleteUpgradePackages"/>
+      <metric source="ecimLicenseInstalls" target="ecimLicenseInstalls"/>
+      <metric source="ecimRestoreConfirmBackups" target="ecimRestoreConfirmBackups"/>
+      <metric source="ecimRestoreDownloadBackups" target="ecimRestoreDownloadBackups"/>
+      <metric source="ecimRestoreRestoreBackups" target="ecimRestoreRestoreBackups"/>
+      <metric source="ecimUpgradeActivates" target="ecimUpgradeActivates"/>
+      <metric source="ecimUpgradeConfirms" target="ecimUpgradeConfirms"/>
+      <metric source="ecimUpgradePrepares" target="ecimUpgradePrepares"/>
+      <metric source="ecimUpgradeVerifys" target="ecimUpgradeVerifys"/>
+      <metric source="ecimNodeHealthCHecks" target="ecimNodeHealthCHecks"/>
+      <metric source="axeLicenseInstalls" target="axeLicenseInstalls"/>
+      <metric source="axeBackupCreateBackups" target="axeBackupCreateBackups"/>
+      <metric source="axeBackupUploads" target="axeBackupUploads"/>
+      <metric source="axeDeleteBackups" target="axeDeleteBackups"/>
+      <metric source="ecimLicenseRefreshJobRefreshActivities" target="ecimLicenseRefreshJobRefreshActivities"/>
+      <metric source="ecimLicenseRefreshJobRequestActivities" target="ecimLicenseRefreshJobRequestActivities"/>
+      <metric source="ecimLicenseRefreshJobInstallActivities" target="ecimLicenseRefreshJobInstallActivities"/>
+      <metric source="vranUpgradeActivates" target="vranUpgradeActivates"/>
+      <metric source="vranUpgradeConfirms" target="vranUpgradeConfirms"/>
+      <metric source="vranUpgradePrepares" target="vranUpgradePrepares"/>
+      <metric source="vranUpgradeVerifies" target="vranUpgradeVerifies"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

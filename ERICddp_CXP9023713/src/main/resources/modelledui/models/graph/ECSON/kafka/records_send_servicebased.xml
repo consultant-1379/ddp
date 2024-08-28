@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Produced Messages"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="kafka_producer">
+        <reference table="sites" condition="kafka_producer.siteid = sites.id"/>
+        <reference table="servers" condition="kafka_producer.serverid = servers.id"/>
+        <reference table="kafka_topic_names" condition="kafka_producer.topicid  = kafka_topic_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverids"/>
+      <param name="topicid"/>
+      <where>sites.name = '%s' AND kafka_producer.serverid IN ( %s ) AND kafka_producer.topicid = '%s'</where>
+      <column db="kafka_producer.records_send" label="Produced Messages"/>
+    </query>
+  </queries>
+  <size width="480" height="240"/>
+</modelledgraph>

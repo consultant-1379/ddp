@@ -1,0 +1,78 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Time::Local;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($log);
+    my $result = GetOptions(
+			    "log=s"  => \$log,
+			    "debug" => \$DEBUG
+			    );
+
+    $log or die "Usage: checkLog --log logfile";
+    open LOG, "$log" or die "Cannot open \"$log\"";
+
+    my $lastEid = -1;
+    my $eventCount = 0;
+    
+    my $totalRead = 0;
+    my $totalMissing = 0;
+    
+    while ( my $line = <LOG> )
+    {
+	if ( $line =~ /^LastEventID=(\d+)/ )
+	{
+	    my $eid = $1;
+
+	    if ( $DEBUG ) { print "$lastEid $eid $eventCount\n"; }
+	    
+	    if ( $lastEid != - 1 )
+	    {
+		if ( ($eid - $lastEid) != $eventCount )
+		{
+		    my $numMissing =  ($eid - $lastEid) - $eventCount;
+		    print "Missing $numMissing Events between $lastEid and $eid\n";	    
+		    $totalMissing += $numMissing;
+		}
+		
+		$totalRead += $eventCount;
+	    }
+	    $eventCount = 0;
+	    $lastEid = $eid;	
+	}
+	elsif ( $line =~ /^Log has being cleared/ )
+	{
+	    print "Log has being cleared\n";
+	    $lastEid = -1;
+	}
+	else
+	{
+	    $eventCount++;
+	}
+    }
+    close LOG;
+    
+    if ( $totalRead > 0 )
+    {
+	printf("Totals: Read = %d, Missing = %d, Ratio = (%02.02f\%)\n", 
+	       $totalRead, 
+	       $totalMissing, 
+	       (($totalMissing/($totalRead+$totalMissing)) * 100) );
+    }
+    else
+    {
+	print "Failed to read any log entries\n";
+    }
+}
+
+
+	
+
+

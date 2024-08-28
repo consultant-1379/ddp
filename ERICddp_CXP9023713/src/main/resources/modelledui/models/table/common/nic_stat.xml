@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="nic_stat">
+  <reference table="network_interfaces" condition="nic_stat.nicid = network_interfaces.id"/>
+ </dbtables>
+
+ <param name="serverid"/>
+ <param name="date"/>
+ <where>nic_stat.serverid = %serverid% AND nic_stat.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="nic_stat.nicid"/>
+ </groupby>
+
+ <column db="nic_stat.nicid" label="nicid" id="nicid" visible="false"/>
+ <column db="network_interfaces.name" id="nic" label="Interface Name"/>
+ <column db="ROUND(AVG(ibytes_per_sec), 0)" label="Avg Bytes / s (in)"/>
+ <column db="MAX(ibytes_per_sec)" label="Max Bytes / s (in)"/>
+ <column db="ROUND(AVG(obytes_per_sec), 0)" label="Avg Bytes / s (out)"/>
+ <column db="MAX(obytes_per_sec)" label="Max Bytes / s (out)"/>
+ <column db="ROUND( IFNULL(AVG(ipkts_per_sec),0), 0)" label="Avg Pkts / s (in)"/>
+ <column db="MAX(IFNULL(ipkts_per_sec,0))" label="Max Pkts / s (in)"/>
+ <column db="ROUND(IFNULL(AVG(opkts_per_sec),0), 0)" label="Avg Pkts / s (out)"/>
+ <column db="MAX(IFNULL(opkts_per_sec,0))" label="Max Pkts / s (out)"/>
+
+ <ctxmenu keycol="nicid" targettype="modelledgraph" multiselect="false">
+  <item id="common/nic_stat_bandwidth" label="Plot Bandwidth"/>
+  <item id="common/nic_stat_pkts" label="Plot Packets/s"/>
+ </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_fmsnmp_operationonnode">
+    <reference table="sites" condition="enm_fmsnmp_operationonnode.siteid = sites.id"/>
+    <reference table="servers" condition="enm_fmsnmp_operationonnode.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_fmsnmp_operationonnode.neid = enm_ne.id"/>
+    <reference table="ne_types" condition="ne_types.id = enm_ne.netypeid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_fmsnmp_operationonnode.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_ne.name" label="Node Name"/>
+  <column db="operationType" label="Operation Type"/>
+  <column db="IFNULL(ne_types.name, 'NA')" label="Network Element Type"/>
+  <column db="snmpAgentPort" label="SnmpAgentPort"/>
+  <column db="snmpTrapPort" label="SnmpTrapPort"/>
+  <column db="snmpVersion" label="SnmpVersion"/>
+  <column db="snmpReadCommunity" label="SnmpReadCommunity"/>
+  <column db="snmpWriteCommunity" label="SnmpWriteCommunity"/>
+  <column db="snmpSecLevel" label="SnmpSecLevel"/>
+  <column db="snmpAuthProtocol" label="SnmpAuthProtocol"/>
+  <column db="snmpPrivProtocol" label="SnmpPrivProtocol"/>
+  <column db="CASE WHEN duplicated = 0 THEN 'FALSE' ELSE 'TRUE' END" label="Duplicated"/>
+  <column db="executionTime" label="Execution Time"/>
+
+</modelledtable>

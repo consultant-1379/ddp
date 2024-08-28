@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use Instr;
+
+our $DEBUG = 0;
+
+sub parseInput($) {
+    my ($inputFile) = @_;
+
+    my @samples = ();
+    open INPUT, $inputFile or die "Cannot open $inputFile";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^([\d:]+) (\d+)$/ ) {
+            my ($timestamp,$numstarted) = ($1,$2);
+            my $time = parseTime( $timestamp, $StatsTime::TIME_DDMMYY_HM );
+            my %sample = (
+                'time' => $time,
+                'timestamp' => formatTime( $time, $StatsTime::TIME_SQL ),
+                'numstarted' => $numstarted
+                );
+            push @samples, \%sample;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseInput: samples", \@samples); }
+    return \@samples;
+}
+
+sub main() {
+    my ($inputFile,$site,$server);
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    my $r_samples = parseInput($inputFile);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId($dbh, $siteId, $server);
+
+    my %dbColMap = ('numstarted' => 'numstarted');
+    instrStoreData("netsim_numstarted",$site,
+                   { 'serverid' => $serverId },
+                   $r_samples,
+                   { 'numstarted' => 'numstarted' });
+}
+
+main();

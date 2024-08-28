@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="No of open file instances"
+>
+  <presetagg type="COUNT" interval="Per Minute"/>
+  <title value="Open File Instance"/>
+  <queries>
+    <query timecol="time" multiseries="netanserver_open_file_statistics_details.analysisName">
+      <dbtables main="netanserver_open_file_statistics_details">
+        <reference table="sites" condition="netanserver_open_file_statistics_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="analysisName" label="Analysis Name"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

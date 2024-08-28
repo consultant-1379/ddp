@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_lifecycle_instr">
+    <reference table="sites" condition="enm_aim_lifecycle_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_lifecycle_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_lifecycle_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(nestingProcessTime)" label="nestingProcessTime"/>
+  <column db="SUM(totalReceivedIncidentsToNest)" label="totalReceivedIncidentsToNest"/>
+  <column db="SUM(totalIncidentsCreated_Nesting)" label="totalIncidentsCreated_Nesting"/>
+  <column db="SUM(totalIncidentsProcessed)" label="totalIncidentsProcessed"/>
+  <column db="SUM(confidenceCalculationTimeInNesting)" label="confidenceCalculationTimeInNesting"/>
+  <column db="SUM(knowledgeBaseRestCallTimeInNesting)" label="knowledgeBaseRestCallTimeInNesting"/>
+  <column db="SUM(KBRestCallFailures)" label="KBRestCallFailures"/>
+  <column db="SUM(KBRestCalls)" label="KBRestCalls"/>
+  <column db="SUM(totalNestingFailures)" label="totalNestingFailures"/>
+  <column db="SUM(totalIncidentsCreatedWithFMDataSource)" label="totalIncidentsCreatedWithFMDataSource"/>
+  <column db="SUM(totalIncidentsCreatedWithPMDataSource)" label="totalIncidentsCreatedWithPMDataSource"/>
+  <column db="SUM(totalIncidentsCreatedWithFMAndPMDataSource)" label="totalIncidentsCreatedWithFMAndPMDataSource"/>
+  <column db="SUM(totalIncidentsChangedFromFMToFMAndPM)" label="totalIncidentsChangedFromFMToFMAndPM"/>
+  <column db="SUM(totalIncidentsChangedFromPMToFMAndPM)" label="totalIncidentsChangedFromPMToFMAndPM"/>
+  <column db="SUM(totalActiveIncidents)" label="totalActiveIncidents"/>
+  <column db="SUM(totalInactiveIncidents)" label="totalInactiveIncidents"/>
+  <column db="SUM(totalClosedEventsReceived)" label="totalClosedEventsReceived"/>
+  <column db="SUM(totalActiveIncidentsInCache)" label="totalActiveIncidentsInCache"/>
+  <column db="SUM(totalIncidentsSetToInactive)" label="totalIncidentsSetToInactive"/>
+  <column db="SUM(currentIncidentTableSizeInMB)" label="currentIncidentTableSizeInMB"/>
+  <column db="SUM(currentEventTableSizeInMB)" label="currentEventTableSizeInMB"/>
+  <column db="SUM(singleDimensionKeysSize)" label="singleDimensionKeysSize"/>
+  <column db="SUM(combinedDimensionKeysSize)" label="combinedDimensionKeysSize"/>
+  <column db="SUM(avgEventsInIncident)" label="avgEventsInIncident"/>
+  <column db="SUM(avgTimeIncidentIsOpen)" label="avgTimeIncidentIsOpen"/>
+  <column db="SUM(maxNetworkWideLoadKPIValueCacheSize)" label="maxNetworkWideLoadKPIValueCacheSize"/>
+  <column db="SUM(loadKpiSize)" label="loadKpiSize"/>
+  <column db="SUM(monitoringKpisSize)" label="monitoringKpisSize"/>
+  <column db="SUM(networkElementScopeSize)" label="networkElementScopeSize"/>
+  <column db="SUM(priorityRankScoresPerCellSize)" label="priorityRankScoresPerCellSize"/>
+  <column db="SUM(utilizationCellKpiValuesSize)" label="utilizationCellKpiValuesSize"/>
+  <column db="SUM(totalOfCellTopologyReads)" label="totalOfCellTopologyReads"/>
+  <column db="SUM(totalTimeCreatingIncidents)" label="totalTimeCreatingIncidents"/>
+  <column db="SUM(totalTimeUpdatingIncidents)" label="totalTimeUpdatingIncidents"/>
+  <column db="SUM(totalTimeDeletingIncidents)" label="totalTimeDeletingIncidents"/>
+  <column db="SUM(totalTimeFetchingIncidents)" label="totalTimeFetchingIncidents"/>
+  <column db="SUM(totalIncidentsCreated)" label="totalIncidentsCreated"/>
+  <column db="SUM(totalIncidentsUpdated)" label="totalIncidentsUpdated"/>
+  <column db="SUM(totalIncidentsDeleted)" label="totalIncidentsDeleted"/>
+  <column db="SUM(totalIncidentsFetched)" label="totalIncidentsFetched"/>
+  <column db="SUM(totalFailedOperations)" label="totalFailedOperations"/>
+  <column db="SUM(totalOperationsSkippedDueToWriteLock)" label="totalOperationsSkippedDueToWriteLock"/>
+  <column db="SUM(totalIncidentsInAIM)" label="totalIncidentsInAIM"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="lc-all" label="Plot All"/>
+    <item id="lc-nestingProcessTime" label="Plot nestingProcessTime"/>
+    <item id="lc-totalReceivedIncidentsToNest" label="Plot totalReceivedIncidentsToNest"/>
+    <item id="lc-totalIncidentsCreated_Nesting" label="Plot totalIncidentsCreated_Nesting"/>
+    <item id="lc-totalIncidentsProcessed" label="Plot totalIncidentsProcessed"/>
+    <item id="lc-confidenceCalculationTimeInNesting" label="Plot confidenceCalculationTimeInNesting"/>
+    <item id="lc-knowledgeBaseRestCallTimeInNesting" label="Plot knowledgeBaseRestCallTimeInNesting"/>
+    <item id="lc-KBRestCallFailures" label="Plot KBRestCallFailures"/>
+    <item id="lc-KBRestCalls" label="Plot KBRestCalls"/>
+    <item id="lc-totalNestingFailures" label="Plot totalNestingFailures"/>
+    <item id="lc-totalIncidentsCreatedWithFMDataSource" label="Plot totalIncidentsCreatedWithFMDataSource"/>
+    <item id="lc-totalIncidentsCreatedWithPMDataSource" label="Plot totalIncidentsCreatedWithPMDataSource"/>
+    <item id="lc-totalIncidentsCreatedWithFMAndPMDataSource" label="Plot totalIncidentsCreatedWithFMAndPMDataSource"/>
+    <item id="lc-totalIncidentsChangedFromFMToFMAndPM" label="Plot totalIncidentsChangedFromFMToFMAndPM"/>
+    <item id="lc-totalIncidentsChangedFromPMToFMAndPM" label="Plot totalIncidentsChangedFromPMToFMAndPM"/>
+    <item id="lc-totalActiveIncidents" label="Plot totalActiveIncidents"/>
+    <item id="lc-totalInactiveIncidents" label="Plot totalInactiveIncidents"/>
+    <item id="lc-totalClosedEventsReceived" label="Plot totalClosedEventsReceived"/>
+    <item id="lc-totalActiveIncidentsInCache" label="Plot totalActiveIncidentsInCache"/>
+    <item id="lc-totalIncidentsSetToInactive" label="Plot totalIncidentsSetToInactive"/>
+    <item id="lc-currentIncidentTableSizeInMB" label="Plot currentIncidentTableSizeInMB"/>
+    <item id="lc-currentEventTableSizeInMB" label="Plot currentEventTableSizeInMB"/>
+    <item id="lc-singleDimensionKeysSize" label="Plot singleDimensionKeysSize"/>
+    <item id="lc-combinedDimensionKeysSize" label="Plot combinedDimensionKeysSize"/>
+    <item id="lc-avgEventsInIncident" label="Plot avgEventsInIncident"/>
+    <item id="lc-avgTimeIncidentIsOpen" label="Plot avgTimeIncidentIsOpen"/>
+    <item id="lc-maxNetworkWideLoadKPIValueCacheSize" label="Plot maxNetworkWideLoadKPIValueCacheSize"/>
+    <item id="lc-loadKpiSize" label="Plot loadKpiSize"/>
+    <item id="lc-monitoringKpisSize" label="Plot monitoringKpisSize"/>
+    <item id="lc-networkElementScopeSize" label="Plot networkElementScopeSize"/>
+    <item id="lc-priorityRankScoresPerCellSize" label="Plot priorityRankScoresPerCellSize"/>
+    <item id="lc-utilizationCellKpiValuesSize" label="Plot utilizationCellKpiValuesSize"/>
+    <item id="lc-totalOfCellTopologyReads" label="Plot totalOfCellTopologyReads"/>
+    <item id="lc-totalTimeCreatingIncidents" label="Plot totalTimeCreatingIncidents"/>
+    <item id="lc-totalTimeUpdatingIncidents" label="Plot totalTimeUpdatingIncidents"/>
+    <item id="lc-totalTimeDeletingIncidents" label="Plot totalTimeDeletingIncidents"/>
+    <item id="lc-totalTimeFetchingIncidents" label="Plot totalTimeFetchingIncidents"/>
+    <item id="lc-totalIncidentsCreated" label="Plot totalIncidentsCreated"/>
+    <item id="lc-totalIncidentsUpdated" label="Plot totalIncidentsUpdated"/>
+    <item id="lc-totalIncidentsDeleted" label="Plot totalIncidentsDeleted"/>
+    <item id="lc-totalIncidentsFetched" label="Plot totalIncidentsFetched"/>
+    <item id="lc-totalFailedOperations" label="Plot totalFailedOperations"/>
+    <item id="lc-totalOperationsSkippedDueToWriteLock" label="Plot totalOperationsSkippedDueToWriteLock"/>
+    <item id="lc-totalIncidentsInAIM" label="Plot totalIncidentsInAIM"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

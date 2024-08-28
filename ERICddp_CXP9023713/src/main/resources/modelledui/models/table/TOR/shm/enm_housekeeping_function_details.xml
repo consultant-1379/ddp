@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_housekeeping_function_details">
+    <reference table="sites" condition="enm_housekeeping_function_details.siteid = sites.id"/>
+    <reference table="ne_types" condition="enm_housekeeping_function_details.netypeId = ne_types.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_housekeeping_function_details.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time" formatter="ddpFormatTime"/>
+  <column db="ne_types.name" label="Node Type"/>
+  <column db="networkLocked" label="Network Locked Packages"/>
+  <column db="locked" label="Locked Packages"/>
+  <column db="unlocked" label="Unlocked Packages"/>
+  <column db="deleted" label="Deleted Packages"/>
+
+</modelledtable>

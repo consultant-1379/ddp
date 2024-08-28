@@ -1,0 +1,30 @@
+#!/bin/bash 
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+if [ -z "$1" ] ; then
+    STATS_ROOT=/data/stats
+else
+    STATS_ROOT=$1
+fi
+
+RUNNING_LOG_DIR=/data/ddp/log
+if [ ! -d ${RUNNING_LOG_DIR} ] ; then
+    mkdir ${RUNNING_LOG_DIR}
+fi
+
+if [ -r ${RUNNING_LOG_DIR}/mas.txt ] ; then
+  exit 0
+fi
+
+if [ -r ${STATS_ROOT}/config ] ; then
+    /bin/nice ${ANALYSIS_BIN}/main/makeAllStats ${STATS_ROOT}/config > ${RUNNING_LOG_DIR}/mas.txt 2>&1
+    egrep "^Processing" ${RUNNING_LOG_DIR}/mas.txt > /dev/null
+    if [ $? -eq 0 ] ; then
+	DATE=`date +%Y%m%d`
+	cat ${RUNNING_LOG_DIR}/mas.txt >> ${RUNNING_LOG_DIR}/processed.${DATE}
+    fi
+    rm ${RUNNING_LOG_DIR}/mas.txt
+fi

@@ -1,0 +1,133 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use POSIX;
+use Data::Dumper;
+use Time::Local;
+
+use alarmConsts;
+use alarmLog;
+
+use DBI;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+
+
+sub storeSyncs($$) {
+    my ($site,$r_syncs) = @_;
+
+    if ( $#{$r_syncs} == -1 ) { return; }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my %objs = ();
+    my %reasons = ();
+
+    my $firstTime = parseTime( $r_syncs->[0]->{'start'}, $StatsTime::TIME_SYB );
+    my $lastTime = parseTime( $r_syncs->[$#{$r_syncs}]->{'start'}, $StatsTime::TIME_SYB );
+    foreach my $r_sync ( @{$r_syncs} ) {
+	$objs{$r_sync->{'node'}}++;
+	if ( exists $r_sync->{'reason'} )
+	{
+	    $reasons{$r_sync->{'reason'}}++;
+	}
+
+	my $time = parseTime($r_sync->{'start'}, $StatsTime::TIME_SYB );
+	if ( $time < $firstTime ) { 
+	    $firstTime = $time
+	}
+	if ( $time > $lastTime ) {
+	    $lastTime = $time;
+	}
+    }
+
+    my @objList = keys %objs;
+    my $r_objIdMap = getIdMap( $dbh, "fm_obj", "id", "name", \@objList );
+
+    my @reasonList = keys %reasons;
+    my $r_reasonIdMap = getIdMap( $dbh, "fm_failures", "id", "name", \@reasonList );
+    
+    
+    dbDo($dbh, sprintf("DELETE FROM fm_sync WHERE siteid = %d AND starttime BETWEEN %s AND %s",
+		       $siteId,
+		       $dbh->quote( formatTime( $firstTime, $StatsTime::TIME_SQL ) ),
+		       $dbh->quote( formatTime( $lastTime, $StatsTime::TIME_SQL ) ) ));
+    
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) 
+    {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = $tmpDir . "/fm_syncs.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+    foreach my $r_sync ( @{$r_syncs} )
+    {
+	printf BCP "%s\t%d\t%s\t%d\t",
+	formatTime( parseTime( $r_sync->{'start'}, $StatsTime::TIME_SYB ), $StatsTime::TIME_SQL ),
+	$siteId,
+	formatTime( parseTime( $r_sync->{'end'}, $StatsTime::TIME_SYB ), $StatsTime::TIME_SQL ),
+	$r_objIdMap->{$r_sync->{'node'}};
+
+	my @values = ();
+	if ( $r_sync->{'result'} == 1 ) {
+	    push @values, "SUCCESS";
+	    push @values, $r_reasonIdMap->{'Success'};
+	} else {
+	    push @values, "FAILURE";
+	    push @values, $r_reasonIdMap->{$r_sync->{'reason'}};
+	}
+	foreach my $key ( 'alarm_rec', 'alarm_con', 'alarm_clr' ) {
+	    my $value = $r_sync->{$key};
+	    if ( ! defined $value ) {
+		$value = '\N';
+	    }
+	    push @values, $value;
+	}
+	print BCP join("\t",@values),"\n";
+    }
+    close BCP;
+    
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE fm_sync" );
+
+    $dbh->disconnect;    
+}
+
+sub main() {
+    my ($logFile,$site);
+    my $result = GetOptions(
+	"log=s"    => \$logFile,
+	"site=s" => \$site,
+	"debug=n"       => \$DEBUG
+	);
+    ($result == 1) or die("Invalid args");
+
+    setStatsDB_Debug($DEBUG);
+    setStatsTime_Debug($DEBUG);
+    setAlarmLog_Debug($DEBUG);
+
+    my $r_events = readLog($logFile);
+    my $r_syncs = processEvents($r_events);
+
+    if ( defined $site ) {
+	storeSyncs($site,$r_syncs);    
+    }
+}
+
+main();
+
+	
+	
+     
+
+		       
+

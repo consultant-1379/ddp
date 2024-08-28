@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="fmalarmprocessing"/>
+      <service name="consfm"/>
+  </services>
+
+  <table name="fm_alarmprocessing_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.fm.alarmprocessor.instrumentation.AlarmProcessor:type=APSInstrumentedBean$">
+      <metric source="minorAlarmsProcessedByAPS" target="minorAlarmsProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="majorAlarmsProcessedByAPS" target="majorAlarmsProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="clearAlarmsProcessedByAPS" target="clearAlarmsProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="warningAlarmsProcessedByAPS" target="warningAlarmsProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="indeterminateAlarmsProcessed" target="indeterminateAlarmsProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="criticalAlarmsProcessedByAPS" target="criticalAlarmsProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="alarmProcessedByAPS" target="alarmProcessedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="failedAlarmCountByAPS" target="failedAlarmCountByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="alarmCountReceivedByAPS" target="alarmCountReceivedByAPSPerMinute" delta="true" filteridle="true"/>
+      <metric source="alarmRootNotApplicableProcessedByAPS" target="alarmRootNotApplicableProcessedByAPS" delta="true" filteridle="true"/>
+      <metric source="alarmRootPrimaryProcessedByAPS" target="alarmRootPrimaryProcessedByAPS" delta="true" filteridle="true"/>
+      <metric source="alarmRootSecondaryProcessedByAPS" target="alarmRootSecondaryProcessedByAPS" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.fm.alarmprocessor.instrumentation.AlarmProcessor:type=AOPInstrumentedBean$">
+      <metric source="alarmCountDiscardedByAPS" target="alarmCountDiscardedByAPS" delta="true" filteridle="true"/>
+      <metric source="alertCountDiscardedByAPS" target="alertCountDiscardedByAPS" delta="true" filteridle="true"/>
+      <metric source="nodeCountSuppressedByAPS" target="nodeCountSuppressedByAPS"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

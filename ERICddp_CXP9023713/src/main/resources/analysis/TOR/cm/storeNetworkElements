@@ -1,0 +1,163 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+
+use StatsTime;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseNeo4jFile($) {
+    my ($neFile) = @_;
+
+    my $jsonStr = undef;
+    {
+        local $/ = undef;
+        open FILE, $neFile or die "Couldn't open file: $!";
+        binmode FILE;
+        $jsonStr = <FILE>;
+        close FILE;
+    }
+
+    my $json = decode_json($jsonStr);
+    if ( $DEBUG > 8 ) { print "parseNeo4jFile: json=", Dumper($json); }
+
+    my $neTypeIndex = undef;
+    for ( my $index = 2; $index <= $#{$json->{'columns'}}; $index++ ) {
+        my ($attrName) = $json->{'columns'}->[$index] =~ /m\.\`(\S+)\`$/;
+        if ( $attrName eq 'neType' ) {
+            $neTypeIndex = $index;
+        }
+    }
+
+    defined $neTypeIndex or die "Failed to find the neType column";
+    my %ne = ();
+    foreach my $r_moData ( @{$json->{'data'}} ) {
+        if ( $r_moData->[1] eq 'Live' ) {
+            my ($neName) = $r_moData->[0] =~ /=([^=]+)$/;
+            $ne{$neName} = $r_moData->[$neTypeIndex];
+        }
+    }
+
+    return \%ne;
+}
+
+sub parseVersantNeFile($) {
+    my ($neFile) = @_;
+
+    open INPUT, $neFile or die "Cannot open $neFile     ";
+    my $inLive = 0;
+    my $neType = undef;
+    my %ne = ();
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseNeFile: inLive=$inLive line $.=$line"; }
+        my ($name,$value) = $line =~ /^##\s+(\S+)\s+(.*)/;
+        if ( ! defined $value ) {
+            next;
+        }
+
+        # Strip any trailing spaces from the value
+        $value =~ s/\s+$//;
+
+        if ( $DEBUG > 8 ) { print "parseNeFile: name=$name value=$value\n"; }
+
+        if ( $name eq 'bucketName' ) {
+            if ( $value eq '5="Live"' ) {
+                $inLive = 1;
+            } else {
+                $inLive = 0;
+            }
+            $neType = undef;
+        } elsif ( $inLive == 1 ) {
+            if ( $name =~ /at_neType/ ) {
+                if ( $value =~ /^\d+=\"([^\"]+)\"$/ ) {
+                    $neType = $1;
+                    if ( $DEBUG > 5 ) { print "parseNeFile: neType=$neType\n"; }
+                }
+            } elsif ( $name eq 'at_networkElementId' ) {
+                my ($neName) = $value =~ /^\d+=\"([^\"]+)\"$/;
+                if ( $DEBUG > 5 ) { print "parseNeFile: neName=$neName\n"; }
+                $ne{$neName} = $neType;
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 4 ) { print Dumper("parseNeFile: ne",\%ne); }
+    return \%ne;
+}
+
+sub store($$) {
+    my ($site,$r_ne) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+
+    my @types = values %{$r_ne};
+    my $r_nodeTypeMap = getIdMap($dbh,"ne_types", "id", "name", \@types );
+
+    dbDo($dbh,"LOCK TABLES enm_ne WRITE") or die "Failed to lock ne table";
+    my $r_AllRows =
+        dbSelectAllArr( $dbh,
+                        sprintf("SELECT enm_ne.id, enm_ne.name, enm_ne.netypeid FROM enm_ne WHERE siteid = %d",
+                                $siteId)) or die "Failed to read enm_ne";
+
+    my %dbNe = ();
+    foreach my $r_dbRow ( @{$r_AllRows} ) {
+        $dbNe{$r_dbRow->[1]} = $r_dbRow;
+    }
+
+    while ( my ($name, $type) = each %{$r_ne} ) {
+        my $neTypeId = $r_nodeTypeMap->{$type};
+        if ( exists $dbNe{$name} ) {
+            if ( (!defined $dbNe{$name}->[2]) || $dbNe{$name}->[2] != $neTypeId ) {
+                dbDo($dbh,sprintf("UPDATE enm_ne SET netypeid = %d WHERE id = %d",
+                                  $neTypeId,$dbNe{$name}->[0]))
+                    or die "Failed to update typeid for $name";
+            }
+        } else {
+            dbDo($dbh,sprintf("INSERT INTO enm_ne (siteid,name,netypeid) VALUES (%d,'%s',%d)",
+                              $siteId,$name,$neTypeId))
+                or die "Failed to insert $name";
+        }
+    }
+
+    dbDo($dbh, "UNLOCK TABLES");
+
+    $dbh->disconnect;
+}
+
+sub main() {
+    my ( $neFile, $site );
+    my $neo4j = 0;
+    my $result = GetOptions(
+        "neo4j" => \$neo4j,
+        "nefile=s" => \$neFile,
+        "site=s"   => \$site,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my $r_ne = undef;
+    if ( $neo4j ) {
+        $r_ne = parseNeo4jFile($neFile);
+    } else {
+        $r_ne = parseVersantNeFile( $neFile );
+    }
+    store($site,$r_ne);
+}
+
+main();

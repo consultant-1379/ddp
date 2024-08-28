@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_windows_certificate_details">
+    <reference table="sites" condition="eniq_windows_certificate_details.siteid = sites.id"/>
+    <reference table="eniq_windows_certi_name_id_mapping" condition="eniq_windows_certi_name_id_mapping.id = eniq_windows_certificate_details.certificateNameId"/>
+    <reference table="eniq_windows_certi_purpose_id_mapping" condition="eniq_windows_certi_purpose_id_mapping.id = eniq_windows_certificate_details.certificatePurposeId"/>
+    <reference table="eniq_server_info" condition="eniq_server_info.serverid = eniq_windows_certificate_details.serverid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_windows_certificate_details.date = '%date%' AND eniq_server_info.type = 'OCS_WITHOUT_CITRIX'</where>
+
+  <column db="DISTINCT eniq_windows_certi_name_id_mapping.certificateName" label="Certificate Name"/>
+  <column db="eniq_windows_certi_purpose_id_mapping.certificatePurpose" label="Purpose"/>
+  <column db="eniq_windows_certificate_details.expiryDate" label="Expiry Date"/>
+  <column db="eniq_windows_certificate_details.expiryInDays" label="Expiry (in days)"/>
+
+</modelledtable>
+

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_nsm_instr">
+      <reference table="sites" condition="enm_nsm_instr.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="CmNodeHeartbeatSupervisionEventsReceived" type="xy" ylabel="Count" forcelegend="true">
+      <title value="CmNodeHeartbeatSupervision Events Received"/>
+      <column db="totalCmNodeHeartbeatSupervisionEventsReceived" label="CmNodeHeartbeatSupervision Events Received"/>
+    </graph>
+    <graph name="CmFunctionEventsReceived" type="xy" ylabel="Count" forcelegend="true">
+      <title value="CmFunction Events Received"/>
+      <column db="totalFailedSyncsCountEventsReceived" label="CmFunction Events Received"/>
+    </graph>
+    <graph name="ConfigurationParameterChangeEventsReceived" type="xy" ylabel="Count" forcelegend="true">
+      <title value="Configuration Parameter Change Events Received"/>
+      <column db="totalCmNodeSyncMonitorFeatureEventsReceived" label="Total Feature Change Events "/>
+      <column db="totalNoOfCmSyncFailuresBeforeAlarmEventsReceived" label="Total Threshold Change Events"/>
+    </graph>
+    <graph name="SuccessfulFMAlarmRequests" type="xy" ylabel="Count" forcelegend="true">
+      <title value="Successful FM Alarm Requests Sent"/>
+      <column db="totalCmUnsyncedAlarmsRaised" label="Total Alarms Raised"/>
+      <column db="totalCmUnsyncedAlarmsCleared" label="Total Alarms Cleared"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="DPSEvents">
+      <member>CmNodeHeartbeatSupervisionEventsReceived</member>
+      <member>CmFunctionEventsReceived</member>
+    </group>
+    <group name="ConfigurationEvents">
+      <member>ConfigurationParameterChangeEventsReceived</member>
+    </group>
+    <group name="AlarmRequests">
+      <member>SuccessfulFMAlarmRequests</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

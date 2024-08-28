@@ -1,0 +1,8 @@
+{ "version": 2 }
+{"basetime":1621810215}
+{"section":"labels"}
+{"Id":1,"Labels":{"__name__":"node_cpu_seconds_total","cpu":"0","endpoint":"metrics","instance":"10.0.10.165:9690","job":"nodeexporter","mode":"user","namespace":"enm4","pod":"eric-pm-node-exporter-tt29f","service":"eric-pm-node-exporter"}}
+{"Id":2,"Labels":{"__name__":"node_cpu_seconds_total","cpu":"0","endpoint":"metrics","instance":"10.0.10.165:9690","job":"nodeexporter","mode":"system","namespace":"enm4","pod":"eric-pm-node-exporter-tt29f","service":"eric-pm-node-exporter"}}
+{"section":"samples"}
+{"Id":1,"Timestamps":[0,60],"Values":[531294.18,7.52]}
+{"Id":2,"Timestamps":[0,60],"Values":[407641.42,6]}

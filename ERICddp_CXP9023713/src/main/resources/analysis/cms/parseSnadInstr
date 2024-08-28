@@ -1,0 +1,105 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use Instr;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub convertTime($) {
+    my ($instrTime) = @_;
+    
+    $instrTime =~ s/ /:/;
+    $instrTime =~ s/\.(\d{3,3})$//;
+
+    my $timeInt = parseTime($instrTime, $StatsTime::TIME_DDMMYY_HMS);
+    return formatTime($timeInt,$StatsTime::TIME_SQL);
+}
+
+sub storeData($$) {
+    my ($site,$r_samples) = @_;   
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my @colNames =  (  "mastersInCache", "proxiesInCache", "mosInTempArea", "discoveredRncs", 
+		       "recoveringRncs", "snRecoveryMoCount", "mosCheckedSoFar", 
+		       "sleepyNotificationQueueSize", "sleepyNotificationQueueInactiveSize", 
+		       "sleepyNotificationQueueActiveSize", "totalNotificationsReceived" );
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/snad_instr.bcp";
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+    my $totalNotificationsReceived = undef;
+    foreach my $r_sample ( @{$r_samples} ) {
+	my @row = ( convertTime($r_sample->{'timestamp'}),
+		    $siteId );
+	foreach my $colName ( @colNames ) {
+	    my $value = $r_sample->{$colName};
+	    if ( ! defined $value ) {
+		$value = '\N';
+	    }
+
+	    # Implement delta handling for totalNotificationsReceived
+	    if ( $colName eq "totalNotificationsReceived" ) {
+		my $delta = 0;
+		if ( defined $totalNotificationsReceived ) {
+		    $delta = $value - $totalNotificationsReceived;
+		}
+		$totalNotificationsReceived = $value;
+		$value = $delta;
+	    }
+
+	    push @row, $value;
+	}
+	print BULK_INSERT join("\t", @row), "\n";
+    }
+    close BULK_INSERT;
+    
+    dbDo($dbh, sprintf("DELETE FROM snad_instr WHERE siteid = %d AND time BETWEEN '%s' AND '%s'",
+		       $siteId, convertTime($r_samples->[0]->{'timestamp'}), 
+		       convertTime($r_samples->[$#{$r_samples}]->{'timestamp'}) ))
+	or die "Cannot remove data from snad_instr";
+    dbDo($dbh, sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE snad_instr (time,siteid,%s)",
+		       $bcpFile, join(",", @colNames)))
+	or die "Cannot load data into snad_instr";
+
+    $dbh->disconnect();	
+}
+
+sub main() {
+    my ($site,$instrData,$instrCfgFile);
+    my $result = GetOptions(
+        "data=s" => \$instrData,
+	"cfg=s"  => \$instrCfgFile,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    if ( $DEBUG > 10 ) { 
+	setInstr_Debug($DEBUG-10);
+    }
+
+    my $r_instrCfg = parseConfig($instrCfgFile);
+    foreach my $provider ( keys %{$r_instrCfg->{'OSS-Profile'}->{'providers'}} ) {
+	if ( $provider ne 'cms_snad_reg' ) {
+	    delete $r_instrCfg->{'OSS-Profile'}->{'providers'}->{$provider};
+	}
+    }
+    my $r_data = parseDataForCfg( $r_instrCfg, $instrData, 0 );
+    if ( $DEBUG > 7 ) { print Dumper("main: r_data", $r_data); }
+
+    if ( defined $site ) {
+	storeData($site,$r_data->{'cms_snad_reg'});
+    }
+}
+
+main();

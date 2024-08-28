@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_link_events_recieved" timecol="date">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="host"/>
+      <groupby name="Link"/>
+      <groupby name="EventType"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="Count" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+    <!-- NCM_AGENT.LINK_EVENTS_RECEIVED {\"LinkEvents\":\"[{\"Link\":\"Id-1594390999258-CORE23MLTN003/LAN-1/6/2-CORE51ML6366-001/LAN-1/0/3\",\"EventType\":\"NETWORK_LINK_REMOVE\",\"Count\":1},{\"Link\":\"Id-1594390999258-CORE23MLTN003/LAN-1/6/2-CORE51ML6366-001/LAN-1/0/3\",\"EventType\":\"NETWORK_LINK_ADD\",\"Count\":1},{\"Link\":\"Id-1594390935026-CORE23MLTN001/LAN-1/6/4-CORE23MLTN004/LAN-1/6/4\",\"EventType\":\"NETWORK_LINK_ADD\",\"Count\":1},{\"Link\":\"Id-1594390916683-CORE23MLTN001/LAN-1/6/2-CORE23MLTN004/LAN-1/6/2\",\"EventType\":\"NETWORK_LINK_ADD\",\"Count\":1},{\"Link\":\"Id-1594390916683-CORE23MLTN001/LAN-1/6/2-CORE23MLTN004/LAN-1/6/2\",\"EventType\":\"NETWORK_LINK_UPDATE\",\"Count\":1}]\",\"_Thread\":\"EJB default - 31\"}" -->
+    <event name="NCM_AGENT.LINK_EVENTS_RECEIVED" explode_array="LinkEvents">
+      <metric source="host" target="serverid"/>
+      <metric source="Link" target="networkLink"/>
+      <metric source="EventType" target="eventType"/>
+      <metric source="Count" target="count"/>
+    </event>
+  </events>
+</modelledevents>
+

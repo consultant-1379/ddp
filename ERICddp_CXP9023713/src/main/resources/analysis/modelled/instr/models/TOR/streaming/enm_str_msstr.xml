@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_msstr\S+">
+
+  <table name="enm_str_msstr">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="jvmid" reftable="enm_str_jvm_names" refnamecol="jvm_name"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^(%1%)-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server@3Created_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="createdConnections3" delta="true" filteridle="true"/>
+      <property name="jvmid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server@3Dropped_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="droppedConnections3" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server@3Active_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="activeConnections3"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server@3Bytes_processed,type=StatisticsHandler$">
+      <metric source="Count" target="kbytesProcessed3" delta="true" filteridle="true" scale="1024"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server@3Events,type=StatisticsHandler$">
+      <metric source="Count" target="events3" delta="true" filteridle="true"/>
+   </metricgroup>
+   <metricgroup name="^(%1%)-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server_5g@2Created_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="createdConnections2" delta="true" filteridle="true"/>
+      <property name="jvmid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server_5g@2Dropped_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="droppedConnections2" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server_5g@2Active_Connections,type=StatisticsHandler$">
+      <metric source="Count" target="activeConnections2"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server_5g@2Bytes_processed,type=StatisticsHandler$">
+      <metric source="Count" target="kbytesProcessed2" delta="true" filteridle="true" scale="1024"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.mediation.netty.component.statistics:name=stream_in_server_5g@2Events,type=StatisticsHandler$">
+      <metric source="Count" target="events2" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,183 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use POSIX;
+use Data::Dumper;
+use Time::Local;
+
+use DBI;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub processEvents {
+    my ($r_events) = @_;
+
+}
+
+sub main() {
+    my ( $file, $site, $sqlDate, $hostname, @fileDataset );
+    my $result = GetOptions(
+        "file=s"  => \$file,
+        "site=s"  => \$site,
+        "date=s"  => \$sqlDate,
+        "remote=s" => \$hostname,
+        "debug=n" => \$DEBUG
+    );
+
+    if ($DEBUG > 4) { print "Site Name: $site, Server Name: $hostname\n"; }
+
+    ( $result == 1 ) or die("Invalid args");
+    my $dbh = connect_db();
+
+    my $siteid = getSiteId( $dbh, $site );
+    ( $siteid > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverid = getServerId($dbh, $siteid, $hostname);
+    if ($DEBUG > 4) { print "SERVER ID: $serverid"; }
+    ($serverid > -1 ) or die "Failed to get serverid for $hostname";
+
+    my $r_data = readLog($file);
+    parseDataForBulkInsert( $sqlDate, $siteid, $serverid, $r_data );
+
+}
+
+sub parseDataForBulkInsert() {
+    my ( $sqlDate, $siteid, $serverid, $r_data ) = @_;
+    my %dataForStorage;
+    my $r_value;
+    my $cnt = 0;
+
+    foreach my $r_recordRef ( @{$r_data} ) {
+        if ( $DEBUG > 8 ) {
+            print Dumper( "processEvents: event", $r_recordRef );
+        }
+
+        #set timstamp variable as event starttime.
+        my $timestamp = $r_recordRef->{'time'};
+        
+        if ($timestamp =~ m/$sqlDate.*/){
+            foreach my $value ( keys %$r_recordRef ) {
+                if ( $value ne 'time' ) {
+                    $r_value = $r_recordRef->{$value};
+                    $dataForStorage{$timestamp}->{$value} = $r_value;
+                }
+            }
+            $cnt++;
+        }
+    }
+    if ( $DEBUG > 6 ) { print Dumper %dataForStorage; }
+
+    writeBulkImport( $sqlDate, $siteid, $serverid, \%dataForStorage );
+}
+
+sub writeBulkImport() {
+    my ( $sqlDate, $siteid, $serverid, $r_dataForStorage ) = @_;
+
+    #initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/caas_perf.bcp";
+    if ( $DEBUG > 4 ) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile"
+      or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $timestamp ( sort( keys(%$r_dataForStorage) ) ) {
+        my $process = $r_dataForStorage->{$timestamp};
+
+        if ( $DEBUG > 9 ) { print "Process: " . $timestamp . "\n"; }
+
+        my $record .=
+            $timestamp . "," 
+          . $siteid . ","
+          . $serverid. ","
+          . $process->{'authen_req'} . ","
+          . $process->{'author_req'} . ","
+          . $process->{'failed_req'} . ","
+          . $process->{'proc_time'};
+
+        if ( $DEBUG > 4 ) { print "Record: " . $record; }
+        print BULK_INSERT $record;
+    }
+
+    close BULK_INSERT;
+    storeDataset( $sqlDate, $siteid, $serverid, $bcpFile );
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ( $sqlDate, $siteid, $serverid, $bcpFile ) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete =
+        "DELETE FROM caas_performance WHERE time BETWEEN '" 
+      . $sqlDate
+      . " 00:00:00' AND '"
+      . $sqlDate
+      . " 23:59:59' AND siteid = "
+      . $siteid
+      . " AND serverid = "
+      . $serverid;
+
+    if ( $DEBUG > 4 ) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo( $dbh, $rerunDelete )
+      or die "ERROR: Failed to clear data from caas_performance for rerun...\n";
+
+    dbDo( $dbh,
+"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE caas_performance FIELDS TERMINATED BY ',' "
+    );
+    $dbh->disconnect;
+
+    return 0;
+}
+
+sub readLine {
+    my $buff;
+    my $line;
+    while ( ( $line = <LOG> ) && ( $line !~ /$/ ) ) {
+        chop $line;
+        $buff .= $line;
+    }
+
+    my $result = $buff . $line;
+    if ( $DEBUG > 9 ) { print "readLine: result = $result"; }
+
+    return $result;
+}
+
+sub readLog {
+    my ($logFile) = @_;
+
+    my @events = ();
+    open LOG, $logFile or die "Cannot open cs log";
+
+    while ( my $line = readLine() ) {
+        my @fields = split( /\s{2,}|,/, $line );
+        if ( $DEBUG > 7 ) { print Dumper( "readLog: fields", \@fields ); }
+
+        my $r_event = {
+            'time'       => $fields[0],
+            'authen_req' => $fields[1],
+            'author_req' => $fields[2],
+            'failed_req' => $fields[3],
+            'proc_time'  => $fields[4]
+        };
+
+        push @events, $r_event;
+    }
+    close LOG;
+
+    return \@events;
+}

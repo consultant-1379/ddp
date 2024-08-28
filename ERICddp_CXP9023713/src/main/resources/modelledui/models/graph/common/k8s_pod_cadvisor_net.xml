@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="Network"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+  <dbtables main="k8s_pod_cadvisor">
+   <reference table="sites" condition="k8s_pod_cadvisor.siteid = sites.id"/>
+   <reference table="servers" condition="k8s_pod_cadvisor.serverid = servers.id"/>
+  </dbtables>
+
+   <param name="site"/>
+   <param name="serverids"/>
+   <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+   <column db="k8s_pod_cadvisor.net_rx_mb+k8s_pod_cadvisor.net_tx_mb" label="Network (MB)"/>
+  </query>
+ </queries>
+ <size width="600" height="240"/>
+</modelledgraph>

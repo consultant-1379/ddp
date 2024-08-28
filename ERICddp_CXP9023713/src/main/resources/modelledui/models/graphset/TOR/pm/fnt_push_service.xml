@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_fnt_push_service">
+      <reference table="sites" condition="enm_fnt_push_service.siteid = sites.id"/>
+      <reference table="servers" condition="enm_fnt_push_service.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="type"/>
+    <where>sites.name = '%s' AND enm_fnt_push_service.serviceType = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="pmstats" type="sb">
+      <title value="Number Of Files To Transfer"/>
+      <column db="numberOfFilesToTransfer" label="No Of Files To Transfer"/>
+    </graph>
+    <graph name="cm" type="sb">
+      <title value="Number Of Files Transferred"/>
+      <column db="numberOfFilesTransferred" label="No Of Files Transferred"/>
+    </graph>
+    <graph name="productdata" type="sb">
+      <title value="Number Of Files Failed"/>
+      <column db="numberOfFilesFailed" label="No Of Files Failed"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>pmstats</member>
+      <member>cm</member>
+      <member>productdata</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

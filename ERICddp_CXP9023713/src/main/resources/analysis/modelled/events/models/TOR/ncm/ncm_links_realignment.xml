@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_links_realignment">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <events>
+    <!--NCM_AGENT.LINKS_REALIGNMENT {\"duration\":115,\"numOfLinks\":1,\"_Thread\":\"VBJ ThreadPool Worker id=4 se=iiop_tp scm=iiop_tp orb=579c5745\",\"status\":\"SUCCESS\",\"info\":\"\"}-->
+    <event name="NCM_AGENT.LINKS_REALIGNMENT">
+      <metric source="host" target="serverid"/>
+      <metric source="duration" target="duration"/>
+      <metric source="numOfLinks" target="numOfLinks"/>
+      <metric source="numOfInvalidLinks" target="numOfInvalidLinks"/>
+      <metric source="status" target="status"/>
+      <metric source="info" target="info"/>
+    </event>
+  </events>
+</modelledevents>
+

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_spsserv_entity_instr">
+    <reference table="sites" condition="enm_spsserv_entity_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_spsserv_entity_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_spsserv_entity_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(createMethodInvocations)" label="No. of Successful Requests (CREATE)"/>
+  <column db="SUM(createMethodFailures)" label="No. of Failed Requests (CREATE)"/>
+  <column db="ROUND(AVG(createExecutionTimeTotalMillis),0)" label="Average Time per Request in ms (CREATE)"/>
+  <column db="SUM(getMethodInvocations)" label="No. of Successful Requests (READ)"/>
+  <column db="SUM(getMethodFailures)" label="No. of Failed Requests (READ)"/>
+  <column db="ROUND(AVG(getExecutionTimeTotalMillis),0)" label="Average Time per Request in ms (READ)"/>
+  <column db="SUM(updateMethodInvocations)" label="No. of Successful Requests (UPDATE)"/>
+  <column db="SUM(updateMethodFailures)" label="No. of Failed Requests (UPDATE)"/>
+  <column db="ROUND(AVG(updateExecutionTimeTotalMillis),0)" label="Average Time per Request in ms (UPDATE)"/>
+  <column db="SUM(deleteMethodInvocations)" label="No. of Successful Requests (DELETE)"/>
+  <column db="SUM(deleteMethodFailures)" label="No. of Failed Requests (DELETE)"/>
+  <column db="ROUND(AVG(deleteExecutionTimeTotalMillis),0)" label="Average Time per Request in ms (DELETE)"/>
+
+</modelledtable>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_radionode_filetransfer">
+    <reference table="sites" condition="enm_radionode_filetransfer.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="type"/>
+  <where>sites.name = '%site%' AND enm_radionode_filetransfer.type = '%type%' AND enm_radionode_filetransfer.date BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <column db="enm_radionode_filetransfer.total" label="Total "/>
+  <column db="enm_radionode_filetransfer.ftpesCount" label="Number of FTPeS enabled"/>
+  <column db="enm_radionode_filetransfer.sftpCount" label="Number of SFTP enabled"/>
+</modelledtable>

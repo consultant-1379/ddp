@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_meta_transfer_batches">
+    <reference table="sites" condition="eniq_meta_transfer_batches.siteid = sites.id"/>
+    <reference table="eniq_settype_names" condition="eniq_meta_transfer_batches.settype = eniq_settype_names.id"/>
+    <reference table="eniq_task_names" condition="eniq_meta_transfer_batches.taskid = eniq_task_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="setType"/>
+
+  <where>sites.name = '%site%' AND eniq_meta_transfer_batches.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND eniq_settype_names.name = '%setType%' AND duration != 0</where>
+  <groupby>
+    <column db="eniq_task_names.name"/>
+    <column db="eniq_meta_transfer_batches.status"/>
+  </groupby>
+  <order columnid="rowCount" direction="DESC"/>
+
+  <column db="CONCAT(eniq_task_names.id, ':', eniq_settype_names.id)" label="id" id="id" visible="false"/>
+  <column db="eniq_task_names.name" label="Task name" />
+  <column db="eniq_meta_transfer_batches.status" label="Status" />
+  <column db="COUNT(*) " label ="Count (No of Adaptions Performed)" id="rowCount" />
+  <column db="ROUND(AVG(duration), 1)" label ="Avg. Duration (sec)" />
+  <column db="ROUND(MAX(duration), 1)" label ="Max. Duration (sec)" />
+
+  <ctxmenu keycol="id" targettype="url" >
+    <item id="plotTask" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

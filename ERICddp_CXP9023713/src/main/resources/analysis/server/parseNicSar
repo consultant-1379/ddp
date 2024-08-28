@@ -1,0 +1,247 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use POSIX qw(ceil);
+use DBI;
+
+use StatsTime;
+use Instr;
+use DataStore;
+
+our $DEBUG = 0;
+
+our @STATS_COLUMNS = ( 'rxbyt', 'rxpck', 'txbyt', 'txpck' );
+our @ERROR_COLUMNS = ( 'rxerr', 'txerr', 'coll', 'rxdrop', 'txdrop', 'txcarr', 'rxfram', 'rxfifo', 'txfifo' );
+
+our $RX_DROP_THRESHOLD = 2;
+
+sub readCsv($) {
+    my ($inputFile) = @_;
+
+    my %errColHash = map { $_ => 1 } @ERROR_COLUMNS;
+    my %statColHash = map { $_ => 1 } @STATS_COLUMNS;
+
+    my $r_errColMap = undef; # column index => NIC,stat
+    my $r_statColMap = undef; # column index => NIC,stat
+
+    my %errsByNic = ();
+    my %statsByNic = ();
+
+    open CSV, $inputFile or die "Could not open input file " . $inputFile . ": " . $!;
+
+    my $lineNum = 0;
+    while ( my $line = <CSV> ) {
+        $lineNum++;
+        if ( $DEBUG > 9 ) { print "readCsv: lineNum=$lineNum line=$line"; }
+        chop $line;
+
+        my @cols = split(';', $line);
+        if ( $#cols <= 1 || $cols[1] eq '' ) {
+            # We expect to skip line two, moan about any other line
+            if ( $lineNum != 2 ) {
+                print "WARNING: skipping invalid line $lineNum: $line";
+            }
+            next;
+        }
+
+        if ( $cols[0] eq 'Date' ) {
+            $r_errColMap = {};
+            $r_statColMap = {};
+            for (my $i = 0 ; $i < $#cols ; $i++) {
+                if ( $cols[$i] =~ /^IF (\S+) (\S+)\/s$/ ) {
+                    my ($nic,$col) = ($1,$2);
+                    if ($DEBUG > 4 ) { print "readCsv: nic=$nic col=$col i=$i\n"; }
+                    if ( exists $errColHash{$col} ) {
+                        # We only want physical interfaces so ignore vnet and bond interfaces
+                        if ( $nic !~ /^vnet|^bond|^lo|^veth|^mactap|^macvtap|^sit0/ ) {
+                            $r_errColMap->{$i} = { 'nic' => $nic, 'col' => $col };
+                        }
+                    } elsif ( exists $statColHash{$col} ) {
+                        if ( $nic !~ /^vnet|^lo|^veth|^mactap|^macvtap|^sit0/ ) {
+                            $r_statColMap->{$i} = { 'nic' => $nic, 'col' => $col };
+                        }
+                    }
+                }
+            }
+            if ( $DEBUG > 3 ) { print Dumper("readCsv: r_errColMap", $r_errColMap, "r_statColMap", $r_statColMap); }
+
+        } elsif ( defined $r_errColMap ) {
+            my $timeStamp = undef;
+            # Handle different time formats, (kSar => Thu Mar 16 13:01:01 GMT 2017, parseIncrSar => 2017-03-16 13:01:01)
+            if ( $cols[0] =~ /^2/ ) {
+                $timeStamp = parseTime( $cols[0], $StatsTime::TIME_SQL );
+            } else {
+                $timeStamp = parseTime( $cols[0], $StatsTime::TIME_DAY_MON_DD_HHMMSS_TZ_YYYY );
+            }
+
+            my %errSampleByNic = ();
+            while ( my ($colIndex,$r_nicCol) = each %{$r_errColMap} ) {
+                my $r_sample = $errSampleByNic{$r_nicCol->{'nic'}};
+                if ( ! defined $r_sample ) {
+                    $r_sample = { 'time' => $timeStamp };
+                    foreach my $errCol ( @ERROR_COLUMNS ) {
+                        $r_sample->{$errCol} = 0;
+                    }
+                    $errSampleByNic{$r_nicCol->{'nic'}} = $r_sample;
+                    if ( ! exists $errsByNic{$r_nicCol->{'nic'}} ) {
+                        $errsByNic{$r_nicCol->{'nic'}} = [];
+                    }
+                    push @{$errsByNic{$r_nicCol->{'nic'}}}, $r_sample;
+                }
+                # We want to round up because if the value is between 0 and 1, we
+                # want to see 1
+                $r_sample->{$r_nicCol->{'col'}} = ceil($cols[$colIndex]);
+            }
+
+            my %statsSampleByNic = ();
+            while ( my ($colIndex,$r_nicCol) = each %{$r_statColMap} ) {
+                my $r_sample = $statsSampleByNic{$r_nicCol->{'nic'}};
+                if ( ! defined $r_sample ) {
+                    $r_sample = { 'time' => $timeStamp };
+                    foreach my $colName ( @STATS_COLUMNS ) {
+                        $r_sample->{$colName} = 0;
+                    }
+                    $statsSampleByNic{$r_nicCol->{'nic'}} = $r_sample;
+                    if ( ! exists $statsByNic{$r_nicCol->{'nic'}} ) {
+                        $statsByNic{$r_nicCol->{'nic'}} = [];
+                    }
+                    push @{$statsByNic{$r_nicCol->{'nic'}}}, $r_sample;
+                }
+                if ( $r_nicCol->{'col'} eq 'rxbyt' || $r_nicCol->{'col'} eq 'txbyt' ) {
+                    $r_sample->{$r_nicCol->{'col'}} = $cols[$colIndex] * 1024;
+                } else {
+                    $r_sample->{$r_nicCol->{'col'}} = $cols[$colIndex];
+                }
+            }
+        }
+    }
+    close CSV;
+
+    if ( $DEBUG > 6 ) { print Dumper("readCsv: errsByNic", \%errsByNic); }
+    if ( $DEBUG > 6 ) { print Dumper("readCsv: statsByNic", \%statsByNic); }
+
+    return (\%statsByNic,\%errsByNic);
+}
+
+sub storeStats($$$$) {
+    my ($r_statsByNic,$site,$server,$service) = @_;
+
+    # Remove stats for idle NICs
+    foreach my $nic ( sort keys %{$r_statsByNic} ) {
+        my $r_samples = $r_statsByNic->{$nic};
+        my $total = 0;
+        foreach my $r_sample ( @${r_samples} ) {
+            $total += $r_sample->{'rxpck'} + $r_sample->{'txpck'};
+        }
+        if ( $total == 0 ) {
+            print "INFO: Discarding stats for idle NIC $nic\n";
+            delete $r_statsByNic->{$nic};
+        }
+    }
+
+    my %tableModel = (
+        'name' => 'nic_stat',
+        'keycol' => [
+            { 'name' => 'serverid', 'reftable' => 'servers' },
+            { 'name' => 'nicid', 'reftable' => 'network_interfaces', 'reffiltercol' => 'serverid' }
+        ]
+        );
+
+    my %propertyValues = (
+        'site' => $site,
+        'server' => $server
+        );
+
+    my %columnMap = (
+        'rxbyt' => 'ibytes_per_sec',
+        'rxpck' => 'ipkts_per_sec',
+        'txbyt' => 'obytes_per_sec',
+        'txpck' => 'opkts_per_sec'
+        );
+
+    my @dataSets = ();
+    while ( my ($nic,$r_samples) = each %{$r_statsByNic} ) {
+        my %setProps = ( 'nicid' => { 'sourcevalue' => $nic } );
+        push @dataSets, { 'samples' => $r_samples, 'properties' => \%setProps };
+    }
+
+    DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 $service,
+                                 \%propertyValues,
+                                 \%columnMap,
+                                 \@dataSets );
+}
+
+sub storeErrors($$$$) {
+    my ($r_errsByNic,$site,$server,$service) = @_;
+
+    my %thresholds = ();
+    foreach my $errColumn ( @ERROR_COLUMNS ) {
+        $thresholds{$errColumn} = 0;
+    }
+    $thresholds{'rxdrop'} = $RX_DROP_THRESHOLD;
+
+    my @dataSets = ();
+    while ( my ($nic,$r_samples) = each %{$r_errsByNic} ) {
+        my $r_filteredSamples = instrFilterIdleSamplesWithThresholds($r_samples,\%thresholds,0);
+        if ( $#{$r_filteredSamples} > -1 ) {
+            my %setProps = ( 'nicid' => { 'sourcevalue' => $nic } );
+            push @dataSets, { 'samples' => $r_filteredSamples, 'properties' => \%setProps };
+        }
+    }
+    if ( $#dataSets == -1 ) {
+        return;
+    }
+
+    my %tableModel = (
+        'name' => 'nic_errors',
+        'keycol' => [
+            { 'name' => 'nicid', 'reftable' => 'network_interfaces', 'reffiltercol' => 'serverid' }
+        ]
+    );
+
+    my %propertyValues = (
+        'site' => $site,
+        'server' => $server
+        );
+
+    # Store the nic_errors data
+    my %columnMap = ();
+    foreach my $col ( @ERROR_COLUMNS ) {
+        $columnMap{$col} = $col;
+    }
+
+    DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 $service,
+                                 \%propertyValues,
+                                 \%columnMap,
+                                 \@dataSets );
+}
+
+sub main() {
+    my ($inputFile,$site,$server,$service);
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "service=s" => \$service,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+
+    my ($r_statsByNic,$r_errsByNic) = readCsv($inputFile);
+
+    storeStats($r_statsByNic,$site,$server,$service);
+    storeErrors($r_errsByNic,$site,$server,$service);
+}
+
+main();
+

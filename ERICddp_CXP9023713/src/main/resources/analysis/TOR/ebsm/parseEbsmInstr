@@ -1,0 +1,224 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+### Script  : parseEbsmInstr
+### Author  : Piyush Chandravanshi (xchapiy)
+### Purpose : The purpose of this script is to parse elasticsearch.log file for 'evt-*-ebsm*' servers
+###           in order to extract metric information for the EBSM events.
+###           Finally stored in the database in ebsm_instr table in statsdb.
+### Usage   : parseEbsmInstr --logdir ${ENMLOG_DIR} --site ${SITE} --date ${SQL_DATE}
+###=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsTime;
+use EnmServiceGroup;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ( $logDir, $site, $date );
+    my $result = GetOptions(
+        "logdir=s" => \$logDir,
+        "site=s"   => \$site,
+        "date=s"   => \$date,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+
+    my $r_serverMap = enmGetServiceGroupInstances($site,$date,"ebsm");
+    my @fileDataset = ();
+    foreach my $server ( keys %{$r_serverMap} ) {
+        my @dirsToBeChecked = ('JBOSS', 'UNKNOWN');
+        foreach ( @dirsToBeChecked ) {
+            my $logFilePath = $logDir . "/" . $_ . "/" . $server;
+            if ( $DEBUG > 2 ) { print "main: Checking for $logFilePath\n"; }
+            if ( -r $logFilePath ) {
+                push @fileDataset, $logFilePath;
+            }
+        }
+    }
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", \@fileDataset); }
+
+    if ( scalar @fileDataset == 0 ) {
+        print "No EBSM Instrumentation files found\n";
+    } else {
+        my ($r_ebsmInstList,$ebsmEpsIds) = parseEbsmLogs( \@fileDataset, $r_serverMap );
+        if ( scalar @{$r_ebsmInstList} == 0 ) {
+            print "No EBSM Instrumentation logs found\n";
+        } else {
+            storeinstData( $site, $r_ebsmInstList, $date , $ebsmEpsIds );
+        }
+    }
+}
+
+sub parseEbsmLogs($$) {
+    my $r_fileDataset = shift;
+    my $r_serverMap = shift;
+    my %ebsmEpsId = (); 
+    my @instData = ();
+    my $ebsmEpsIdPerFile = [];
+    foreach my $file ( @{$r_fileDataset} ) {
+        print "Parsing $file\n";
+        my $r_ebsmInstListForFile;
+        ($r_ebsmInstListForFile,$ebsmEpsIdPerFile) = getEbsmInstList($file, $r_serverMap);
+        for my $keys(keys $ebsmEpsIdPerFile) {
+          $ebsmEpsId{$keys} = $ebsmEpsIdPerFile->{$keys}
+        }
+        push @instData, @{$r_ebsmInstListForFile};
+        print "Found " . ( $#instData + 1 ) . " instData\n";
+        if ( $DEBUG > 5 ) { print Dumper( "parseLogs: instData", \@instData ); }
+    }
+    my @keysEbsIds  = keys%ebsmEpsId;
+    return (\@instData,\@keysEbsIds);
+}
+
+sub getEbsmInstList($$) {
+    my $file = shift;
+    my $r_serverMap = shift;
+    my @instDataListForFile = ();
+    my %ebsmEpsId = ();
+    open INPUT_FILE, "$file" or die "Failed to open $file";
+
+    while ( my $line = <INPUT_FILE> ) {
+        if ( $DEBUG > 9 ) { print "parseLogs: line=$line"; }
+
+        #2015-12-10T09:30:15+00:00@evt-2-ebsm3@@ com.ericsson.oss.itpf.EVENT_LOGGER [NO USER #DATA, EBS-M Instrumentation, COARSE, EBSM-Counter-Generation-Service, #EBSM-Counter-Generation-Metrics, #EpsId=evt-2-ebsm3_ebsm,ropId=19174,ropName=SubNetwork=19,ManagedElement=19:201512100930,expected#NumInputRops=1,ropsReceived=1,incompleteInputRops=0,eventsProcessed=420776,ignoredEvents=0,inval#idEvents=0,filesReceived=4,erroneousFiles=0,processingTimeInMilliSec=5961,fileOutputTimeInMilliS#ec=70]
+        my ( $timestamp, $server, $program, $message ) = $line =~ /^(.*)@(.*)@(.*)@(.*)$/;
+
+        if ( !defined $message ) {
+            print "WARN: Failed to parse $line";
+            next;
+        }
+
+        my ( $date , $time ) = $timestamp =~ /(\d{4,4}-\d{2,2}-\d{2,2})T(\d{2,2}:\d{2,2}:\d{2,2})/;
+        my $finaltimestamp = $date .' '. $time;
+
+        #com.ericsson.oss.itpf.EVENT_LOGGER [NO USER DATA, EBS-M Instrumentation, COARSE, #EBSM-Counter-Generation-Service, EBSM-Counter-Generation-Metrics, #EpsId=evt-2-ebsm3_ebsm,ropId=19174,ropName=SubNetwork=19,ManagedElement=19:201512100930,expected#NumInputRops=1,ropsReceived=1,incompleteInputRops=0,eventsProcessed=420776,ignoredEvents=0,inval#idEvents=0,filesReceived=4,erroneousFiles=0,processingTimeInMilliSec=5961,fileOutputTimeInMilliS#ec=70]
+        # The "EBS-M Instrumentation" part may also be "EBS Instrumentation", and the "ManagedElement=" part may also be "NetworkElement=".
+
+        my $instDataLogRegex = qr/EBS[^\s]* Instrumentation.*EBSM-Counter-Generation-Metrics.*EpsId=.*_([\w+|-]+).*ropId=(\d+).*(?:Managed|Network)Element=([^:]+):([^,]+).*expectedNumInputRops=(\d+),ropsReceived=(\d+),incompleteInputRops=(\d+),eventsProcessed=(\d+),ignoredEvents=(\d+),invalidEvents=(\d+),filesReceived=(\d+),erroneousFiles=(\d+),processingTimeInMilliSec=(\d+),fileOutputTimeInMilliSec=(\d+)/;
+
+        if ( $message =~ $instDataLogRegex ) {
+            my $serverId;
+
+            if ( exists $r_serverMap->{$server} ) {
+               $serverId = $r_serverMap->{$server};
+            }
+            my $r_instrDataEvent = getInstrDataEvent( $message, $instDataLogRegex, $serverId, $finaltimestamp );
+            $ebsmEpsId{$r_instrDataEvent->{'EpsId'}} = $r_instrDataEvent->{'EpsId'};
+            push @instDataListForFile, $r_instrDataEvent;
+        }
+    }
+    close INPUT_FILE;
+
+    return (\@instDataListForFile,\%ebsmEpsId);
+}
+
+sub getInstrDataEvent($$$$) {
+    my ( $message, $instDataLogRegex, $serverId, $finaltimestamp ) = @_;
+    my (
+        $EpsId,$RopId,$Nodename,$ropName,$expectedNumInputRops,$ropsReceived,
+        $incompleteInputRops,$eventsProcessed,$ignoredEvents,
+        $invalidEvents,$filesReceived, $erroneousFiles, $processingTimeInMilliSec,
+        $fileOutputTimeInMilliSec
+    ) = $message =~ $instDataLogRegex;
+
+    my $r_instrDataEvent = {
+        'serverid'               => $serverId,
+        'time'                   => $finaltimestamp,
+        'EpsId'                  => $EpsId,
+        'ropid'                  => $RopId,
+        'node_name'              => $Nodename,
+        'expected_num_input_rop' => $expectedNumInputRops,
+        'rop_received'           => $ropsReceived,
+        'incomplete_input_rops'  => $incompleteInputRops,
+        'events_processed'       => $eventsProcessed,
+        'ignored_events'         => $ignoredEvents,
+        'invalid_events'         => $invalidEvents,
+        'files_received'         => $filesReceived,
+        'erroneous_files'        => $erroneousFiles,
+        'processing_time'        => $processingTimeInMilliSec,
+        'file_output_time'       => $fileOutputTimeInMilliSec,
+        'rop_name'               => $ropName
+    };
+    
+    if ( $DEBUG > 7 ) {
+        print Dumper( "parseLogs: r_instrDataEvent", $r_instrDataEvent );
+    }
+    return $r_instrDataEvent;
+}
+
+sub storeinstData($$$$) {
+    my ( $site, $r_ebsmInstList, $date, $ebsmEpsIds ) = @_;
+
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    my $siteId = getSiteId( $dbh, $site );
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+
+    my $table = "ebsm_instr";
+
+    dbDo( $dbh, "DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'"
+            ) or die "Failed to delete from $table".$dbh->errstr."\n";
+
+    my $bcpFileName = writeBulkExportFile( $dbh, $siteId, $r_ebsmInstList , $ebsmEpsIds );
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE $table" )
+      or die "Failed to load data in $bcpFileName into $table".$dbh->errstr."\n";
+    $dbh->disconnect();
+
+    unlink($bcpFileName);
+}
+
+sub writeBulkExportFile($$$$) {
+    my ( $dbh, $siteId, $r_instData,$ebsmEpsIds ) = @_;
+    my $jvmid2EpsIdMap = getIdMap($dbh,"enm_ebsm_epsid","id","EpsIdText",$ebsmEpsIds);
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = "$tmpDir/ebsm_instrdata.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    foreach my $r_ebsm ( @{$r_instData} ) {
+
+        my @row = (
+            $siteId,
+            $r_ebsm->{'serverid'},
+            $r_ebsm->{'time'},
+            $r_ebsm->{'ropid'},
+            $r_ebsm->{'node_name'},
+            $r_ebsm->{'expected_num_input_rop'},
+            $r_ebsm->{'rop_received'},
+            $r_ebsm->{'incomplete_input_rops'},
+            $r_ebsm->{'events_processed'},
+            $r_ebsm->{'ignored_events'},
+            $r_ebsm->{'invalid_events'},
+            $r_ebsm->{'files_received'},
+            $r_ebsm->{'erroneous_files'},
+            $r_ebsm->{'processing_time'},
+            $r_ebsm->{'file_output_time'},
+            $r_ebsm->{'rop_name'},
+            $jvmid2EpsIdMap->{$r_ebsm->{'EpsId'}}
+        );
+        if(defined $jvmid2EpsIdMap->{$r_ebsm->{'EpsId'}} ) {
+          print BCP join( "\t", @row ), "\n";
+        }
+    }
+    close BCP;
+    return $bcpFileName;
+}
+
+main();
+
+

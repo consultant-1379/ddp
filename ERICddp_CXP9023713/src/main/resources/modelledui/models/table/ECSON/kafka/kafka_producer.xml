@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="kafka_producer">
+    <reference table="sites" condition="kafka_producer.siteid = sites.id"/>
+    <reference table="servers" condition="kafka_producer.serverid  = servers.id"/>
+    <reference table="kafka_topic_names" condition="kafka_producer.topicid  = kafka_topic_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND kafka_producer.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="kafka_topic_names.name"/>
+  </groupby>
+
+  <column db="kafka_producer.topicid" label="TopicId" id="topicid" visible="false"/>
+  <column db="kafka_topic_names.name" label="Topic Name"/>
+  <column db="SUM(kafka_producer.records_send)" label="Total Produced Message"/>
+
+  <ctxmenu keycol="topicid" targettype="url" multiselect="true">
+    <item id="kproducer" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

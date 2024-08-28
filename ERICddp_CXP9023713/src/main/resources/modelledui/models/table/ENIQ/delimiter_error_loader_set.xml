@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_loader_delimiter_error">
+    <reference table="sites" condition="eniq_loader_delimiter_error.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_loader_delimiter_error.time_stamp BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <column db="eniq_loader_delimiter_error.time_stamp" label="Occurrence Time"/>
+  <column db="eniq_loader_delimiter_error.techpack_name" label="Techpack Name"/>
+  <column db="eniq_loader_delimiter_error.loader_set" label="Loader Set"/>
+
+</modelledtable>

@@ -1,0 +1,126 @@
+#!/usr/bin/env perl
+
+
+######################################################################################################################
+# Description --------- parseBisBoVersion --------------------
+# This script parses BIS logs and stores BO version to DB with date and server type for DDP
+# @author - NIRAJ MHATRE (zmhanir)
+# usage parseBisBoVersion --logfile=${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+######################################################################################################################
+
+use strict;
+use warnings;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use StatsDB;
+use Data::Dumper;
+
+
+our $DEBUG = 0;
+
+sub main() {
+    my ( $dbh, $site, $siteId, $server, $serverId, $logFile, $date );
+    my $displayNameIdMap = ();
+
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 1 ) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+
+    $serverId = getServerId($dbh, $siteId, $server);
+
+    my ( $r_versionParsedData, $r_versionNameList ) = parseData($logFile, $date);
+    $displayNameIdMap = getIdMap($dbh, "eniq_bo_display_name_id_mapping", "id", "displayName", $r_versionNameList);
+
+    my $bcpFile = createBcpFile($r_versionParsedData, $siteId, $serverId, $displayNameIdMap);
+
+    my $table = "eniq_bo_version_details";
+    removeOldData($dbh, $table, $siteId, $serverId, $date);
+    loadDb($dbh, $bcpFile, $table);
+
+    if( $DEBUG > 1 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".( $endTime - $startTime )."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData($$) {
+    my ( $logFile, $date ) = @_;
+
+    my @displayNameArrayData = ();
+    my @versionNameList = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( my( $versionName ) = ( $line =~ /(^.*BusinessObjects.*BI.*\w*|\d*),(\d+)$/ ) ) {
+            my %versionData = (
+                date => "$date",
+                displayName => "$versionName"
+            );
+            push(@displayNameArrayData, \%versionData);
+            push(@versionNameList, $versionName);
+        }
+    }
+    close FILE;
+    return (\@displayNameArrayData, \@versionNameList);
+}
+
+sub createBcpFile($$$$) {
+    my ( $r_parsed_data, $siteId, $serverId, $displayNameIdMap ) = @_;
+
+    my $boVersionBcpFile = getBcpFileName("bo_version_details");
+    open BCP, ">$boVersionBcpFile" or die "Cannot open BCPFile $boVersionBcpFile";
+
+    foreach my $data_element ( @$r_parsed_data ) {
+        printf BCP "%s|%d|%d|%d|%s\n",
+            $data_element->{'date'},
+            $siteId,
+            $serverId,
+            $displayNameIdMap->{$data_element->{'displayName'}},
+            "BIS";
+    }
+    close BCP;
+    return $boVersionBcpFile;
+}
+
+sub removeOldData($$$$$) {
+    my ( $dbh, $table, $siteId, $serverId, $date ) = @_;
+
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND date = '$date'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ( $dbh, $bcpFile, $table ) = @_;
+
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+
+}
+
+main();

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+DATADIR=$1
+SQL_DATE=$2
+SITE=$3
+SERVER=$4
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+
+FARM_NAME=`egrep '^Farm name:' ${DATADIR}/ctxfarm.txt | sed 's/^Farm name: //'`
+cat > ${TMP_DIR}/farm_sql.txt <<EOF
+SET @serverid=(SELECT servers.id FROM servers,sites WHERE sites.name = "${SITE}" AND servers.hostname = "${HOSTNAME}" AND servers.siteid = sites.id);
+DELETE FROM citrix_farm WHERE serverid = @serverid AND date = "${SQL_DATE}";
+INSERT INTO citrix_farm (date,serverid,name) VALUES ( "${SQL_DATE}", serverid, "${FARM_NAME}" );
+EOF
+${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/farm_sql.txt

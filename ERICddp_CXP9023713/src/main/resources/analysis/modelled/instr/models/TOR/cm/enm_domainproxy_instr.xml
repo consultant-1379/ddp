@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="dpcoordinator"/>
+  </services>
+
+  <table name="enm_domainproxy_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.sas.common.metrics.domain-proxy-service:type=DomainProxyInstrumentation$">
+      <metric source="deregistrationRequestsCount" target="deregistrationRequestsCount"  delta="true" />
+      <metric source="deregistrationResponsesCount" target="deregistrationResponsesCount"  delta="true" />
+      <metric source="grantRequestsCount" target="grantRequestsCount"  delta="true" />
+      <metric source="grantResponsesCount" target="grantResponsesCount"  delta="true" />
+      <metric source="heartbeatRequestsCount" target="heartbeatRequestsCount"  delta="true" />
+      <metric source="heartbeatResponsesCount" target="heartbeatResponsesCount"  delta="true" />
+      <metric source="spectrumInquiryRequestsCount" target="spectrumInquiryRequestsCount"  delta="true" />
+      <metric source="spectrumInquiryResponsesCount" target="spectrumInquiryResponsesCount"  delta="true" />
+      <metric source="frequenciesChangedCount" target="frequenciesChangedCount"  delta="true" />
+      <metric source="EUtranFrequenciesDeletedCount" target="EUtranFrequenciesDeletedCount"  delta="true" />
+      <metric source="EUtranFrequencyRelationsDeletedCount" target="EUtranFrequencyRelationsDeletedCount"  delta="true" />
+      <metric source="MOsReadFromDPSCount" target="MOsReadFromDPSCount"  delta="true" />
+      <metric source="numberOfTerminatedGrantsIncremental" target="numberOfTerminatedGrantsIncremental"  delta="true" />
+      <metric source="numberOfRelinquishedGrantsIncremental" target="numberOfRelinquishedGrantsIncremental"  delta="true" />
+      <metric source="numberOfRevokedGrantsIncremental" target="numberOfRevokedGrantsIncremental"  delta="true" />
+      <metric source="numberOfSuspendedGrantsIncremental" target="numberOfSuspendedGrantsIncremental"  delta="true" />
+      <metric source="numberOfFailedCbsdRegistrationsIncremental" target="numberOfFailedCbsdRegistrationsIncremental"  delta="true" />
+      <metric source="numberOfFailedConnectionAttemptsWithSasIncremental" target="numberOfFailedConnectionAttemptsWithSasIncremental"  delta="true" />
+      <metric source="numberOfValidGrantsCount" target="numberOfValidGrantsCount"/>
+      <metric source="numberOfMaintainedGrantsCount" target="numberOfMaintainedGrantsCount"/>
+      <metric source="numberOfInactiveCellsCount" target="numberOfInactiveCellsCount"/>
+      <metric source="numberOfActiveCellsCount" target="numberOfActiveCellsCount"/>
+      <metric source="postToSasTimeRunningTotal" target="postToSasTimeRunningTotal" delta="true" />
+      <metric source="requestsPostedToSASCount" target="requestsPostedToSASCount" delta="true" />
+      <metric source="setCbrsTxExpireTimeTimeRunningTotal" target="setCbrsTxExpireTimeTimeRunningTotal" delta="true" />
+      <metric source="setCbrsTxExpireTimeCount" target="setCbrsTxExpireTimeCount" delta="true" />
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

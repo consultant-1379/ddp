@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+>
+  <title value="Audit performance"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_cm_audit_service">
+        <reference table="sites" condition="enm_cm_audit_service.siteid=sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where> sites.name = '%s' </where>
+      <column db="numberCellsAudited/duration" label="Audit performance"/>
+    </query>
+  </queries>
+  <size width="800" height="300"/>
+</modelledgraph>

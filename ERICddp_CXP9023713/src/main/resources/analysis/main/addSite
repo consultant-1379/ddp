@@ -1,0 +1,26 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+FTP_USERID=$1
+WEB_DIR=$2
+
+if [ -z "$3" ] ; then
+    CONFIG=/data/stats/oss/config
+else
+    CONFIG=$3
+fi
+
+if [ ! -f "${CONFIG}" ] ; then
+	echo "Cannot read ${CONFIG} file"
+        exit 1
+fi
+
+. ${CONFIG}
+
+echo "${FTP_USERID}:${WEB_DIR}" >> ${DATA_DIR}/sitelist.txt
+mkdir ${DATA_DIR}/${WEB_DIR}
+mkdir ${DATA_DIR}/${WEB_DIR}/data
+mkdir ${DATA_DIR}/${WEB_DIR}/analysis

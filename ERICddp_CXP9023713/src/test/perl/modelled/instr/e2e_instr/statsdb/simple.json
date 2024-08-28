@@ -1,0 +1,62 @@
+{
+    "queries": [
+        {
+            "sql": "SELECT servers.hostname AS srvname, servers.id AS srvid, k8s_pod.pod AS podName, k8s_pod.podIP AS podIP, k8s_pod_app_names.name AS app FROM k8s_pod JOIN servers ON k8s_pod.serverid = servers.id JOIN k8s_pod_app_names ON k8s_pod.appid = k8s_pod_app_names.id WHERE k8s_pod.siteid = 1 AND k8s_pod.date = '2022-11-28'",
+            "results": [
+                {
+                    "srvname": "simple-01",
+                    "srvid": 1,
+                    "podName": "simple-abcd",
+                    "podIP": "1.1.1.1",
+                    "app": "simpleapp"
+                }
+            ]
+        },
+        {
+            "sql": "SELECT enm_servicegroup_instances.serverid AS srvid, enm_servicegroup_names.name AS sg, servers.hostname AS srvname FROM enm_servicegroup_instances JOIN enm_servicegroup_names ON enm_servicegroup_instances.serviceid = enm_servicegroup_names.id JOIN servers ON enm_servicegroup_instances.serverid = servers.id WHERE enm_servicegroup_instances.siteid = 1 AND enm_servicegroup_instances.date = '2022-11-28'",
+            "results": []
+        },
+        {
+            "sql": "SELECT servers.hostname AS hostname, servers.id AS srvid FROM servers, servercfg WHERE servers.siteid = 1 AND servers.id = servercfg.serverid AND servercfg.date = '2022-11-28'",
+            "results": [
+                {
+                    "hostname": "simple-01",
+                    "srvid": 1
+                }
+            ]
+        },
+        {
+            "sql": "SELECT servers.hostname AS srvname, k8s_node.intIP AS intIP FROM k8s_node, servers WHERE k8s_node.siteid = 1 AND k8s_node.date = '2022-11-28' AND k8s_node.serverid = servers.id",
+            "results": []
+        },
+        {
+            "sql": "SELECT COLUMN_NAME, IS_NULLABLE, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = 'simple' AND table_schema = DATABASE()",
+            "results": [
+                {
+                    "COLUMN_NAME": "time",
+                    "IS_NULLABLE": false,
+                    "DATA_TYPE": "datetime"
+                },
+                {
+                    "COLUMN_NAME": "siteid",
+                    "IS_NULLABLE": false,
+                    "DATA_TYPE": "INT"
+                },
+                {
+                    "COLUMN_NAME": "serverid",
+                    "IS_NULLABLE": false,
+                    "DATA_TYPE": "INT"
+                },
+                {
+                    "COLUMN_NAME": "simple_target",
+                    "IS_NULLABLE": false,
+                    "DATA_TYPE": "INT"
+                }
+            ]
+        }
+    ],
+    "dbDo": [
+        "DELETE FROM simple WHERE time BETWEEN '2023-03-05 00:00:10' AND '2023-03-05 00:02:00' AND serverid = 1 AND siteid = 1",
+        "LOAD DATA LOCAL INFILE '/tmp/simple.bcp' INTO TABLE simple (time,serverid,siteid,simple_target)"
+    ]
+}

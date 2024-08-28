@@ -1,0 +1,94 @@
+body {
+    /*    background: #414141;*/
+    font-family: sans-serif;
+    font-size: 67.5%;
+}
+
+input, select, th, td, textarea {
+    /* These don't inherit from body */
+    font-size: 1em;
+    font-family: sans-serif;
+}
+
+#header {
+    border: 1px solid gray;
+    float: left;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#topmenu {
+	margin: 0 0 0 0;
+	background-color: #cccccc; 
+}
+
+#topmenu a, a:visited {font-size: 1.1em; font-weight: bold; color: #000000; text-decoration: none}
+
+#topmenu .ddpmenu{top:-999em;left:-999em;}
+#topmenu .ddpmenubar{position:static;}
+#topmenu .ddpmenu .ddpmenu,.ddpmenubar .ddpmenu{position:absolute; border: 1px solid gray;}
+#topmenu .ddpmenubar li,.ddpmenu li{list-style-type:none;}
+#topmenu .ddpmenubar ul,.ddpmenu ul,.ddpmenubar li,.ddpmenu li,.ddpmenu h6,.ddpmenubar h6{margin:0;padding:0.25em;}
+#topmenu .ddpmenuitemlabel,.ddpmenubaritemlabel{text-align:left;white-space:nowrap;}
+#topmenu .ddpmenubar ul{*zoom:1;background-color: #eeeeee; }
+#topmenu .ddpmenubar .ddpmenu ul{*zoom:normal;}
+#topmenu .ddpmenubar>.bd>ul:after{content:".";display:block;clear:both;visibility:hidden;height:0;line-height:0;}
+#topmenu .ddpmenubaritem{float:left;}
+#topmenu .ddpmenubaritemlabel,.ddpmenuitemlabel{display:block;}
+#topmenu .ddpmenuitemlabel .helptext{font-style:normal;display:block;margin:-1em 0 0 10em;}
+#topmenu .ddp-menu-shadow{position:absolute;visibility:hidden;z-index:-1;}
+#topmenu .ddp-menu-shadow-visible{top:2px;right:-3px;left:-3px;bottom:-3px;visibility:visible;}
+#topmenu .hide-scrollbars *{overflow:hidden;}
+#topmenu .hide-scrollbars select{display:none;}
+#topmenu .ddpmenu.show-scrollbars,.ddpmenubar.show-scrollbars{overflow:visible;}
+#topmenu .ddpmenu.hide-scrollbars .ddp-menu-shadow,.ddpmenubar.hide-scrollbars .ddp-menu-shadow{overflow:hidden;}
+#topmenu .ddpmenu.show-scrollbars .ddp-menu-shadow,.ddpmenubar.show-scrollbars .ddp-menu-shadow{overflow:auto;}
+#topmenu .ddp-overlay.ddp-force-redraw{margin-bottom:1px;}
+
+/* from the yui container.css */
+.yui-overlay,.yui-panel-container{visibility:hidden;position:absolute;z-index:2}
+.yui-panel{position:relative}
+.yui-panel-container form{margin:0}
+.mask{z-index:1;display:none;position:absolute;top:0;left:0;right:0;bottom:0}
+.mask.block-scrollbars{overflow:auto}
+.masked select,.drag select,.hide-select select{_visibility:hidden}
+.yui-panel-container select{_visibility:inherit}
+.hide-scrollbars,.hide-scrollbars *{overflow:hidden}
+.hide-scrollbars select{display:none}
+.show-scrollbars{overflow:auto}
+.yui-panel-container.show-scrollbars,.yui-tt.show-scrollbars{overflow:visible}
+.yui-panel-container.show-scrollbars .underlay,.yui-tt.show-scrollbars .yui-tt-shadow{overflow:auto}
+.yui-panel-container.shadow .underlay.yui-force-redraw{padding-bottom:1px}
+.yui-effect-fade .underlay,.yui-effect-fade .yui-tt-shadow{display:none}
+.yui-tt-shadow{position:absolute}.yui-override-padding{padding:0!important}
+.yui-panel-container .container-close{overflow:hidden;text-indent:-10000em;text-decoration:none}
+.yui-overlay.yui-force-redraw,.yui-panel-container.yui-force-redraw{margin-bottom:1px}
+
+#content {
+	float: left;
+	clear: left;
+	margin-left: 20px;
+    margin-top: 0px;
+    padding-top: 10px;
+    padding-left: 0px;
+    font-size: 1.1em;
+}
+
+#content h1 {
+    font-size: 2em;
+}
+
+.ddpcontainer {
+	border: 1px solid gray;
+}
+
+.container_header {
+	border: 1px solid gray;
+	background-color: #eeeeee;
+}
+
+#footer {clear: both; margin: 0; padding: .5em; color: #333; background-color: #ddd;
+        border: 1px solid gray; text-align: center; font-weight: bold;}
+
+#footer a {text-decoration: none;}

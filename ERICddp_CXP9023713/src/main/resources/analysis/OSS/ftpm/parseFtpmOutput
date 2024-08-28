@@ -1,0 +1,571 @@
+#!/bin/env perl
+
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsCommon;
+
+use Time::Local;
+use POSIX qw(strftime);
+
+#our $DEBUG=0;
+our $DEBUG=11;
+
+our %monthMap = 
+(
+    Jan => "01",
+    Feb => "02",
+    Mar => "03",
+    Apr => "04",
+    May => "05",
+    Jun => "06",
+    Jul => "07",
+    Aug => "08",
+    Sep => "09",
+    Oct => "10",
+    Nov => "11",
+    Dec => "12"
+);
+
+our $r_neTypeMap;
+
+main();
+
+sub main
+{
+    my ($datalogFile,$nodelogFile,$controllerlogFile,$site,$sqlDate,$tzOffsetHours);
+    my $result = GetOptions(
+        "datalog=s"  => \$datalogFile,
+        "nodelog=s"  => \$nodelogFile,
+        "controllerlog=s"  => \$controllerlogFile,
+        "site=s" => \$site,
+        "sqldate=s" => \$sqlDate,
+        "tzoffset=n" => \$tzOffsetHours,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args"; 
+
+    # Get site id
+    my $dbh = connect_db();
+    my $siteid=getSiteId($dbh,$site);
+
+    $r_neTypeMap = loadNeType($site);
+
+    # Parse log files
+    if($DEBUG > 8) { print "Parsing FTPM Logs\n\tData File: $datalogFile\n\tNode File: $nodelogFile\n\tController File: $controllerlogFile\n"; }
+
+    if( -f $datalogFile) {
+        my $r_allData = parseDataLogFile($datalogFile,$tzOffsetHours);
+        my @dataStatArr = extractDataStats($r_allData);
+        dataStoreStats($siteid,@dataStatArr);
+    }
+
+    if( -f $nodelogFile) {
+        my $r_allNode = parseNodeLogFile($nodelogFile,$tzOffsetHours);
+        my @nodeStatArr = extractNodeStats($r_allNode);
+        nodeStoreStats($siteid,@nodeStatArr);
+    }
+
+    if( -f $controllerlogFile) {
+        my $r_allController = parseControllerLogFile($controllerlogFile,$tzOffsetHours);
+        my @controllerStatArr = extractControllerStats($r_allController);
+        controllerStoreStats($siteid,@controllerStatArr);
+    }
+
+    # Output debug info
+    if($DEBUG > 8){ 
+        print Dumper("parseDataLogFile: r_allData", $r_allData);
+        print Dumper("parseNodeLogFile: r_allNode", $r_allNode);
+        print Dumper("parseControllerLogFile: r_allController", $r_allController);
+
+        print "Time,SiteId,ROP,Job Count,File Transfer Success,File Transfer Fail,Total Data Volume,Network Latency\n";
+        foreach my $row (@dataStatArr){
+            print $row->[0] . "," .  $siteid . "," .  $row->[1] . "," .  $row->[2] . "," . $row->[3] . ",";
+            print $row->[4] . "," .  $row->[5] . "," .  $row->[6] . "\n";
+        }
+
+        print "Time,ROP,Round Trip Time\n";
+        foreach my $row (@nodeStatArr){
+            print $row->[0] . "," . $siteid . "," . $row->[1] . "," . $row->[2] . "\n";
+        }
+    }
+}
+
+sub sqlTime
+{
+    my ($time) = @_;
+
+    my @fields = gmtime(int ( ($time/1000) + 0.5 ));
+    # print Dumper($time, \@fields);
+    return strftime("%Y-%m-%d %H:%M:%S", @fields );
+}
+
+sub parseDataLogFile
+{
+    my ($logFile,$tzOffsetHours) = @_;
+
+    my $timeOffsetMs = $tzOffsetHours * 3600 * 1000;
+    my @allRop = ();
+    my $r_rop;
+
+    # Parse file
+    open LOG, $logFile or die "Cannot open $logFile";
+    while ( my $line = <LOG> )
+    {
+        if ( $DEBUG > 9 ) { print "parseLogFile: line = $line"; }
+
+        if ( $line =~ /^SubNetwork/ )
+        {
+            chop $line;
+            # nodeJobId|nodeFdn|isTransferFailed|isZipped|bytesStored|bytesTransfered|collectionStartTime|
+            # collectionEndTime|originalRopTime|interceptionStartTime|interceptionEndtime
+            my ($jobId,$fdn,$isTransferFailed,$isZipped,$bytesStored,$bytesTransferred,$collectionStartTime,
+                $collectionEndTime,$originalRopTime,$interceptionStartTime,$interceptionEndTime)
+            = split( /\|/, $line );
+
+            if ( $collectionStartTime <= 0 ) {
+                if ( $DEBUG > 3 ) { print "WARN: Skipping invalid startTime for $line\n"; }
+                next;
+            }
+
+            # Store input parameters in hash
+            my $r_Txfr = {
+                'jobId' => $jobId,
+                'fdn' => $fdn,
+                'isTransferFailed' => $isTransferFailed,
+                'isZipped' => $isZipped,
+                'bytesStored' => $bytesStored,
+                'bytesTransferred' => $bytesTransferred,
+                'collectionStartTime' => $collectionStartTime,
+                'collectionEndTime' => $collectionEndTime,
+                'originalRopTime' => $originalRopTime,
+                'interceptionStartTime' => $interceptionStartTime,
+                'interceptionEndtime' => $interceptionEndTime,
+            };
+
+            # Get collection duration time
+            if ( $collectionEndTime > $collectionStartTime ) { 
+                $r_Txfr->{'duration'} = ($collectionEndTime - $collectionStartTime);
+            } else {
+                if ( $DEBUG > 5 ) { print "ERROR: collectionEndTime <= collectionStartTime  for $line\n"; }
+            }
+
+            # Get interception duration time
+            if ( $interceptionEndTime > $interceptionStartTime ) { 
+                $r_Txfr->{'interceptionDuration'} = ($interceptionEndTime - $interceptionStartTime);
+            } else {
+                if ( $DEBUG > 5 ) { print "LOG: interceptionEndTime <= interceptionStartTime  for $line\n"; }
+            }
+
+            # Get ROP time
+            if ( defined $originalRopTime ) { 
+                $r_Txfr->{'rop'} = $originalRopTime + $timeOffsetMs;
+            }
+
+            if ( $DEBUG > 8 ) { print Dumper("parseLogFile: txFr", $r_Txfr); }
+            if ( $DEBUG > 8 ) { print "parseLogFile: txFr->collectionStartTime=", sqlTime($r_Txfr->{'collectionStartTime'}), "\n"; }
+
+            push @{$r_rop->{'files'}}, $r_Txfr;
+        }
+        elsif ( $line =~ /^File Creation Date: \S+ (\S+) (\d+) (\d+):(\d+):\d+ \S+ (\d+)/ )
+        {
+            # Stats are dumped out at the start of the next ROP
+            my ($month, $date, $hour,$min, $year) = ($1,$2,$3,$4,$5);	   
+            $month = $monthMap{$month};
+            # As of 10.1 PMS seems to be outputting a minute after the end of the rop
+            if ( ($min % 5) != 0 ) {
+                $min -= $min % 5;
+            }
+            my $ropEndTime = timegm(0,$min,$hour,$date,$month-1,$year-1900) * 1000;
+            $r_rop = {
+                'files' => [],
+                'collectionStartTime' => $ropEndTime - (15 * 60 * 1000),
+                'time' => "$year-$month-$date $hour:$min:00"
+            };
+            if ( $DEBUG > 3 ) { print "parseLogFile: started new ROP ", $r_rop->{'collectionStartTime'}, " : ", sqlTime($r_rop->{'collectionStartTime'}), "\n"; };
+
+            push @allRop, $r_rop;
+        }
+    }
+    close LOG;
+
+    if ( $DEBUG > 7 ) { print Dumper("parseLogFile: allRop", \@allRop); }
+
+    return \@allRop;
+}
+
+sub parseNodeLogFile
+{
+    my ($logFile,$tzOffsetHours) = @_;
+
+    my $timeOffsetMs = $tzOffsetHours * 3600 * 1000;
+    my @allRop = ();
+    my $r_rop;
+
+    # Parse file
+    open LOG, $logFile or die "Cannot open $logFile";
+    while ( my $line = <LOG> )
+    {
+        if ( $DEBUG > 9 ) { print "parseNodeLogFile: line = $line"; }
+
+        if ( $line =~ /^SubNetwork/ )
+        {
+            chop $line;
+            # nodeJobId|nodeFdn|jobExecutionStartTime|jobExecutionEndTime
+            my ($jobId,$fdn,$jobExecutionStartTime,$jobExecutionEndTime) = split( /\|/, $line );
+
+            my $nodeType = getNodeType($fdn);
+            my $jobExecutionTime = $jobExecutionEndTime - $jobExecutionStartTime;
+
+            # Store input parameters in hash
+            my $r_Txfr = {
+                'jobId' => $jobId,
+                'fdn' => $fdn,
+                'nodeType' => $nodeType,
+                'jobExecutionStartTime' => $jobExecutionStartTime,
+                'jobExecutionEndTime' => $jobExecutionEndTime,
+                'jobExecutionTime' => $jobExecutionTime
+            };
+
+            if ( $DEBUG > 8 ) { print Dumper("parseNodeLogFile: txFr", $r_Txfr); }
+            if ( $DEBUG > 8 ) { print "parseNodeLogFile: txFr->jobExecutionStartTime=", sqlTime($r_Txfr->{'jobExecutionStartTime'}), "\n"; }
+
+            push @{$r_rop->{'files'}}, $r_Txfr;
+        }
+        elsif ( $line =~ /^File Creation Date: \S+ (\S+) (\d+) (\d+):(\d+):\d+ \S+ (\d+)/ )
+        {
+            # Stats are dumped out at the start of the next ROP
+            my ($month, $date, $hour,$min, $year) = ($1,$2,$3,$4,$5);	   
+            $month = $monthMap{$month};
+            # As of 10.1 PMS seems to be outputting a minute after the end of the rop
+            if ( ($min % 5) != 0 ) {
+                $min -= $min % 5;
+            }
+            my $ropEndTime = timegm(0,$min,$hour,$date,$month-1,$year-1900) * 1000;
+            $r_rop = {
+                'files' => [],
+                'collectionStartTime' => $ropEndTime - (15 * 60 * 1000),
+                'time' => "$year-$month-$date $hour:$min:00"
+            };
+            if ( $DEBUG > 3 ) { print "parseNodeLogFile: started new ROP ", $r_rop->{'jobExecutionStartTime'}, " : ", sqlTime($r_rop->{'jobExecutionStartTime'}), "\n"; };
+
+            push @allRop, $r_rop;
+        }
+    }
+    close LOG;
+
+    if ( $DEBUG > 7 ) { print Dumper("parseNodeLogFile: allRop", \@allRop); }
+
+    return \@allRop;
+}
+
+sub parseControllerLogFile
+{
+    my ($logFile,$tzOffsetHours) = @_;
+
+    my $timeOffsetMs = $tzOffsetHours * 3600 * 1000;
+    my @allRop = ();
+    my $r_rop;
+
+    # Parse file
+    open LOG, $logFile or die "Cannot open $logFile";
+
+    while ( my $line = <LOG> )
+    {
+        if ( $DEBUG > 9 ) { print "parseControllerLogFile: line = $line"; }
+
+        if ( $line !~ /^##|^File Creation|^applicationName/ )
+        {
+            chop $line;
+            # applicationName|fileHandlerName
+            my ($appName,$fh) = split( /\|/, $line );
+
+            # Store input parameters in hash
+            my $r_Txfr = {
+                'applicationName' => $appName,
+                'fileHandlerName' => $fh
+            };
+
+            if ( $DEBUG > 8 ) { print Dumper("parseControllerLogFile: txFr", $r_Txfr); }
+
+            push @{$r_rop->{'files'}}, $r_Txfr;
+        }
+        elsif ( $line =~ /^File Creation Date: \S+ (\S+) (\d+) (\d+):(\d+):\d+ \S+ (\d+)/ )
+        {
+            # Stats are dumped out at the start of the next ROP
+            my ($month, $date, $hour,$min, $year) = ($1,$2,$3,$4,$5);
+            $month = $monthMap{$month};
+            # As of 10.1 PMS seems to be outputting a minute after the end of the rop
+            if ( ($min % 5) != 0 ) {
+                $min -= $min % 5;
+            }
+            my $ropEndTime = timegm(0,$min,$hour,$date,$month-1,$year-1900) * 1000;
+            $r_rop = {
+                'files' => [],
+                'collectionStartTime' => $ropEndTime - (15 * 60 * 1000),
+                'time' => "$year-$month-$date $hour:$min:00"
+            };
+            if ( $DEBUG > 3 ) { print "parseControllerLogFile: ROP Time: ", $r_rop->{'time'}, "\n"; };
+
+            push @allRop, $r_rop;
+        }
+    }
+    close LOG;
+
+    if ( $DEBUG > 7 ) { print Dumper("parseControllerLogFile: allRop", \@allRop); }
+
+    return \@allRop;
+}
+
+sub extractDataStats
+{
+    my ($r_allRop) = @_;
+
+    my @retarr = ();
+    my $i=0;;
+
+    # Iterate thru each ROP
+    foreach my $r_rop ( @{$r_allRop} ) {
+        # Get number of Jobs Processed per ROP
+        my $jobCount=0;
+        my $filesCollected=0;
+        my $filesNotCollected=0;
+        my $totalDataVolume=0;
+        my $totalDuration=0;
+        my @jobs= ();
+        my $prevJob="";
+
+        foreach my $r_Txfr ( @{$r_rop->{'files'}} ) {
+            if($r_Txfr->{'jobId'}){ 
+                push(@jobs, $r_Txfr->{'jobId'});
+            }
+            if($r_Txfr->{'isTransferFailed'}=~ /^false$/){ 
+                $filesCollected++; 
+                $totalDataVolume+=$r_Txfr->{'bytesStored'};
+                $totalDuration+=$r_Txfr->{'duration'};
+            }
+            if($r_Txfr->{'isTransferFailed'}=~ /^true$/){ 
+                $filesNotCollected++; 
+            }
+        }
+
+        # This calculation is slightly wrong and needs to be re-visited!!! [2012-01-19 eronkeo]
+        my @sortedJobs = sort { $a cmp $b } @jobs;
+        foreach (@sortedJobs){ 
+            if($prevJob ne $_) { $jobCount++; }
+            $prevJob=$_;
+        }
+
+        $r_rop->{'jobCount'}=$jobCount;
+        $r_rop->{'fileTransferSuccess'}=$filesCollected;
+        $r_rop->{'fileTransferFail'}=$filesNotCollected;
+        $r_rop->{'totalDataVolume'}=$totalDataVolume;
+        $r_rop->{'networkLatency'}=$totalDataVolume/$totalDuration;
+
+        if( $DEBUG > 8 ){ 
+            print "ROP: $r_rop->{'collectionStartTime'}\tJob Count: $r_rop->{'jobCount'}" . 
+            "\tFiles Transferred: $r_rop->{'fileTransferSuccess'}\tFiles Not Transferred: " . 
+            $r_rop->{'fileTransferFail'} . "\nTotal Data Volume: $r_rop->{'totalDataVolume'} bytes\t" . 
+            "Network Latency: $r_rop->{'networkLatency'} bytes/sec\n"; 
+        }
+
+        # Not sure why I did this but there must be a good reason for it!! :-)
+        my @tmparr=(
+            $r_rop->{'time'},
+            $r_rop->{'collectionStartTime'},
+            $r_rop->{'jobCount'},
+            $r_rop->{'fileTransferSuccess'},
+            $r_rop->{'fileTransferFail'},
+            $r_rop->{'totalDataVolume'},
+            $r_rop->{'networkLatency'}
+        );
+        push @{$retarr[$i]}, @tmparr;
+        $i++;
+    }
+
+    if ( $DEBUG > 10 ) { print Dumper("extractDataStats: r_allRop", @{$r_allRop}); }
+
+    return(@retarr);
+}
+
+sub extractNodeStats
+{
+    my ($r_allRop) = @_;
+
+    # Declare variables
+    my @retarr = ();
+    my $i=0;
+
+    # Iterate thru each ROP
+    foreach my $r_rop ( @{$r_allRop} ) {
+        # Declare Round Trip Time variables
+        my $roundTripStart=0;
+        my $roundTripEnd=0;
+
+        foreach my $r_Txfr ( @{$r_rop->{'files'}} ) {
+            # Record earliest start time 
+            if(($roundTripStart==0)||($roundTripStart>$r_Txfr->{'jobExecutionStartTime'})){ 
+                $roundTripStart=$r_Txfr->{'jobExecutionStartTime'}; 
+            } 
+
+            # Record latest end time
+            if(($roundTripEnd==0)||($roundTripEnd<$r_Txfr->{'jobExecutionEndTime'})){
+                $roundTripEnd=$r_Txfr->{'jobExecutionEndTime'};
+            } 
+        }
+
+        # Calculate difference to get round trip time
+        $r_rop->{'roundTripDuration'}=$roundTripEnd-$roundTripStart;
+
+        if( $DEBUG > 10 ){ print "Round Trip Duration: " . ($r_rop->{'roundTripDuration'}/1000) . " seconds\n"; }
+
+        my @tmparr=($r_rop->{'time'},$r_rop->{'collectionStartTime'},$r_rop->{'roundTripDuration'}/1000);
+        push @{$retarr[$i]}, @tmparr;
+        $i++;
+    }
+    return(@retarr);
+}
+
+sub extractControllerStats
+{
+    my ($r_allRop) = @_;
+
+    # Declare variables
+    my @retarr = ();
+    my $i=0;
+
+    # Iterate thru each ROP
+    foreach my $r_rop ( @{$r_allRop} ) {
+        # applicationName|fileHandlerName
+        foreach my $r_Txfr ( @{$r_rop->{'files'}} ) {
+            my @tmparr=($r_rop->{'time'},$r_Txfr->{'applicationName'},$r_Txfr->{'fileHandlerName'});
+            push @{$retarr[$i]}, @tmparr;
+            $i++;
+        }
+    }
+    return(@retarr);
+}
+
+sub loadNeType
+{
+    my ($site) = @_;
+
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_AllNe = readNe($dbh,$siteId);
+        or die "Failed to load ne info from DB";
+    my %neTypeMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) { 
+        my $shortName = $r_NeRow->{'name'};
+
+        # Originally we assumed that for LTE nodes we have a DN of
+        #  SubNetwork=RootMoId,MeContext=NodeName
+        # This assumption has proven incorrect in some cases, so now
+        # the DN can be:
+        #  SubNetwork=RootMoId,SubNetwork=SubNetId,MeContext=NodeName
+        #
+        # To work around this we assume that if rns == type then we 
+        # have the first form, but if it doesn't we have the second. This will break
+        # if anyone is using "ERBS" ad their SubNetId for example.
+        if ( ($r_NeRow->{'type'} ne 'RANAG' && $r_NeRow->{'type'} ne 'ERBS') || ($r_NeRow->{'rns'} ne $r_NeRow->{'type'}) ) {
+            $shortName = $r_NeRow->{'rns'} . "," . $shortName;
+        }
+
+        $neTypeMap{$shortName} = $r_NeRow->{'type'};
+    }
+    $dbh->disconnect;
+
+    if ( $DEBUG > 4 ) { print Dumper("loadNeType: neType", \%neTypeMap); }
+
+    return \%neTypeMap;
+}
+
+sub getNodeType
+{
+    my ($fdn) = @_;
+
+    my $shortName = getShortNode($fdn);
+    my $result = $r_neTypeMap->{$shortName};
+    if ( $DEBUG > 8 ) { print Dumper("getNodeType $fdn result=$result"); }
+    ( defined $result ) or die "Could not get NE info type for $fdn";
+
+    return $result;
+}
+
+sub nodeStoreStats
+{
+    my ($siteid,@stats) = @_;
+
+    my $dbh = connect_db();
+
+    foreach my $row (@stats){
+        if($DEBUG > 8) { print $row->[0] . "," . $siteid . "," . $row->[1] . "," . $row->[2] . "\n"; }
+
+        dbDo($dbh,"DELETE FROM ftpm_filetransfer_node WHERE siteid = $siteid AND time = " . $dbh->quote($row->[0]));
+
+        dbDo($dbh,sprintf("INSERT INTO ftpm_filetransfer_node (time,siteid,originalroptime,roundtriptime) VALUES (%s,%d,%d,%f)",
+                $dbh->quote($row->[0]),
+                $siteid,
+                $row->[1],
+                $row->[2])) or die "Insert failed for $row->[0] ROP - FTPM Node Stats";
+    }
+    $dbh->disconnect();
+}
+
+sub dataStoreStats
+{
+    my ($siteid,@stats) = @_;
+
+    my $dbh = connect_db();
+
+    foreach my $row (@stats){
+        if($DEBUG > 8) { print $row->[0] . "," . $siteid . "," . $row->[1] . "," . $row->[2] . "\n"; }
+
+        dbDo($dbh,"DELETE FROM ftpm_filetransfer_data WHERE siteid = $siteid AND time = " . $dbh->quote($row->[0]));
+
+        dbDo($dbh,sprintf("INSERT INTO ftpm_filetransfer_data (time,siteid,originalroptime,jobcount,numpassedtransfers,numfailedtransfers,datavolumebytes,networklatency) VALUES (%s,%d,%d,%d,%d,%d,%d,%f)",
+                $dbh->quote($row->[0]),
+                $siteid,
+                $row->[1],
+                $row->[2],
+                $row->[3],
+                $row->[4],
+                $row->[5],
+                $row->[6])) or die "Insert failed for $row->[0] ROP - FTPM Data Stats";
+    }
+    $dbh->disconnect();
+}
+
+sub controllerStoreStats
+{
+    my ($siteid,@stats) = @_;
+
+    my $dbh = connect_db();
+    my $i=0;
+
+    foreach my $row (@stats){
+        if($DEBUG > 8) { print $row->[0] . "," . $siteid . "," . $row->[1] . "," . $row->[2] . "\n"; }
+
+        if($i==0){
+            my $sqldate=substr($dbh->quote($row->[0]),0,11);
+
+            dbDo($dbh,"DELETE FROM ftpm_filetransfer_controller WHERE siteid = $siteid AND time BETWEEN " . $sqldate . " 00:00:00' AND " . $sqldate . " 23:59:59'");
+            $i++;
+        }
+
+        dbDo($dbh,sprintf("INSERT INTO ftpm_filetransfer_controller (time,siteid,appname,filetransferhandler) VALUES (%s,%d,%s,%s)",
+                $dbh->quote($row->[0]),
+                $siteid,
+                $row->[1],
+                $row->[2])) or die "Insert failed for $row->[0] ROP - FTPM Controller Stats";
+    }
+    $dbh->disconnect();
+}

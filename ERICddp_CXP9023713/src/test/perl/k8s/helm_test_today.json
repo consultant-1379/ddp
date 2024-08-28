@@ -1,0 +1,82 @@
+{
+    "podstatus": {},
+    "events": [],
+    "helm": [
+        {
+            "metadata": {
+                "name": "sh.helm.release.v1.eric-enm-pre-deploy-integration-enm123.v6",
+                "namespace": "enm123",
+                "uid": "60bd67d1-4bd3-49e8-8220-c52ea2d378ae",
+                "resourceVersion": "128418183",
+                "creationTimestamp": "2023-09-29T08:04:54Z",
+                "labels": {
+                    "modifiedAt": "1695986151",
+                    "name": "eric-enm-pre-deploy-integration-enm123",
+                    "owner": "helm",
+                    "status": "deployed",
+                    "version": "6"
+                }
+            },
+            "data": {
+                "release": {
+                    "name": "eric-enm-pre-deploy-integration-enm123",
+                    "info": {
+                        "first_deployed": "2023-07-04T09:43:02.486416607+02:00",
+                        "last_deployed": "2023-09-29T10:04:51.458364894+02:00",
+                        "deleted": "",
+                        "description": "Upgrade complete",
+                        "status": "deployed",
+                        "notes": "This is eric-enm-pre-deploy-integration Helm Installation!\nYour chart has been successfully released.\n\nTo check it's state, run:\n\n  helm status eric-enm-pre-deploy-integration-enm123\n"
+                    },
+                    "chart": {
+                        "metadata": {
+                            "name": "eric-enm-pre-deploy-integration",
+                            "version": "1.46.3-1",
+                            "description": "A Helm chart for pre-deploy-integration",
+                            "apiVersion": "v2",
+                            "appVersion": "1.0"
+                        }
+                    },
+                    "hooks": [
+                        {
+                            "name": "cenm-deployment-healthcheck",
+                            "kind": "Pod",
+                            "path": "eric-enm-pre-deploy-integration/charts/eric-enm-troubleshooting-utils/templates/tests/deployment_checks.yaml",
+                            "events": [
+                                "test"
+                            ],
+                            "last_run": {
+                                "started_at": "2023-09-29T13:15:00.845136516+02:00",
+                                "completed_at": "2023-09-29T13:15:50.990958754+02:00",
+                                "phase": "Succeeded"
+                            },
+                            "delete_policies": [
+                                "before-hook-creation",
+                                "hook-succeeded",
+                                "hook-failed"
+                            ]
+                        },
+                        {
+                            "name": "eric-enm-symlink-creation-job",
+                            "kind": "Job",
+                            "path": "eric-enm-pre-deploy-integration/templates/eric-enm-symlink-creation-job.yaml",
+                            "events": [
+                                "post-install",
+                                "post-upgrade"
+                            ],
+                            "last_run": {
+                                "started_at": "2023-09-29T10:08:02.935266805+02:00",
+                                "completed_at": "2023-09-29T10:08:16.89398806+02:00",
+                                "phase": "Succeeded"
+                            },
+                            "weight": -5,
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+}

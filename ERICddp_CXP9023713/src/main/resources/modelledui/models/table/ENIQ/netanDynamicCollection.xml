@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pmdb_collections_summary_details">
+    <reference table="sites" condition="eniq_netan_pmdb_collections_summary_details.siteid = sites.id"/>
+    <reference table="ne_types" condition="eniq_netan_pmdb_collections_summary_details.nodeTypeId = ne_types.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_netan_pmdb_collections_summary_details.collectionType = 'Dynamic Collection' AND eniq_netan_pmdb_collections_summary_details.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <column db="eniq_netan_pmdb_collections_summary_details.collectionID" label="Collection ID"/>
+  <column db="ne_types.name" label="Node Type"/>
+  <column db="eniq_netan_pmdb_collections_summary_details.createdOn" label="Created On"/>
+  <column db="eniq_netan_pmdb_collections_summary_details.lastModifiedOn" label="Last Modified On"/>
+
+</modelledtable>

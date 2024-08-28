@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^f5instr@f5cpustats$">
+
+  <table name="f5_cpu_stats">
+    <keycol name="cpuid" reftable="f5_cpu_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>cpuid</multi>
+
+    <metricgroup name="^F5cpustats-(\S+)">
+      <metric source="user" target="user" delta="true" rate="true"/>
+      <metric source="system" target="system" delta="true" rate="true"/>
+      <metric source="iowait" target="iowait" delta="true" rate="true"/>
+      <property name="cpuid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

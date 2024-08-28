@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@testmulti">
+
+  <!-- Test when a metric is mapped to multiple groups using a label filter -->
+  <table name="test"/>
+
+  <metricgroups>
+    <metricgroup name="bind">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="bind_cnt">
+        <labelfilter name="type" value="^bind$"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="unbind">
+      <metric source="ds_connection_handlers_ldap_requests_count" target="bind_cnt">
+        <labelfilter name="type" value="^unbind$"/>
+      </metric>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

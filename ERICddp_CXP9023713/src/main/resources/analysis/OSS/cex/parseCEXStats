@@ -1,0 +1,229 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+	# Declare local variables
+    my ( $file, $site, $sqlDate );
+    my ( @totalPerspectiveEvent, @totalSessionEvent, @totalPartEvent, @totalCommandEvent, @totalPropertyTabEvent );
+    my $result = GetOptions(
+        "file=s"  => \$file,
+        "site=s"  => \$site,
+        "date=s"  => \$sqlDate,
+        "debug=n" => \$DEBUG
+    );
+
+    ( $result == 1 ) or die("Invalid args");
+    my $dbh = connect_db();
+
+    my $siteid = getSiteId( $dbh, $site );
+    ( $siteid > -1 ) or die "Failed to get siteid for $site";
+
+    $dbh->disconnect;
+
+	################################
+    # Slurp lines from line to array
+	################################
+    open(FILE, "$file") or die "ERROR: Failed to open file - $file\n";
+    my @lines=<FILE>;
+    close(FILE);
+
+	my @dbFieldOrder = ('eventStop','eventStartMillis','eventStopMillis','eventType','eventName','eventid');	
+
+	#########################################################
+    # Parse file and split into arrays for each event section
+	#########################################################
+    foreach (@lines) {
+        if( /^PerspectiveEvent/ ) { push(@totalPerspectiveEvent, $_); }
+        elsif( /^SessionEvent/ ) { push(@totalSessionEvent, $_); }
+        elsif( /^PartEvent/ ) { push(@totalPartEvent, $_); }
+        elsif( /^CommandEvent/ ) { push(@totalCommandEvent, $_); }
+        elsif( /^PropertyTabEvent/ ) { push(@totalPropertyTabEvent, $_); }
+    }
+
+    parseCexArray($sqlDate, $siteid, "PerspectiveEvent", \@totalPerspectiveEvent, \@dbFieldOrder);
+    parseCexArray($sqlDate, $siteid, "SessionEvent", \@totalSessionEvent, \@dbFieldOrder);
+    parseCexArray($sqlDate, $siteid, "PartEvent", \@totalPartEvent, \@dbFieldOrder);
+    parseCexArray($sqlDate, $siteid, "CommandEvent", \@totalCommandEvent, \@dbFieldOrder);
+    parseCexArray($sqlDate, $siteid, "PropertyTabEvent", \@totalPropertyTabEvent, \@dbFieldOrder);
+
+	return 0;
+}
+
+
+sub parseCexArray() {
+	# Declare local variables
+    my ($sqlDate,$siteid,$event,$array,$r_dbFieldOrder) = @_;
+    my (%data,@eventTypeList,@eventNameList,@eventIdList);
+	my ($record, $epoch, $startMillis, $epochStop, $stopMillis);
+    my (@unique_eventTypeList,@unique_eventNameList,@unique_eventIdList);
+    my @totalData;
+	my $eventId;
+	my %dataForStorage;
+    my @logEntryFormat = ("eventType","eventStart","eventStop","eventName","eventid");
+
+	##########################################################################################
+    # Create a hash from both the @fileFormat and each line of @array.
+    # Then push the hash into @totalData in oder to build up the complete data.
+	# Note: We also want to create a list of all eventType, eventName and eventid to use later.
+	###########################################################################################
+    foreach my $line (@$array){
+        if(defined $line){
+            chomp($line);
+            my @valArr = split(/,/, $line);
+
+            @data{@logEntryFormat} = @valArr;
+            push @totalData, { %data };
+            push (@eventTypeList, $data{'eventType'});
+
+            unless ( $event eq "SessionEvent" ){
+                push (@eventNameList, $data{'eventName'});
+                push (@eventIdList, $data{'eventid'});
+            }
+        }
+    }
+
+	#####################################################################
+	# Getting the unique eventTypes, eventIds and eventNames into an array 
+	# and then populate an idMap for each one.
+	######################################################################
+    my $dbh = connect_db();
+
+    my %etl_hash;
+    @etl_hash{@eventTypeList} = ();
+    @unique_eventTypeList = keys %etl_hash;
+    my $r_etlIdMap = getIdMap($dbh, "cex_event_types", "id", "name", \@unique_eventTypeList);
+
+    my %enl_hash;
+    @enl_hash{@eventNameList} = ();
+    @unique_eventNameList = keys %enl_hash;
+    my $r_enlIdMap = getIdMap($dbh, "cex_event_names", "id", "name", \@unique_eventNameList);
+
+    my %eidl_hash;
+    @eidl_hash{@eventIdList} = ();
+    @unique_eventIdList = keys %eidl_hash;
+    my $r_eidlIdMap = getIdMap($dbh, "cex_event_ids", "id", "name", \@unique_eventIdList);
+
+    $dbh->disconnect;
+
+	##################################################################################################
+	# Build up a hash of the data for each event starttime and also get the appropriate
+	# id that corresponds to each of the eventTypes, eventIds and eventNames.
+	# Note: We also break the epoch time into the time and millisecond associated to it where relavent
+	##################################################################################################	
+	foreach my $recordRef (@totalData) {
+		my $ms_epoch = $recordRef->{'eventStart'};
+
+        # Break the millisecond epoch number down so we can get the SQL time format.
+		# Assign the startMillis entry to the millisecond value and insert into the hash.
+        ($epoch, $startMillis) = $ms_epoch =~ m/(\d{10})(\d+)/;
+        my $starttime = formatTime( $epoch, $StatsTime::TIME_SQL );
+		if ($starttime =~ m/$sqlDate.*/){
+			$dataForStorage{$starttime}->{'eventStartMillis'} = $startMillis;
+
+			foreach my $field (@$r_dbFieldOrder){
+				if( (defined $recordRef->{$field})  && lc($recordRef->{$field}) ne '' && lc($recordRef->{$field}) ne 'undef'){
+					if ($field eq 'eventStop') {
+						my $ms_epochStop = $recordRef->{$field};
+						($epochStop, $stopMillis) = $ms_epochStop =~ m/(\d{10})(\d+)/;
+
+						my $stoptime = formatTime( $epochStop, $StatsTime::TIME_SQL );
+						$dataForStorage{$starttime}->{$field} = $stoptime;
+						$dataForStorage{$starttime}->{'eventStopMillis'} = $stopMillis;
+
+					}
+					elsif ( $field eq 'eventType' ){
+						# Note: eventType can never be a NULL value.
+						$eventId =  $r_etlIdMap->{$recordRef->{$field}};
+						$dataForStorage{$starttime}->{$field} = $r_etlIdMap->{$recordRef->{$field}} 
+					}
+					elsif ( $field eq 'eventName' ){
+						$dataForStorage{$starttime}->{$field} = $r_enlIdMap->{$recordRef->{$field}}
+					}
+					else{
+						$dataForStorage{$starttime}->{$field} = $r_eidlIdMap->{$recordRef->{$field}}
+					}
+				}
+			}
+		}
+	}
+
+    if ( $DEBUG > 4 ) { print Dumper %dataForStorage;};
+
+   	writeBulkImport($sqlDate,$siteid,$event, $eventId,\%dataForStorage, $r_dbFieldOrder);
+	return 0;
+}
+
+
+sub writeBulkImport() {
+	# Declare local variables
+    my ($sqlDate,$siteid,$event,$eventId,$r_dataForStorage, $r_dbFieldOrder) = @_;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/" . "cex_" . $event . ".bcp";
+
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $starttime(sort(keys(%$r_dataForStorage))) {
+        my $record = $siteid . "," . $starttime. "," ;
+            foreach my $field (@{$r_dbFieldOrder}) {
+                if ( defined $r_dataForStorage->{$starttime}{$field} ){
+                        $record .= $r_dataForStorage->{$starttime}{$field} . ",";
+                }
+                else{
+                        $record .= ",";
+                }
+        }
+
+       $record =~ s/\,$/\n/; # Remove the last comma and add a carriage return
+       if ($DEBUG > 1) { print $record; }
+
+		# Write the record to the file, eliminating records with no metrics
+        print BULK_INSERT $record;
+
+    }
+
+    close BULK_INSERT;
+
+    storeDataset($sqlDate, $siteid, $eventId,  $bcpFile);
+    return 0;
+}
+
+
+sub storeDataset(){
+	# Declare local variables
+    my ($sqlDate, $siteid, $eventId, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Run the bulk insert into the fm_stats
+    my $rerunDelete = "DELETE FROM cex_usage_stats WHERE event_start BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid . " AND event_type = " . $eventId;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from cex_usage_stats for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE cex_usage_stats FIELDS TERMINATED BY ','");
+    $dbh->disconnect;
+
+    return 0;
+}

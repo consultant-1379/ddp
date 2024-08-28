@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^versant_client@versant_client">
+
+  <table name="enm_versant_client_connpool">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^versant_client-connpool$">
+      <metric source="Size" target="size"/>
+      <metric source="ConnectionsInUse" target="connectionsInUse"/>
+      <metric source="AllocationFailures" target="allocationFailures" delta="true"/>
+      <metric source="ConnectionFailures" target="connectionFailures" delta="true"/>
+      <metric source="AllocationTimeouts" target="allocationTimeouts" delta="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

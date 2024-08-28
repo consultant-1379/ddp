@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <xs:element name="ruleset">
+    <xs:complexType>
+      <xs:sequence>
+
+        <xs:element name="conditiondef" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="query" type="xs:string"/>
+            </xs:sequence>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="rule" minOccurs="1" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="name" type="xs:string"/>
+
+              <xs:element name="desc" type="xs:string" minOccurs="0"/>
+
+              <xs:element name="conditional" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="condition" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="def" type="xs:string" use="required"/>
+                        <xs:attribute name="type" use="required">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="less"/>
+                              <xs:enumeration value="more"/>
+                              <xs:enumeration value="equals"/>
+                              <xs:enumeration value="notequals"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                        <xs:attribute name="value" type="xs:int" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="operation" use="required">
+                    <xs:simpleType>
+                      <xs:restriction base="xs:string">
+                        <xs:enumeration value="and"/>
+                        <xs:enumeration value="or"/>
+                      </xs:restriction>
+                    </xs:simpleType>
+                  </xs:attribute>
+                </xs:complexType>
+              </xs:element>
+
+              <xs:element name="columns" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="column" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="link" minOccurs="0">
+                            <xs:complexType>
+                              <xs:sequence>
+                                <xs:element name="page" type="xs:string"/>
+                                <xs:element name="param" minOccurs="0" maxOccurs="unbounded">
+                                  <xs:complexType>
+                                    <xs:attribute name="name" type="xs:string" use="required"/>
+                                    <xs:attribute name="source" type="xs:string"/>
+                                    <xs:attribute name="value" type="xs:string"/>
+                                  </xs:complexType>
+                                </xs:element>
+                                <xs:element name="anchor" type="xs:string" minOccurs="0"/>
+                              </xs:sequence>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                        <xs:attribute name="label" type="xs:string" use="required"/>
+                        <xs:attribute name="type">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="string"/>
+                              <xs:enumeration value="float"/>
+                              <xs:enumeration value="decimal"/>
+                              <xs:enumeration value="int"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                        <xs:attribute name="formatter" type="xs:string"/>
+                        <xs:attribute name="sortFunction" type="xs:string"/>
+                        <xs:attribute name="filterable" type="xs:boolean"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+
+              <xs:element name="query" type="xs:string"/>
+
+              <xs:element name="parameter" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+
+              <xs:element name="threshold" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                  <xs:attribute name="type" use="required">
+                    <xs:simpleType>
+                      <xs:restriction base="xs:string">
+                        <xs:enumeration value="greater"/>
+                        <xs:enumeration value="less"/>
+                      </xs:restriction>
+                    </xs:simpleType>
+                  </xs:attribute>
+                </xs:complexType>
+              </xs:element>
+
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <!-- end of element rule -->
+
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <!-- end of element ruleset -->
+
+</xs:schema>
+

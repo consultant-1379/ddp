@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+
+#===============================================================================================================================
+# Script  : parseFRHController
+# Author  : Ankit Singh (xankadi)
+# Purpose : The purpose of this script is to parse controller.log which contains information about files processed and files in
+#           backlog of the FRH server.
+# Usage   : ${ANALYSIS_BIN}/ENIQ/parseFRHController --site ${SITE} --date ${SQL_DATE} --logfile ${LOG_FILE}
+#===============================================================================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $dbh;
+our $DEBUG = 0;
+our $siteId;
+our $frhControllerTable = "frh_controller_backlog";
+
+sub main {
+    my ($site, $date, $logFile, $startTime);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "logfile=s" => \$logFile,
+        "debug=s" => \$DEBUG
+    );
+
+    if( $DEBUG > 0 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my ($r_parsedData, $r_frhInterfaceNames) = parseFrhControllerLog($logFile);
+    my $r_interfaceNameIdMap = getIdMap($dbh, "frh_interface", "id", "frhInterface", $r_frhInterfaceNames);
+
+    if ( $DEBUG > 1 ) { print Dumper ("Interface Id Map", $r_interfaceNameIdMap); }
+
+    my $bcpFile = createBcpFile($r_parsedData, $r_interfaceNameIdMap);
+    removeOldData($date);
+    loadDb($bcpFile);
+    $dbh->disconnect;
+
+    if( $DEBUG > 0 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): $startTime\n";
+        print "End Time (EPOCH milliseconds): $endTime\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseFrhControllerLog {
+    my $logFileToBeParsed = shift;
+    my @r_parsedData = ();
+    my @r_frhInterfaceNames = ();
+
+    open FILE, "<$logFileToBeParsed" or die "Can't open file to read $logFileToBeParsed\n";
+    while (my $line = <FILE>){
+        if ( my ( $date, $interface, $filesProcessed, $filesInBacklog, $timeToProcess) = $line =~ /(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s+.*?\.(\w+).*:.*?(\d+).*?(\d+).*Took\s(\d+).*/) {
+            my %r_dataForLine = (
+                date => "$date",
+                siteId => "$siteId",
+                interface => "$interface",
+                filesProcessed => "$filesProcessed",
+                filesInBacklog => "$filesInBacklog",
+                totalBacklog => "$filesProcessed" + "$filesInBacklog",
+                timeToProcess => "$timeToProcess"
+                );
+            push (@r_parsedData, \%r_dataForLine);
+            push (@r_frhInterfaceNames, $interface);
+        }
+    }
+    close FILE;
+    if ( $DEBUG > 2 ) { print Dumper ("Parsed Data", \@r_parsedData); }
+    if ( $DEBUG > 3 ) { print Dumper ("Intreface List", \@r_frhInterfaceNames); }
+    return (\@r_parsedData, \@r_frhInterfaceNames);
+}
+
+sub createBcpFile {
+    my ($r_parsedData, $r_interfaceNameIdMap) = @_;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = "$tmpDir/frh_controller_backlog.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    for my $lineData ( @$r_parsedData ) {
+        printf BCP "%s|%d|%d|%d|%d|%d|%d|\n",
+            $lineData->{date},
+            $lineData->{siteId},
+            $r_interfaceNameIdMap->{$lineData->{interface}},
+            $lineData->{totalBacklog},
+            $lineData->{filesInBacklog},
+            $lineData->{filesProcessed},
+            $lineData->{timeToProcess};
+    }
+    close BCP;
+
+    if ( $DEBUG > 4 ) { system ("/usr/bin/cat $bcpFile\n"); }
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($date) = @_;
+    my $deleteStatement = "DELETE FROM $frhControllerTable WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 5 ) { print "SQL query for removal of old data: $deleteStatement \n" };
+    dbDo($dbh, $deleteStatement) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $insertStatement = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $frhControllerTable FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 5 ) { print "SQL query for loading data into the database: $insertStatement \n" };
+    dbDo($dbh, $insertStatement) or die "Failed to load data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

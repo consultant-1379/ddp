@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pmdb_alarm_summary_details">
+    <reference table="sites" condition="eniq_netan_pmdb_alarm_summary_details.siteid = sites.id"/>
+    <reference table="eniq_netan_pme_measure_name_id_mapping_details" condition="eniq_netan_pmdb_alarm_summary_details.measureId = eniq_netan_pme_measure_name_id_mapping_details.id"/>
+    <reference table="ne_types" condition="eniq_netan_pmdb_alarm_summary_details.nodeTypeId = ne_types.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_netan_pmdb_alarm_summary_details.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <groupby>
+    <column db="eniq_netan_pmdb_alarm_summary_details.alarmID"/>
+  </groupby>
+  <order columnid="AlarmState" direction="ASC"/>
+
+  <column db="eniq_netan_pmdb_alarm_summary_details.alarmID" label="Alarm ID"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.alarmType" label="Alarm Type"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.systemArea" label="System Area"/>
+  <column db="ne_types.name" label="Node Type"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.measureType" label="Measure Type"/>
+  <column db="GROUP_CONCAT(distinct eniq_netan_pme_measure_name_id_mapping_details.measureName, '')" label="Measure Name"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.severity" label="Severity"/>
+  <column db="CAST(eniq_netan_pmdb_alarm_summary_details.alarmState AS CHAR)" label="Alarm State" id="AlarmState"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.ProbableCause" label="Probable Cause"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.schedule" label="Schedule"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.aggregation" label="Aggregation"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.lookBackVal" label="Look Back Val"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.lookBackUnit" label="Look Back Unit"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.dataRangeVal" label="Data Range Val"/>
+  <column db="eniq_netan_pmdb_alarm_summary_details.dataRangeUnit" label="Data Range Unit"/>
+
+</modelledtable>

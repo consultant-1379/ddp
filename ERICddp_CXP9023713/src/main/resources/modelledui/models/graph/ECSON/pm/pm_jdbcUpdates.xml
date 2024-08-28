@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="JDBC Updates"/>
+ <queries>
+  <query timecol="time" multiseries="event_type_names.name">
+   <dbtables main="ecson_pm_events_jdbc_updates">
+    <reference table="sites" condition="ecson_pm_events_jdbc_updates.siteid = sites.id"/>
+    <reference table="event_type_names" condition="ecson_pm_events_jdbc_updates.typeid = event_type_names.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_pm_events_jdbc_updates.jdbcUpdates" label="JDBC Updates"/>
+  </query>
+ </queries>
+ <size width="650" height="400"/>
+</modelledgraph>

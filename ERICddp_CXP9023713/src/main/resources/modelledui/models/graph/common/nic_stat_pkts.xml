@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="NIC Packets/sec"/>
+ <queries>
+  <query timecol="time">
+  <dbtables main="nic_stat"/>
+
+   <param name="nicid"/>
+   <param name="serverid"/>
+   <where>nic_stat.nicid = %d AND nic_stat.serverid = %d</where>
+   <column db="ipkts_per_sec" label="RX"/>
+   <column db="opkts_per_sec" label="TX"/>
+  </query>
+ </queries>
+</modelledgraph>

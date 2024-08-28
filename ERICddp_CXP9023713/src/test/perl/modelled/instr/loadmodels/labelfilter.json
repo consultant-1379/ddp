@@ -1,0 +1,25 @@
+{
+    "model": "labelfilter.xml",
+    "checks": [
+        {
+            "desc": "Verfiy labelfilter with same metric mapped to multiple group: bind",
+            "path": [ "metricgroup", "bind", "metric", 0, "labelfilters" ],
+            "expected": [
+                {
+                    "name": "type",
+                    "value": "^bind$"
+                }
+            ]
+        },
+        {
+            "desc": "Verfiy labelfilter with same metric mapped to multiple group: unbind",
+            "path": [ "metricgroup", "unbind", "metric", 0, "labelfilters" ],
+            "expected": [
+                {
+                    "name": "type",
+                    "value": "^unbind$"
+                }
+            ]
+        }
+    ]
+}

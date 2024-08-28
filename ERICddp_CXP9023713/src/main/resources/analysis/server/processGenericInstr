@@ -1,0 +1,35 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/data/tmp
+fi
+
+if [ -z "${INCR_DIR}" ] ; then
+    INCR_DIR=${TMP_DIR}
+fi
+
+SERVICE_ARG=""
+
+while getopts s:d:a:e:v: OPT ; do
+    case $OPT in
+        s) SERVER_DIR="${OPTARG}" ;;
+        d) DATADIR="${OPTARG}" ;;
+        a) DASH_DATE="${OPTARG}" ;;
+        e) SITE="${OPTARG}" ;;
+        v) SERVICE_ARG="--service ${OPTARG}" ;;
+    esac
+done
+
+SERVER=$(cat ${SERVER_DIR}/hostname | head --lines=1 | awk '{print $2}' | awk -F\. '{print $1}')
+CFGFILES=$(ls ${DATADIR}/instr | egrep 'genjmx_')
+if [ -z "${CFGFILES}" ] ; then
+    CFGFILES=$(ls ${DATADIR}/instr | egrep -v 'kstat-|cosm\.xml|TSSAuthorityMC\.xml')
+fi
+if [ ! -z "${CFGFILES}" ] ; then
+    CFGFILES=$(echo ${CFGFILES} | sed 's/ /,/g')
+    ${ANALYSIS_BIN}/server/parseGenericInstr --cfgDir ${DATADIR}/instr --cfgFiles ${CFGFILES} --data ${DATADIR}/instr.txt \
+                   --date ${DASH_DATE} --site ${SITE} --server ${SERVER} --incr ${INCR_DIR}/genericInstr.${SERVER} ${SERVICE_ARG}
+fi

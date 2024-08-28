@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_node_events_recieved" timecol="date">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="host"/>
+      <groupby name="NetworkElement"/>
+      <groupby name="NcmNodeId"/>
+      <groupby name="EventType"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="Count" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+    <!--NCM_AGENT.NODE_EVENTS_RECEIVED {\"_Thread\":\"EJB default - 31\",\"NodeEvents\":\[{\"NetworkElement\":\"CORE23MLTN004\",\"NcmNodeId\":\"2\",\"EventType\":\"NETWORK_ELEMENT_ADD\",\"Count\":1},{\"NetworkElement\":\"CORE23MLTN003\",\"NcmNodeId\":\"3\",\"EventType\":\"NETWORK_ELEMENT_ADD\",\"Count\":1},{\"NetworkElement\":\"CORE51ML6366-001\",\"NcmNodeId\":\"5\",\"EventType\":\"NETWORK_ELEMENT_ADD\",\"Count\":1},{\"NetworkElement\":\"CORE23MLTN002\",\"NcmNodeId\":\"4\",\"EventType\":\"NETWORK_ELEMENT_ADD\",\"Count\":1},{\"NetworkElement\":\"CORE51ML6366-001\",\"NcmNodeId\":\"5\",\"EventType\":\"NETWORK_ELEMENT_REMOVE\",\"Count\":1}]}-->
+    <event name="NCM_AGENT.NODE_EVENTS_RECEIVED" explode_array="NodeEvents">
+      <metric source="host" target="serverid"/>
+      <metric source="NetworkElement" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="NcmNodeId" target="ncmNodeId"/>
+      <metric source="EventType" target="eventType"/>
+      <metric source="Count" target="count"/>
+    </event>
+  </events>
+</modelledevents>
+

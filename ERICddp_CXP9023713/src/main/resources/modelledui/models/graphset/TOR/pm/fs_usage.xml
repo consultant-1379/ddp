@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="enm_pmic_fs_usage.path">
+    <dbtables main="enm_pmic_fs_usage">
+      <reference table="sites" condition="enm_pmic_fs_usage.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="used" type="sb" ylabel="GB">
+      <title value="File System Used Space"/>
+      <column db="fsUsage" label="File System Used Space"/>
+    </graph>
+    <graph name="available" type="sb" ylabel="GB">
+      <title value="File System Available Space"/>
+      <column db="fsAvailable" label="File System Available Space"/>
+    </graph>
+    <graph name="percent" type="sb" ylabel="%used">
+      <title value="File System Usage (Percentage)"/>
+      <column db="CEIL((fsUsage/(fsUsage+fsAvailable))*100)" label="File System Usage (Percentage)"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="all">
+      <member>used</member>
+      <member>available</member>
+      <member>percent</member>
+    </group>
+  </groups>
+</modelledgraphset>

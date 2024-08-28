@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_sfs_storage_fs_details">
+    <reference table="sites" condition="eniq_sfs_storage_fs_details.siteId = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_sfs_storage_fs_details.date = '%date%'</where>
+  <column db="eniq_sfs_storage_fs_details.fileSystem" label="File System"/>
+  <column db="eniq_sfs_storage_fs_details.status" label="Status"/>
+  <column db="eniq_sfs_storage_fs_details.fileSystemSize" label="Size (GB)"/>
+  <column db="eniq_sfs_storage_fs_details.layout" label="Layout"/>
+  <column db="eniq_sfs_storage_fs_details.mirrors" label="Mirrors"/>
+  <column db="eniq_sfs_storage_fs_details.columns" label="Columns"/>
+  <column db="eniq_sfs_storage_fs_details.usePercentage" label="Use%"/>
+  <column db="eniq_sfs_storage_fs_details.nfsShared" label="NFS Shared"/>
+  <column db="eniq_sfs_storage_fs_details.cifsShared" label="CIFS Shared"/>
+  <column db="eniq_sfs_storage_fs_details.ftpShared" label="FTP Shared"/>
+  <column db="eniq_sfs_storage_fs_details.secondaryTier" label="Secondary Tier"/>
+  <column db="eniq_sfs_storage_fs_details.poolList" label="Pool List"/>
+
+</modelledtable>

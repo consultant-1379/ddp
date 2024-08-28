@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="enm_neo4j_mocounts">
+    <reference table="sites" condition="enm_neo4j_mocounts.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND enm_neo4j_mocounts.date = '%date%' </where>
+
+ <column db="(IFNULL(SUM(enm_neo4j_mocounts.total), 0) - IFNULL(SUM(enm_neo4j_mocounts.nonlive), 0))" label="Live"/>
+ <column db="SUM(enm_neo4j_mocounts.nonlive)" label="Non-Live"/>
+
+</modelledtable>

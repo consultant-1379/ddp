@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="month">
+
+  <query timecol="filedate" multiseries="emc_pool.name">
+    <dbtables main="emc_pool_cfg">
+      <reference table="emc_pool" condition="emc_pool_cfg.poolid = emc_pool.id"/>
+    </dbtables>
+
+    <param name="sysid"/>
+    <param name="poolid"/>
+    <where>emc_pool_cfg.sysid = %d AND emc_pool_cfg.poolid IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="used" type="tsc" yabel="GB" forcelegend="true">
+      <title value="Used (GB)"/>
+      <column db="usedGB" label="Used (GB)"/>
+    </graph>
+    <graph name="meta" type="tsc" yabel="GB" forcelegend="true">
+      <title value="Metadata Allocated (GB)"/>
+      <column db="metadataSizeUsedGB" label="Metadata (GB)"/>
+    </graph>
+    <graph name="snap" type="tsc" yabel="GB" forcelegend="true">
+      <title value="Snaps Size (GB)"/>
+      <column db="snapSizeUsedGB" label="Snaps Size (GB)"/>
+    </graph>
+    <graph name="datareductionratio" type="tsc" yabel="" forcelegend="true">
+      <title value="Data Reduction Ratio"/>
+      <column db="dataReductionRatio" label="Data Reduction Ratio"/>
+    </graph>
+  </graphs>
+
+</modelledgraphset>
+

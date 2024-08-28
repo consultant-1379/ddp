@@ -1,0 +1,33 @@
+#!/bin/bash
+
+LOG_FILE=/data/ddp/log/backup.log
+LOCK_DIR=/tmp/bkup-lock
+
+log() {
+    MY_MSG="$1"
+    DATE=$(date)
+    echo "${DATE} ${MY_MSG}" >> ${LOG_FILE}
+}
+
+log "INFO: Stream $STREAM_NUMBER starting"
+
+mkdir ${LOCK_DIR}
+if [ $? -ne 0 ] ; then
+    echo "${STREAM_PID}" > ${LOCK_DIR}/stream_${STREAM_NUMBER}    
+    while [ ! -r ${LOCK_DIR}/ready ] ; do
+	DATE=$(date)
+	log "INFO: Stream $STREAM_NUMBER waiting" >> ${LOG_FILE}
+	sleep 1
+    done
+else    
+    log "INFO: Stream $STREAM_NUMBER got lock" >> ${LOG_FILE}
+    echo "${STREAM_PID}" > ${LOCK_DIR}/stream_${STREAM_NUMBER}    
+    /data/ddp/current/server_setup/snapdbfs -a create -s bkup >> ${LOG_FILE} 2>&1
+    /data/ddp/current/server_setup/snapdbfs -a mount -s bkup >> ${LOG_FILE} 2>&1
+    touch ${LOCK_DIR}/ready
+    log "INFO: Stream $STREAM_NUMBER created ready file" >> ${LOG_FILE}    
+fi
+
+
+
+

@@ -1,0 +1,135 @@
+#!/usr/bin/perl
+############################################################################################
+# Script : parseSfsLog
+# Purpose: This is a generic script to parse the following two SFS logs:
+#          1. ${DATADIR}/remotehosts/*_SFS/storage_fs_list.txt [OR]
+#             ${DATADIR}/remotehosts/*_ACCESSNAS/storage_fs_list.txt
+#          2. ${DATADIR}/plugin_data/sfsSnapCacheStatus/sfsSnapCacheStatus_${SQL_DATE}.txt
+# Author : Anam Pargal (xanampa)
+# Usage  : ${ANALYSIS_BIN}/ENIQ/parseSfsLog --logfile <logfile> --table <table name>
+#          --date <date> --site <site>
+#############################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+our $logFile;
+our $table = "";
+our $tmpDir;
+our $date;
+our $DEBUG = 0;
+our $dbh;
+our $site;
+our $siteId;
+our $bcpFile;
+
+sub main {
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "table=s"   => \$table,
+        "date=s"    => \$date,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 0 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    my $parsed_data = parseData();
+    createBcpFile($parsed_data);
+    loadDb();
+    $dbh->disconnect();
+    if( $DEBUG > 0 ){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my @recordList = ();
+    my @data = ();
+    my $headerline = "false";
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ){
+#########################################################################################################
+## The below code handled extra lines which is coming in the logs file at starting position.            #
+## It will skip the extra lines until the required data will come.                                      #
+#########################################################################################################
+        if ( $headerline eq "false" ) {
+            if ( $line =~ /(^CACHE NAME.*)|(^FS.*)/ ) {
+                $headerline = "true";
+            }
+            next;
+        }
+        if ( $line =~ /^\w+.*$/ ){
+            if ( $table eq "eniq_sfs_storage_fs_details" ){
+                @data = (split /\s+/, $line);
+                if ( scalar(@data) == 11 ){
+                    splice (@data, 9, 0, "");
+                }
+                foreach my $dataElement (@data) {
+                    if ( $dataElement eq "-" ){
+                        $dataElement = "";
+                    }
+                    if ( $dataElement =~ /(.*)\%/ ){
+                        $dataElement = $1;
+                    }
+                }
+            }
+            else {
+                @data = (split /[\(\)\s]+/, $line);
+            }
+        push @recordList, [@data];
+        }
+    }
+    close FILE;
+    if ( $DEBUG > 1 ) { print Dumper ("Parsed Data", \@recordList); }
+    return (\@recordList);
+}
+
+sub createBcpFile {
+    my $parsed_data = shift;
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $bcpFile = "${tmpDir}/${table}.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open bcpFile";
+    for my $i (0 .. $#$parsed_data) {
+        print BCP $date."|".$siteId;
+        for my $j (0 .. $#{$parsed_data->[$i]}) {
+            print BCP "|".$parsed_data->[$i][$j];
+        }
+        print BCP "\n";
+    }
+    close BCP;
+    if ( $DEBUG > 2 ) { system ("/usr/bin/cat $bcpFile\n"); }
+}
+
+sub loadDb {
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    removeOldData();
+    if ( $DEBUG > 4 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh,$loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND date = '$date'";
+    if ( $DEBUG > 3 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main();

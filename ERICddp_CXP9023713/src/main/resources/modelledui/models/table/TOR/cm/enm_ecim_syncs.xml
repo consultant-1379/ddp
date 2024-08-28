@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ecim_syncs">
+    <reference table="sites" condition="enm_ecim_syncs.siteid = sites.id"/>
+    <reference table="servers" condition="enm_ecim_syncs.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_ecim_syncs.neid = enm_ne.id"/>
+    <reference table="ne_types" condition="ne_types.id = enm_ne.netypeid" join="LEFT OUTER JOIN"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverids"/>
+  <where>sites.name = '%site%' AND enm_ecim_syncs.start BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_ecim_syncs.serverid IN (%serverids%)</where>
+
+  <column db="IFNULL(TIMEDIFF( time(start),SEC_TO_TIME(ROUND(duration/1000))), 'NA')" label="Start Time"/>
+  <column db="DATE_FORMAT(start,'%H:%i:%s')" label="End Time"/>
+  <column db="enm_ne.name" label="Network Element"/>
+  <column db="ne_types.name" label="NE Type"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(duration/1000)), 'NA')" label="Duration (hh:mm:ss)"/>
+  <column db="mo_parsed" label="MOs Parsed"/>
+  <column db="(mo_parsed/duration)*1000" label="MOs Parsed/sec"/>
+  <column db="t_read_mo_ne" label="Time Read MOs from NE(msec)"/>
+  <column db="t_ne_trans_mo" label="NE Transfrom MO Time(msec)"/>
+  <column db="n_mo_write" label="MOs Written"/>
+  <column db="n_mo_create" label="MOs Created"/>
+  <column db="n_mo_update" label="MOs Updated"/>
+  <column db="n_mo_delete" label="MOs Deleted"/>
+  <column db="t_mo_write" label="Time MOs Write(msec)"/>
+  <column db="t_mo_delta" label="Time MOs Delta Calculation(msec)"/>
+  <column db="n_mo_attr_read" label="Num MOs Attribute Read"/>
+  <column db="n_mo_attr_trans" label="Num MOs Attribute Transformed"/>
+  <column db="n_mo_attr_null" label="Num MOs Attribute Null"/>
+  <column db="n_mo_attr_discard" label="Num MOs Attribute Discarded"/>
+  <column db="timeToSendNotificationsCmEventNBI" label="Time Taken To Send Notifications to CM Events NBI"/>
+  <column db="numOfNotificationsSendToCmEventsNBI" label="Num Of Notifications sent to CM Event NBI"/>
+
+</modelledtable>
+

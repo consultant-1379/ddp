@@ -1,0 +1,79 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($input,$output);
+    
+    my $result = GetOptions(
+			    "input=s" => \$input,
+			    "output=s"  => \$output,
+			    "debug=s" => \$DEBUG
+			    ); 
+    ($result == 1) or die "Invalid args";
+
+    my $r_locks = readLog($input);
+    
+    open OUTPUT, ">$output" or die "Cannot write to $output";
+    foreach my $r_lock ( @{$r_locks} )
+    {
+	printf OUTPUT " <tr> <td>%s</td> <td>%s</td> <td>%s</td> </tr>\n",
+	$r_lock->{'waiter'}, $r_lock->{'holder'}, $r_lock->{'mo'};
+    }
+    close OUTPUT;
+}
+
+sub readLog
+{
+    my ($inputFile) = @_;
+
+    my @locks = ();
+
+    open INPUT, $inputFile or die "Failed to open input $inputFile";
+    while ( my $line = <INPUT> )
+    {
+	my ($date, $time, $mc, $error, $level, $addInfo) = $line =~ 
+	    /^(\S+) (\S+)\s+(\S+) \"([^\"]*)\" \"([^\"]*)\" (.*)/;
+
+	my ($lockStr) = $addInfo =~ /Versant Lock Timeout: @(.*) DBName:/;
+	my @fields = split /,\@/, $lockStr;
+
+	my ($lockHolder,$lockWaiter,$lockedMo);
+	for my $field ( @fields )
+	{
+	    my ($name,$value) = $field =~ /^([^=]+)=(.*)/;
+	    if ( $name eq "LockHolderTransactionNameName" )
+	    {
+		$lockHolder = $value;
+	    }
+	    elsif ( $name eq "LockedOutTransactionName" )
+	    {
+		$lockWaiter = $value;
+	    }
+	    elsif ( $name eq "MoDName" )
+	    {
+		$lockedMo = $value;
+	    }
+	}
+
+	my $r_lock = {
+	    "holder" => $lockHolder,
+	    "waiter" => $lockWaiter,
+	    "mo"     => $lockedMo
+	    };
+	push @locks, $r_lock;
+    }
+    
+    close INPUT;
+
+    return \@locks;
+}
+
+

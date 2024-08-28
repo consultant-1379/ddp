@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_comecim_notification">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="comecimmscm"/>
+  </services>
+
+  <events>
+      <event name="COM_ECIM_CM_NOTIF_METRICS">
+        <metric source="host" target="serverid"/>
+        <metric source="RateCOM_ECIM_1" target="rateCom_ecim_1"/>
+        <metric source="RateCOM_ECIM_2" target="rateCom_ecim_2"/>
+        <metric source="RateCOM_ECIM_3" target="rateCom_ecim_3"/>
+        <metric source="RateCOM_ECIM_4" target="rateCom_ecim_4"/>
+        <metric source="RateCOM_ECIM_5" target="rateCom_ecim_5"/>
+        <metric source="RateCOM_ECIM_6" target="rateCom_ecim_6"/>
+        <metric source="RateCOM_ECIM_7" target="rateCom_ecim_7"/>
+        <metric source="RateCOM_ECIM_8" target="rateCom_ecim_8"/>
+        <metric source="RateCOM_ECIM_9" target="rateCom_ecim_9"/>
+        <metric source="RateCOM_ECIM_10" target="rateCom_ecim_10"/>
+        <metric source="UseCOM_ECIM_1" target="useCom_ecim_1"/>
+        <metric source="UseCOM_ECIM_2" target="useCom_ecim_2"/>
+        <metric source="UseCOM_ECIM_3" target="useCom_ecim_3"/>
+        <metric source="UseCOM_ECIM_4" target="useCom_ecim_4"/>
+        <metric source="UseCOM_ECIM_5" target="useCom_ecim_5"/>
+        <metric source="UseCOM_ECIM_6" target="useCom_ecim_6"/>
+        <metric source="UseCOM_ECIM_7" target="useCom_ecim_7"/>
+        <metric source="UseCOM_ECIM_8" target="useCom_ecim_8"/>
+        <metric source="UseCOM_ECIM_9" target="useCom_ecim_9"/>
+        <metric source="UseCOM_ECIM_10" target="useCom_ecim_10"/>
+      </event>
+  </events>
+</modelledevents>

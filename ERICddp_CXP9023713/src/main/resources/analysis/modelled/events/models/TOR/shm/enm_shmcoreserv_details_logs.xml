@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_shmcoreserv_details_logs">
+    <keycol name="configTypeId" reftable="nhc_config_types" />
+  </table>
+
+  <services>
+    <service name="shmcoreservice" />
+    <service name="consshm" />
+  </services>
+
+  <events>
+    <!-- SHM.MainJobComplete {"Status":"COMPLETED","JobType":"UPGRADE","EndTime":"2019-01-02
+    14:49:40","ProgressPercentage":100.0,"NumberOfComponents":1,"JobName":"UpgradeJob_administrator_02012019144100","StartTime":"2019-01-02
+    14:41:55","DurationOfJob":464908,"NumberOfNetworkElements":1,"DurationOfNeJobsCreation":221,"_Thread":"job-executor-tp-threads
+    - 34","Result":"SUCCESS"} -->
+    <event name="SHM.MainJobComplete">
+      <metric source="JobType" target="jobType" />
+      <metric source="JobName" target="job_name" />
+      <metric source="NumberOfNetworkElements" target="number_of_network_elements" />
+      <metric source="DurationOfJob" target="duration" />
+      <metric source="ProgressPercentage" target="progress_percentage" />
+      <metric source="Status" target="status" />
+      <metric source="Result" target="result" />
+      <metric source="NumberOfComponents" target="n_components" />
+      <metric source="DurationOfNeJobsCreation" target="t_nejobcreation" />
+    </event>
+
+    <!-- NHC.MainJobComplete
+    {"Status":"COMPLETED","ReportCategory":"PREINSTALL","EndTime":"2019-01-02
+    15:11:03","ProgressPercentage":0.0,"JobName":"Report_administrator_02012019150942","StartTime":"2019-01-02
+    15:10:48","DurationOfJob":14783,"NumberOfNetworkElements":1,"DurationOfNeJobsCreation":7521,"Result":"FAILED","JobType":"NODE_HEALTH_CHECK","NeTypes":"RadioNode","HealthyNodesCount":0,"_Thread":"job-executor-tp-threads
+    - 53"} -->
+    <event name="NHC.MainJobComplete">
+      <metric source="JobType" target="jobType" />
+      <metric source="JobName" target="job_name" />
+      <metric source="NumberOfNetworkElements" target="number_of_network_elements" />
+      <metric source="DurationOfJob" target="duration" />
+      <metric source="ProgressPercentage" target="progress_percentage" />
+      <metric source="Status" target="status" />
+      <metric source="Result" target="result" />
+      <metric source="HealthyNodesCount" target="healthy_nodes_count" />
+      <metric source="ReportCategory" target="category" />
+      <metric source="NeTypes" target="netypes" />
+      <metric source="DurationOfNeJobsCreation" target="t_nejobcreation" />
+      <metric source="ConfigurationType" target="configTypeId" />
+    </event>
+
+  </events>
+</modelledevents>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_cassandra_stats">
+    <reference table="sites" condition="eo_cassandra_stats.siteid = sites.id"/>
+    <reference table="servers" condition="eo_cassandra_stats.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_cassandra_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.id" label="Instance" visible="false" id="InstanceId"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="AVG(clientConnectedNativeClients)" label="Average Connected Native Clients"/>
+
+  <ctxmenu keycol="InstanceId" targettype="url" multiselect="true">
+    <item id="cnc" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>
+

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Node"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Supervision"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_cm_supervision">
+        <reference table="sites" condition="enm_cm_supervision.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="types"/>
+      <where>sites.name = '%s' AND enm_cm_supervision.type = '%s'</where>
+      <column db="subscribed" label="subscribed"/>
+      <column db="supervised" label="supervised"/>
+      <column db="synced" label="synced"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

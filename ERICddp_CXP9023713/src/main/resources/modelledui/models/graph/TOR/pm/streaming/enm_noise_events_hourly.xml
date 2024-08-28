@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="Count"
+ timespan="day"
+ forcelegend="true"
+>
+  <presetagg type="SUM" interval="Hourly" />
+  <title value="Noise Events/sec"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_ebsm_inst_stats">
+        <reference table="sites" condition="enm_ebsm_inst_stats.siteid=sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where> sites.name = '%s'</where>
+      <column db="(numberOfEventsIgnoredLTE / 3600)" label="EBS-L"/>
+      <column db="(numberOfEventsIgnoredNR / 3600)" label="EBS-N"/>
+    </query>
+  </queries>
+  <size width="800" height="320"/>
+</modelledgraph>
+

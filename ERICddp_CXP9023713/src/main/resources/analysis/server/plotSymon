@@ -1,0 +1,54 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+SYMON_LOG=$1
+OUTPUT_DIR=$2
+SITE=$3
+DASH_DATE=$4
+
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+DATE=`echo ${DASH_DATE} | sed 's/-//g'`
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+USERS=`${ANALYSIS_BIN}/server/parseSymon --input ${SYMON_LOG} --data ${TMP_DIR}/data.txt --site ${SITE} --date ${SQL_DATE} | egrep "^STATS" | sed 's/STATS,//g' | sed 's/,/ /g'`
+
+cat > ${TMP_DIR}/cmd.txt <<EOF
+set xdata time
+set timefmt "%d%m%y:%H:%M"
+set format x "%H:%M"
+set yrange [ 0: ]
+set terminal jpeg medium 
+set style fill solid
+set key under
+EOF
+
+INDEX=0
+for GRAPH in CPU IO ; do
+    COLINDEX=2
+    PLOTCMD=""
+    for USER in ${USERS} ; do
+	if [ $COLINDEX -gt 2 ] ; then
+	    PLOTCMD=",${PLOTCMD}"
+	fi
+	PLOTCMD="\"${TMP_DIR}/data.txt\" index ${INDEX} using 1:${COLINDEX} title \"${USER}\" with boxes ${PLOTCMD}"
+	COLINDEX=`expr ${COLINDEX} + 1`
+    done
+    
+    cat >> ${TMP_DIR}/cmd.txt <<EOF 
+set output "${OUTPUT_DIR}/sybase_${GRAPH}.jpg"
+plot ${PLOTCMD}
+EOF
+    
+    INDEX=`expr ${INDEX} + 1`
+done
+	
+gnuplot ${TMP_DIR}/cmd.txt
+if [ $? -eq 0 ]; then 
+    /bin/rm -f ${TMP_DIR}/data.txt ${TMP_DIR}/cmd.txt
+fi

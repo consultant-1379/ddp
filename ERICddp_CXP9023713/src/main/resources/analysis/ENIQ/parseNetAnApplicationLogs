@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseNetAnApplicationLogs -----------
+#       This is a generic script to parse any NetanServer application logs
+#       in tsv format with first column as datetime and to store data to Db.
+#       For now 2 log files are being addressed:
+#       1. OpenFilesStatisticsLog<yyyymmdd>.txt
+#       2. UserSessionStatisticsLog<yyyymmdd>.txt
+#       @author - Bhagyashree Jain (xjaibha)
+#       usage  parseNetAnApplicationLogs --logfile <logfile> --table <table name>
+#               --columns <coulmn1,column2,..,columnN> --site <site>
+######################################################################
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+our $table = "";
+our $epochFirstTime;
+our $epochLastTime;
+
+sub main {
+    my ($site, $server, $logFile, $requiredColumnNames);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "table=s"   => \$table,
+        "columns=s" => \$requiredColumnNames,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+        );
+   ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 1 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my $bcpFile = parseData($logFile, $requiredColumnNames);
+    removeOldData();
+    loadDb($bcpFile);
+    $dbh->disconnect();
+    if( $DEBUG > 1 ){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my ($logFile, $requiredColumnNames) = @_;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "$tmpDir/${table}_metrics.bcp";
+
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    my $line = <FILE>; # Header line
+    my @requiredColumnNumber = getColumnNumbers($line, $requiredColumnNames);
+    $line = <FILE>;  # We do not need second line
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    while ( $line = <FILE> ){
+        chomp($line);
+        my @lineData = (split /\t/, $line) [@requiredColumnNumber];
+        if ( $DEBUG > 2 ) {print Dumper("Fetched line", @lineData)};
+        my ($datetime) = $lineData[0] =~ /(.*),.*/;
+        my $epochCurrentTime = parseTime( $datetime, $StatsTime::TIME_SQL );
+        # Need to fetch analysis name in case of OpenFilesStatisticsLog<yyyymmdd>.txt
+        if ( $logFile =~ /OpenFilesStatisticsLog/ ) {
+            $lineData[1] = getAnalysisName($lineData[1]);
+        }
+        if (( ! defined $epochFirstTime ) || ( $epochCurrentTime < $epochFirstTime )) {
+            $epochFirstTime = $epochCurrentTime;
+        }
+        if (( ! defined $epochLastTime ) || ( $epochCurrentTime > $epochLastTime )) {
+            $epochLastTime = $epochCurrentTime;
+        }
+        printf BCP "%s,%d",
+            $datetime, $siteId;
+            for my $columnNumber ( 1 .. $#lineData ) {
+                print BCP ",".$lineData[$columnNumber];
+            }
+            print BCP "\n";
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub getColumnNumbers {
+    my ($r_allColumnNames, $requiredColumnNames) = @_;
+    my @requiredColumnNumber;
+    my @requiredColumnList = split(/\,/, $requiredColumnNames);
+    if ( $DEBUG > 3 ) {print Dumper("Requested column names:", @requiredColumnList)};
+    my @actualColumnsList = split(/\t/, $r_allColumnNames);
+    # If not 16B format or 17A format, exit.
+    if ($actualColumnsList[0] !~ /^TimeStamp|^UTC TimeStamp/) {
+        print "Log format not supported.\n";
+        exit 0;
+    }
+    if ( $DEBUG > 4 ) {print Dumper("Actual columns in log file:", @actualColumnsList)};
+    for my $requiredColumn ( @requiredColumnList ) {
+        my $index = first { $actualColumnsList[$_] =~ m/${requiredColumn}$/ } 0..$#actualColumnsList;
+        if ( defined $index ) {
+            push(@requiredColumnNumber, $index);
+        }
+    }
+    my $noOfColumns = @requiredColumnNumber;
+    if ( $noOfColumns < 1 ) {
+        print "Required columns are not present in log.\n";
+        exit 1;
+    }
+    return @requiredColumnNumber;
+}
+
+sub getAnalysisName {
+    my $filePath = shift;
+    my ($analysisName) = $filePath =~ /.*\/(.*)$/;
+    return $analysisName;
+}
+
+sub removeOldData {
+    my $firstTimestamp = formatTime( $epochFirstTime, $StatsTime::TIME_SQL );
+    my $lastTimestamp = formatTime( $epochLastTime, $StatsTime::TIME_SQL );
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ( $DEBUG > 5 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 5 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

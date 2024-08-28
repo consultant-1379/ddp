@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_integration_bind">
+    <reference table="sites" condition="enm_integration_bind.siteid = sites.id"/>
+    <reference table="enm_ne" condition="enm_ne.id = enm_integration_bind.neid"/>
+    <reference table="ne_types" condition="ne_types.id = enm_integration_bind.netypeid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_integration_bind.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time" formatter="ddpFormatTime"/>
+  <column db="projectName" label="Project Name"/>
+  <column db="enm_ne.name" label="Node Name"/>
+  <column db="ne_types.name" label="Node Type"/>
+  <column db="bindType" label="Bind Type"/>
+  <column db="activityType" label="Activity Type"/>
+</modelledtable>

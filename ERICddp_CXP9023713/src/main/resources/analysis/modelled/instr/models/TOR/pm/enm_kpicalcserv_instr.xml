@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="kpiservice"/> <!-- TO BE REMOVED ONCE ISO 1.60.64 IS AVAILABLE ON ALL SITES -->
+    <service name="kpicalcserv"/>
+    <service name="conskpiserv"/>
+  </services>
+
+  <table name="enm_kpicalcserv_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.metrics.kpi-calculation-service:type=KpiCalculationServiceMetric$">
+      <metric source="notificationHandler_NumberOfFileNotificationsReceived" target="notificationHandler_NumberOfFileNotificationsReceived" delta="true" filteridle="true"/>
+      <metric source="parserHandler_NumberOfFilesSuccessfullyParsed" target="parserHandler_NumberOfFilesSuccessfullyParsed" delta="true" filteridle="true"/>
+      <metric source="parserHandler_NumberOfPmCountersParsed" target="parserHandler_NumberOfPmCountersParsed" delta="true" filteridle="true"/>
+      <metric source="moGeneratorHandler_NumberOfMOsGenerated" target="moGeneratorHandler_NumberOfMOsGenerated" delta="true" filteridle="true"/>
+      <metric source="kpiRuleHandler_NumberOfKPIsSuccessfullyGenerated" target="kpiRuleHandler_NumberOfKPIsSuccessfullyGenerated" delta="true" filteridle="true"/>
+      <metric source="parserHandler_NumberOfFilesUnSuccessfullyParsed" target="parserHandler_NumberOfFilesUnSuccessfullyParsed" delta="true" filteridle="true"/>
+      <metric source="averageKpiCalculationTime" target="averageKpiCalculationTime"/>
+      <metric source="notificationHandler_NumberOfFilesFoundOnSystem" target="notificationHandler_NumberOfFilesFoundOnSystem" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.metrics.kpi-calculation-service:type=KpiCounterMeasurementMetrics$">
+      <metric source="kpiRuleHandler_NumberOfPmCountersUsed" target="kpiRuleHandler_NumberOfPmCountersUsed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.metrics.kpi-calculation-service:type=KpiCacheMetric$">
+      <metric source="numberOfKpiValuesWriteSucc" target="numberOfKpiValuesWriteSucc" delta="true" filteridle="true"/>
+      <metric source="numberOfKpiValuesWriteFail" target="numberOfKpiValuesWriteFail" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.metrics.kpi-calculation-service:type=RealTimeKpiCalculationServiceMetrics$">
+      <metric source="numberOfMediationEventsReceived" target="numberOfMediationEventsReceived" delta="true" filteridle="true"/>
+      <metric source="numberOfDiscardedMediationEvents" target="numberOfDiscardedMediationEvents" delta="true" filteridle="true"/>
+      <metric source="numberOfRealTimeKpisSuccessfullyGenerated" target="numberOfRealTimeKpisSuccessfullyGenerated" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.metrics.kpi-calculation-service:type=RealTimeKpiCounterMeasurementMetrics$">
+      <metric source="numberOfPmCountersUsed" target="numberOfPmCountersUsed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.nhm.kpicalculationservice.metrics.kpi-calculation-service:type=RealTimeWebPushMetrics$">
+      <metric source="numberOfRealTimeWebPushEvents" target="numberOfRealTimeWebPushEvents" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedRealTimeWebPushEvents" target="numberOfFailedRealTimeWebPushEvents" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.kpispecification.service.metrics.kpi-specification-service:type=KpiAutoScopeUpdateMetric$">
+      <metric source="numberOfExecutedQueries" target="numberOfExecutedQueries" delta="true" filteridle="true"/>
+      <metric source="numberOfQueriesResolvedFromCache" target="numberOfQueriesResolvedFromCache" delta="true" filteridle="true"/>
+      <metric source="numberOfNetworkElementsRetrievedFromQueriesExecution" target="numberOfNetworkElementsRetrievedFromQueriesExecution" delta="true" filteridle="true"/>
+      <metric source="numberOfNetworkElementsRetrievedFromCachedQueriesResults" target="numberOfNetworkElementsRetrievedFromCachedQueriesResults" delta="true" filteridle="true"/>
+      <metric source="numberOfKpiActuallyUpdated" target="numberOfKpiActuallyUpdated" delta="true" filteridle="true"/>
+      <metric source="numberOfAllKpisExamined" target="numberOfAllKpisExamined" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

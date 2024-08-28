@@ -1,0 +1,35 @@
+#!/bin/bash
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+while getopts s:d:h:o:t:u:r: OPT ; do
+    case $OPT in
+        s) SITE="${OPTARG}" ;;
+        d) DASH_DATE="${OPTARG}" ;;
+        h) HOST_DIR="${OPTARG}" ;;
+        o) ANALYSIS_OUTPUT="${OPTARG}" ;;
+        t) ANALYSIS_TYPE="${OPTARG}" ;;
+        u) UTC_OFFSET="${OPTARG}" ;;
+        r) SERVER="${OPTARG}" ;;
+    esac
+done
+
+
+DATE=$(echo ${DASH_DATE} | sed 's/-//g')
+
+#If the log format has not been declared above me, assume default
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="TSts"
+# for a description of log line formats, see comments in outputProcessing.awk
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+if [ -r ${HOST_DIR}/EO/OpenDJLDAPMonitor.log ] ; then
+    log "OpenDJ Stats"
+    run ${ANALYSIS_BIN}/openldap/parseOpenDJLDAPMonitorInfo --monfile ${HOST_DIR}/EO/OpenDJLDAPMonitor.log --server ${SERVER} --site ${SITE} --date ${DASH_DATE}
+fi
+
+AMQ_XML=${HOST_DIR}/instr/activemq.xml
+if [ -s ${AMQ_XML} ] ; then
+    run ${ANALYSIS_BIN}/OSS/activemq/storeQueueStats --cfg "${AMQ_XML}" --data ${HOST_DIR}/instr.txt --site ${SITE}
+fi

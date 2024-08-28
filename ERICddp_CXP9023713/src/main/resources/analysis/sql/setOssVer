@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+use strict;
+
+use StatsDB;
+use DBI;
+use Getopt::Long;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($site,$ossSwVer,$date,$wran,$gsm,$core,$lte,$tdran);
+    my $result = GetOptions("site=s"  => \$site,
+        "sw=s"  => \$ossSwVer,
+        "date=s" => \$date,
+        "wran=s" => \$wran,
+        "gsm=s" => \$gsm,
+        "core=s" => \$core,
+        "lte=s" => \$lte,
+        "tdran=s" => \$tdran,
+        "debug=s" => \$DEBUG
+    );
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my @verList = ( $ossSwVer );
+
+    my $r_verIdMap = getIdMap($dbh, "oss_ver_names", "id", "name", \@verList );
+    my $siteId = getSiteId($dbh,$site);
+
+    $dbh->do("DELETE FROM oss_ver WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my $names = "date,siteid,verid";
+    my $vals = "'" . $date . "'," . $siteId . "," . $r_verIdMap->{$ossSwVer};
+    if ($wran =~ /^\d+$/) { $names .= ",wran_net_size"; $vals .= "," . $wran; }
+    if ($gsm =~ /^\d+$/) { $names .= ",gsm_net_size"; $vals .= "," . $gsm; }
+    if ($core =~ /^\d+$/) { $names .= ",core_net_size"; $vals .= "," . $core; }
+    if ($lte =~ /^\d+$/) { $names .= ",lte_net_size"; $vals .= "," . $lte; }
+    if ($tdran =~ /^\d+$/) { $names .= ",tdran_net_size"; $vals .= "," . $tdran; }
+
+    my $sql = "INSERT INTO oss_ver (" . $names . ") VALUES (" . $vals . ")";
+    if ( $DEBUG > 2 ) { print "main: $sql\n"; }
+    $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+
+    $dbh->disconnect;
+}
+
+

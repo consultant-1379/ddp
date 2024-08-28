@@ -1,0 +1,154 @@
+#!/usr/bin/perl
+######################################################################
+#       Description ---------   parseNetAnUserAuditLog -----------
+#       This script is to parse NetanServer UserAudit log.
+#       @author - Bhagyashree Jain (xjaibha)
+#       usage  parseNetAnUserAuditLog --logfile ${LogFile} --site <site>
+######################################################################
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $siteId = "";
+our $dbh = "";
+our $logFile = "";
+our $concurrentUserTypeid = 1;
+our $definedUserTypeid = 2;
+our $concurrentFirstTime;
+our $concurrentLastTime;
+our $definedFirstTime;
+our $definedLastTime;
+our $userAuditTable = "netanserver_userauditlog_details";
+
+sub main {
+    my $site;
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+        );
+
+   ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 0 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    my $r_data = parseData();
+    my $bcpFile = createBcpFile($r_data);
+    loadDb($bcpFile);
+    if( $DEBUG > 0 ){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my @r_data = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    my $firstLine = <FILE>;
+    while (my $line = <FILE>) {
+        chomp($line);
+        $line =~ s/ //g;
+        my @linedata = (split /\t/, $line);
+        if ( $DEBUG > 1 ) { print Dumper(@linedata)};
+        my $datetime = $linedata[0];
+        $datetime =~ s/T/ /g;
+        my $currentTime = parseTime( $datetime, $StatsTime::TIME_SQL );
+        if (( $linedata[6] eq "CONCURRENT_USERS" )) {
+            $linedata[6] = $concurrentUserTypeid;
+            if (( ! defined $concurrentFirstTime ) || ( $currentTime < $concurrentFirstTime )) {
+                $concurrentFirstTime = $currentTime;
+            }
+            if (( ! defined $concurrentLastTime ) || ( $currentTime > $concurrentLastTime )) {
+                $concurrentLastTime = $currentTime;
+            }
+        }
+        if (( $linedata[6] eq "DEFINED_USERS" )) {
+            $linedata[6] = $definedUserTypeid;
+            if (( ! defined $definedFirstTime ) || ( $currentTime < $definedFirstTime )) {
+                $definedFirstTime = $currentTime;
+            }
+            if (( ! defined $definedLastTime ) || ( $currentTime > $definedLastTime )) {
+                $definedLastTime = $currentTime;
+            }
+        }        
+        my %r_dataForLine = (
+            time             => "$datetime",
+            noOfAnalystUser  => "$linedata[1]",
+            noOfAuthorUser   => "$linedata[2]",
+            noOfConsumerUser => "$linedata[3]",
+            noOfOtherUser    => "$linedata[4]",
+            totalUser        => "$linedata[5]",
+            typeid           => "$linedata[6]"
+        );
+        push (@r_data, \%r_dataForLine);
+    }
+    if ( $DEBUG > 2 ) { print '@r_data: ' . Dumper \@r_data; }
+    return (\@r_data);
+}
+
+sub createBcpFile {
+    my $r_data = shift;
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "${tmpDir}/netanUserAudit.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open $bcpFile";
+    for my $data ( @$r_data ) {
+        printf BCP "%s,%d,%d,%d,%d,%d,%d,%s\n",
+            $data->{time},
+            $siteId,
+            $data->{noOfAnalystUser},
+            $data->{noOfAuthorUser},
+            $data->{noOfConsumerUser},
+            $data->{noOfOtherUser},
+            $data->{totalUser},
+            $data->{typeid};
+    }
+    close BCP;
+    if ($DEBUG > 3) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $bcpFile");
+    }
+    return $bcpFile;
+}
+
+sub removeOldData {
+    $concurrentFirstTime = formatTime( $concurrentFirstTime, $StatsTime::TIME_SQL );
+    $concurrentLastTime = formatTime( $concurrentLastTime, $StatsTime::TIME_SQL );
+    $definedFirstTime  = formatTime( $definedFirstTime, $StatsTime::TIME_SQL );
+    $definedLastTime = formatTime( $definedLastTime, $StatsTime::TIME_SQL );
+    my $deleteSql1 = "DELETE FROM $userAuditTable WHERE siteid = $siteId AND typeid = $concurrentUserTypeid AND time BETWEEN '$concurrentFirstTime' AND '$concurrentLastTime'";
+    my $deleteSql2 = "DELETE FROM $userAuditTable WHERE siteid = $siteId AND typeid = $definedUserTypeid AND time BETWEEN '$definedFirstTime' AND '$definedLastTime'";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql1\n";
+        print "$deleteSql2\n";
+    }
+    dbDo($dbh,$deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh,$deleteSql2) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $userAuditTable FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 4 ) { print "SQL query for inserting data: $sth \n" };
+    removeOldData();
+    dbDo($dbh,$sth) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

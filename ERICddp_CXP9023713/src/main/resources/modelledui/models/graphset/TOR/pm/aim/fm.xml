@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_aim_fm_instr">
+      <reference table="sites" condition="enm_aim_fm_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_aim_fm_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="totalAlarmsDroppedBecauseOfScopeFiltering" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalAlarmsDroppedBecauseOfScopeFiltering"/>
+      <column db="totalAlarmsDroppedBecauseOfScopeFiltering" label="totalAlarmsDroppedBecauseOfScopeFiltering"/>
+    </graph>
+    <graph name="totalAlarmsDroppedDueToInvalidData" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalAlarmsDroppedDueToInvalidData"/>
+      <column db="totalAlarmsDroppedDueToInvalidData" label="totalAlarmsDroppedDueToInvalidData"/>
+    </graph>
+    <graph name="totalAlarmsDroppedForOtherReasons" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalAlarmsDroppedForOtherReasons"/>
+      <column db="totalAlarmsDroppedForOtherReasons" label="totalAlarmsDroppedForOtherReasons"/>
+    </graph>
+    <graph name="totalAlarmsReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalAlarmsReceived"/>
+      <column db="totalAlarmsReceived"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="totalAlarmsReceived">
+      <member>totalAlarmsReceived</member>
+    </group>
+    <group name="totalAlarmsDroppedBecauseOfScopeFiltering">
+      <member>totalAlarmsDroppedBecauseOfScopeFiltering</member>
+    </group>
+    <group name="totalAlarmsDroppedDueToInvalidData">
+      <member>totalAlarmsDroppedDueToInvalidData</member>
+    </group>
+    <group name="totalAlarmsDroppedForOtherReasons">
+      <member>totalAlarmsDroppedForOtherReasons</member>
+    </group>
+    <group name="all">
+      <member>totalAlarmsDroppedBecauseOfScopeFiltering</member>
+      <member>totalAlarmsDroppedDueToInvalidData</member>
+      <member>totalAlarmsDroppedForOtherReasons</member>
+    </group>
+    <group name="fmFlow">
+      <member>totalAlarmsReceived</member>
+      <member>totalAlarmsDroppedBecauseOfScopeFiltering</member>
+      <member>totalAlarmsDroppedDueToInvalidData</member>
+      <member>totalAlarmsDroppedForOtherReasons</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

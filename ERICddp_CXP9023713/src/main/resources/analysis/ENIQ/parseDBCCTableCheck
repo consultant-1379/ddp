@@ -1,0 +1,106 @@
+#!/usr/bin/perl
+
+##################################################################################################################
+# Description ---------   parseDBCCTableCheck --------------------------------
+# This script parses the DBCC logs and store data to DB for DDP
+# @author - Sunil Yadav (xsunyad)
+# usage parseDBCCTableCheck --dir ${DIR} --site ${SITE} --date ${SQL_DATE}
+###################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dbh, $siteId, $dir, $date, $site);
+    my $result = GetOptions(
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my ($r_parsedData, $r_tableNameList) = parseData($dir);
+    my $tableNameIdMap = getIdMap($dbh, "eniq_aggregated_counter_table_name_id_mapping", "id", "tableName", $r_tableNameList);
+    my $table = "eniq_dbcc_table_info";
+    my $bcpFile = createBcpFile($r_parsedData, $siteId, $date, $tableNameIdMap);
+    removeOldData($dbh, $siteId, $table, $date);
+    loadDb($dbh, $bcpFile, $table);
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($dir) = @_;
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = grep { $_ =~ /IndexError|NotCheckedTables|NotVerifiedIndex/ } readdir DIR;
+    closedir DIR;
+    my @dbccParsedData = ();
+    my @tableNameList = ();
+    my $tableName;
+    foreach my $logFile ( @files ) {
+        if ( -s "$dir/$logFile" ) {
+            open FILE, "<$dir/$logFile" or die "Can't open file to read $dir/$logFile";
+            while ( my $line = <FILE> ) {
+                chomp($line);
+                my @array = split(",", $line);
+                if ( defined $array[1] && $array[1] ne "NULL" ) {
+                    $array[1] =~ s/^'|'$//g;
+                    if ( $array[1] =~ /(.*)_\d+$/ ) {
+                        $tableName = $1;
+                    } else {
+                        $tableName = $array[1];
+                    }
+                    if (! grep (/^$tableName$/, @tableNameList) ) {
+                        my %dbccTableHash = (
+                            tableName => $tableName
+                        );
+                        push (@dbccParsedData, \%dbccTableHash);
+                        push (@tableNameList, $tableName);
+                    }
+                }
+            }
+            close FILE;
+        }
+    }
+    return (\@dbccParsedData, \@tableNameList);
+}
+
+sub createBcpFile($$$$) {
+    my ($r_parsedData, $siteId, $date, $tableNameIdMap) = @_;
+    my $dbccBcpFile = getBcpFileName("dbcc_table_info");
+    open BCP, ">$dbccBcpFile" or die "Cannot open BCPFile $dbccBcpFile";
+    foreach my $data_element ( @$r_parsedData ) {
+        printf BCP "%s|%d|%d\n",
+            $date,
+            $siteId,
+            $tableNameIdMap->{$data_element->{'tableName'}};
+    }
+    close BCP;
+    return $dbccBcpFile;
+}
+
+sub removeOldData($$$$) {
+    my ($dbh, $siteId, $table, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date'";
+    if ( $DEBUG > 1 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="enm_flow_asu_overallsummary">
+  <reference table="sites" condition="enm_flow_asu_overallsummary.siteId = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND enm_flow_asu_overallsummary.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_flow_asu_overallsummary.eventName = 'ORAN'</where>
+
+ <column db="flowExecutionName" label="Flow Execution Name" id="flowExecutionName"/>
+ <column db="totalNodes" label="Total Nodes"/>
+ <column db="nodesSuccessful" label="Nodes Successful"/>
+ <column db="nodesFailed" label="Total Failed"/>
+ <column db="TIMEDIFF(time(time),SEC_TO_TIME(totalTimetaken))" label="Start Time" formatter="ddpFormatTime"/>
+ <column db="time" label="End Time" formatter="ddpFormatTime"/>
+ <column db="SEC_TO_TIME(totalTimetaken)" label="Total Time Taken"/>
+ <column db="SEC_TO_TIME(timeTakenForSetup)" label="Time Taken For Setup"/>
+ <column db="SEC_TO_TIME(timeTakenForPreparation)" label="Time Taken For Preparation"/>
+ <column db="SEC_TO_TIME(timeTakenForActivation)" label="Time Taken For Activation"/>
+ <column db="result" label="Result"/>
+
+ <ctxmenu keycol="flowExecutionName" targettype="url" multiselect="true">
+  <item id="flowExecutionName" label="Details"/>
+  <urltarget arg="Details"/>
+ </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="imkpianomalydetection"/>
+  </services>
+
+  <table name="enm_aim_anomaly_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.incidentmgt.kpi.ad.services.impl.incident-management-kpi-anomaly-detection:type=KpiInstrumentation$">
+          <metric source="validKpiValuesProcessed" target="validKpiValuesProcessed" delta="true" filteridle="true"/>
+          <metric source="invalidKpiValuesProcessed" target="invalidKpiValuesProcessed" delta="true" filteridle="true"/>
+          <metric source="emptyKpiResultsReceived" target="emptyKpiResultsReceived" delta="true" filteridle="true"/>
+          <metric source="totalEventsCreated" target="totalEventsCreated" delta="true" filteridle="true"/>
+          <metric source="totalOpenKpiEventsCreated" target="totalOpenKpiEventsCreated" delta="true" filteridle="true"/>
+          <metric source="totalClosedKpiEventsCreated" target="totalClosedKpiEventsCreated" delta="true" filteridle="true"/>
+          <metric source="totalEventsDropped" target="totalEventsDropped" delta="true" filteridle="true"/>
+          <metric source="totalProcessingTime" target="totalProcessingTime" delta="true" filteridle="true"/>
+          <metric source="currentlyActiveAnomalies" target="currentlyActiveAnomalies" delta="true" filteridle="true"/>
+          <metric source="totalKpiResultsCollected" target="totalKpiResultsCollected" delta="true" filteridle="true"/>
+          <metric source="totalLoadKpiValuesProcessed" target="totalLoadKpiValuesProcessed" delta="true" filteridle="true"/>
+          <metric source="totalMonitoringKpiValuesProcessed" target="totalMonitoringKpiValuesProcessed" delta="true" filteridle="true"/>
+          <metric source="loadKpiProcessingTime" target="loadKpiProcessingTime" delta="true" filteridle="true"/>
+          <metric source="monitoringKpiProcessingTime" target="monitoringKpiProcessingTime" delta="true" filteridle="true"/>
+          <metric source="totalAnomalyReadingsCreated" target="totalAnomalyReadingsCreated" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+  </modelledinstr>

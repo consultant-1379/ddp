@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_site_energy_visualization_instr">
+    <reference table="sites" condition="enm_cm_site_energy_visualization_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_site_energy_visualization_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_site_energy_visualization_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(numberOfSuccessfulRequestsER)" label="Number of Successful Requests"/>
+  <column db="SUM(numberOfFailedRequestsER)" label="Number of Failed Requests"/>
+  <column db="SUM(totalResponseSizeInKbER)" label="Average Response Size Of Requests (KB)"/>
+  <column db="SUM(totalResponseTimePerRequestER)" label="Average Response Time Of Requests (ms)"/>
+  <column db="SUM(numberOfParsedPmFiles)" label="Number of Files Parsed"/>
+  <column db="SUM(numberOfDbConnections)" label="Number of DB Connections"/>
+  <column db="SUM(numberOfDbReadOperationsER)" label="Number of DB Read Operations"/>
+  <column db="SUM(numberOfDbWriteOperationsER)" label="Number of DB Write Operations"/>
+  <column db="SUM(numberOfDbDeleteOperationsER)" label="Number of DB Delete Operations"/>
+  <column db="SUM(totalTimeTakenForHouseKeepingER)" label="Average Time Take For House Keeping (ms)"/>
+</modelledtable>

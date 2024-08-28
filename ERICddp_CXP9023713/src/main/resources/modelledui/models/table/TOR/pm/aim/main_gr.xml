@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_grouping_instr">
+    <reference table="sites" condition="enm_aim_grouping_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_grouping_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_grouping_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(totalGroupingProcessTime)" label="totalGroupingProcessTime"/>
+  <column db="SUM(totalProcessingTime)" label="totalProcessingTime"/>
+  <column db="SUM(totalUnionBatchProcessTime)" label="totalUnionBatchProcessTime"/>
+  <column db="SUM(totalTimeCalculatingConfidence)" label="totalTimeCalculatingConfidence"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="gr-allMain" label="Plot All"/>
+    <item id="gr-totalGroupingProcessTime" label="Plot totalGroupingProcessTime"/>
+    <item id="gr-totalProcessingTime" label="Plot totalProcessingTime"/>
+    <item id="gr-totalUnionBatchProcessTime" label="Plot totalUnionBatchProcessTime"/>
+    <item id="gr-totalTimeCalculatingConfidence" label="Plot totalTimeCalculatingConfidence"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

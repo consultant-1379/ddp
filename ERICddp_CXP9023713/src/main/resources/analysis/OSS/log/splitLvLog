@@ -1,0 +1,91 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use Time::HiRes qw(gettimeofday tv_interval);
+
+our $DEBUG = 0;
+
+our $MAX_ENTRY_PER_MC = 1000000;
+our $MAX_ENTRY_MESSAGE = "[DDP MAX ENTRIES PER MC REACHED]";
+
+
+sub toGenericString {
+    my $str = shift;
+    # Strip FDNs
+    $str =~ s/SubNetwork=[A-Za-z0-9_,=\-]+/[FDN]/g;
+    # Strip Object refs
+    $str =~ s/@[\da-f]+/:[OBJREF]/;
+    # Strip numbers
+    $str =~ s/\d+/[NUM]/g;
+    $str = substr($str,0,255);
+    # Strip FDNs
+
+    return $str;
+}
+
+sub main {
+    my ($logFile,$outDir);
+    my $result = GetOptions(
+        "input=s"  => \$logFile,
+        "outdir=s" => \$outDir,
+        "debug=s" => \$DEBUG
+    );
+
+    open LOG, $logFile or die "Cannot open $logFile";
+    my %fh = ();
+    my %countByMC = ();
+    my $lineCount = 0;
+    while ( my $line = <LOG> ) {
+	$lineCount++;
+	if ( $DEBUG > 9 ) { print "processLog: $lineCount line=$line"; }
+	if ( $DEBUG > 0 ) { if ( ($lineCount % 5000) == 0 ) { print "processLog: " . scalar(localtime(time())) . " lineCount=$lineCount\n" } };
+
+	# "time_stamp", "log_type", "application_name", "resource"
+        my ($date, $time, $logType, $appName, $rest) = $line =~ 
+	    /^(\S+) (\S+) (\S+) \"([^\"]*)\" (.*)/;
+	if ( $DEBUG > 8 ) { print "date=$date time=$time logType=$logType appName=$appName rest=$rest\n"; }
+	if (! defined($date) ) {
+	    if ( $DEBUG > 0 ) { print "processLog: failed to parse $line"; }
+	    next;
+	}
+	if ( length($appName) > 0 ) {
+	    $appName = toGenericString($appName);	
+	    if ( $DEBUG > 6 ) { print "main: gen appName=$appName\n"; }
+	} else {
+	    $appName = "UNKNOWN";
+	}
+
+        if ( $appName eq "AMOS" ) {
+            $MAX_ENTRY_PER_MC = 1500000;
+        }
+	$countByMC{$appName}++;
+	my $currCount = $countByMC{$appName};
+	if ( $currCount < $MAX_ENTRY_PER_MC ) {
+	    my $r_fh = $fh{$appName};
+	    if ( ! defined $r_fh ) {
+		my $fileName = $outDir . "/" . $appName;
+		open $r_fh, ">$fileName" or die "Cannot open $fileName";
+		$fh{$appName} = $r_fh;
+	    }
+	    print {$r_fh} $line;
+	} elsif ( $currCount == $MAX_ENTRY_PER_MC ) {
+	    print "WARN: Max entry exceeded for $appName\n";
+	}
+	$MAX_ENTRY_PER_MC = 1000000;
+    }
+    close LOG;
+
+    foreach my $appName ( keys %fh ) {
+	my $r_fh = $fh{$appName};
+	close $r_fh;
+    }
+}
+
+
+main();

@@ -1,0 +1,130 @@
+#! /bin/bash
+#
+# ddpd          Start/Stop the ddp daemon.
+#
+# chkconfig: 345 99 01
+# description: ddpd runs the crontb script peroidly to analyse incoming OSS_Data files
+#
+# processname: crond
+# config: /etc/crontab
+# pidfile: /var/run/crond.pid
+
+# Source function library.
+. /etc/init.d/functions
+  
+prog="ddpd"
+
+INTERVAL=60
+DDPD_EXIT_FILE=/var/run/ddpd.exit
+MAKE_ALL_STATS_EXIT_FILE=/tmp/makeAllStats.exit
+TIMESTAMP_FILE=/var/run/ddpd.timestamp
+CRONTB=/data/ddp/current/analysis/main/crontb
+XFERLOG=/var/log/proftpd/xferlog
+runddpd() {
+      echo $$ > /var/run/ddpd.pid
+      rm -f ${DDPD_EXIT_FILE} ${TIMESTAMP_FILE} > /dev/null 2>&1
+      DATE=`date`
+      echo "${DATE} Starting"
+      REF_TIME=0
+      while [ ! -e ${DDPD_EXIT_FILE} ] ; do    
+  	  su - statsadm -c "${CRONTB}"
+	  sleep ${INTERVAL}
+# 	  RUN_CRONTB=0
+# 	  if [ ! -e ${DDPD_EXIT_FILE} ] ; then
+# 	      if [ -r ${XFERLOG} ] ; then
+# 		  XFERLOG_TIME=`ls -n --time-style="+%Y%m%d%H%M%S" $XFERLOG | awk '{print $6}'`
+# 		  if [ ${XFERLOG_TIME} -gt ${REF_TIME} ] ; then
+# 		      RUN_CRONTB=1
+# 		  fi
+# 		  REF_TIME=${XFERLOG_TIME}
+# 	      fi
+# 	  fi
+
+# 	  if [ ${RUN_CRONTB} -eq 1 ] ; then
+# 	      su - statsadm -c "${CRONTB}"
+# 	  else
+#               sleep ${INTERVAL}			    
+# 	  fi	 
+      done  
+
+      rm -f /var/run/ddpd.pid
+      rm -f ${DDPD_EXIT_FILE}
+      rm -f ${MAKE_ALL_STATS_EXIT_FILE}
+
+      DATE=`date`
+      echo "${DATE} Shutting down"
+}
+
+start() {
+        echo -n $"Starting $prog: "     
+        if [ -e /var/lock/subsys/ddpd ]; then
+            if [ -e /var/run/ddpd.pid ] && [ -e /proc/`cat /var/run/ddpd.pid` ]; then
+                echo -n $"cannot start ddpd: ddpd is already running.";
+                failure $"cannot start ddpd: ddpd already running.";
+                echo
+                return 1
+            fi
+        fi
+        daemon $0 run
+        RETVAL=$?
+        echo
+        [ $RETVAL -eq 0 ] && touch /var/lock/subsys/ddpd;
+        return $RETVAL
+}
+
+stop() {
+        echo -n $"Stopping $prog: "
+        if [ ! -e /var/lock/subsys/ddpd ]; then
+            echo -n $"cannot stop ddpd: ddpd is not running."
+            failure $"cannot stop ddpd: ddpd is not running."
+            echo
+            return 1;
+        fi
+
+	touch $DDPD_EXIT_FILE
+	touch ${MAKE_ALL_STATS_EXIT_FILE}
+	while [ -e ${DDPD_EXIT_FILE} ] ; do
+	    sleep 1
+	done
+
+        RETVAL=0
+        echo
+        [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/ddpd;
+        return $RETVAL
+}       
+
+rhstatus() {
+        status ddpd
+}       
+
+restart() {
+        stop
+        start
+}       
+
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  restart)
+        restart
+        ;;
+  reload)
+        ;;
+  status)
+        rhstatus
+        ;;
+  condrestart)
+        [ -f /var/lock/subsys/ddpd ] && restart || :
+        ;;
+
+  run)
+	runddpd >> /var/log/ddpd 2>&1 &
+	;;
+  *)
+        echo $"Usage: $0 {start|stop|status|reload|restart|condrestart}"
+        exit 1
+esac

@@ -1,0 +1,24 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_fnt_push_service">
+    <reference table="sites" condition="enm_fnt_push_service.siteid = sites.id"/>
+    <reference table="servers" condition="enm_fnt_push_service.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_fnt_push_service.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="false">
+    <column db="serviceType"/>
+  </groupby>
+
+  <column db="serviceType" label="Type" id="servicetype"/>
+  <column db="SUM(numberOfFilesToTransfer)" label="Number of Files to Transfer"/>
+  <column db="SUM(numberOfFilesTransferred)" label="Number of Files Transferred"/>
+  <column db="SUM(numberOfFilesFailed)" label="Number of Files Transfer Failed"/>
+
+  <ctxmenu keycol="servicetype" targettype="url" multiselect="true">
+    <item id="plotServices" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

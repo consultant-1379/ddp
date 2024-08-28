@@ -1,0 +1,332 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $TIMESTAMP    = 0;
+our $STATS        = 1;
+
+main();
+
+sub main
+{
+    my ($inputFile,$dataFile,$date,$site);
+    my $result = GetOptions(
+			    "input=s" => \$inputFile,
+			    "data=s" => \$dataFile,
+			    "date=s" => \$date,
+			    "site=s" => \$site,
+			    "debug=s" => \$DEBUG,
+			    );
+    my $r_Data = parseInput($inputFile);
+    my %totals = ();
+    calculateDeltas($r_Data, \%totals);
+
+    if ( $site )
+    {
+        storeMetrics( $site, $date, $r_Data );
+        storeTotals( $site, $date, \%totals );
+    }
+
+    my $r_sortedCpuUsers = aggregateData($r_Data, \%totals, 8);
+
+    if ( $dataFile )
+    {
+	writeData($r_Data,$r_sortedCpuUsers, $dataFile);
+    }
+
+    print "STATS";
+    foreach my $user ( @{$r_sortedCpuUsers} )
+    {
+	print ",$user";
+    }
+    print "\n";
+}
+
+sub writeData
+{
+    my ($r_Data, $r_sortedCpuUsers, $dataFile) = @_;
+
+    open DATA, ">$dataFile" or die "Cannot write to $dataFile";
+    foreach my $stat ( 'cpu', 'io' )
+    {
+	foreach my $r_CurrData ( @{$r_Data} )
+	{
+	    print DATA $r_CurrData->{'timestamp'};
+	    my $runningTotal = 0;
+	    foreach my $user ( @{$r_sortedCpuUsers} )
+	    {
+		$runningTotal += $r_CurrData->{'stats'}->{$user}->{$stat};
+		print DATA " ", $runningTotal;
+	    }
+	    print DATA "\n";
+	}
+
+	print DATA "\n\n";
+    }
+    close DATA;
+}
+
+sub aggregateData
+{
+    my ($r_Data, $r_totals, $maxCount) = @_;
+
+    my $r_sortedCpuUsers = getKeysSortedByValue($r_totals->{'cpu'});
+    if ( $#{$r_sortedCpuUsers} < $maxCount )
+    {
+	if ( $DEBUG > 2 ) { print "aggregateData less then $maxCount users\n"; }
+	return $r_sortedCpuUsers;
+    }
+
+    my %indexMap = ();
+    for ( my $i = 0; $i < ($maxCount-1); $i++ )
+    {
+	$indexMap{$r_sortedCpuUsers->[$i]} = $i;
+    }
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData indexMap", \%indexMap ); }
+
+    foreach my $r_CurrData ( @{$r_Data} )
+    {
+	if ( $DEBUG > 2 ) { print Dumper("aggregateData currData", $r_CurrData ); }
+
+	my $ioOther = 0;
+	my $cpuOther = 0;
+
+	foreach my $userid ( keys %{$r_CurrData->{'stats'}} )
+	{
+	    if ( ! exists $indexMap{$userid} )
+	    {
+		$ioOther += $r_CurrData->{'stats'}->{$userid}->{'io'};
+		$cpuOther += $r_CurrData->{'stats'}->{$userid}->{'cpu'};
+		
+		delete $r_CurrData->{'stats'}->{$userid};
+	    }
+	}
+	$r_CurrData->{'stats'}->{'Other'} = {
+	    'io' => $ioOther,
+	    'cpu' => $cpuOther
+	    };
+    }
+
+    $#{$r_sortedCpuUsers} = $maxCount - 1;
+    push @{$r_sortedCpuUsers}, 'Other';
+
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData data", $r_Data ); }
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData sortedCpuUsers", $r_sortedCpuUsers ); }
+
+    return $r_sortedCpuUsers;
+}
+
+
+sub storeMetrics {
+    my ($site,$date, $r_Data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    # Remove any existing row
+    dbDo($dbh,"DELETE FROM sybase_usage_by_user_hires WHERE siteid = $siteId AND time BETWEEN \'" . $date . " 00:00:00\' AND \'" . $date . " 23:59:59\'")
+	or die "Failed to delete old stats";
+
+    my @users = keys %{@{$r_Data}[0]->{'stats'}};
+    my $r_userIdMap = getIdMap($dbh,"sybase_users", "id", "name", \@users );
+
+    foreach my $r_CurrData ( @{$r_Data} ) {
+        # original parser used gnuplot to draw graphs, reformat the timestamp here (should just stop using
+        # this format altogether)
+        my @td = $r_CurrData->{'timestamp'} =~ /^([0-3][0-9])([0-1][0-9])([0-9][0-9]):([0-2][0-9]):([0-5][0-9])$/;
+        my $ts = "20" . $td[2] . "-" . $td[1] . "-" . $td[0] . " " . $td[3] . ":" . $td[4] . ":00";
+        my $sql = "";
+	my @values = ();
+        foreach my $user ( keys %{$r_CurrData->{'stats'}} ) {
+	    push @values, sprintf("(%d, \'%s\', %d, %d, %d)", $siteId, $ts, $r_userIdMap->{$user},
+				  $r_CurrData->{'stats'}->{$user}->{'cpu'}, 
+				  $r_CurrData->{'stats'}->{$user}->{'io'});
+	}
+	if ( $#values > -1 ) {
+	    dbDo($dbh,"INSERT INTO sybase_usage_by_user_hires (siteid,time,userid,cpu,io) VALUES " . join(",",@values) ) or die "Failed to insert sample";
+	}
+    }
+}
+
+sub storeTotals
+{
+    my ($site,$date, $r_totals) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    # Remove any existing row
+    dbDo($dbh, "DELETE FROM sybase_usage_by_user WHERE siteid = $siteId AND date = \'" . $date . "\'")
+	or die "Failed to remove old data";
+
+    my @users = keys %{$r_totals->{'io'}};
+    my $r_userIdMap = getIdMap($dbh,"sybase_users", "id", "name", \@users );
+
+    foreach my $user ( keys %{$r_totals->{'io'}} )
+    {
+	my $sql = sprintf("INSERT INTO sybase_usage_by_user (siteid,date,userid,cpu,io) VALUES (%d, \'%s\', %d, %d, %d)",
+			  $siteId, $date, $r_userIdMap->{$user}, $r_totals->{'cpu'}->{$user}, $r_totals->{'io'}->{$user});
+	dbDo($dbh,$sql) or die "Failed to insert sample";
+    }
+
+    $dbh->disconnect;
+}
+
+
+
+    
+sub getUserId
+{
+    my ($dbh) = @_;
+
+    my %userIdMap = ();
+    my $sth = $dbh->prepare('SELECT name,id FROM sybase_users')
+	or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute()             # Execute the query
+	or die "Couldn't execute statement: " . $sth->errstr;
+
+    while ( my $r_row = $sth->fetchrow_arrayref() )
+    {
+	if ( $DEBUG > 5 ) { print Dumper("getUserId row", $r_row); };
+	$userIdMap{$r_row->[0]} = $r_row->[1];
+    }
+    $sth->finish;
+
+    if ( $DEBUG > 2 ) { print Dumper("getUserId userIdMap", \%userIdMap); };
+
+    return \%userIdMap;
+}
+
+      
+sub by_number
+{
+    return $b <=> $a;
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+        my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+        $reverseHash{$reverseKey} = $key;
+        $counter++;
+    }
+
+    my $r_Result = [];
+    foreach my $reverseKey ( sort by_number keys %reverseHash )
+    {
+        $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+
+    return $r_Result;
+}
+
+sub calculateDeltas
+{
+    my ($r_Data,$r_totals) = @_;
+    if ( $DEBUG > 5 ) { print "calculateDeltas: numSamples=$#{$r_Data}\n"; }
+
+    for ( my $i = 0; $i < $#{$r_Data}; $i++ )
+    {
+	my $r_CurrSample = $r_Data->[$i];
+	my $r_NextSample = $r_Data->[$i+1];
+
+	foreach my $userid ( keys %{$r_CurrSample->{'stats'}} )
+	{
+	    my $r_currStat = $r_CurrSample->{'stats'}->{$userid};
+	    my $r_nextStat = $r_NextSample->{'stats'}->{$userid};
+
+	    foreach my $statName ( keys %{$r_currStat} )
+	    {
+		my $delta = $r_nextStat->{$statName} - $r_currStat->{$statName};
+		if ( $DEBUG > 5 ) { print "calculateDeltas: $userid $statName curr=$r_currStat->{$statName} next=$r_nextStat->{$statName} delta=$delta\n"; }
+		if ( $delta < 0 )
+		{
+		    print "ERROR: sample=$i, userid=$userid, stat=$statName negative delta=$delta\n";
+		    $delta = 0;
+		}
+		$r_currStat->{$statName} = $delta;
+		$r_totals->{$statName}->{$userid}+= $delta;
+	    }
+	}
+    }
+    pop @{$r_Data};
+
+    if ( $DEBUG > 2 ) { print Dumper("calculateDeltas data", $r_Data ); }
+    if ( $DEBUG > 2 ) { print Dumper("calculateDeltas total", $r_totals ); }
+
+}    
+
+
+	
+sub parseInput
+{
+    my ($inputFile) = @_;
+
+    my @data = ();
+    my ($r_CurrData);
+
+    my $state = $TIMESTAMP;
+
+    open INPUT, $inputFile or die "Failed to open $inputFile";
+    while ( my $line = <INPUT> )
+    {
+	if ( $DEBUG > 7 ) { print "$state: $line" };
+
+	if ( $state == $TIMESTAMP )
+	{
+	    if ( $line =~ /^\d{6,6}:\d{2,2}:\d{2,2}/ )
+	    {
+		$r_CurrData = {};
+		push @data, $r_CurrData;
+		chop $line;
+		$r_CurrData->{'timestamp'} = $line;
+
+		<INPUT>; <INPUT>; # Skip header
+		$state = $STATS;
+	    };
+	}
+	elsif ( $state == $STATS )
+	{
+	    if ( $line =~ /^ \S+/ )
+	    {
+# imh                            Nov 16 2004     1448430 1.2717%        88746263 -8.1067%
+		my ($userid, $cpu, $io ) = $line =~
+		    /^ (\S+)\s+\S+\s+\d+\s+\d+\s+([\d\-]+)\s+\S+\s+([\d\-]+)/;
+		if ( $DEBUG > 6 ) { print "userid=$userid, cpu=$cpu, io=$io\n"; }
+		if ( $userid )
+		{
+		    $r_CurrData->{'stats'}->{$userid} = {
+			"cpu" => $cpu,
+			"io"  => $io
+			};
+		}
+		elsif ( $DEBUG > 1 ) 
+		{
+		    print "Failed to parse $line";
+		}
+	    }
+	    else
+	    {
+		$state = $TIMESTAMP;
+	    }
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("data", \@data ); }
+    
+    return \@data;
+}

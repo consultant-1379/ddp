@@ -1,0 +1,224 @@
+#!/usr/bin/env perl
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+our $log;
+our $DEBUG = 0;
+our $dbh;
+our $siteId;
+our $date;
+our $tmpDir = "/data/tmp";
+main();
+
+sub main{
+    my ($site,$table);
+    my $result = GetOptions(
+        "log=s"   => \$log,
+        "site=s"  => \$site,
+        "date=s"  => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my ($r_rows, $loadingParsingTime) = loadLog($log);
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    $dbh = connect_db();
+    getTaskId($dbh,$r_rows);
+    $siteId = getSiteId($dbh,$site);
+    my ($fileName, $loadingParsing)  = makeBcp($table,$r_rows,$loadingParsingTime);
+    removeOldData();
+    loadDb($fileName, $loadingParsing);
+}
+
+sub makeBcp {
+    my($table,$r_rows,$loadingParsingTime) = @_;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} )
+    {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $fileName = $tmpDir . "/duration.bcp";
+    my $loadingParsingFile = $tmpDir . "/loadingParsingFile.bcp";
+    open BCP1, ">$fileName" or die "Cannot open $fileName";
+    foreach my $r_row ( @{$r_rows} ) {
+        printf BCP1 "%s\t%d\t%d\t%d\t%d\t%s\n", $r_row->[1], $siteId, $r_row->[0], $r_row->[2], $r_row->[4], $r_row->[3];
+    }
+    close BCP1;
+    open BCP2, ">$loadingParsingFile" or die "Cannot open $loadingParsingFile";
+    foreach my $timeDuration ( @$loadingParsingTime ) {
+        printf BCP2 "%d\t%s\t%s\t%s\t%s\t%s\n", $siteId, $timeDuration->{ropStartTime}, $timeDuration->{startTime}, $timeDuration->{endTime}, $timeDuration->{loadingTime}, $timeDuration->{excecutionTime};
+    }
+    close BCP2;
+    return ($fileName, $loadingParsingFile);
+}
+
+sub removeOldData {
+    my $deleteSql1 = "DELETE FROM eniq_meta_transfer_batches WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    my $deleteSql2 = "DELETE FROM eniq_loading_parsing_duration WHERE siteid = $siteId AND ropStartTime BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ($DEBUG >= 5) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql1\n";
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql2\n";
+    }
+    dbDo($dbh, $deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteSql2) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($fileName, $loadingParsing)= @_;
+    my $loadSql1 = "LOAD DATA LOCAL INFILE '$fileName' INTO TABLE eniq_meta_transfer_batches";
+    dbDo($dbh, $loadSql1) or die "Failed to load Data".$dbh->errstr."\n";
+        if ( -s $loadingParsing ) {
+            my $loadSql2 = "LOAD DATA LOCAL INFILE '$loadingParsing' INTO TABLE eniq_loading_parsing_duration";
+            dbDo($dbh, $loadSql2) or die "Failed to load Data".$dbh->errstr."\n";
+            if ( $DEBUG > 6 ) { print "SQL query for inserting data: $loadSql2\n" };
+        }
+    if ($DEBUG >= 6) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql1\n";
+    }
+    $dbh->disconnect();
+    unlink($fileName, $loadingParsing);
+}
+
+sub getTaskId {
+    my ($dbh,$r_rows) = @_;
+    my %taskMap = ();
+    my %settypeMap = ();
+    foreach my $r_row ( @{$r_rows} ) {
+        $taskMap{$r_row->[0]}++;
+        $settypeMap{$r_row->[4]}++;
+    }
+    my @taskList = keys %taskMap;
+    my @settypeList = keys %settypeMap;
+    my $r_taskIdMap = getIdMap($dbh,"eniq_task_names", "id", "name", \@taskList );
+    my $r_settypeIdMap = getIdMap($dbh,"eniq_settype_names", "id", "name", \@settypeList );
+
+    foreach my $r_row ( @{$r_rows} ) {
+        $r_row->[0] = $r_taskIdMap->{$r_row->[0]};
+        $r_row->[4] = $r_settypeIdMap->{$r_row->[4]};
+    }
+}
+
+sub loadLog {
+    my ($logFile) = @_;
+    my @rows = ();
+    my $firstLineFlag = 1;
+    my $loadingParsingTime;
+    open LOG, $logFile or die "Cannot open $logFile";
+    while ( my $line = <LOG> ) {
+        if ( $DEBUG > 7 ) { print "loadLog $line"; }
+        if ( $line =~ /^;/ ) {
+            chop $line; # Remove \n
+            my @row = split( ';', $line );
+            if ( $firstLineFlag == 1 and $#row == 6 ){
+                $loadingParsingTime = loadingParsingTime();
+                $firstLineFlag = 0;
+            }
+            if ( $DEBUG > 6 ) { print Dumper("loadLog row", \@row ); }
+            # Remove leading
+                shift @row;
+                push @rows, \@row;
+        }
+    }
+    close LOG;
+    if ( $DEBUG > 5 ) { print Dumper("loadLog rows", \@rows ); }
+    return (\@rows, $loadingParsingTime);
+}
+
+sub loadingParsingTime {
+    my @endTime=();
+    my $endTime;
+    my @row=();
+    my $ropStartTime;
+    my @startTime=();
+    my $line;
+    my $startTime;
+    my $maxEndTimeInEpoch;
+    my $excecutionTime;
+    my $loadingexcecutionTime;
+    my @nextstartTime=();
+    my @loadingParsingRecordList=();
+
+    my $tmpDir = '/data/tmp';
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $temporary_logfile = "$tmpDir/tmp_parsing_loadingfile";
+    `grep -w Loader $log | sort -t- -k2.1 > $temporary_logfile`;
+    my @rop = ropTime();
+    open FILE, $temporary_logfile  or die "Cannot open $temporary_logfile";
+    $line = <FILE>;
+    for (my $index = 0; $index < 96; $index++) {
+        undef $startTime;
+        undef $endTime;
+        my $firstROP = 1;
+        { do {
+            @row = split( ';', $line );
+            shift @row;
+            if ( $row[1] && $row[5] ) {
+                my $currentLineStartTimeInEpoch = parseTime( $row[1], $StatsTime::TIME_YYYYMD_HMS );
+                my $currentLineEndTimeInEpoch = parseTime( $row[5], $StatsTime::TIME_YYYYMD_HMS );
+                my $currentROPInEpoch = parseTime( $rop[$index], $StatsTime::TIME_YYYYMD_HMS );
+                my $nextROPInEpoch = parseTime( $rop[$index+1], $StatsTime::TIME_YYYYMD_HMS );
+                if ( $currentROPInEpoch <= $currentLineStartTimeInEpoch and  $nextROPInEpoch > $currentLineStartTimeInEpoch ) {
+                    if ( $firstROP == 1 ) {
+                        $startTime = $row[1];
+                        $firstROP = 0;
+                    }
+                    if ( "$endTime" != "NULL" ) {
+                        $maxEndTimeInEpoch =  parseTime( $endTime, $StatsTime::TIME_YYYYMD_HMS );
+                        if ( $maxEndTimeInEpoch < $currentLineEndTimeInEpoch ) {
+                            $endTime = $row[5];
+                        }
+                    }else{ $endTime = $row[5]; }
+                }else{
+                    last;
+                }
+            }
+        }while ( $line = <FILE> ); }
+        $ropStartTime = $rop[$index];
+        if ( "$startTime" and "$endTime" ) {
+            $excecutionTime =  parseTime( $endTime, $StatsTime::TIME_YYYYMD_HMS ) - parseTime( $ropStartTime, $StatsTime::TIME_YYYYMD_HMS );
+            $loadingexcecutionTime =  parseTime( $endTime, $StatsTime::TIME_YYYYMD_HMS ) - parseTime( $startTime, $StatsTime::TIME_YYYYMD_HMS );
+            my %loadingParsingRecord = (
+            ropStartTime   => "$ropStartTime",
+            startTime      => "$startTime",
+            endTime        => "$endTime",
+            loadingTime    => "$loadingexcecutionTime",
+            excecutionTime => "$excecutionTime"
+        );
+        push (@loadingParsingRecordList, \%loadingParsingRecord);
+        }
+    }
+    close FILE;
+    if ( $DEBUG > 1 ) { print Dumper ("Parsed Data", \@loadingParsingRecordList); }
+    unlink ($temporary_logfile);
+    return \@loadingParsingRecordList;
+}
+
+sub ropTime {
+    my $totalTime = 0;
+    my $endTime = '23:59:00';
+    my $ropEndTime = join(' ', $date, $endTime);
+    my @allRopTime=();
+    for ( my $ropIndex=0; $ropIndex<=95; $ropIndex++ ) {                #it generates the 96 Rop times array.
+        my $hour = (int $totalTime /3600);
+        my $formatedHour = sprintf("%02d", $hour);
+        my $min = ($totalTime-($hour*3600))/60;
+        my $formatedMin = sprintf("%02d", $min);
+        my $time = join(':', $formatedHour, $formatedMin, '00');
+        my $ropStartime = join(' ', $date, $time);
+        my $formatedRopStartTime = join('', $ropStartime, '');
+        $totalTime = $totalTime+900;
+        push(@allRopTime, $formatedRopStartTime);
+    }
+    push (@allRopTime, $ropEndTime);
+    return @allRopTime;
+}

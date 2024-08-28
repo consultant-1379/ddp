@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_dps_neo4j_client_connection_pool">
+      <reference table="sites" condition="enm_dps_neo4j_client_connection_pool.siteid = sites.id"/>
+      <reference table="servers" condition="enm_dps_neo4j_client_connection_pool.serverId = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="acquiredCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Acquired Count"/>
+      <column db="acquiredCount" label="Acquired Count"/>
+    </graph>
+    <graph name="acquiringCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Acquiring Count"/>
+      <column db="acquiringCount" label="Acquiring Count"/>
+    </graph>
+    <graph name="closedCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Closed Count"/>
+      <column db="closedCount" label="Closed Count"/>
+    </graph>
+    <graph name="createdCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Created Count"/>
+      <column db="createdCount" label="Created Count"/>
+    </graph>
+    <graph name="failedToCreateCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Failed To Create Count"/>
+      <column db="failedToCreateCount" label="Failed To Create Count"/>
+    </graph>
+    <graph name="idleCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Idle Count"/>
+      <column db="idleCount" label="Idle Count"/>
+    </graph>
+    <graph name="inUseCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="In Use Count"/>
+      <column db="inUseCount" label="In Use Count"/>
+    </graph>
+    <graph name="timedOutToAcquireCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Timed Out To Acquire Count"/>
+      <column db="timedOutToAcquireCount" label="Timed Out To Acquire Count"/>
+    </graph>
+    <graph name="totalAcquisitionTime" type="sb" ylabel="Time(MS)" forcelegend="true">
+      <title value="Total Acquisition Time(MS)"/>
+      <column db="totalAcquisitionTime" label="Total Acquisition Time"/>
+    </graph>
+    <graph name="totalConnectionTime" type="sb" ylabel="Time(MS)" forcelegend="true">
+      <title value="Total Connection Time(MS)"/>
+      <column db="totalConnectionTime" label="Total Connection Time"/>
+    </graph>
+    <graph name="totalInUseCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalInUseCount"/>
+      <column db="totalInUseCount" label="totalInUseCount"/>
+    </graph>
+    <graph name="totalInUseTime" type="sb" ylabel="Time(MS)" forcelegend="true">
+      <title value="Total In Use Time(MS)"/>
+      <column db="totalInUseTime" label="Total In Use Time"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>acquiredCount</member>
+      <member>acquiringCount</member>
+      <member>closedCount</member>
+      <member>createdCount</member>
+      <member>failedToCreateCount</member>
+      <member>idleCount</member>
+      <member>inUseCount</member>
+      <member>timedOutToAcquireCount</member>
+      <member>totalAcquisitionTime</member>
+      <member>totalConnectionTime</member>
+      <member>totalInUseCount</member>
+      <member>totalInUseTime</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

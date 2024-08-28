@@ -1,0 +1,108 @@
+#!/usr/bin/env perl
+
+use strict;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG=0;
+my ($dataFile, $tableFile,$eventsFile,$offset);
+my $result = GetOptions("data=s"  => \$dataFile,
+			"table=s"  => \$tableFile,
+			"amevents=s" => \$eventsFile,
+			"offset=s" => \$offset,
+			"debug" => \$DEBUG,
+			);
+
+open DATA, $dataFile or die "Cannot open $dataFile";
+my @exports = ();
+while ( my $line = <DATA> )
+{
+    $_ = $line;
+    my ($file, $activityId, $moCount, $startTime) =
+	/^(\S+) (\d+) (\d+) (\d+)/;
+
+    if ( $DEBUG ) { print "$file, $activityId, $moCount, $startTime\n"; }
+
+    my $r_export = {
+	'file' => $file,
+	'activityId' => $activityId,
+	'moCount' => $moCount,
+	'startTime' => $startTime
+	};
+    push @exports, $r_export;
+}
+close DATA;
+
+my %exportActivities = ();
+open EVENTS, $eventsFile or die "Cannot open $eventsFile";
+while ( my $line = <EVENTS> )
+{
+#03-06-04:00:25:11.219 RANOS AM COM.ERICSSON.NMS.CIF.AM.NEW_RESULT COM.ERICSSON.NMS.CIF.AM.NEW_RESULT
+#        SYSTEM_DN="AM"
+#        EVENT_TIME="2004.06.03 00:25:11.213"
+#        TYPE="COM.ERICSSON.NMS.CIF.AM.NEW_RESULT"
+#        ID="133052955065980036"
+    
+    if ( $line =~ /^\d+/ )
+    {
+	$_ = $line;
+	my ($day, $month, $year, $hour, $min,$sec) =
+	    /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+)/;    
+       
+	my $eventTime = timelocal($sec, $min, $hour, $day, $month - 1, $year + 100);
+
+	<EVENTS>;
+	<EVENTS>;
+	<EVENTS>;
+
+	$line = <EVENTS>;
+	if ( $DEBUG ) { print $line; }
+	$_ = $line;
+	my ($activityId) = /^\s+ID=\"(\d+)\"/;
+
+	if ( $DEBUG ) { print "$eventTime $activityId : $day, $month, $year, $hour, $min,$sec\n"; }
+
+	$exportActivities{$activityId} = $eventTime;
+    }
+}
+close EVENTS;
+
+my $deltaOffset = ($offset *3600) - getLocalOffset();
+open TABLE, ">$tableFile" or die "Cannot open $tableFile";
+foreach my $r_export ( @exports )
+{
+    if ( $DEBUG ) { print Dumper( $r_export, undef ); }
+
+    my $startTime = ($r_export->{'startTime'}) + $deltaOffset;
+    
+    my @timeFields = localtime($startTime);
+    my $startTimeStr = sprintf("%02d-%02d-%02d:%02d:%02d:%02d" , $timeFields[3], $timeFields[4] + 1, $timeFields[5] - 100, $timeFields[2], $timeFields[1]);
+    
+    my $duration = "";
+    if ( $DEBUG ) { print  $exportActivities{$r_export->{'activityId'}}, "\n"; }
+
+    if ( $exportActivities{$r_export->{'activityId'}} )
+    {
+	my $durationSec = $exportActivities{$r_export->{'activityId'}} - $startTime;
+	$duration = sprintf("%02d:%02d:%02d", int ( $durationSec / 3600 ), int ( ($durationSec % 3600) / 60 ), $durationSec % 60 );
+    }
+
+    printf TABLE " <tr> <td>%s<\/td> <td>%s<\/td> <td>%s<\/td> <td>%d<\/td> <\/tr>\n", $startTimeStr, $r_export->{'file'}, $duration, $r_export->{'moCount'};
+}
+close TABLE;
+
+sub getLocalOffset
+{
+    my $now = time();
+    
+    my @local = localtime($now);
+    my @gm = gmtime($now);
+
+    my $gmToLocal = timelocal($gm[0],$gm[1],$gm[2],$gm[3],$gm[4],$gm[5]);
+
+    my $localOffset = $now - $gmToLocal;
+    if ( $DEBUG ) { print "$now $gmToLocal $localOffset\n" }
+
+    return $localOffset;
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_mr_execution">
+    <keycol name="mrid" reftable="enm_mr" refnamecol="name"/>
+  </table>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="MR"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="n_executions" type="count"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <event name="MR.EXECUTION">
+        <metric source="MR" target="mrid"/>
+        <metric source="n_executions" target="n_executions"/>
+      </event>
+  </events>
+</modelledevents>

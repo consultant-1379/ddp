@@ -1,0 +1,72 @@
+#!/usr/bin/env perl
+
+use strict;
+use IO::File;
+use Getopt::Long;
+
+our $DEBUG = 0;
+
+my $outdir = "/tmp";
+my $input;
+my $result = GetOptions("input=s" => \$input,
+			"outdir=s" => \$outdir,
+			"debug=n" => \$DEBUG
+			);
+
+if ( defined $input ) {
+    open INPUT, $input or die "Cannot open $input";
+    *STDIN = *INPUT;
+}
+
+my %catFileHandle = ();
+while ( my $line = <STDIN> )
+{
+    my ($eventType, $cateory);
+
+    if ( $DEBUG > 3 ) { print "line=$line"; }
+
+    if ( $line =~ /^\S+ (\S+) (\S+)/ )
+    {
+	($eventType, $cateory) = ($1,$2);
+    }
+    elsif ( $line =~ /^\S+\t(\S+)/ )
+    {
+	$cateory = $1;
+	$eventType = "NA";
+    }
+    
+    if ( $DEBUG > 2 ) { print "eventType=$eventType cateory=$cateory\n"; }
+    
+    if ( $eventType eq "OSS" || $eventType eq "NA" || $eventType eq "RANOS" )
+    {
+	if ( ! exists $catFileHandle{$cateory} )
+	{
+	    my $fileName = $outdir . "/" . $cateory;
+	    if ( $DEBUG > 2 ) { print "opening file $fileName for $cateory\n"; }
+	    my $fh = new IO::File ">$fileName";
+	    $catFileHandle{$cateory} = $fh;
+	}
+	
+	my $event = $line;
+	my $endEvent = 0;
+	while ( $endEvent == 0 )
+	{
+	    $line = <STDIN>;
+	    #print "Entered while, $eventBodyLine";
+	    $event .= $line;
+	    
+	    if ( (length $line) <= 1 )
+	    {
+		$endEvent = 1;
+	    }
+	}
+
+	my $fh = $catFileHandle{$cateory};
+	print $fh $event;
+    }	
+}
+
+foreach my $cateory ( keys %catFileHandle )
+{
+    $catFileHandle{$cateory}->close();
+}

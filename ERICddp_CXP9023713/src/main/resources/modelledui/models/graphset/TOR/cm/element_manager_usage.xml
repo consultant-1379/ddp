@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_cm_element_manager_usage">
+      <reference table="sites" condition="enm_cm_element_manager_usage.siteid = sites.id"/>
+      <reference table="servers" condition="enm_cm_element_manager_usage.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="sessions" type="tsc" ylabel="Count">
+      <title value="Sessions"/>
+      <column db="sessioncount" label="Sessions"/>
+    </graph>
+    <graph name="memoryused" type="tsc" ylabel="%">
+      <title value="Memory Usage"/>
+      <column db="memoryused" label="Memory Usage"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="element">
+      <member>sessions</member>
+      <member>memoryused</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_npam_instr">
+      <reference table="sites" condition="enm_npam_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_npam_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="enableRemoteManagementEventsReceived" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Enable RemoteManagement Events"/>
+      <column db="enableRemoteManagementEventsReceived" label="Enable RemoteManagement Events"/>
+    </graph>
+    <graph name="disableRemoteManagementEventsReceived" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Disable RemoteManagement Events"/>
+      <column db="disableRemoteManagementEventsReceived" label="Disable RemoteManagement Events"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="npamavc">
+      <member>enableRemoteManagementEventsReceived</member>
+      <member>disableRemoteManagementEventsReceived</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

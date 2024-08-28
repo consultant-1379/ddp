@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_mscmce_notification">
+      <reference table="sites" condition="enm_mscmce_notification.siteid = sites.id"/>
+      <reference table="servers" condition="enm_mscmce_notification.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="receivedNotificationsCount" type="sb" ylabel="Count">
+      <title value="Received"/>
+      <column db="receivedNotificationsCount" label="Received"/>
+    </graph>
+    <graph name="processedNotificationsCount" type="sb" ylabel="Count">
+      <title value="Processed"/>
+      <column db="processedNotificationsCount" label="Processed"/>
+    </graph>
+    <graph name="discardedNotificationsCount" type="sb" ylabel="Count">
+      <title value="Discarded"/>
+      <column db="discardedNotificationsCount" label="Discarded"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="notification">
+      <member>receivedNotificationsCount</member>
+      <member>processedNotificationsCount</member>
+      <member>discardedNotificationsCount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

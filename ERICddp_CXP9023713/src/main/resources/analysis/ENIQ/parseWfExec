@@ -1,0 +1,263 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseLog($$) {
+    my ($log,$r_recordsByFolder) = @_;
+
+    open INPUT, $log or die "Cannot open $log";
+    while ( my $line = <INPUT> ) {
+    if ( $DEBUG > 9 ) { print "parseLog: line ", $line; }
+
+    my ($date,$time,$info) = $line =~ /^([\d-]+) ([\d:]+) (.*)/;
+    if ( ! defined $info ) {
+        if ( $DEBUG > 0 ) { print "parseLog: Failed to parse $line"; }
+        next;
+    }
+
+    my @fields = split(/;/,$info);
+    if ( $DEBUG > 8 ) { print Dumper("parseLog: fields", \@fields); }
+
+    my ($wfGrp,$wfName,$state) = ($fields[0],$fields[1],$fields[2]);
+    my $execTime;
+    # Workaround for bug with the state is repeated
+    if ( $#fields == 3 ) {
+        $execTime = $fields[3];
+    } else {
+        $execTime = $fields[4];
+    }
+
+    if ( ! defined $execTime ) {
+        if ( $DEBUG > 0 ) { print "parseLog: Failed to parse info $info"; }
+        next;
+    }
+
+    if ( $DEBUG > 7 ) { print "parseLog: wfGrp=$wfGrp,wfName=$wfName,state=$state,execTime=$execTime\n"; }
+
+        my ($folder,$wf,$inst) = split(/\./,$wfName);
+
+    my $r_records = $r_recordsByFolder->{$folder};
+    if ( ! defined $r_records ) {
+        $r_records = [];
+        $r_recordsByFolder->{$folder} = $r_records;
+    }
+
+    my $r_record = {
+        'time' => "$date $time",
+        'folder' => $folder,
+        'wf'  => $wf,
+        'inst' => $inst,
+        'state' => $state,
+        'duration' => $execTime };
+    if ( defined $wfGrp && $wfGrp ne "" ) {
+        $r_record->{'grp'} = $wfGrp;
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseLog: r_record", $r_record); }
+    push @{$r_records}, $r_record;
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseLog: recordsByFolder", $r_recordsByFolder); }
+}
+
+sub groupEvents($) {
+    my ($r_records) = @_;
+
+    my %activeWf = ();
+    my @completedWf = ();
+    foreach my $r_record ( @{$r_records} ) {
+    if ( $DEBUG > 8 ) { print Dumper("groupEvents: r_record", $r_record); }
+
+    my $key = $r_record->{'wf'} . "." . $r_record->{'inst'};
+    my $r_wfExec = $activeWf{$key};
+    if ( ! defined $r_wfExec ) {
+        $r_wfExec = {
+        'wf' => $key,
+        'events' => {}
+        };
+        $activeWf{$key} = $r_wfExec;
+    }
+
+    if ( (! exists $r_wfExec->{'grp'}) && (exists $r_record->{'grp'}) ) {
+        $r_wfExec->{'grp'} = $r_record->{'grp'};
+    }
+
+    $r_wfExec->{'events'}->{$r_record->{'state'}} = $r_record->{'time'};
+
+    if ( $r_record->{'duration'} > 0 ) {
+        $r_wfExec->{'duration'} = $r_record->{'duration'};
+    }
+
+    if ( $r_record->{'state'} eq 'Idle' ) {
+        delete $activeWf{$key};
+
+        if ( exists $r_wfExec->{'events'}->{'Loading'} ) {
+        # Sometimes workflow aborts without reaching the running state
+        if ( ! exists $r_wfExec->{'events'}->{'Running'} ) {
+            $r_wfExec->{'events'}->{'Running'} = $r_wfExec->{'events'}->{'Loading'};
+        }
+
+        push @completedWf, $r_wfExec;
+        } else {
+        if ( $DEBUG > 0 ) { print Dumper("groupEvents: Discard incomplete wfExec", $r_wfExec); }
+        }
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("groupEvents: r_wfExec", $r_wfExec); }
+
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("groupEvents: completedWf", \@completedWf); }
+
+    return \@completedWf;
+}
+
+sub getEventTime($$) {
+    my ($r_completedWf,$state) = @_;
+
+    my $eventTime = $r_completedWf->{'events'}->{$state};
+    if ( defined $eventTime ) {
+    my ($date,$time) = $eventTime =~ /^(\S+) (\S+)/;
+    return $time;
+    } else {
+    return "";
+    }
+}
+
+sub store($$) {
+    my ($site,$r_wfExecByFolder) = @_;
+
+    my @folderList = keys %{$r_wfExecByFolder};
+    my %allGrps = ();
+    my %allWf = ();
+    foreach my $folder ( @folderList ) {
+    foreach my $r_wfExec ( @{$r_wfExecByFolder->{$folder}} ) {
+        if ( ! exists $r_wfExec->{'grp'} ) {
+        if ( $DEBUG > 0 ) { print Dumper("store: missing grp", $r_wfExec); }
+        $r_wfExec->{'grp'} = "NOT_AVAILABLE";
+        }
+
+        $allGrps{$r_wfExec->{'grp'}} = 1;
+        $allWf{$r_wfExec->{'wf'}} = 1;
+    }
+    }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ( $siteId > -1 ) or die "ERROR: Cannot find siteid for $site";
+
+    my $r_folderMap = getIdMap($dbh,"eniq_folder_names", "id", "name", \@folderList );
+    my @grpList = keys %allGrps;
+    my $r_grpMap = getIdMap($dbh,"eniq_workflowgroup_names", "id", "name", \@grpList );
+    my @wfList = keys %allWf;
+    my $r_wfMap = getIdMap($dbh,"eniq_workflow_names", "id", "name", \@wfList );
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFile = "$tmpDir/wfexec.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open $bcpFile";
+    my ($first,$last);
+    foreach my $folder ( @folderList ) {
+    my $fldrid = $r_folderMap->{$folder};
+
+    my $r_wfExecs = $r_wfExecByFolder->{$folder};
+
+    my $thisFirst = parseTime( $r_wfExecs->[0]->{'events'}->{'Loading'},
+                   $StatsTime::TIME_SQL );
+    if ( (! defined $first) || ($thisFirst < $first) ) {
+        $first = $thisFirst;
+    }
+    my $thisLast = parseTime( $r_wfExecs->[$#{$r_wfExecs}]->{'events'}->{'Loading'},
+                  $StatsTime::TIME_SQL );
+    if ( (! defined $last) || ($thisLast > $last) ) {
+        $last = $thisLast;
+    }
+
+    foreach my $r_wfExec ( @{$r_wfExecs} ) {
+        if ( $DEBUG > 7 ) { print Dumper("store r_wfExec", $r_wfExec); }
+
+        my $aborted = 0;
+        if ( exists $r_wfExec->{'events'}->{'Aborted'} ) {
+        $aborted = 1;
+        }
+        printf BCP "%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\n",
+        $siteId,$fldrid,$r_grpMap->{$r_wfExec->{'grp'}},$r_wfMap->{$r_wfExec->{'wf'}},
+        $r_wfExec->{'events'}->{'Loading'}, $r_wfExec->{'events'}->{'Running'}, $r_wfExec->{'events'}->{'Idle'},
+        $aborted;
+    }
+    }
+    close BCP;
+    if ( (! defined $first) || (! defined $last) ) {
+    die "First $first Last $last";
+    }
+
+    dbDo($dbh, sprintf("DELETE FROM eniq_workflow_executions WHERE siteid = %d AND tload BETWEEN '%s' AND '%s'",
+               $siteId,
+               formatTime( $first, $StatsTime::TIME_SQL ),
+               formatTime( $last, $StatsTime::TIME_SQL )))
+    or die "Failed to delete old data". $dbh->errstr;
+    dbDo($dbh, sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE eniq_workflow_executions",$bcpFile))
+    or die "Failed to load new data". $dbh->errstr;
+
+    $dbh->disconnect();
+    unlink($bcpFile);
+}
+
+sub main {
+    my ($site,$dir);
+    my $result = GetOptions (
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+
+    opendir(my $dh, $dir) || die "can't opendir $dir: $!";
+    my @allFiles = readdir($dh);
+    closedir $dh;
+
+    my @wfExecFiles = ();
+    foreach my $file ( @allFiles ) {
+    if ( $file =~ /^wfexec.log/ ) {
+        push @wfExecFiles, $file;
+    }
+    }
+    # The the files, need to "move" the wfexec.log to the end of the list
+    my @sortedWfExecFiles = sort @wfExecFiles;
+    my $wfFile = shift @sortedWfExecFiles;
+    push @sortedWfExecFiles, $wfFile;
+
+    my %recordsByFolder = ();
+
+    foreach my $wfExecFile ( @sortedWfExecFiles ) {
+    print "Parsing $wfExecFile\n";
+    parseLog($dir . "/" . $wfExecFile, \%recordsByFolder);
+    }
+
+    my %wfExecByFolder = ();
+    foreach my $folder ( keys %recordsByFolder ) {
+    my $r_wfExecs = groupEvents($recordsByFolder{$folder});
+    if ( $#{$r_wfExecs} > -1 ) {
+        $wfExecByFolder{$folder} = $r_wfExecs;
+    }
+    }
+    store($site,\%wfExecByFolder);
+}
+
+main;

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^f5instr@f5httpstats$"
+>
+  <table name="eo_f5_http_stats"/>
+
+  <metricgroups>
+    <metricgroup name="^F5httpstats-http$">
+      <metric source="numberReqs" target="numberReqs" delta="true" filteridle="true"/>
+      <metric source="postReqs" target="postReqs" delta="true" filteridle="true"/>
+      <metric source="getReqs" target="getReqs" delta="true" filteridle="true"/>
+      <metric source="resp_2xxCnt" target="resp_2xxCnt" delta="true" filteridle="true"/>
+      <metric source="resp_3xxCnt" target="resp_3xxCnt" delta="true" filteridle="true"/>
+      <metric source="resp_4xxCnt" target="resp_4xxCnt" delta="true" filteridle="true"/>
+      <metric source="resp_5xxCnt" target="resp_5xxCnt" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

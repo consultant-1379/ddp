@@ -1,0 +1,90 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Time::Local;
+
+our @DAYS = ("Sun","Mon","Tue","Wed","Thu","Fri","Sat");
+our @MONTHS = ("Jan","Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" );
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($upFile,$date);
+
+    my $result = GetOptions(
+        "up=s"  => \$upFile,
+        "date=s"  => \$date,
+        "debug=s" => \$DEBUG
+      );
+    ( $result == 1 ) or die("Invalid Args");
+    ( $date ) or die("No date specified");
+
+    my ($day,$month,$year) = $date =~ /^(\d{2,2})(\d{2,2})(\d{2,2})$/;
+
+    my $lastUpTime = 0;
+    open UPTIME, $upFile or die ("Could not read from $upFile");
+    while ( my $line = <UPTIME> ) {
+        if ( $DEBUG > 9 ) { print "main: line=$line"; }
+
+        my  ( $currentTime, $uptime ) = $line =~ /^\s+(\S+)\s+up\s+([^,]*)/;
+        if ( $DEBUG > 7 ) { print "main: currentTime=$currentTime uptime=$uptime\n"; }
+
+        my $currentTimeInMin = undef;
+        if ( $currentTime =~ /^(\d+):(\d+):\d+/ ) {
+            my ($currentHour,$currentMin) = ($1,$2);
+            $currentTimeInMin = ($currentHour*60) + $currentMin;
+        } elsif ( $currentTime =~ /^(\d+):(\d+)([apm]+)/ ) {
+            my ($currentHour,$currentMin,$ampm) = ($1,$2,$3);
+            if ( ($currentHour == 12) && ($ampm eq "am") ) {
+                $currentHour = 0;
+            } elsif ( ($ampm eq "pm") && ($currentHour < 12) ) {
+                $currentHour += 12;
+            }
+            $currentTimeInMin = ($currentHour*60) + $currentMin;
+        } else {
+            print "WARN: Cound not extract time from $line";
+            next;
+        }
+        if ( $DEBUG > 9 ) { print "main: currentTimeInMin=$currentTimeInMin\n"; }
+
+        my $currentUpTime = undef;
+        if ( $uptime =~ /^(\d+):(\d+)$/ ) {
+            $currentUpTime = ($1 * 60) + $2;
+        } elsif ( $uptime =~ /^(\d+)\smin/ ) {
+            $currentUpTime = $1;
+        } elsif ( $uptime =~ /^(\d+)\shr/ ) {
+            $currentUpTime = $1 * 60;
+        } elsif ( $uptime =~ /^(\d+)\sday/ ) {
+            $currentUpTime = $1 * (24 * 60);
+        } else {
+            print "WARNING: Failed to parse $line";
+            next;
+        }
+
+        if ( $DEBUG > 5 ) { print "main: lastUpTime=$lastUpTime currentUpTime=$currentUpTime\n"; }
+
+        if ( $currentUpTime < $lastUpTime )
+        {
+            my $rebootTime = $currentTimeInMin - $currentUpTime;
+            if ( $rebootTime < 0 )
+            {
+                $rebootTime = 0;
+            }
+
+            my $hour = int ($rebootTime / 60);
+            my $min = $rebootTime % 60;
+
+            my $unixtime = timelocal($0, $min, $hour, $day, $month - 1, $year + 100);
+            my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($unixtime);
+
+            printf "reboot    system boot                   %s %s %02d %02d:%02d\n",
+            $DAYS[$wday], $MONTHS[$mon], $mday, $hour, $min;
+        }
+
+        $lastUpTime = $currentUpTime;
+    }
+    close UPTIME;
+}

@@ -1,0 +1,614 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+SERVER_TYPE="MASTER"
+
+ANALYSIS_TYPE="FULL"
+NFSD="no"
+while getopts i:o:s:d:t:l:a:m:e:n OPT ; do
+    case $OPT in
+        i) SERVER_DIR="${OPTARG}" ;;
+        o) OUTPUT_DIR="${OPTARG}" ;;
+        s) SITE="${OPTARG}" ;;
+        d) SQL_DATE="${OPTARG}" ;;
+        t) SERVER_TYPE="${OPTARG}" ;;
+        l) LAST_SAR_TIME_FILE="${OPTARG}" ;;
+        a) DATADIR="${OPTARG}" ;;
+        m) ANALYSIS_TYPE="${OPTARG}" ;;
+        e) SERVICE="${OPTARG}" ;;
+        n) NFSD="yes" ;;
+    esac
+done
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/data/tmp
+fi
+
+if [ -z "${INCR_DIR}" ] ; then
+    INCR_DIR=${TMP_DIR}
+fi
+
+SERVICE_ARG=""
+if [ ! -z "${SERVICE}" ] ; then
+    SERVICE_ARG="--service ${SERVICE}"
+fi
+
+# Log stuff
+LOG_LINE_FORMAT="s"
+DATE=$(echo ${SQL_DATE} | sed 's/^20//' | awk -F\- '{printf "%02d%02d%02d", $3, $2, $1}')
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+source ${ANALYSIS_BIN}/common/functions.sh
+
+if [ -d ${TMP_DIR}/server ]; then
+    rm -rf ${TMP_DIR}/server
+fi
+
+mkdir ${TMP_DIR}/server
+export TMP_DIR=${TMP_DIR}/server
+
+#
+# Make sure MySQL can read and write to the tmp dir
+#
+chmod 777 ${TMP_DIR}
+
+#
+# Pretty much everything below here depends on having the hostname, so
+# cut and run if we don't have it
+#
+HOSTNAME=$(${ANALYSIS_BIN}/server/getHostname ${SERVER_DIR})
+if [ $? -ne 0 ] ; then
+    echo "ERROR: getHostname failed, ${HOSTNAME}"
+    exit 1
+fi
+
+IP_ADDRESS=$(cat ${SERVER_DIR}/hostname | head --lines=1 | awk '{print $1}')
+
+OUTPUT_DIR=${OUTPUT_DIR}/${HOSTNAME}
+
+PREFIX_ARG=""
+if [ "${SERVER_TYPE}" = "SFS" ] || [ "${SERVER_TYPE}" = "ACCESSNAS" ]; then
+    PARENT_DIR=$(dirname ${SERVER_DIR})
+    if [ -s ${PARENT_DIR}/storage_disk_list.txt ] ; then
+        POOLS=$(cat ${PARENT_DIR}/storage_disk_list.txt | tail --lines +3 | egrep -v '^$' | awk '{print $2}' | egrep -iv 'coordinator|^-|please|private' | awk '{printf "%s,", $1}' | sed 's/,$//')
+        if [ ! -z "${POOLS}" ] ; then
+            PREFIX_ARG="--prefix ${POOLS}"
+        fi
+    else
+        PREFIX_ARG="na"
+    fi
+fi
+
+if [ "${ANALYSIS_TYPE}" = "FULL" ] ; then
+    ${ANALYSIS_BIN}/server/createServer --site "${SITE}" --host ${HOSTNAME} --type ${SERVER_TYPE}
+
+    if [ ! -d ${OUTPUT_DIR} ]; then
+        mkdir -p ${OUTPUT_DIR}
+    fi
+
+    cat > ${OUTPUT_DIR}/hostname.php <<EOF
+<?php
+\$hostname="${HOSTNAME}";
+?>
+EOF
+
+    if [ -r ${SERVER_DIR}/arrays.txt ] ; then
+        ${ANALYSIS_BIN}/server/parseArrays --input ${SERVER_DIR}/arrays.txt --table ${OUTPUT_DIR}/array.html
+    elif [ -d ${SERVER_DIR}/cam ] ; then
+        ${ANALYSIS_BIN}/server/parseCAM --dir ${SERVER_DIR}/cam --table ${OUTPUT_DIR}/array.html
+    fi
+
+    #
+    # DDC R1 or R2?
+    #
+    ZPOOL_STATUS=${SERVER_DIR}/zpool_status.txt
+    if [ -d ${SERVER_DIR}/zfs ] ; then
+        ZPOOL_STATUS=${SERVER_DIR}/zfs/zpool.status
+    fi
+
+    #
+    # Hardware
+    #
+    # Only store once per day
+    if [ ! -r ${INCR_DIR}/serverCfg.${HOSTNAME} ] ; then
+        run ${ANALYSIS_BIN}/server/storeServerCfg --dir ${SERVER_DIR} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+        touch ${INCR_DIR}/serverCfg.${HOSTNAME}
+    fi
+
+    if [ -r ${SERVER_DIR}/socket.log ] ; then
+        run ${ANALYSIS_BIN}/server/plotSocket ${SERVER_DIR}/socket.log ${OUTPUT_DIR}
+    fi
+
+    if [ -r ${SERVER_DIR}/df.txt ] && [ "${PREFIX_ARG}" != 'na' ] ; then
+        run ${ANALYSIS_BIN}/server/parseDf --df ${SERVER_DIR}/df.txt --site ${SITE} --sqldate ${SQL_DATE} --host ${HOSTNAME} ${PREFIX_ARG}
+    fi
+
+    ###SFS BUR
+    if [ "${SERVER_TYPE}" = "SFS" ] || [ "${SERVER_TYPE}" = "ACCESSNAS" ]; then
+       SFS_BUR_DIR="${SERVER_DIR}/../bur/opt/ericsson/itpf/bur/log/bos"
+       if [ -r ${SFS_BUR_DIR} ] ; then
+          run ${ANALYSIS_BIN}/TOR/bur/parseSfsBurLog --site ${SITE} --date ${SQL_DATE} --dir ${SFS_BUR_DIR}
+       fi
+
+       SFS_BUR_THROUGHPUT_FILE="${SERVER_DIR}/../bur/measurement_backup_FilesystemThroughput.data"
+       if [ -r "${SFS_BUR_THROUGHPUT_FILE}" ] && [ ! -z "${HOSTNAME}" ] ; then
+          run ${ANALYSIS_BIN}/TOR/bur/parseSfsBurThroughput --throughput_file ${SFS_BUR_THROUGHPUT_FILE} --server ${HOSTNAME} --site ${SITE} --date ${SQL_DATE}
+       fi
+    fi
+
+fi
+
+getSarCfg() {
+    SAR_CFG="${ANALYSIS_BIN}/server/sar.${SAR_PLATFORM}.cfg"
+
+    if [ "${SAR_PLATFORM}" = "SunOS" ] ; then
+        PAGE_SIZE=8192
+        if [ -r ${SERVER_DIR}/pagesize ] ; then
+            PGSZ=$(head -1 ${SERVER_DIR}/pagesize | awk '$1 ~ /^[0-9]*$/ {print $1}')
+            if [ ! -z "${PGSZ}" ] ; then
+                PAGE_SIZE=${PGSZ}
+            fi
+        elif [ -r ${SERVER_DIR}/prtdiag.txt ] ; then
+            # no pagesize file - we started collecting that in ERICdoss R1AE01
+            # Check for either an Intel or AMD CPU
+            egrep "(Intel|AMD)" ${SERVER_DIR}/prtdiag.txt | grep CPU > /dev/null 2>&1
+            if [ $? -eq 0 ] ; then
+                # x86 hardware
+                PAGE_SIZE=4096
+            fi
+        fi
+        KSAR_OPTS="-solarisPagesize ${PAGE_SIZE}"
+        FREEMEM_SCALE=$(expr 1024 \* 1024 / ${PAGE_SIZE})
+        sed "s/FREEMEM_SCALE/${FREEMEM_SCALE}/" ${SAR_CFG} > ${TMP_DIR}/sar.cfg
+        SAR_CFG=${TMP_DIR}/sar.cfg
+    elif [ "${SAR_PLATFORM}" = "Linux" ] ; then
+        cp ${SAR_CFG} ${TMP_DIR}/sar.cfg
+        if [ -d ${SERVER_DIR}/vm ] ; then
+            echo "CPU all %guest,guest,1" >> ${TMP_DIR}/sar.cfg
+        fi
+
+        IS_VM=0
+        if [ "${SERVER_TYPE}" = "ENM_VM" ] ; then
+            IS_VM=1
+        elif [ "${SERVER_TYPE}" = "NETSIM" ] ; then
+            if [ -r ${SERVER_DIR}/dmidecode.txt ] ; then
+                grep --silent 'Product Name: VMware Virtual Platform' ${SERVER_DIR}/dmidecode.txt
+                if [ $? -eq 0 ] ; then
+                    IS_VM=1
+                fi
+            fi
+        fi
+        if [ ${IS_VM} -eq 1 ] ; then
+            echo "CPU all Steal,steal,1" >> ${TMP_DIR}/sar.cfg
+        fi
+        SAR_CFG=${TMP_DIR}/sar.cfg
+    fi
+}
+
+#
+# Server stats from sar
+#
+parseSar() {
+    egrep "^sar: can't open " ${SERVER_DIR}/sar.txt
+    if [ $? -eq 0 ] ; then
+        echo "ERROR: sar not configured"
+        return
+    fi
+
+    grep -v 'unix restarts' ${SERVER_DIR}/sar.txt | sed 's#N/A#0#g' > ${TMP_DIR}/sar.txt
+
+    if [ ! -z "${LAST_SAR_TIME_FILE}" ] ; then
+        LAST_SAR_DATA_TIME=$(tail ${TMP_DIR}/sar.txt | grep "^[0-2][0-9]:[0-5][0-9]:[0-5][0-9]" | tail -n 1 | awk '{ print $1 }')
+        if [ -z "${LAST_SAR_DATA_TIME}" ] ; then
+            echo "WARN: Could not get last sar time"
+        else
+            echo "${LAST_SAR_DATA_TIME}" > ${LAST_SAR_TIME_FILE}
+        fi
+    fi
+
+    #
+    # Parse the sar file and load it into the hires_server_stat table
+    #
+    # what platform are we on
+    SAR_PLATFORM=$(head -2 ${TMP_DIR}/sar.txt | grep -v "^$" | awk '{print $1}')
+    KSAR_EXEC="${ANALYSIS_BIN}/ksar/run.sh"
+
+    HEADER_LINE=$(head -2 ${TMP_DIR}/sar.txt | grep -v "^$")
+    MONTH=$(echo ${SQL_DATE} | awk -F\- '{print $2}')
+    DAY=$(echo ${SQL_DATE} | awk -F\- '{print $3}')
+    echo "${HEADER_LINE}" | grep "${MONTH}/${DAY}/" > /dev/null
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Did not find expected date ${MONTH}/${DAY} in ${HEADER_LINE}"
+        return
+    fi
+
+    getSarCfg
+
+    #/opt/ksar/run.sh -input ${TMP_DIR}/sar.txt -outputJPG ${OUTPUTDIR}/sar/jpg/ -showCPUstacked -showMEMstacked -cpuFixedAxis -showIntrListstacked -width 600 -height 400 -outputCSV ${TMP_DIR}/sar.csv -solarisPagesize ${PAGE_SIZE}
+    # What platform are we running on?
+
+    SAR_CSV=${TMP_DIR}/sar.${HOSTNAME}.csv
+    run ${KSAR_EXEC} -input ${TMP_DIR}/sar.txt -outputCSV ${SAR_CSV} ${KSAR_OPTS}
+
+    # Support incremental processing
+    INCR_FLAG=""
+    SAR_CSV_LINES=$(cat ${TMP_DIR}/sar.${HOSTNAME}.csv | wc -l | awk '{print $1}')
+    # Note: SAR_FIRSTTIME is also used further down when loading the
+    #       NIC stats
+    SAR_FIRSTTIME=$(head -2 ${TMP_DIR}/sar.${HOSTNAME}.csv | tail -1 | awk '{print $4}')
+    SAR_INCR=${INCR_DIR}/sar.${HOSTNAME}.lines
+    if [ -r ${SAR_INCR} ] ; then
+        PREV_SAR_INFO=$(cat ${SAR_INCR})
+
+        PREV_SAR_CSV_LINES=$(echo ${PREV_SAR_INFO} | awk '{print $1}')
+        DO_INCREMENTAL=1
+
+        NUM_FIELDS=$(echo "${PREV_SAR_INFO}" | awk '{print NF}')
+        if [ ${NUM_FIELDS} -eq 2 ] ; then
+            # We have the timestamp of the first line so check it
+            INCR_FIRSTTIME=$(echo "${PREV_SAR_INFO}" | awk '{print $2}')
+            if [ "${SAR_FIRSTTIME}" != "${INCR_FIRSTTIME}" ] ; then
+                echo "Warning: Time in sar file ${SAR_FIRSTTIME} differs from time in incr file ${INCR_FIRSTTIME}"
+                DO_INCREMENTAL=0
+            fi
+        fi
+
+        if [ ${DO_INCREMENTAL} -eq 1 ] ; then
+            NEW_LINES=$(expr ${SAR_CSV_LINES} - ${PREV_SAR_CSV_LINES})
+            mv ${TMP_DIR}/sar.${HOSTNAME}.csv ${TMP_DIR}/sar.${HOSTNAME}.csv.full
+            head -2 ${TMP_DIR}/sar.${HOSTNAME}.csv.full > ${TMP_DIR}/sar.${HOSTNAME}.csv
+            tail -${NEW_LINES} ${TMP_DIR}/sar.${HOSTNAME}.csv.full >> ${TMP_DIR}/sar.${HOSTNAME}.csv
+            INCR_FLAG="-incr"
+        fi
+    fi
+    echo "${SAR_CSV_LINES} ${SAR_FIRSTTIME}" > ${SAR_INCR}
+
+    run ${ANALYSIS_BIN}/server/parseSarCsv --cfg ${SAR_CFG} --input ${SAR_CSV} --site ${SITE} --date ${SQL_DATE} --host ${HOSTNAME} ${INCR_FLAG} ${SERVICE_ARG}
+}
+
+if [ -r ${SERVER_DIR}/sar.txt ]; then
+    parseSar
+    SAR_DISK_CSV=${SAR_CSV}
+    SAR_NET_CSV=${SAR_CSV}
+elif [ -r ${SERVER_DIR}/sar.incr ] ; then
+    if [ -r ${INCR_DIR}/sar.incr.ddp ] ; then
+        INCR_FLAG="-incr"
+    else
+        INCR_FLAG=""
+    fi
+
+    NFSD_ARG=""
+    if [ "${NFSD}" = "yes" ] ; then
+        NFSD_ARG="--nfsd"
+    fi
+    # Parse the sar files to a three seperate CSV files
+    #  sar_sys.csv which has the OS stats like CPU load, memory usage, etc.
+    #  sar_disk.csv which has the disk IO stats
+    #  sar_net.csv which has the NIC stats
+    run ${ANALYSIS_BIN}/server/parseIncrSar \
+        --indir ${SERVER_DIR} --outdir ${TMP_DIR} --incr ${INCR_DIR}/sar.incr.ddp ${NFSD_ARG}
+
+    SAR_PLATFORM="Linux"
+    getSarCfg
+    run ${ANALYSIS_BIN}/server/parseSarCsv --cfg ${SAR_CFG} \
+        --input ${TMP_DIR}/sar_sys.csv --site ${SITE} --date ${SQL_DATE} --host ${HOSTNAME} ${INCR_FLAG} ${SERVICE_ARG} ${NFSD_ARG}
+
+    SAR_PLATFORM="Linux"
+    SAR_DISK_CSV=${TMP_DIR}/sar_disk.csv
+    SAR_NET_CSV=${TMP_DIR}/sar_net.csv
+
+    if [ ! -z "${LAST_SAR_TIME_FILE}" ] ; then
+        if [ -s ${TMP_DIR}/sar_sys.csv ] ; then
+            LAST_SAR_DATA_TIME=$(tail --lines 1 ${TMP_DIR}/sar_sys.csv | awk -F\; '{ print $1 }' | awk '{print $2}')
+            if [ -z "${LAST_SAR_DATA_TIME}" ] ; then
+                echo "WARN: Could not get last time from sar_sys.csv"
+            else
+                echo "${LAST_SAR_DATA_TIME}" > ${LAST_SAR_TIME_FILE}
+            fi
+        else
+            echo "WARN: sys_sys.csv doesn't exist or is empty"
+        fi
+    fi
+fi
+
+if [ -r ${SERVER_DIR}/esxi_metrics.txt ]; then
+    run ${ANALYSIS_BIN}/server/parseEsxiMetrics --input ${SERVER_DIR}/esxi_metrics.txt --incr ${INCR_DIR}/esxi.inc --site ${SITE} --date ${SQL_DATE} --host ${HOSTNAME}
+fi
+
+#
+# Disk stats
+#
+
+if [ -r ${SAR_DISK_CSV} ] && [[ ( -r ${SERVER_DIR}/mnttab ) || ( -r ${SERVER_DIR}/mtab ) ]]  ; then
+    echo "IO Stats"
+    run ${ANALYSIS_BIN}/server/io --dir ${SERVER_DIR} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE} --csv ${SAR_DISK_CSV} ${INCR_FLAG} ${SERVICE_ARG}
+fi
+
+if [ "${ANALYSIS_TYPE}" = "FULL" ] ; then
+    if [ -r ${SERVER_DIR}/vxstat.txt ] && [ "${PREFIX_ARG}" != 'na' ] ; then
+        run ${ANALYSIS_BIN}/server/parseVxstat --input ${SERVER_DIR}/vxstat.txt --site ${SITE} --server ${HOSTNAME} ${PREFIX_ARG}
+    fi
+
+    if [ -s ${SERVER_DIR}/vxfsstat_i.txt ] && [ -s ${SERVER_DIR}/vxfsstat_v.txt ] ; then
+        run ${ANALYSIS_BIN}/server/parseVxfsStat -i ${SERVER_DIR}/vxfsstat_i.txt -v ${SERVER_DIR}/vxfsstat_v.txt --site ${SITE} --server ${HOSTNAME}
+    fi
+
+    if [ -r ${SERVER_DIR}/../instr/kstat-zfs-profile.xml ] && [ -r ${SERVER_DIR}/zfs/zpool.list ] ; then
+        grep "no pools available" ${SERVER_DIR}/zfs/zpool.list > /dev/null
+        if [ $? -ne 0 ] ; then
+            echo "Storing ZFS Cache Statistics"
+            run ${ANALYSIS_BIN}/server/storeZfsCacheStats -cfg ${SERVER_DIR}/../instr/kstat-zfs-profile.xml -data ${SERVER_DIR}/../instr.txt -server ${HOSTNAME} -site ${SITE}
+        fi
+    fi
+
+    SERVER_RESTARTS=0
+    if [ -r ${SERVER_DIR}/last.txt ] ; then
+        FILESIZE=$(ls -l ${SERVER_DIR}/last.txt | awk '{print $5}')
+        # Typically lines in the last log for reboots are 58 bytes
+        # Anything other than that and there is probably an error
+        # message in the log file
+        BYTEMULTIPLE=$(perl -e "if (int(${FILESIZE} / 58) == ${FILESIZE} / 58) { print 1; } else { print 0 }")
+        if [ ${FILESIZE} -eq 0 ] || [ ${BYTEMULTIPLE} -eq 0 ] ; then
+            if [ -r ${SERVER_DIR}/uptime.txt ] ; then
+                mv ${SERVER_DIR}/last.txt ${SERVER_DIR}/last.txt.wtmp
+                ${ANALYSIS_BIN}/server/parseUpTime --up ${SERVER_DIR}/uptime.txt --date ${DATE} > ${SERVER_DIR}/last.txt
+            fi
+        fi
+        SERVER_RESTARTS=$(grep -v 'system down' ${SERVER_DIR}/last.txt | wc -l  | awk '{print $1}')
+    fi
+
+    if [ ${SERVER_RESTARTS} -ne 0 ] ; then
+        cat > ${TMP_DIR}/sql.txt <<EOF
+SET @serverid=(SELECT servers.id FROM servers,sites WHERE sites.name = "${SITE}" AND servers.hostname = "${HOSTNAME}" AND servers.siteid = sites.id);
+DELETE FROM server_reboots WHERE serverid = @serverid AND server_reboots.time >= "${SQL_DATE} 00:00:00" AND server_reboots.time <= "${SQL_DATE} 23:59:59";
+EOF
+
+        BOOT_TIME=""
+        while read LINE ; do
+            TIME=$(echo $LINE | awk '{print $NF}')
+            TYPE=$(echo $LINE | awk '{print $3}')
+            if [ "${TYPE}" = "down" ] ; then
+                if [ ! -z "${BOOT_TIME}" ] ; then
+                    DURATION="TIME_TO_SEC(TIMEDIFF('${SQL_DATE} ${BOOT_TIME}:00', '${SQL_DATE} ${TIME}:00'))"
+                    echo "INSERT INTO server_reboots (serverid,time,duration) VALUES ( @serverid, \"${SQL_DATE} ${BOOT_TIME}:00\", ${DURATION} );" >> ${TMP_DIR}/sql.txt
+                    BOOT_TIME=""
+                fi
+            elif [ "${TYPE}" = "boot" ] ; then
+                if [ ! -z "${BOOT_TIME}" ] ; then # second boot line seen without 'system down'
+                    echo "INSERT INTO server_reboots (serverid,time) VALUES ( @serverid, \"${SQL_DATE} ${BOOT_TIME}:00\" );" >> ${TMP_DIR}/sql.txt
+                fi
+
+                BOOT_TIME="${TIME}"
+            fi
+
+            # We need to presist boottime into a file as the BOOT_TIME values doesn't survive the while/read loop
+            echo "${BOOT_TIME}" > ${TMP_DIR}/boottime.txt
+        done < ${SERVER_DIR}/last.txt
+
+        BOOT_TIME=$(cat ${TMP_DIR}/boottime.txt)
+        if [ ! -z "${BOOT_TIME}" ] ; then # no down line found for last system boot line
+            echo "INSERT INTO server_reboots (serverid,time) VALUES ( @serverid, \"${SQL_DATE} ${BOOT_TIME}:00\" );" >> ${TMP_DIR}/sql.txt
+            BOOT_TIME=""
+        fi
+
+        ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/sql.txt
+    fi
+fi
+
+#
+# NIC stats if available
+#
+if [ -r ${SERVER_DIR}/../instr/kstat-net-io-profile.xml -a -r ${SERVER_DIR}/../instr.txt ] ; then
+    echo "NIC Instr stats"
+    run ${ANALYSIS_BIN}/server/storeNetworkStats -cfg ${SERVER_DIR}/../instr/kstat-net-io-profile.xml -data ${SERVER_DIR}/../instr.txt -server ${HOSTNAME} -site ${SITE} --incr ${INCR_DIR}/storeNetworkStats.${HOSTNAME}
+elif [ "${SAR_PLATFORM}" = "Linux" ] && [ -r ${SAR_NET_CSV} ] ; then
+    #
+    # NIC stats if available from sar (on Linux)
+    #
+    run ${ANALYSIS_BIN}/server/parseNicSar --site ${SITE} --server ${HOSTNAME} --input ${SAR_NET_CSV} ${SERVICE_ARG}
+elif [ -r ${SERVER_DIR}/netstat_i.log ]; then
+    run ${ANALYSIS_BIN}/server/parseNetStat --netstat ${SERVER_DIR}/netstat_i.log --site ${SITE} --host ${HOSTNAME}
+ fi
+
+if [ "${ANALYSIS_TYPE}" = "FULL" ] ; then
+    # NIC settings
+    if [ -r ${SERVER_DIR}/kstat_net.txt ] ; then
+        cat > ${TMP_DIR}/nic_${HOSTNAME}.sql <<EOF
+SET @serverid=(SELECT servers.id FROM servers,sites WHERE sites.name = "${SITE}" AND servers.hostname = "${HOSTNAME}" AND servers.siteid = sites.id);
+EOF
+        NIC_LIST=$(head -30 ${SERVER_DIR}/netstat_i.log | egrep '^[a-z]' | awk '{print $1}' | grep -v lo0  | sort -u)
+        for NIC in ${NIC_LIST} ; do
+            NIC_TYPE=$(echo ${NIC} | sed 's/[0-9]*$//')
+            NIC_INST=$(echo ${NIC} | sed "s|^${NIC_TYPE}||")
+            LINK_SPEED=$(grep "^${NIC_TYPE}:${NIC_INST}:" ${SERVER_DIR}/kstat_net.txt | grep link_speed | awk '{print $NF}' | head -1)
+            if [ -z "${LINK_SPEED}" ] ; then
+                # look for the ifspeed parameter instead - this is the number of bits, not megabits.
+                LINK_SPEED=$(grep "^${NIC_TYPE}:${NIC_INST}:" ${SERVER_DIR}/kstat_net.txt | grep ifspeed | awk '{print $NF}' | head -1)
+                LINK_SPEED=$(expr ${LINK_SPEED} / 1000000 2> /dev/null)
+                if [ -z "${LINK_SPEED}" ] ; then
+                    LINK_SPEED=0
+                fi
+            fi
+            if [ "${NIC_TYPE}" = "net" ] ; then
+                LINK_DUPLEX=$(grep "${NIC_TYPE}${NIC_INST}:" ${SERVER_DIR}/kstat_net.txt | grep link_duplex | awk '{print $NF}' | head -1)
+            else
+                LINK_DUPLEX=$(grep "^${NIC_TYPE}:${NIC_INST}:" ${SERVER_DIR}/kstat_net.txt | grep link_duplex | awk '{print $NF}' | head -1)
+            fi
+            if [ "${LINK_DUPLEX}" = "2" ] ; then
+                LINK_DUPLEX="full"
+            else
+                LINK_DUPLEX="half"
+            fi
+
+            if [ "${NIC_TYPE}" = "net" ]; then
+                NIC_TYPE="(net|bnxe)"
+            fi
+
+            # Only works for the bnxe driver
+            DRV_VERSION=$(egrep -w "^${NIC_TYPE}:${NIC_INST}:stats:version" ${SERVER_DIR}/kstat_net.txt | awk '{print $2}')
+            if [ ! -z "${DRV_VERSION}" ] ; then
+                FW_VERSION=$(egrep -w "^${NIC_TYPE}:${NIC_INST}:stats:versionBC" ${SERVER_DIR}/kstat_net.txt | awk '{print $2}')
+            else
+                FW_VERSION=""
+            fi
+
+            cat >> ${TMP_DIR}/nic_${HOSTNAME}.sql <<EOF
+SET @nicid=(SELECT id FROM network_interfaces WHERE serverid = @serverid AND name = "${NIC}");
+DELETE FROM network_interface_config WHERE ifid = @nicid AND date = "${SQL_DATE}";
+INSERT INTO network_interface_config (date,ifid,speed,duplex,drv,fw) VALUES ( "${SQL_DATE}", @nicid, ${LINK_SPEED}, "${LINK_DUPLEX}", "${DRV_VERSION}", "${FW_VERSION}" );
+EOF
+        done
+        ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/nic_${HOSTNAME}.sql
+    fi
+
+
+
+    #
+    # NIC Config for Linix
+    #
+    ETHTOOL_FILE_LIST=$(find ${SERVER_DIR} -name 'ethtool.*' | egrep -v 'ethtool.(vnet|mac|br)')
+    if [ ! -z "${ETHTOOL_FILE_LIST}" ] ; then
+        log "Storing NIC config"
+        cat > ${TMP_DIR}/nic_${HOSTNAME}.sql <<EOF
+SET @serverid=(SELECT servers.id FROM servers,sites WHERE sites.name = "${SITE}" AND servers.hostname = "${HOSTNAME}" AND servers.siteid = sites.id);
+EOF
+        HAS_NIC_CONF=0
+        for ETHTOOL_FILE in ${ETHTOOL_FILE_LIST} ; do
+            NIC=$(echo ${ETHTOOL_FILE} | sed 's/.*ethtool\.//')
+
+            SPEED=$(cat ${ETHTOOL_FILE} | egrep '^[[:space:]]*Speed: ' | awk '{print $2}')
+            LINK_SPEED=$(echo "${SPEED}" | sed 's|Mb/s||')
+            if [ -z "${LINK_SPEED}" ] || [ "${LINK_SPEED}" = "Unknown!" ]; then
+                LINK_SPEED=0
+            fi
+
+            DUPLEX=$(cat ${ETHTOOL_FILE} | egrep '^[[:space:]]*Duplex:' | awk '{print $2}')
+            echo "${DUPLEX}" | grep --silent "Unknown"
+            if [ $? -eq 0 ] ; then
+                LINK_DUPLEX="\N"
+            else
+                LINK_DUPLEX="\"$(echo "${DUPLEX}" | tr '[A-Z]' '[a-z]')\""
+                if [ "${LINK_DUPLEX}" = "\"\"" ] ; then
+                    LINK_DUPLEX="\N"
+                fi
+            fi
+
+            DRV_VERSION=""
+            FW_VERSION=""
+            ETHTOOL_DRIVER_FILE=$(echo ${ETHTOOL_FILE} | sed 's|\.|_driver.|')
+            if [ -r ${ETHTOOL_DRIVER_FILE} ] ; then
+                DRV_VERSION=$(cat ${ETHTOOL_DRIVER_FILE} | egrep '^version:' | sed 's/^version: //')
+                FW_VERSION=$(cat ${ETHTOOL_DRIVER_FILE} | egrep '^firmware-version:' | sed 's/^firmware-version: //')
+            fi
+
+            # Now lets see if we've any actual data (for NICs in VM's we don't)
+            if [ ${LINK_SPEED} -ne 0 ] || [ "${LINK_DUPLEX}" != "\N" ] || [ ! -z "${DRV_VERSION}${FW_VERSION}" ] ; then
+                HAS_NIC_CONF=1
+                cat >> ${TMP_DIR}/nic_${HOSTNAME}.sql <<EOF
+SET @nicid=(SELECT id FROM network_interfaces WHERE serverid = @serverid AND name = "${NIC}");
+DELETE FROM network_interface_config WHERE ifid = @nicid AND date = "${SQL_DATE}";
+INSERT INTO network_interface_config (date,ifid,speed,duplex,drv,fw) VALUES ( "${SQL_DATE}", @nicid, ${LINK_SPEED}, ${LINK_DUPLEX}, "${DRV_VERSION}", "${FW_VERSION}" );
+EOF
+            fi
+        done
+        if [ ${HAS_NIC_CONF} -eq 1 ] ; then
+            ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/nic_${HOSTNAME}.sql
+        fi
+    fi
+
+
+    #
+    # SMF events
+    #
+    if [ -d ${SERVER_DIR}/smf ] ; then
+        SMF_ARGS="-date ${SQL_DATE} -site ${SITE} -server ${HOSTNAME} -logdir ${SERVER_DIR}/smf"
+        if [ -f ${SERVER_DIR}/svcs-p.txt ] ; then
+            SMF_ARGS="${SMF_ARGS} -status ${SERVER_DIR}/svcs-p.txt"
+        fi
+        echo "SMF events"
+        run ${ANALYSIS_BIN}/server/parseSmf ${SMF_ARGS}
+    fi
+
+    #
+    # Process crontab log
+    #
+
+    CRON_FILE=""
+
+    if [ -r ${SERVER_DIR}/cron.log ]; then
+        CRON_FILE=${SERVER_DIR}/cron.log
+    elif [ -r ${SERVER_DIR}/../cron.log ]; then
+        CRON_FILE=${SERVER_DIR}/../cron.log
+    fi
+
+    SERVER_TYPE_LIST=("EBAS" "ENIQ_STATS" "ENM_ASR_HOST" "ENM_AUTOMATION_HOST" "ENM_DB_HOST" "ENM_EBA_HOST" "ENM_EBS_HOST" "ENM_ESN_HOST" "ENM_EVENT_HOST" "ENM_SCRIPTING_HOST" "ENM_SERVICE_HOST" "ENM_STREAMING_HOST" "OTHER" "MASTER" "STATS_COORDINATOR" "STATS_ENGINE" "STATS_IQR" "TOR_MANAGEMENT_SERVER")
+
+    for SERVERS in ${SERVER_TYPE_LIST[@]} ; do
+        if [ "${CRON_FILE}" != "" ] && [ "${SERVER_TYPE}" = ${SERVERS} ] ; then
+            echo "Crontab Stats for ${HOSTNAME}"
+            run ${ANALYSIS_BIN}/server/parseCron --input ${CRON_FILE} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+        fi
+    done
+
+    #
+    # Process stats based on jps output
+    #
+    if [ -r ${SERVER_DIR}/jps.log ] ; then
+        echo "Process Stats"
+        OS_ARG=""
+        if [ ! -z "${SAR_PLATFORM}" ] ; then
+            OS_ARG="-o ${SAR_PLATFORM}"
+        fi
+        run ${ANALYSIS_BIN}/server/plotJps -j ${SERVER_DIR}/jps.log -s ${SITE} -d ${SQL_DATE} -v ${HOSTNAME} -i ${INCR_DIR}/jps.${HOSTNAME} ${OS_ARG}
+    fi
+
+    #
+    # Store the messages file
+    #
+    if [ -f ${SERVER_DIR}/messages.txt ] ; then
+        run ${ANALYSIS_BIN}/server/storeMessages -sqldate ${SQL_DATE} -server ${HOSTNAME} -site ${SITE} -file ${SERVER_DIR}/messages.txt
+    fi
+
+    #
+    # Store stats from /proc/net/rpc/nfsd
+    #
+    if [ -r ${SERVER_DIR}/nfsd ] ; then
+        POOL_ARG=""
+        if [ -r ${SERVER_DIR}/nfsd_pool_stats ] ; then
+            POOL_ARG="--poolstats ${SERVER_DIR}/nfsd_pool_stats"
+        elif [ -r ${SERVER_DIR}/pool_stats ] ; then
+            POOL_ARG="--poolstats ${SERVER_DIR}/pool_stats"
+        fi
+        run ${ANALYSIS_BIN}/server/parseNfsd --server ${HOSTNAME} --site ${SITE} --input ${SERVER_DIR}/nfsd ${POOL_ARG}
+    fi
+
+    #
+    # Store stats from /proc/self/mountstats
+    #
+    if [ -r ${SERVER_DIR}/nfsstat.txt ] ; then
+        run ${ANALYSIS_BIN}/server/parseNfsStat --server ${HOSTNAME} --site ${SITE} --input ${SERVER_DIR}/nfsstat.txt --date ${SQL_DATE}
+    fi
+
+    #
+    # Store IP address/NIC mapping
+    #
+    if [ -r ${SERVER_DIR}/ifconfig.txt ] ; then
+        run ${ANALYSIS_BIN}/server/parseIfConfig --server ${HOSTNAME} --site ${SITE} --input ${SERVER_DIR}/ifconfig.txt --date ${SQL_DATE}
+    fi
+
+    # Store the path to MASTER's '/data/stats/<OSS>/<SITE>/data/<DDMMYY>/server' directory under 'server_datadirs.txt'.
+    #   This will ease the process of getting data directory paths under PHP scripts which otherwise should involve
+    #   expensive DB calls to know the type of the given server and then deduce the path based on that server type.
+    DATADIRS_FILE=${DATADIR}/server_datadirs.txt
+    ADD_TO_FILE=1
+    if [ -r ${DATADIRS_FILE} ] ; then
+        grep -q "^${HOSTNAME}::${SERVER_DIR}$" ${DATADIRS_FILE}
+        if [ $? -eq 0 ] ; then
+            ADD_TO_FILE=0
+        fi
+    fi
+    if [ ${ADD_TO_FILE} -eq 1 ] ; then
+        echo "${HOSTNAME}::${SERVER_DIR}" >> ${DATADIRS_FILE}
+    fi
+fi

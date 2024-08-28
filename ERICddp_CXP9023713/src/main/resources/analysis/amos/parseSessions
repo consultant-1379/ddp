@@ -1,0 +1,190 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($directory,$dashDate);
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "directory=s" => \$directory,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    # Validate the parameters passed
+    if ( ! $directory ) {
+        printUsageAndExit("No feed directory specified");
+    }
+    if ( ! $site ) {
+        printUsageAndExit("No site specified");
+    }
+    if ( ! $dashDate ) {
+        printUsageAndExit("No date specified");
+    }
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+   ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Read the directory and pull the sessions files into an array and process them in turn
+    opendir(DATADIR, $directory) or die "Invalid directory: " . $directory . "\n";
+    my @fileNames = grep { $_ =~ m/amos_sessions/ } readdir DATADIR;
+
+    # Parse the files
+    foreach my $fileName (@fileNames) {
+        if ($DEBUG > 4) { print "Feed file: " . $fileName . "\n"; }
+        # Get the server details & serverid
+        my ($server) = $fileName =~ /amos_sessions_(\S+).*\.log/;
+        if(defined $server) {
+            my $serverid = getServerIdWithoutFail($dbh, $siteid,$server);
+            if($serverid!=0 ) {
+                my $file = $directory . "/" . $fileName;
+                if (-e $file) {
+                    processData($file, $sqlDate, $siteid, $serverid, \%dataForStorage);
+                }
+                else {
+                    print "WARNING: No data file - expected file " . $file . " does not exist.\n";
+                }
+            }
+            else {
+                print "Could not find server $server \n";
+            }
+        }
+        else {
+            if ( $DEBUG > 4 ) {  print "server name is blank\n"; }
+        }
+    }
+    return 0;
+}
+
+sub processData() {
+    my ($file , $sqlDate, $siteid, $serverid, $r_dataForStorage) = @_;
+    my $dbh = connect_db();
+    my $cnt = 0;
+    my @order;
+    my @metrics = ("Moshell Sessions", "Spawned Processes");
+
+    ###
+    # We're only collecting "Moshell Sessions" and "Spawned Processes" metrics for the moment
+    # Set up the id map for these from the array above.
+    ###
+    my $r_metricsIdMap = getIdMap($dbh, "amos_metrics", "id", "name", \@metrics);
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+
+        if ($line =~ /^\s*$/) {
+            next LINE;
+        } else {
+            ####
+            # Very simple parsing - just a comma separated file with the fields described within, eg
+            #     2011-02-22-17-30-00,Moshell Sessions: 4, Spawned Processes: 16
+            ####
+            my ($ccyy, $mm, $dd, $hh, $mn, $ss, $moshellSessions, $spawnedProcesses) = $line =~ /([0-9]{4})-([0-9]{2})-([0-9]{2})-([0-9]{2})-([0-9]{2})-([0-9]{2})\,\s*Moshell Sessions\:\s*([0-9]+)\,\s*Spawned Processes\:\s*([0-9]+)/;
+
+            # Build up the the dataset
+            my $date = $ccyy . "-" . $mm . "-" . $dd;
+
+            # Only take data for the date in question - reject otherwise
+            if ($date eq $sqlDate) {
+                $r_dataForStorage->{$cnt}->{'time'} = $ccyy . "-" . $mm . "-" . $dd . " " . $hh . "\:" . $mn . "\:" . $ss;
+                $r_dataForStorage->{$cnt}->{'Moshell Sessions'} = $moshellSessions;
+                $r_dataForStorage->{$cnt}->{'Spawned Processes'} = $spawnedProcesses;
+
+                # Sort by the count index using and order array
+                push(@order, $cnt);
+                $cnt++;
+            }
+            next LINE;
+       }
+    }
+    close(DATA);
+
+    if ($DEBUG > 7) { print Dumper $r_dataForStorage; }
+
+    # If there is data to store, store it
+    if ($cnt > 0) {
+        storeDataset($sqlDate, $siteid, $serverid, $r_dataForStorage, \@metrics, $r_metricsIdMap, \@order);
+    } else {
+        print "WARNING: No data to store for " . $site . " for " . $sqlDate . "\n";
+    }
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $serverid, $r_dataForStorage, $r_metrics, $r_metricsIdMap, $r_order) = @_;
+    my $dbh = connect_db();
+
+    # BCP file
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/amos_sessions." . $siteid . "." . $sqlDate. "." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $index (@$r_order) {
+         foreach my $metric (@$r_metrics) {
+             print BULK_INSERT $r_dataForStorage->{$index}->{'time'} . "|" . $siteid . "|" . $serverid . "|" . $r_metricsIdMap->{$metric} . "|" . $r_dataForStorage->{$index}->{$metric} . "\n";
+         }
+    }
+    close BULK_INSERT;
+
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM amos_sessions WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid . " AND serverid = " . $serverid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data amos_sessions for rerun with statement " . $rerunDelete . "\n";
+
+    # Set up the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE amos_sessions FIELDS TERMINATED BY '|'";
+
+    if ($DEBUG > 4) { print "INSERT SQL: " . $sqlInsert . "\n"; }
+
+    # Run the INSERT
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into amos_sessions with statement " . $sqlInsert . "\n";
+    $dbh->disconnect;
+
+    return 0;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseSessions --directory <directory> --site <sitename> --date dd-mm-yy \n";
+
+    exit 1;
+}
+

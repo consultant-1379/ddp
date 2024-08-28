@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="f5_virtual_stats">
+  <reference table="sites" condition="f5_virtual_stats.siteid = sites.id"/>
+  <reference table="f5_virtual_names" condition="f5_virtual_stats.virtualid = f5_virtual_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND f5_virtual_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="f5_virtual_names.name"/>
+ </groupby>
+
+ <order columnid="requests" direction="DESC"/>
+
+ <column db="f5_virtual_names.id" id="virtualid" label="virtualid" visible="false"/>
+ <column db="f5_virtual_names.name" label="Virtual"/>
+ <column db="ROUND(AVG(f5_virtual_stats.clientsidekbitsout))" label="ClientSideKBitsOut"/>
+ <column db="ROUND(AVG(f5_virtual_stats.clientsidekbitsin))" label="ClientSideKbitsIn"/>
+ <column db="SUM(f5_virtual_stats.clientsidetotconns)" label="ClientSidetotConns"/>
+ <column db="SUM(f5_virtual_stats.clientsideslowkilled)" label="ClientSideslowKilled"/>
+ <column db="SUM(f5_virtual_stats.clientsideevictedconn)" label="ClientSideevictedConns"/>
+ <column db="ROUND(AVG(f5_virtual_stats.ephemeralkbitsout))" label="ephemeralKBitsOut"/>
+ <column db="ROUND(AVG(f5_virtual_stats.ephemeralkbitsin))" label="ephemeralKBitsIn"/>
+ <column db="SUM(f5_virtual_stats.ephemeraltotconns)" label="ephemeraltotConns"/>
+ <column db="SUM(f5_virtual_stats.ephmeralslowkilled)" label="ephemeralslowKilled"/>
+ <column db="SUM(f5_virtual_stats.ephmeralevictedconns)" label="ephemeralevictedConns"/>
+ <column db="SUM(f5_virtual_stats.totrequests)" label="totRequests" id="requests"/>
+
+ <ctxmenu keycol="virtualid" targettype="url" multiselect="true">
+  <item id="virtualstats" label="Plot"/>
+  <urltarget arg="plot"/>
+ </ctxmenu>
+</modelledtable>
+

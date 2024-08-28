@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <services>
+    <service name="rpmoflow"/>
+  </services>
+
+  <table name="enm_eba_rpmoflow">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="jvmid" reftable="enm_str_jvm_names" refnamecol="jvm_name"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Written$">
+      <metric source="Count" target="Number_Of_Event_Files_Written" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Ctrl_Files_Written$">
+      <metric source="Count" target="Number_Of_Ctrl_Files_Written" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Ctrl_Files_Rewritten$">
+      <metric source="Count" target="Number_Of_Ctrl_Files_Rewritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Rewritten$">
+      <metric source="Count" target="Number_Of_Event_Files_Rewritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Total_number_of_output_events$">
+      <metric source="Count" target="Total_number_of_output_events" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^(rpmoflow\d+)-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Processed_Event_Rate_per_Second$">
+      <metric source="Count" target="Processed_Event_Rate_per_Second" delta="true" filteridle="true"/>
+      <property name="jvmid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Binary_Event_Files_Written$">
+      <metric source="Count" target="binaryFilesWritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Binary_Event_Files_Rewritten$">
+        <metric source="Count" target="binaryFilesRewritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Processed_Binary_Event_Rate_per_Second$">
+        <metric source="Count" target="binaryEventRate" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmoflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Total_number_of_Binary_output_events$">
+          <metric source="Count" target="binaryOutputEvents" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Written$">
+      <metric source="Count" target="Number_Of_Event_Files_Written" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Ctrl_Files_Written$">
+      <metric source="Count" target="Number_Of_Ctrl_Files_Written" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Ctrl_Files_Rewritten$">
+      <metric source="Count" target="Number_Of_Ctrl_Files_Rewritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Rewritten$">
+      <metric source="Count" target="Number_Of_Event_Files_Rewritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Total_number_of_output_events$">
+      <metric source="Count" target="Total_number_of_output_events" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^(rpmo-eps\d+)-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Processed_Event_Rate_per_Second$">
+      <metric source="Count" target="Processed_Event_Rate_per_Second" delta="true" filteridle="true"/>
+      <property name="jvmid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Binary_Event_Files_Written$">
+      <metric source="Count" target="binaryFilesWritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Binary_Event_Files_Rewritten$">
+      <metric source="Count" target="binaryFilesRewritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Processed_Binary_Event_Rate_per_Second$">
+      <metric source="Count" target="binaryEventRate" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rpmo-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rpmo-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Total_number_of_Binary_output_events$">
+      <metric source="Count" target="binaryOutputEvents" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="IO Wait"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+  <dbtables main="hires_server_stat">
+   <reference table="sites" condition="hires_server_stat.siteid = sites.id"/>
+   <reference table="servers" condition="hires_server_stat.serverid = servers.id"/>
+  </dbtables>
+
+   <param name="site"/>
+   <param name="serverids"/>
+   <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+   <column db="hires_server_stat.iowait" label="IO Wait(%)"/>
+  </query>
+ </queries>
+ <size width="800" height="320"/>
+</modelledgraph>

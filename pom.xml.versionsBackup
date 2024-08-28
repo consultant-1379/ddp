@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ericsson.nms</groupId>
+    <artifactId>integration</artifactId>
+    <version>13.2.0.176-SNAPSHOT</version>
+  </parent>
+  <groupId>com.ericsson.cifwk.diagmon</groupId>
+  <artifactId>ddp</artifactId>
+  <version>1.0.204</version>
+  <packaging>pom</packaging>
+
+  <name>DDP Parent</name>
+  <description>Parent pom for the DDP project.</description>
+
+  <repositories>
+    <repository>
+      <id>prototype</id>
+      <url>https://arm1s11-eiffel004.eiffel.gic.ericsson.se:8443/nexus/content/repositories/prototype</url>
+    </repository>
+  </repositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>1.6</source>
+          <target>1.6</target>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+  
+
+  <modules>
+    <module>plot</module>
+    <module>reportengine</module>
+    <module>ksar</module>
+    <module>ERICddp_CXP9023713</module>
+    <module>clean_up</module>
+  </modules>
+</project>
+
+

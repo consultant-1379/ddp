@@ -1,0 +1,270 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+
+sub main
+{
+    my ($log,$site,$date,$startOrder,$stopOrder);
+    my $result = GetOptions(
+        "log=s"  => \$log,
+        "start=s"  => \$startOrder,
+        "stop=s"  => \$stopOrder,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    if ( ! $log ) {
+        printUsageAndExit("No Log specified");
+    }
+
+    my $r_SysRestartEvents = readLog($log);
+    my $r_SysTasks = groupEvents($r_SysRestartEvents,$startOrder,$stopOrder);
+
+    if ( $site ) {
+	store($site,$date,$r_SysTasks);
+    }
+}
+
+sub readOrderFile {
+    my ($file) = @_;
+
+    my %mcOrder = ();
+    open ORDER, $file or die "Cannot open $file";
+    <ORDER>; # Skip header
+    while ( my $line = <ORDER> ) {
+	my ($theMc,$theOther) = $line =~ /^(\S+)\s+(\d+)/;
+	$mcOrder{$theMc} = $theOther;
+    }
+    close ORDER;
+
+    return \%mcOrder;
+}
+
+sub store
+{
+    my ($site,$date,$r_SysTasks) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();    
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    
+    my @emtpyList = ();
+    my $r_McMap = getIdMap($dbh,"mc_names", "id", "name", \@emtpyList );
+
+    foreach my $r_SysTask ( @{$r_SysTasks} ) {
+	my $ssId = getTaskId($dbh, $siteId, $r_SysTask);
+
+	dbDo( $dbh, "DELETE FROM system_startstop_details WHERE ssid = $ssId");
+
+	my @orders = sort { $a <=> $b } keys %{$r_SysTask->{'order'}};
+    
+	foreach my $order ( @orders ) {
+	    my $r_EventsForOrder = $r_SysTask->{'order'}->{$order};
+	    if ( $DEBUG > 5 ) { print Dumper("processSystemTask: order=order r_EventsForOrder", $r_EventsForOrder); }
+	    my $r_CritEvent = getCritEvent($r_EventsForOrder);	  
+	    my $critTime = getEventStartTime($r_CritEvent);
+	    
+	    dbDo($dbh, sprintf("INSERT INTO system_startstop_details ( ssid, eventtime, mcid, orderval, eventduration ) VALUES ( %d, '%s', %d, %d, %d )",
+			       $ssId,
+			       formatTime($critTime, $StatsTime::TIME_SQL),
+			       $r_McMap->{$r_CritEvent->{'mc'}},
+			       $order,
+			       int( ($r_CritEvent->{'duration'}/1000) + 0.5)));
+	}
+    }
+}
+
+sub getCritEvent
+{
+    my ($r_EventsForOrder) = @_;
+    
+    if ( $DEBUG > 5 ) { print Dumper("getCritEvent: r_EventsForOrder", $r_EventsForOrder); }
+    my $r_CritEvent;
+    foreach my $r_Event ( @{$r_EventsForOrder} ) {
+	if ( defined $r_CritEvent ) {
+	    if ( $r_Event->{'duration'} > $r_CritEvent->{'duration'} ) {
+		$r_CritEvent = $r_Event;
+	    }
+	} else {
+	    $r_CritEvent = $r_Event;
+	}
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("getCritEvent: result", $r_CritEvent); }
+    return $r_CritEvent;
+}
+
+sub getEventStartTime
+{
+    my ($r_Event) = @_;
+    return timeStampToSec($r_Event->{'timestamp'}) - int($r_Event->{'duration'}/1000);
+}
+
+sub getTaskId
+{
+    my ( $dbh, $siteId, $r_SysTask ) = @_;
+
+    my $ssId;
+
+    if ( $DEBUG > 9 ) { print Dumper("getTaskId: r_SysTask", $r_SysTask); }
+    my @orders = sort { $a <=> $b } keys %{$r_SysTask->{'order'}};
+    my $startTimeSec = getEventStartTime(getCritEvent($r_SysTask->{'order'}->{$orders[0]}));
+    my $endTime = getCritEvent($r_SysTask->{'order'}->{$orders[$#orders]})->{'timestamp'};
+    $endTime =~ s/\./:/;
+
+    my $query = sprintf("SELECT id,endtime FROM system_startstop WHERE begintime = '%s' AND siteid = %d AND type = '%s'",
+			formatTime($startTimeSec, $StatsTime::TIME_SQL), $siteId, $r_SysTask->{'task'});
+    if ( $DEBUG > 2 ) { print "getTaskId: query=$query\n"; }
+    my $sth = $dbh->prepare($query) or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute() or die "Couldn't execute statement: " . $sth->errstr;
+    if ( $sth->rows > 0 ) {
+	my @row = $sth->fetchrow_array();
+	if ( $DEBUG > 2 ) { print Dumper("getTaskId: row", \@row); }
+	$ssId = $row[0];
+	
+	if ( $endTime ne $row[1] ) {
+	    dbDo($dbh, sprintf("UPDATE system_startstop SET endtime = '%s' WHERE ssid = '%d'", $endTime, $ssId));
+	}
+    } else {
+	dbDo( $dbh, 
+	      sprintf("INSERT INTO system_startstop ( begintime, endtime, siteid, type ) VALUES ( '%s', '%s', %d, '%s' )",
+		      formatTime($startTimeSec, $StatsTime::TIME_SQL),
+		      $endTime, $siteId, $r_SysTask->{'task'})
+	    );
+        $ssId = $dbh->last_insert_id(undef,undef,"system_startstop","id");
+    }
+
+    return $ssId;
+}
+
+sub timeStampToSec
+{
+    my ($timestamp) = @_;
+
+    $timestamp =~ s/ /:/;
+    $timestamp =~ s/\./:/;
+    return parseTime($timestamp, $StatsTime::TIME_YYYYMDHMS);
+}
+
+sub groupEvents
+{
+    my ($r_SysRestartEvents,$startOrderFile,$stopOrderFile) = @_;
+
+    my %orders = ();
+    $orders{'START'} = readOrderFile($startOrderFile);
+    $orders{'SHUTDOWN'} = readOrderFile($stopOrderFile);
+    if ( $DEBUG > 6 ) { print Dumper("groupEvents: orders", \%orders); }
+       
+    my @systemTasks = ();
+    
+    my $r_currSysTask = {};
+    foreach my $r_Event ( @{$r_SysRestartEvents} ) {
+	if ( $DEBUG > 7 ) { print Dumper("groupEvents: r_Event", $r_Event); }
+
+	my $eventTask = $r_Event->{'type'};
+	
+	if ( $eventTask ne $r_currSysTask->{'task'} ) {
+	    if ( $eventTask eq 'START_COMPLETED' ) {
+		$r_currSysTask = {};
+		next;
+	    }
+
+	    if ( $DEBUG > 4 ) { print Dumper("groupEvents: new task, r_Event", $r_Event); }
+
+	    $r_currSysTask = {
+		'task'  => $eventTask,
+		'order' => {}
+	    };
+	    push @systemTasks, $r_currSysTask;
+	}
+	
+	my $eventMc = $r_Event->{'mc'};
+	my $eventOrder = $orders{$eventTask}->{$eventMc};
+	
+	if ( ! exists $r_currSysTask->{'order'}->{ $eventOrder } ) {
+	    $r_currSysTask->{'order'}->{ $eventOrder } = [];
+	}
+	push @{ $r_currSysTask->{'order'}->{ $eventOrder } }, $r_Event;
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("groupEvents: \@systemTasks", \@systemTasks); } 
+
+    return \@systemTasks;
+}
+	
+	
+sub readLog($) {
+    my ($log) = @_;
+    my @systemRestartEvents = ();
+    open LOG, "$log" or die "Could not open Log File";
+    while ( my $line = <LOG> ) {
+	if ( $DEBUG > 9 ) { print "readLog: line=$line"; }
+
+        my ($date, $time, $logType, $appName, $rest) = $line =~
+            /^(\S+) (\S+) (\S+) \"([^\"]*)\" (.*)/;
+        if ( ! defined $rest ) {
+            print "WARN: Failed to parse $line\n";
+        }
+        if ( $DEBUG > 8) { print "readLog: date=$date time=$time logType=$logType appName=$appName rest=$rest\n"; }
+
+	if ( $appName ne 'SelfManagementStartStop' || $logType ne 'SYSTEM' ) {
+	    next;
+	}
+
+	my ($eventType) = $rest =~ /\"COM\.ERICSSON\.NMS\.CIF\.SSR\.([^\"]+)\"/;
+	my ($addInfo) = $rest =~ /\"([^\"]+)\"$/;
+        if ( $DEBUG > 8) { print "readLog: eventType=$eventType addInfo=$addInfo\n"; }
+
+
+	if ( $eventType =~ /RUNNING_STATE_CHANGE/ ) {
+	    #rnh_topology_reg: Running state from started to stopped  Reason: SYSTEM_SHUTDOWN  Elapsed time: 1082 ms
+	    #LaunchService: Running state from stopped to started  Reason: SYSTEM_START  Elapsed time: 8180
+	    if ( $addInfo =~ 
+		 /^(\S+): Running state from \S+ to \S+  Reason: SYSTEM_(\S+)  Elapsed time: (\d+)/ ) {
+		my $r_Event = {
+		    'mc' => $1,
+		    'timestamp' => $date . ' ' . $time,
+		    'type' => $2,
+		    'duration' => $3
+		};
+		if ( $DEBUG > 7 ) { print Dumper("readLog: r_Event", $r_Event); }
+		push @systemRestartEvents, $r_Event;
+	    } elsif ( $addInfo =~ /^Started \S+ in (\d+)/ ) {
+		my $r_Event = {
+		    'timestamp' => $date . ' ' . $time,
+		    'type' => 'START_COMPLETED',
+		    'duration' => $1
+		};
+		push @systemRestartEvents, $r_Event;
+	    }		    
+	}
+    }
+    close LOG;
+
+    if ( $DEBUG > 5 ) { print Dumper("readLog: systemRestartEvents", \@systemRestartEvents); }
+    return \@systemRestartEvents;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseSystemRestart --log logfile --site sitename --date yyyy-mm-dd\n";    
+    exit 1;
+}

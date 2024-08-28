@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Count"
+>
+  <title value="Unexpected Failed PDM Config Messages"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="enm_ncmagent_mefServiceLcm_instr">
+        <reference table="sites" condition="enm_ncmagent_mefServiceLcm_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_ncmagent_mefServiceLcm_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="unexpectedFailed" label="Count"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

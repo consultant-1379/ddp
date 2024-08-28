@@ -1,0 +1,105 @@
+#!/usr/bin/env perl
+
+$countFile = $ARGV[0];
+$countByMinFile = $ARGV[1];
+$countBySessFile = $ARGV[2];
+
+open COUNT, $countFile or die "Cannot open $countFile";
+open COUNT_BY_MIN, ">$countByMinFile" or die "Cannot open $countByMinFile";
+
+$lastTime = -1;
+$gotFirstLine = 0;
+while ( $line = <COUNT> )
+{
+    @parts = split /@/, $line;
+    if ( $parts[0] eq "SESSIONNAMES" )
+    {
+	@sessions = split /@@/, $line;
+	# Remove the SESSIONNAMES part
+	shift @sessions;
+    }
+    else
+    {
+	@timeFields = split /:/, $parts[0];
+	if ( $#timeFields == 1 )
+	{
+	    $hour = $timeFields[0];
+	    $min  = $timeFields[1];
+	}
+	else
+	{
+	    $hour = $timeFields[2];
+	    $min  = $timeFields[3];
+	}
+
+
+	shift @parts;
+	
+	# Strip out any lines from before midnight
+	if ( ! $gotFirstLine )
+	{
+	    if ( $hour == 0 )
+	    {
+		$gotFirstLine = 1;
+	    }
+	    else
+	    {
+		next;
+	    }
+	}
+
+	    
+	$currTime = ($hour * 60) + $min;
+
+	# Fill in any blank lines
+	while ( ($currTime - $lastTime) > 1 )
+	{
+	    $lastTime++;
+	    printf COUNT_BY_MIN "%02d:%02d:00 0 0 0 0 0 0 0\n", int ( $lastTime / 60 ), $lastTime % 60;
+	}
+		
+	@operationCount = ( 0, 0, 0, 0, 0, 0, 0 );
+	foreach $sessCount ( @parts )
+	{
+	    @sessCountParts = split /,/, $sessCount;
+	    $sessKey = shift @sessCountParts;
+
+	    $r_SessTotals = $sessTotals{$sessKey};
+	    if ( ! $r_SessTotals )
+	    {
+		$r_SessTotals = [ 0, 0, 0, 0, 0, 0, 0 ];
+		$sessTotals{$sessKey} = $r_SessTotals;
+	    }	    
+	    for ( $i = 0; $i <= $#sessCountParts; $i++ )
+	    {
+		$r_SessTotals->[$i] += $sessCountParts[$i];
+		$operationCount[$i] += $sessCountParts[$i];
+	    }
+	}
+	
+	printf COUNT_BY_MIN "%02d:%02d:00", $hour, $min;
+	foreach $opCount ( @operationCount )
+	{
+	    print COUNT_BY_MIN " $opCount";
+	}
+	print COUNT_BY_MIN "\n";
+	$lastTime = $currTime;
+    }
+}
+close COUNT;
+close COUNT_BY_MIN;
+
+
+open COUNT_BY_SESS, ">$countBySessFile" or die "Cannot open $countBySessFile";
+foreach $sessKey ( keys %sessTotals )
+{
+    $r_SessTotals = $sessTotals{$sessKey};
+    @sessionInfo = split /::/, $sessions[$sessKey];
+
+    foreach $op ( @{$r_SessTotals} )
+    {
+	print COUNT_BY_SESS "$op|";
+    }
+    print COUNT_BY_SESS "$sessionInfo[1]|$sessionInfo[0]\n";
+}
+close COUNT_BY_SESS;

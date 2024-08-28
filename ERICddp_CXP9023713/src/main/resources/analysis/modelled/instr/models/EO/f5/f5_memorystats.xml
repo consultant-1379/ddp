@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^f5instr@f5memorystats$"
+>
+
+  <table name="eo_f5_memory_stats">
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^F5memorystats-TMM$">
+      <metric source="memoryTotal" target="memoryTotal"/>
+      <metric source="memoryUsed" target="memoryUsed"/>
+      <metric source="tmmMemoryTotal" target="tmmMemoryTotal"/>
+      <metric source="tmmMemoryUsed" target="tmmMemoryUsed"/>
+      <metric source="swapTotal" target="swapTotal"/>
+      <metric source="swapUsed" target="swapUsed"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

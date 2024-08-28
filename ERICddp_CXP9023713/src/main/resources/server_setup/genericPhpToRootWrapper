@@ -1,0 +1,22 @@
+#!/bin/bash
+
+#=====================================================================
+# Script  : genericPhpToRootWrapper
+# Author  : Patrick O Connor
+# Purpose : The purpose of this script is to source config then call genericPhpToRootWrapper.pl
+# Usage   : ${DDP_ROOT}/${NEW_DDP_VER}/server_setup/genericPhpToRootWrapper \
+#           -scriptid <SCRIPT_ID_THAT_NEEDS_TO_BE_RUN_AS_ROOT> -options <INPUT_OPTIONS_FOR_SCRIPT> \
+#           -outputfile <PATH_TO_LOG_TO_REDIRECT_SCRIPT_OUTPUT>
+#=====================================================================
+
+SERVER_SETUP=`dirname $0`
+SERVER_SETUP=`cd ${SERVER_SETUP} ; pwd`
+
+ANALYSIS_DIR=`cd ${SERVER_SETUP} ; cd ../analysis ; pwd`
+export PERL5OPT="-I${ANALYSIS_DIR}/common"
+
+# Source config
+. /data/stats/config
+
+${SERVER_SETUP}/genericPhpToRootWrapper.pl "$@"
+

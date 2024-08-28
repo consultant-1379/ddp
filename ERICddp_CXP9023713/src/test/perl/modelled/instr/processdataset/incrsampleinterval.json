@@ -1,0 +1,82 @@
+{
+    "desc": "Verify incremental processing with sampleinterval",
+    "model": "sampleinterval.xml",
+    "cliArgs": {
+        "date": "2022-02-07"
+    },
+    "columnmap": {
+        "bind:-ds_connection_handlers_ldap_requests_count": "bind_cnt"
+    },
+    "delta": [
+        "bind:-ds_connection_handlers_ldap_requests_count"
+    ],
+    "filteridle": [],
+    "filterstatic": [],
+    "filtervalue": {},
+    "rate": [],
+    "scale": {},
+    "runs": [
+        {
+            "input": [
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 1,
+                    "timestamp": "2022-02-07 00:00:34",
+                    "time": 1644192034
+                },
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2,
+                    "timestamp": "2022-02-07 00:01:34",
+                    "time": 1644192094
+                },
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 3,
+                    "timestamp": "2022-02-07 00:02:34",
+                    "time": 1644192154
+                },
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 4,
+                    "timestamp": "2022-02-07 00:03:34",
+                    "time": 1644192214
+                },
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 5,
+                    "timestamp": "2022-02-07 00:04:34",
+                    "time": 1644192274
+                },
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 6,
+                    "timestamp": "2022-02-07 00:05:34",
+                    "time": 1644192334
+                }
+            ],
+            "output": [
+                {
+                    "timestamp": "2022-02-07 00:02:34",
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2,
+                    "time": 1644192154
+                },
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2,
+                    "time": 1644192274,
+                    "timestamp": "2022-02-07 00:04:34"
+                }
+            ]
+        },
+        {
+            "input": [
+                {
+                    "bind:-ds_connection_handlers_ldap_requests_count": 7,
+                    "timestamp": "2022-02-07 00:06:34",
+                    "time": 1644192394
+                }
+            ],
+            "output": [
+                {
+                    "time": 1644192394,
+                    "timestamp": "2022-02-07 00:06:34",
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2
+                }
+            ]
+        }
+    ]
+}

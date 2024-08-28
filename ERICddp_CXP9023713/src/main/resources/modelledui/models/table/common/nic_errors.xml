@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="nic_errors">
+  <reference table="network_interfaces" condition="nic_errors.nicid = network_interfaces.id"/>
+  <reference table="sites" condition="nic_errors.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="serverid"/>
+ <param name="date"/>
+ <where>nic_errors.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND network_interfaces.serverid = %serverid% AND sites.name = '%site%'</where>
+
+ <groupby>
+    <column db="nic_errors.nicid"/>
+ </groupby>
+
+ <column db="nic_errors.nicid" label="nicid" id="nicid" visible="false"/>
+ <column db="network_interfaces.name" id="nic" label="Interface Name"/>
+ <column db="SUM(coll)" label="Collisions"/>
+ <column db="SUM(rxdrop)" label="RX Drops"/>
+ <column db="SUM(rxerr)" label="RX Errors"/>
+ <column db="SUM(rxerr)" label="RX FIFO"/>
+ <column db="SUM(rxfram)" label="RX Frame"/>
+ <column db="SUM(txcarr)" label="TX Carrier"/>
+ <column db="SUM(txdrop)" label="TX Drops"/>
+ <column db="SUM(txerr)" label="TX Error"/>
+ <column db="SUM(txfifo)" label="TX FIFO"/>
+
+ <ctxmenu keycol="nicid" targettype="modelledgraph" multiselect="true">
+  <item id="common/nic_errors_coll" label="Plot Collisions"/>
+  <item id="common/nic_errors_rxdrop" label="Plot RX Drops"/>
+  <item id="common/nic_errors_rxerr" label="Plot RX Errors"/>
+  <item id="common/nic_errors_rxfifo" label="Plot RX FIFO"/>
+  <item id="common/nic_errors_rxfram" label="Plot RX Frame"/>
+  <item id="common/nic_errors_txcarr" label="Plot TX Carrier"/>
+  <item id="common/nic_errors_txdrop" label="Plot TX Drops"/>
+  <item id="common/nic_errors_txerr" label="Plot TX Error"/>
+  <item id="common/nic_errors_txfifo" label="Plot TX FIFO"/>
+ </ctxmenu>
+
+</modelledtable>

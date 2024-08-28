@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="%s">
+    <param name="title"/>
+  </title>
+  <queries>
+    <query timecol="time">
+      <dbtables main="fm_alarmprocessing_instr">
+        <reference table="sites" condition="fm_alarmprocessing_instr.siteid = sites.id"/>
+        <reference table="servers" condition="fm_alarmprocessing_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="server"/>
+      <where>sites.name = '%s' AND servers.hostname = '%s'</where>
+      <column db="alarmRootNotApplicableProcessedByAPS" label="Not Applicable"/>
+      <column db="alarmRootPrimaryProcessedByAPS" label="Primary"/>
+      <column db="alarmRootSecondaryProcessedByAPS" label="Secondary"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

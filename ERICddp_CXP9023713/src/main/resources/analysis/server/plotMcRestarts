@@ -1,0 +1,18 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+DATADIR=$1
+OUTPUTDIR=$2
+DASH_DATE=$3
+SITE=$4
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+
+if [ -r ${TMP_DIR}/lvlog/SelfManagementStartStop ] ; then
+    ${ANALYSIS_BIN}/server/parseMC --log ${TMP_DIR}/lvlog/SelfManagementStartStop --site ${SITE} --date ${SQL_DATE}
+fi

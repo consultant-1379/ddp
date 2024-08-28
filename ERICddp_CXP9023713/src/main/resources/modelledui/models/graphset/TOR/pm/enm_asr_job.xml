@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_asr_job">
+      <reference table="sites" condition="enm_asr_job.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="jobType"/>
+    <where>sites.name = '%s' AND enm_asr_job.jobType = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="readStageDuration" type="tsc" ylabel="millisec">
+      <title value="Stage Duration(msec)"/>
+      <column db="readlongTaskDuration" label="Task Max"/>
+    </graph>
+    <graph name="kafkaReadTime" type="tsc" ylabel="millisec">
+      <title value="Kafka Read Time"/>
+      <column db="kafkaReadTime/readNumTasks" label="Task Average"/>
+      <column db="kafkaReadTimeMax" label="Task Max"/>
+    </graph>
+    <graph name="inputEvents" type="tsc" ylabel="Count">
+      <title value="Input Events"/>
+      <column db="inputEventCount/readNumTasks" label="Task Average"/>
+      <column db="inputEventsMax" label="Task Max"/>
+    </graph>
+    <graph name="filteredEvents" type="tsc" ylabel="Count">
+      <title value="Filtered Events"/>
+      <column db="filteredEvents/readNumTasks" label="Task Average"/>
+      <column db="filteredEventsMax" label="Task Max"/>
+    </graph>
+    <graph name="writeStageDuration" type="tsc" ylabel="millisec">
+      <title value="Stage Duration(msec)"/>
+      <column db="writelongTaskDuration" label="Task Max"/>
+    </graph>
+    <graph name="completeRecords" type="tsc" ylabel="Count">
+      <title value="Complete Records"/>
+      <column db="completeRecords/writeNumTasks" label="Task Average"/>
+      <column db="completeRecordsMax" label="Task Max"/>
+    </graph>
+    <graph name="endTriggeredSessions" type="tsc" ylabel="Count">
+      <title value="End Triggered Suspect Sessions"/>
+      <column db="endTriggeredSessions/writeNumTasks" label="Task Average"/>
+      <column db="endTriggeredSessionsMax" label="Task Max"/>
+    </graph>
+    <graph name="inactiveSuspectSessions" type="tsc" ylabel="Count">
+      <title value="Inactive Suspect Sessions"/>
+      <column db="inactiveSuspectSession/writeNumTasks" label="Task Average"/>
+      <column db="inactiveSuspectSessionMax" label="Task Max"/>
+    </graph>
+    <graph name="kafkaWriteTime" type="tsc" ylabel="millisec">
+      <title value="Kafka Write Time"/>
+      <column db="kafkaWriteTime/writeNumTasks" label="Task Average"/>
+      <column db="kafkaWriteTimeMax" label="Task Max"/>
+    </graph>
+    <graph name="mapStateTime" type="tsc" ylabel="millisec">
+      <title value="Map with State Time"/>
+      <column db="mapStateTime/writeNumTasks" label="Task Average"/>
+      <column db="mapStateTimeMax" label="Task Max"/>
+    </graph>
+    <graph name="completeRecords" type="tsc" ylabel="count">
+      <title value="Completed Records"/>
+      <column db="completeRecords" label="Completed Records"/>
+    </graph>
+    <graph name="filteredEvents" type="tsc" ylabel="count">
+      <title value="Filtered Events"/>
+      <column db="filteredEvents" label="Filtered Events"/>
+    </graph>
+    <graph name="suspectRecords" type="tsc" ylabel="count">
+      <title value="Suspect Records"/>
+      <column db="suspectRecords" label="Suspect Records"/>
+    </graph>
+    <graph name="inputEventCount" type="tsc" ylabel="count">
+      <title value="Input Event Count"/>
+      <column db="inputEventCount" label="Input Event Count"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="read">
+      <member>readStageDuration</member>
+      <member>kafkaReadTime</member>
+      <member>inputEvents</member>
+      <member>filteredEvents</member>
+    </group>
+    <group name="write">
+      <member>writeStageDuration</member>
+      <member>completeRecords</member>
+      <member>endTriggeredSessions</member>
+      <member>inactiveSuspectSessions</member>
+      <member>kafkaWriteTime</member>
+      <member>mapStateTime</member>
+    </group>
+    <group name="batch">
+      <member>inputEventCount</member>
+      <member>filteredEvents</member>
+      <member>completeRecords</member>
+      <member>suspectRecords</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

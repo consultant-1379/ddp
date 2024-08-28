@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="imlifecycleservice"/>
+  </services>
+
+  <table name="enm_aim_lifecycle_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.instrumentation.incident-management-life-cycle-service:type=NestingInstrumentationBean$">
+      <metric source="nestingProcessTime" target="nestingProcessTime" delta="true" filteridle="true"/>
+      <metric source="totalReceivedIncidentsToNest" target="totalReceivedIncidentsToNest" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsCreated" target="totalIncidentsCreated_Nesting" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsProcessed" target="totalIncidentsProcessed" delta="true" filteridle="true"/>
+      <metric source="confidenceCalculationTimeInNesting" target="confidenceCalculationTimeInNesting" delta="true" filteridle="true"/>
+      <metric source="knowledgeBaseRestCallTimeInNesting" target="knowledgeBaseRestCallTimeInNesting" delta="true" filteridle="true"/>
+      <metric source="KBRestCallFailures" target="KBRestCallFailures" delta="true" filteridle="true"/>
+      <metric source="KBRestCalls" target="KBRestCalls" delta="true" filteridle="true"/>
+      <metric source="totalNestingFailures" target="totalNestingFailures" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsCreatedWithFMDataSource" target="totalIncidentsCreatedWithFMDataSource" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsCreatedWithPMDataSource" target="totalIncidentsCreatedWithPMDataSource" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsCreatedWithFMAndPMDataSource" target="totalIncidentsCreatedWithFMAndPMDataSource" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsChangedFromFMToFMAndPM" target="totalIncidentsChangedFromFMToFMAndPM" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsChangedFromPMToFMAndPM" target="totalIncidentsChangedFromPMToFMAndPM" delta="true" filteridle="true"/>
+      <metric source="totalActiveIncidents" target="totalActiveIncidents"/>
+      <metric source="totalInactiveIncidents" target="totalInactiveIncidents"/>
+      <metric source="totalIncidentsInAIM" target="totalIncidentsInAIM"/>
+      <metric source="totalActiveIncidentsWithFMDataSource" target="totalActiveIncidentsWithFMDataSource"/>
+      <metric source="totalActiveIncidentsWithPMDataSource" target="totalActiveIncidentsWithPMDataSource"/>
+      <metric source="totalActiveIncidentsWithFMAndPMDataSource" target="totalActiveIncidentsWithFMAndPMDataSource"/>
+      <metric source="avgEventsInIncident" target="avgEventsInIncident"/>
+      <metric source="avgTimeIncidentIsOpen" target="avgTimeIncidentIsOpen"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.lifecyclemanagement.instrumentation.incident-management-life-cycle-service:type=LifecycleManagementInstrumentationBean$">
+      <metric source="totalClosedEventsReceived" target="totalClosedEventsReceived" delta="true" filteridle="true"/>
+      <metric source="totalActiveIncidentsInCache" target="totalActiveIncidentsInCache"/>
+      <metric source="totalIncidentsSetToInactive" target="totalIncidentsSetToInactive" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.incidentmgt.persistance.instrumentation.incident-management-life-cycle-service:type=LifecycleDBAdminInstrumentationBean$">
+      <metric source="currentIncidentTableSizeInMB" target="currentIncidentTableSizeInMB"/>
+      <metric source="currentEventTableSizeInMB" target="currentEventTableSizeInMB"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.instrumentation.incident-management-life-cycle-service:type=LifeCycleCacheInstrumentationBean$">
+      <metric source="singleDimensionKeysSize" target="singleDimensionKeysSize"/>
+      <metric source="combinedDimensionKeysSize" target="combinedDimensionKeysSize"/>
+      <metric source="maxNetworkWideLoadKPIValueCacheSize" target="maxNetworkWideLoadKPIValueCacheSize"/>
+      <metric source="loadKpiSize" target="loadKpiSize"/>
+      <metric source="monitoringKpisSize" target="monitoringKpisSize"/>
+      <metric source="networkElementScopeSize" target="networkElementScopeSize"/>
+      <metric source="priorityRankScoresPerCellSize" target="priorityRankScoresPerCellSize"/>
+      <metric source="utilizationCellKpiValuesSize" target="utilizationCellKpiValuesSize"/>
+      <metric source="totalOfCellTopologyReads" target="totalOfCellTopologyReads" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.incidentmgt.persistance.instrumentation.incident-management-life-cycle-service:type=IncidentDataBaseInstrumentationBean$">
+      <metric source="totalTimeCreatingIncidents" target="totalTimeCreatingIncidents" delta="true" filteridle="true"/>
+      <metric source="totalTimeUpdatingIncidents" target="totalTimeUpdatingIncidents" delta="true" filteridle="true"/>
+      <metric source="totalTimeDeletingIncidents" target="totalTimeDeletingIncidents" delta="true" filteridle="true"/>
+      <metric source="totalTimeFetchingIncidents" target="totalTimeFetchingIncidents" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsCreated" target="totalIncidentsCreated" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsUpdated" target="totalIncidentsUpdated" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsDeleted" target="totalIncidentsDeleted" delta="true" filteridle="true"/>
+      <metric source="totalIncidentsFetched" target="totalIncidentsFetched" delta="true" filteridle="true"/>
+      <metric source="totalFailedOperations" target="totalFailedOperations" delta="true" filteridle="true"/>
+      <metric source="totalOperationsSkippedDueToWriteLock" target="totalOperationsSkippedDueToWriteLock" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.instrumentation.incident-management-life-cycle-service:type=TrainingStatusInstrumentationBean$">
+      <metric source="percentageOfLTECellsTrained" target="percentageOfLTECellsTrained"/>
+      <metric source="percentageOfWCDMACellsTrained" target="percentageOfWCDMACellsTrained"/>
+      <metric source="percentageOfRNCsTrained" target="percentageOfRNCsTrained"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.instrumentation.incident-management-life-cycle-service:type=EnrichmentEventInstrumentationBean$">
+      <metric source="totalCorrelationsBetweenFMIncidentAndTT" target="totalCorrelationsBetweenFMIncidentAndTT" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenPMIncidentAndTT" target="totalCorrelationsBetweenPMIncidentAndTT" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenFMPMIncidentAndTT" target="totalCorrelationsBetweenFMPMIncidentAndTT" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenIncidentAndTT" target="totalCorrelationsBetweenIncidentAndTT" delta="true" filteridle="true"/>
+      <metric source="totalTroubleTicketsReceived" target="totalTroubleTicketsReceived" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenFMIncidentAndWO" target="totalCorrelationsBetweenFMIncidentAndWO" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenPMIncidentAndWO" target="totalCorrelationsBetweenPMIncidentAndWO" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenFMPMIncidentAndWO" target="totalCorrelationsBetweenFMPMIncidentAndWO" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenIncidentAndWO" target="totalCorrelationsBetweenIncidentAndWO" delta="true" filteridle="true"/>
+      <metric source="totalWorkOrdersReceived" target="totalWorkOrdersReceived" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenFMIncidentAndOtherEnrichmentEvents" target="totalCorrelationsBetweenFMIncidentAndOtherEnrichmentEvents" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenPMIncidentAndOtherEnrichmentEvents" target="totalCorrelationsBetweenPMIncidentAndOtherEnrichmentEvents" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenFMPMIncidentAndOtherEnrichmentEvents" target="totalCorrelationsBetweenFMPMIncidentAndOtherEnrichmentEvents" delta="true" filteridle="true"/>
+      <metric source="totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents" target="totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents" delta="true" filteridle="true"/>
+      <metric source="totalOtherEnrichmentEventsReceived" target="totalOtherEnrichmentEventsReceived" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.enm.services.incident.nbi.instrumentation.incident-management-life-cycle-service:type=NbiInstrumentationBean$">
+      <metric source="totalEventsProcessed" target="totalEventsProcessed" delta="true" filteridle="true"/>
+      <metric source="eventProcessingTime" target="eventProcessingTime" delta="true" filteridle="true"/>
+      <metric source="totalBatchNotificationsSent" target="totalBatchNotificationsSent" delta="true" filteridle="true"/>
+      <metric source="totalEventsSent" target="totalEventsSent" delta="true" filteridle="true"/>
+      <metric source="totalNotificationErrors" target="totalNotificationErrors" delta="true" filteridle="true"/>
+      <metric source="eventSendingTime" target="eventSendingTime" delta="true" filteridle="true"/>
+      <metric source="totalSingleIncidentRequest" target="totalSingleIncidentRequest" delta="true" filteridle="true"/>
+      <metric source="totalMultipleFiltersIncidentRequest" target="totalMultipleFiltersIncidentRequest" delta="true" filteridle="true"/>
+      <metric source="multipleFiltersIncidentSendingTime" target="multipleFiltersIncidentSendingTime" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,317 @@
+#!/usr/bin/env perl
+
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsCommon;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG=0;
+
+main();
+
+
+sub main
+{
+    my ($inputFile,$site,$server,$date);
+    my $result = GetOptions("input=s"     => \$inputFile,
+			    "site=s"      => \$site,
+			    "server=s"    => \$server,
+			    "date=s"      => \$date,
+			    "debug=s"     => \$DEBUG
+			    );
+			    
+    my ($year,$month,$day) = $date =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})$/;
+    my $r_scriptExecutions = parseLog($inputFile,$year);
+    processExecutions($r_scriptExecutions);
+    store($r_scriptExecutions,$site,$server);
+}
+
+sub store
+{
+    my ($r_scriptExecutions,$site,$server) = @_;
+
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_slaveIds = getIdMap($dbh,"smrs_slave","id","hostname",[],$siteId,"siteid");
+
+    my $firstTime = $r_scriptExecutions->[0]->{'events'}->[0]->{'timestamp'};
+    my $lastTime = $r_scriptExecutions->[$#{$r_scriptExecutions}]->{'events'}->[0]->{'timestamp'};
+    if ( $r_scriptExecutions->[0]->{'name'} =~ /^tar_smrs_slave/ || $r_scriptExecutions->[0]->{'name'} =~ /^smrs_slave_[^_]+_/ ) {
+	if ( ! exists $r_slaveIds->{$server} ) {
+	    $r_slaveIds = getIdMap($dbh,"smrs_slave","id","hostname",[ $server ],$siteId,"siteid");
+	}
+	
+	dbDo($dbh,sprintf("DELETE FROM smrs_slave_createtar WHERE slaveid = %d AND time BETWEEN '%s' AND '%s'",
+			  $r_slaveIds->{$server},
+			  formatTime($firstTime, $StatsTime::TIME_SQL ),
+			  formatTime($lastTime, $StatsTime::TIME_SQL )))
+	    or die "Failed to delete existing data in smrs_slave_createtar";
+
+    } elsif ( $r_scriptExecutions->[0]->{'name'} =~ /^get_tar_from_slaves/ || $r_scriptExecutions->[0]->{'name'} =~ /^smrs_master_/ ) {
+	dbDo($dbh,sprintf("DELETE FROM smrs_master_gettar WHERE siteid = $siteId AND time BETWEEN '%s' AND '%s'",
+			  formatTime($firstTime, $StatsTime::TIME_SQL ),
+			  formatTime($lastTime, $StatsTime::TIME_SQL )))
+	    or die "Failed to delete existing data in smrs_slave_createtar";
+    }
+
+    foreach my $r_exec ( @{$r_scriptExecutions} ) {
+    	if ( $DEBUG > 6 ) { print Dumper("store: processing", $r_exec); }
+    	if ( ($r_exec->{'name'} =~ /^tar_smrs_slave/ || $r_exec->{'name'} =~ /^smrs_slave_[^_]+_/) && 
+    	     exists $r_exec->{'find.files'} ) {
+    	    dbDo($dbh,sprintf("INSERT INTO smrs_slave_createtar VALUES('%s',%d,%d,'%s',%d,%d,%d,%d,'%s')",
+    			      formatTime( $r_exec->{'events'}->[0]->{'timestamp'}, $StatsTime::TIME_SQL ),
+			      $r_slaveIds->{$server},
+    			      $r_exec->{'duration'},
+    			      $r_exec->{'type'},
+    			      $r_exec->{'find.time'},
+    			      $r_exec->{'find.files'},
+    			      $r_exec->{'tar.time'},
+    			      int ( ($r_exec->{'tar.bytes'} / 1024) + 0.5 ),
+			      $r_exec->{'tarfilets'}) )
+    		or die "Failed to insert into smrs_slave_createtar";
+    	} elsif ( ($r_exec->{'name'} =~ /^get_tar_from_slaves/ || $r_exec->{'name'} =~ /^smrs_master_/) &&
+		  $#{$r_exec->{'transfers'}} > -1 ) {
+	    foreach my $r_txfr ( @{$r_exec->{'transfers'}} ) {
+		if ( $DEBUG > 4 ) { print Dumper("store: r_txfr", $r_txfr); }
+		my $slaveId = $r_slaveIds->{$r_txfr->{'slave'}};
+		if ( ! defined $slaveId ) {
+		    $r_slaveIds = getIdMap($dbh,"smrs_slave","id","hostname",[ $r_txfr->{'slave'} ],$siteId,"siteid");
+		    $slaveId = $r_slaveIds->{$r_txfr->{'slave'}};
+		}
+
+		dbDo($dbh,sprintf("INSERT INTO smrs_master_gettar VALUES('%s',%d,%d,'%s',%d,%d,%d,'%s')",
+				  formatTime( $r_txfr->{'copystart'}, $StatsTime::TIME_SQL ),
+				  $siteId,
+				  $r_txfr->{'duration'},
+				  $r_exec->{'type'},
+				  $r_txfr->{'copy.time'},
+				  $r_txfr->{'extract.time'},
+				  $slaveId,
+				  $r_txfr->{'tarfilets'}) )
+		    or die "Failed to insert into smrs_master_gettar";
+	    }
+	}
+    }
+
+    $dbh->disconnect;
+}
+	    
+sub processExecutions
+{
+    my ($r_scriptExecutions) = @_;
+
+    foreach my $r_exec ( @{$r_scriptExecutions} ) {
+	if ( $DEBUG > 6 ) { print Dumper("processExecutions: processing", $r_exec); }
+	if ( $r_exec->{'name'} eq 'UNKNOWN' && 
+	     $r_exec->{'events'}->[0]->{'message'} =~ /GRAN/ ) {
+	    $r_exec->{'name'} = 'tar_smrs_slave.sh';
+	}
+
+	if ( $r_exec->{'name'} =~ /^tar_smrs_slave/ || $r_exec->{'name'} =~ /^smrs_slave_[^_]+_/ ) {
+	    if ( $r_exec->{'name'} =~ /^tar_smrs_slave/ ) {
+		($r_exec->{'type'}) = $r_exec->{'events'}->[0]->{'message'}
+		=~ /file \/export\/([A-Z]+)/;
+	    } else {
+		($r_exec->{'type'}) = $r_exec->{'name'} =~ /^smrs_slave_([^_]+)_/;
+	    }
+
+	    if ( $#{$r_exec->{'events'}} > 1 ) {
+		my $r_events = $r_exec->{'events'};
+		for ( my $i = 1; $i <= $#{$r_events}; $i++ ) {
+		    if ( $r_events->[$i]->{'message'} =~ /Tarring (\d+) files/ ) {
+			$r_exec->{'find.files'} = $1;
+			$r_exec->{'find.time'} = $r_events->[$i]->{'timestamp'} -
+			    $r_events->[$i-1]->{'timestamp'};
+
+			if ( $DEBUG > 5 ) { 
+			    printf "processExecution smrs slave tar find.time=%d find.files=%d\n", 
+			    $r_exec->{'find.time'},$r_exec->{'find.files'}; 
+			}
+		    } elsif ( $r_events->[$i]->{'message'} =~ /(\S+)\.tar created with size (\d+)/ ) {
+			my $tarFile = $1;
+			$r_exec->{'tar.bytes'} = $2;
+			$r_exec->{'tar.time'} = $r_events->[$i]->{'timestamp'} - 
+			    $r_events->[$i - 1]->{'timestamp'};
+			if ( $DEBUG > 5 ) { 
+			    printf "processExecution smrs slave tar tarfile=%s tar.bytes=%d tar.time=%d\n", 
+			    $tarFile, $r_exec->{'tar.bytes'}, $r_exec->{'tar.time'};
+			}
+
+			my ($year,$month,$day,$hour,$min,$sec) = $tarFile =~ 
+			    /_(\d{4,4})(\d{2,2})(\d{2,2})_(\d{2,2})(\d{2,2})(\d{2,2})_[A-Za-z]+$/;
+			$r_exec->{'tarfilets'} = sprintf("%04d-%02d-%02d %02d:%02d:%02d", 
+							 $year, $month, $day,
+							 $hour,$min, $sec);
+		    }
+		}
+	    }
+	} elsif ( $r_exec->{'name'} =~ /^get_tar_from_slaves/ || $r_exec->{'name'} =~ /^smrs_master_/ ) {
+	    if ( $r_exec->{'name'} =~ /^get_tar_from_slaves/ ) {
+		if ( $r_exec->{'name'} =~ /core/ ) { 
+		    $r_exec->{'type'} = 'CORE';
+		} else {
+		    $r_exec->{'type'} = 'GRAN';
+		}
+	    } elsif ( $r_exec->{'name'} =~ /^smrs_master_([^:]+)/ ) {
+		$r_exec->{'type'} = $1;
+	    }
+		
+	    $r_exec->{'transfers'} = [];
+	    foreach my $r_event ( @{$r_exec->{'events'}} ) {
+		if ( $DEBUG > 6 ) { print "processExecutions: event message=$r_event->{'message'}\n"; }
+
+		if ( $r_event->{'message'} =~ /^Copying (\S+) from (\S+)/ ) {
+		    my ($tarFile,$slave) = ($1,$2);
+		    my ($year,$month,$day,$hour,$min,$sec) = $tarFile =~ 
+			/_(\d{4,4})(\d{2,2})(\d{2,2})_(\d{2,2})(\d{2,2})(\d{2,2})_[A-Za-z]+.tar$/;
+		    my $tarfilets = sprintf("%04d-%02d-%02d %02d:%02d:%02d", 
+					    $year, $month, $day,
+					    $hour,$min, $sec);
+ 		    
+		    my $r_txfr = { 
+			'slave' => $slave,		       
+			'copystart' => $r_event->{'timestamp'},
+			'tarfile' => $tarFile,
+			'tarfilets' => $tarfilets
+		    };
+		    if ( $DEBUG > 5 ) { print Dumper("processExecutions: new txfr", $r_txfr); }
+		    push @{$r_exec->{'transfers'}}, $r_txfr;
+		} elsif ( $r_event->{'message'} =~ /^Removing (\S+) from (\S+)/ ) {
+		    my ($tarFile,$slave) = ($1,$2);
+		    my $r_txfr = $r_exec->{'transfers'}->[$#{$r_exec->{'transfers'}}];
+		    if ( $DEBUG > 5 ) { print Dumper("processExecutions: tarFile=$tarFile slave=$slave r_txfr", $r_txfr); }
+		    if ( $r_txfr->{'slave'} eq $slave &&
+			 $r_txfr->{'tarfile'} eq $tarFile ) {
+			$r_txfr->{'copy.time'} = $r_event->{'timestamp'} - $r_txfr->{'copystart'};
+		    } else {
+			print "WARN: Sequence error for $r_event->{'message'}\n"; 
+		    }
+		} elsif ( $r_event->{'message'} =~ /^Extracting tar (\S+) for slave (\S+)/ ) {
+		    my ($tarFile,$slave) = ($1,$2);
+		    my $r_txfr = $r_exec->{'transfers'}->[$#{$r_exec->{'transfers'}}];
+		    if ( $DEBUG > 5 ) { print Dumper("processExecutions: tarFile=$tarFile slave=$slave r_txfr", $r_txfr); }
+		    if ( $r_txfr->{'slave'} eq $slave &&
+			 $r_txfr->{'tarfile'} eq $tarFile ) {
+			$r_txfr->{'extractstart'} = $r_event->{'timestamp'};
+		    } else {
+			print "WARN: Sequence error for $r_event->{'message'}\n"; 
+		    }
+		} elsif ( $r_event->{'message'} =~ /^Completed processing for (\S+) from (\S+)/ ) {
+		    my ($tarFile,$slave) = ($1,$2);
+		    my $r_txfr = $r_exec->{'transfers'}->[$#{$r_exec->{'transfers'}}];
+		    if ( $DEBUG > 5 ) { print Dumper("processExecutions: tarFile=$tarFile slave=$slave r_txfr", $r_txfr); }
+		    if ( $r_txfr->{'slave'} eq $slave &&
+			 $r_txfr->{'tarfile'} eq $tarFile ) {
+			$r_txfr->{'extract.time'} = $r_event->{'timestamp'} - $r_txfr->{'extractstart'};
+			$r_txfr->{'duration'} = $r_event->{'timestamp'} - $r_txfr->{'copystart'};
+		    } else {
+			print "WARN: Sequence error for $r_event->{'message'}\n"; 
+		    }
+		    
+		}
+	    }
+	}
+
+	my $startTime = $r_exec->{'events'}->[0]->{'timestamp'};
+	my $endTime = $r_exec->{'events'}->[$#{$r_exec->{'events'}}]->{'timestamp'};
+	$r_exec->{'duration'} = $endTime - $startTime;	    
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("processExecutions: r_scriptExecutions", $r_scriptExecutions); }
+}
+	    
+
+sub parseLog
+{
+    my ($inputFile,$year) = @_;
+
+    open LOG, $inputFile or die "Failed to open $inputFile";
+    my @scriptExecutions = ();
+    my %activeScripts = ();
+    while ( my $line = <LOG> ) {
+	if ( $DEBUG > 9 ) { print "parseLog: line=$line"; }
+	if ( $line =~ /^(.*) \S+ smrs: \[[^\]]+\] (.*)/ ) {
+	    my ($timeStr,$message) = ($1,$2,$3,$4);
+	    my $timestamp = parseTime($timeStr . " X " . $year, $StatsTime::TIME_UNIX_DATE);
+	    if ( $DEBUG > 8 ) { print "parseLog: timestamp=$timestamp message=$message\n"; }
+
+	    my ($script,$pid);
+	    if ( $message =~ /^([^ :]+):(\d+) (.*)/ ) {
+		($script,$pid,$message) = ($1,$2,$3);
+
+		if ( exists $activeScripts{$pid} ) {
+		    if ( $activeScripts{$pid}->{'name'} eq "UNKNOWN" ) {
+			$activeScripts{$pid}->{'name'} = $script;
+		    }
+		}
+	    } elsif ( $message =~ /^(\d+): (.*)/ ) {
+		($pid,$message) = ($1,$2);
+		if ( exists $activeScripts{$pid} ) {
+		    $script = $activeScripts{$pid}->{'name'};
+		} else {
+		    $script = "UNKNOWN";
+		}
+	    }
+
+	    if ( defined $pid ) {
+		if ( $DEBUG > 5 ) { print "parseLog: pid=$pid script=$script message=$message\n"; }
+
+		# If the pid is already in the map and this is this first message in an
+		# execution, then the one in the map is a previous execution of the
+		# script and should be removed
+		if ( exists $activeScripts{$pid} && $message =~ /^Created reference/ ) {
+		    delete $activeScripts{$pid};
+		}
+
+		if ( ! exists $activeScripts{$pid} ) {
+		    $activeScripts{$pid} =  {
+			'name' => $script,
+			'events' => []
+		    };		    
+		    push @scriptExecutions, $activeScripts{$pid};
+		}
+		my $r_event = {
+		    'timestamp' => $timestamp,
+		    'message'   => $message
+		};
+		push @{$activeScripts{$pid}->{'events'}}, $r_event;
+
+		if ( $message eq 'Finished' ) { 
+		    delete $activeScripts{$pid};
+		}
+	    } elsif ( $message =~ /^smrs_master_/ || $message =~ /^smrs_slave_[^_]+_/ ) { 		
+		my ($script,$message) = $message =~ /^([^ :]+)\s*: (.*)/;
+		if ( $DEBUG > 5 ) { print "parseLog: script=$script message=$message\n"; }
+
+		if ( $message =~ /^Starting loop/ ) {
+		    $activeScripts{$script} =  {
+			'name' => $script,
+			'events' => []
+		    };
+		    push @scriptExecutions, $activeScripts{$script};
+		}
+		my $r_event = {
+		    'timestamp' => $timestamp,
+		    'message'   => $message
+		};
+		push @{$activeScripts{$script}->{'events'}}, $r_event;
+	    }       	
+	}
+    }
+
+    if ( $DEBUG > 3 ) { 
+	print Dumper("parseLog: scriptExecutions", \@scriptExecutions);
+    }
+
+    return \@scriptExecutions;
+}
+		

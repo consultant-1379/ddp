@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="fmservice"/>
+      <service name="consfm"/>
+  </services>
+
+  <table name="enm_fmservnetlog_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.netlog.instrumentation.netlog-service:type=NetlogStatistics$">
+      <metric source="numOfDescribeCommands" target="numOfDescribeCommands" delta="true" filteridle="true"/>
+      <metric source="numOfUploadCommands" target="numOfUploadCommands" delta="true" filteridle="true"/>
+      <metric source="numOfStatusCommands" target="numOfStatusCommands" delta="true" filteridle="true"/>
+      <metric source="numOfDownloadCommands" target="numOfDownloadCommands" delta="true" filteridle="true"/>
+      <metric source="numOfDeleteCommands" target="numOfDeleteCommands" delta="true" filteridle="true"/>
+      <metric source="numOfCollectedStarted" target="numOfCollectionStarted" delta="true" filteridle="true"/>
+      <metric source="numOfCollectionFailed" target="numOfCollectionFailed" delta="true" filteridle="true"/>
+      <metric source="numOfReadyForExported" target="numOfReadyForExported" delta="true" filteridle="true"/>
+      <metric source="numOfCollectionRescheduled" target="numOfCollectionRescheduled" delta="true" filteridle="true"/>
+      <metric source="numOfRetentionTimerRun" target="numOfRetentionTimerRun" delta="true" filteridle="true"/>
+      <metric source="longestTimeOfUpload" target="longestTimeOfUpload"/>
+      <metric source="shortestTimeOfUpload" target="shortestTimeOfUpload"/>
+      <metric source="greatestFileDimension" target="greatestFileDimension"/>
+      <metric source="availableDiskSpace" target="availableDiskSpace"/>
+      <metric source="totalDiskSpace" target="totalDiskSpace"/>
+      <metric source="numOfObjectInCache" target="numOfObjectInCache"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.alarmcontroldisplayservice.instrumentation.alarmcontroldisplayservice:type=OverloadStatistics$">
+      <metric source="bufferedProcessedAlarmsCount" target="bufferedProcessedAlarmsCount"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

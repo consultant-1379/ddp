@@ -1,0 +1,115 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use DBI;
+use Time::Local;
+
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($site,$ddl,$quiet,$dataonly);
+    my $result = GetOptions("site=s"  => \$site,
+                            "ddl=s"   => \$ddl,
+			    "quiet" => \$quiet,
+			    "dataonly" => \$dataonly,
+			    "debug=s" => \$DEBUG
+			    );
+    ($result == 1) or die "Invalid args"; 
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh,$site);
+    if ( $siteid == -1 )
+    {
+	print "WARN: Could not find site $site\n";
+	exit 1;
+    }
+
+    my @sql = ();
+
+    # Network
+    foreach my $table ( @{getTables($ddl, "ifid")} )
+    {
+	push @sql, "DELETE FROM $table USING $table,network_interfaces,servers WHERE $table.ifid = network_interfaces.id AND network_interfaces.serverid = servers.id AND servers.siteid = $siteid";
+    }
+
+    # Disks
+    foreach my $table ( @{getTables($ddl,"diskid")} )
+    {
+	push @sql, "DELETE FROM $table USING $table,disks,servers WHERE $table.diskid = disks.id AND disks.serverid = servers.id AND servers.siteid = $siteid";
+    }
+
+    # Tables keyed by serverid
+    foreach my $table ( @{getTables($ddl,"serverid")} )
+    {
+	push @sql, "DELETE FROM $table USING $table,servers WHERE $table.serverid = servers.id AND servers.siteid = $siteid";
+    }
+
+    # Tables keyed by siteid
+    foreach my $table ( @{getTables($ddl,"siteid")} )
+    {
+	push @sql, "DELETE FROM $table USING $table WHERE siteid = $siteid";
+    }
+
+    if ( ! $dataonly )
+    {
+	push @sql, "DELETE FROM sites USING sites WHERE id = $siteid";
+    }
+
+    if ( $DEBUG > 0 ) { print Dumper("main: sql", \@sql ); }
+
+    foreach my $oneSql ( @sql )
+    {
+	print $oneSql, "\n";
+	my $numRowsDeleted = dbDo($dbh, $oneSql);
+	if ( defined $numRowsDeleted )
+	{
+	    print "\tNum rows deleted = ", $numRowsDeleted, "\n";
+	}
+	else
+	{
+	    exit 1;
+	}	
+    }
+
+    $dbh->disconnect;
+}
+
+
+sub getTables
+{
+    my ($ddl,$column) = @_;
+
+    open DDL, $ddl or die "Cannot open $ddl";
+    my @tableList = ();
+    while ( my $line = <DDL> )
+    {
+	if ( $DEBUG > 9 ) { print "getTables: line=$line"; }
+
+	if ( $line =~ /^CREATE TABLE (\S+)/ )
+	{
+	    my $tableName = $1;
+	    if ( $DEBUG > 8 ) { print "getTables: tableName=$tableName\n"; }
+
+	    while ( ($line = <DDL>) && ($line !~ /^.*\;$/) )
+	    {
+		if ( $line =~ /^\s+`?$column/ )
+		{
+		    if ( $DEBUG > 8 ) { print "getTables: matched $column\n"; }
+
+		    push @tableList, $tableName;
+		}
+	    }
+	}
+    }
+    close DDL;
+
+    return \@tableList;
+}
+

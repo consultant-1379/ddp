@@ -1,0 +1,125 @@
+#!/usr/bin/perl
+
+###################################################################################################################################################
+# Description ---------   parseAggregatedCounter -------------------------------------
+# This script parses the aggregated counter information and stores data to DB for DDP
+# @author - SUNIL YADAV (xsunyad)
+# usage parseAggregatedCounter --logfile ${LOG_FILE} --site ${SITE} --date ${SQL_DATE}
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+
+###############################################################
+# Globals
+###############################################################
+
+our $dbh;
+our $siteId;
+our $DEBUG = 0;
+our $date = "";
+our $aggregatedTableNameIdMap;
+our $aggregatedFeatureNameIdMap;
+our $aggregatedCounterNameIdMap;
+our @aggregatedCounterTableNameList = ();
+our @aggregatedCounterNameList = ();
+our @aggregatedCounterFeatureNameList = ();
+
+sub main {
+    my ($site, $logFile);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my $aggregatedCounterParsedData = parseData($logFile);
+    $aggregatedTableNameIdMap = getIdMap($dbh, "eniq_aggregated_counter_table_name_id_mapping", "id", "tableName", \@aggregatedCounterTableNameList);
+    $aggregatedCounterNameIdMap = getIdMap($dbh, "eniq_aggregated_counter_name_id_mapping", "id", "counterName", \@aggregatedCounterNameList);
+    $aggregatedFeatureNameIdMap = getIdMap($dbh, "eniq_aggregated_counter_feature_name_id_mapping", "id", "featureName", \@aggregatedCounterFeatureNameList);
+    my $table = "eniq_aggregated_accessed_counter_details";
+    my $bcpFile = createBcpFile($aggregatedCounterParsedData);
+    removeOldData($table);
+    loadDb($bcpFile, $table);
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my $logFile = shift;
+    my @aggregatedCounterArrayData = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( my ($tableName, $counterName, $accessedCount, $lastAccessedDate, $featureName) = $line =~ /^([a-zA-Z_]+|.*\d[a-zA-Z_]+)::(\w+)::(\d+)::(.*)::(.*)$/ ) {
+            my %aggregatedCounterData = (
+                tableName => "$tableName",
+                counterName => "$counterName",
+                accessedCount => "$accessedCount",
+                lastAccessedDate => "$lastAccessedDate",
+                featureName => "$featureName"
+            );
+            push (@aggregatedCounterArrayData, \%aggregatedCounterData);
+            push (@aggregatedCounterTableNameList, $tableName);
+            push (@aggregatedCounterNameList, $counterName);
+            push (@aggregatedCounterFeatureNameList, $featureName);
+        }
+    }
+    close FILE;
+    return (\@aggregatedCounterArrayData);
+}
+
+sub createBcpFile($) {
+    my $parsed_data = shift;
+    my $aggregatedCounterBcpFile = getBcpFileName("aggregated_counter_details");
+    open BCP, ">$aggregatedCounterBcpFile" or die "Cannot open BCPFile $aggregatedCounterBcpFile";
+    foreach my $data_element ( @$parsed_data ) {
+        printf BCP "%s|%d|%d|%d|%d|%d|%s\n",
+            $date,
+            $siteId,
+            $aggregatedTableNameIdMap->{$data_element->{'tableName'}},
+            $aggregatedCounterNameIdMap->{$data_element->{'counterName'}},
+            $aggregatedFeatureNameIdMap->{$data_element->{'featureName'}},
+            $data_element->{accessedCount},
+            $data_element->{lastAccessedDate};
+    }
+    close BCP;
+    return $aggregatedCounterBcpFile;
+}
+
+sub removeOldData($) {
+    my $table = shift;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date' ";
+    if ( $DEBUG > 3 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$) {
+    my ($bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

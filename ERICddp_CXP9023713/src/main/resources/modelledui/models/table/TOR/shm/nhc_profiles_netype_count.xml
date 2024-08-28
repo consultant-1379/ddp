@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_nhc_profiles_log">
+    <reference table="sites" condition="enm_nhc_profiles_log.siteid = sites.id"/>
+    <reference table="servers" condition="enm_nhc_profiles_log.serverid = servers.id"/>
+    <reference table="ne_types" condition="enm_nhc_profiles_log.netypeid = ne_types.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_nhc_profiles_log.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="ne_types.name"/>
+  </groupby>
+
+  <column db="ne_types.id" label="id" visible="false" id="type_id"/>
+  <column db="ne_types.name" label="NE Type"/>
+  <column db="COUNT(ne_types.name)" label="Profile Count"/>
+
+  <ctxmenu keycol="type_id" targettype="url" multiselect="true">
+    <item id="plotNETypeCountMonth" label="Plot for last month"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

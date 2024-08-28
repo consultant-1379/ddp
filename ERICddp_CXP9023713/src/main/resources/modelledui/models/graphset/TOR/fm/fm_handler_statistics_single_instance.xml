@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_fm_handler_statistics">
+      <reference table="sites" condition="enm_fm_handler_statistics.siteid = sites.id"/>
+      <reference table="servers" condition="enm_fm_handler_statistics.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverid"/>
+    <where>sites.name = '%s' AND servers.id = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="totalsupervisednodes" type="sb" forcelegend="true">
+      <title value="Total Number Of Supervised Nodes"/>
+      <column db="totalNoOfSupervisedNodes" label="Supervised Nodes"/>
+    </graph>
+    <graph name="totalheartbeatfailures" type="sb" forcelegend="true">
+      <title value="Total Number Of Heartbeat Failures"/>
+      <column db="totalNoOfHeartbeatFailures" label="Heartbeat Failures"/>
+    </graph>
+  </graphs>
+  <groups>
+    <group name="nodesStatus">
+      <member>totalsupervisednodes</member>
+      <member>totalheartbeatfailures</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

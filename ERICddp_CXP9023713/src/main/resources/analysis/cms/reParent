@@ -1,0 +1,165 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use DBI;
+
+use strict;
+
+our $DEBUG=0;
+
+main();
+
+sub main()
+{
+    my ($eventsFile,$date,$site);
+    my $result = GetOptions("events=s"  => \$eventsFile,
+			    "date=s"  => \$date,
+			    "site=s"  => \$site,
+			    "debug=s" => \$DEBUG,
+	);
+    ($result == 1) or die "Invalid args"; 
+    my $r_reParent = readEvents($eventsFile);
+
+    if ( defined $site ) {
+	storeResults($r_reParent, $site, $date);
+    }	
+}
+
+sub storeResults
+{
+    my ( $r_reparent, $site,$date ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) 
+    {
+	print "ERROR: Could not find siteid for $site\n";
+	return;
+    }
+
+    my %rns = ();
+    foreach my $srcRns (  keys %{$r_reparent} ) {
+	$rns{$srcRns} = 1;
+	foreach my $destRns ( keys %{$r_reparent->{$srcRns}} ) {
+	    $rns{$destRns} = 1;
+	}
+    }
+    my @rnsList = keys %rns;    
+    my $r_rnsIdMap = getIdMap($dbh, "rns", "id", "name", \@rnsList );
+    
+    $dbh->do("DELETE FROM wran_rbs_reparent WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    foreach my $srcRns (  keys %{$r_reparent} ) {
+	foreach my $destRns ( keys %{$r_reparent->{$srcRns}} ) {
+	    dbDo( $dbh, 
+		  sprintf("INSERT INTO wran_rbs_reparent (date,siteid,src_rns,dest_rns,count) VALUES (\'%s\',%d,%d,%d,%d)",
+			  $date,
+			  $siteId,
+			  $r_rnsIdMap->{$srcRns},
+			  $r_rnsIdMap->{$destRns},
+			  $r_reparent->{$srcRns}->{$destRns})
+		);
+	}
+    }
+    
+
+    $dbh->disconnect;
+}
+
+sub getLine
+{
+    my $line = <EVENTS>;
+    if ( $DEBUG > 9 ) { print "getLine: $line"; }
+    return $line;
+}
+
+sub readEvents
+{
+    my ($eventsFile) = @_;
+
+    my $currHour = 0;
+
+    my %reparent = ();
+    my %deletedRbs = ();
+    open EVENTS, "$eventsFile" or die "Cannot open $eventsFile";
+    while ( my $line = getLine() )
+    {
+	if ( $line =~ /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d+):(\d+):(\d+)\.(\d+) OSS 0c1A (\S+) (\S+)/o )
+	{	
+	    my ($currDate, $currMonth, $currYear, $hour, $min,$sec, $ms, $eventType, $area) = ($1,$2,$3,$4,$5,$6,$7,$8,$9);
+	    if ( $DEBUG > 8 ) { print "parseReadEvents: Matched $hour:$min:$sec $eventType $area\n"; }
+	    if ( (! $currYear) || (!$currMonth) )
+	    {
+		print "Invalid Event header: $line";
+		next;
+	    }
+	    
+	    if ( $currHour > $hour )
+	    {
+		$currDate++;
+	    }
+	    $currHour = $hour;	
+	    my $node = "notSet"; 
+	    my $state = -1;
+
+	    my %nameValue = ();
+	    while ( ($line = getLine()) =~ /^\s+([^ =]+)=(.+)$/ )
+	    {
+		my ($name,$value) = ($1,$2);
+		if ( $DEBUG > 8 ) { print "readEvents: name=$name value=$value\n"; }
+		$nameValue{$name} = $value;
+	    }
+
+	    if ( $nameValue{'moc'} !~ /MeContext/ )
+	    {
+		if ( $DEBUG > 5 ) { print "readEvents: Skipping non-MeContext event $nameValue{'moc'}\n"; }
+		next;
+	    }
+
+	    my ($mcFdn) = $nameValue{'moi'} =~ /^\"?([^\"\n]+)\"?$/;
+	    if ( $DEBUG > 5 ) { print "readEvents: mcFdn = $mcFdn\n"; }
+            
+	    if ( $nameValue{'cs_name'} =~ /ONRM/ ) {
+		if ( $DEBUG > 5 ) { print "readEvents: Skipping ONRM Event\n"; }
+		next;
+	    }
+
+	    # Only interested in RBSs
+	    my ($rns,$mc) = $mcFdn =~ /^SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=(.*)/;
+	    if ( (! $rns) || ( $rns eq $mc ) )
+	    {
+		# RXI or RNC, so next!
+		if ( $DEBUG > 4 ) { print "readEvents: Skipping non-RBS event for $mc\n"; }
+		next;
+	    }
+	    
+	    if ( $DEBUG > 5 ) { print "readEvents: Checking area=$area eventType=$eventType\n"; }
+
+	    if ( $area eq 'VALID' ) {
+		if ( $eventType eq 'OBJECT_DELETION' ) {
+		    if ( $DEBUG > 4 ) { print "readEvents: Deleted $mc from $rns\n"; }		    
+		    $deletedRbs{$mc} = $rns;
+		} elsif ( $eventType eq 'OBJECT_CREATION' ) {
+		    if ( $DEBUG > 4 ) { print "readEvents: Added $mc to $rns\n"; }		    
+		    if ( exists $deletedRbs{$mc} &&
+			 $deletedRbs{$mc} ne $rns ) {
+			$reparent{$deletedRbs{$mc}}->{$rns}++;
+			if ( $DEBUG > 3 ) { print "readEvents: Reparent $mc from $deletedRbs{$mc} to $rns\n"; }
+		    }
+		    delete $deletedRbs{$mc};
+		}
+	    }
+	}
+    }
+    close EVENTS;
+    
+    if ( $DEBUG > 3 ) { print Dumper("readEvents: reparent", \%reparent); }
+    return \%reparent;
+}
+

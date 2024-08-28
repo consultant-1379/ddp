@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Number Of Nodes"
+ timespan="day"
+>
+  <title value="Number Of Nodes Waiting for Resync"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="enm_ecim_node_resync">
+        <reference table="sites" condition="enm_ecim_node_resync.siteid = sites.id"/>
+        <reference table="servers" condition="enm_ecim_node_resync.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where> sites.name = '%s' </where>
+      <column db="numberOfNodesWaiting" label="Number of Nodes Waiting for Resync"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

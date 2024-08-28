@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_shm_releasenotecount_log">
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="shmservice"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="nodeType"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="count" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <!-- SHM.IMPORT_NE_SOFTWARE_STORE_RELEASE_NOTES_INFORMATION {"releaseNoteCount":[{"count":4,"nodeType":"RNC"},{"count":3,"nodeType":"RadioNode"}],"_Thread":"EJB async - 9"} -->
+      <event name="SHM.IMPORT_NE_SOFTWARE_STORE_RELEASE_NOTES_INFORMATION" explode_array="releaseNoteCount">
+        <metric source="nodeType" target="netypeid" />
+        <metric source="count" target="count"/>
+      </event>
+  </events>
+</modelledevents>

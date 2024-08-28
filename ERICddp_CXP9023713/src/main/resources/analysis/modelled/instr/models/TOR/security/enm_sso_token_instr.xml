@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^\S+-Instrumentation@e2e_(\S+)">
+  <table name="enm_sso_token_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <services>
+    <service name="sso"/>
+  </services>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.security.singlesignon.ejb.beans.instrumentation.singlesignon:type=SSONCMInstrumentationBean">
+      <metric source="userTokenValidationSuccess" target="UserTokenValidationSuccess" delta="true" filteridle="true"/>
+      <metric source="userTokenValidationFailure" target="UserTokenValidationFailure" delta="true" filteridle="true"/>
+      <metric source="userTokenValidationResponseTime" target="UserTokenValidationResponseTime" />
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

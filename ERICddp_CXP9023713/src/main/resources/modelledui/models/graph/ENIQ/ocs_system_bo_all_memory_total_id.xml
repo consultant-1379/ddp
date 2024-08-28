@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="CPU Usage (%)"
+>
+  <presetagg type="AVG" interval="Hourly"/>
+  <title value="Memory Usage(Total)"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_ocs_system_bo_all">
+        <reference table="sites" condition="eniq_ocs_system_bo_all.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' </where>
+      <column db="eniq_ocs_system_bo_all.ws" label="Memory Usage(MB)"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

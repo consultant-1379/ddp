@@ -1,0 +1,188 @@
+#!/usr/bin/perl
+####################################################################################
+#       Description ---------   parseBisApplicationLogs -----------
+#       This script is generic script to parse any Bis application logs
+#       in txt format and store data to Db
+#       @author - Ayush kabra (xayukab)
+#       usage  parseBisApplicationLogs --logfile ${LogFile} --table <table name>
+#              --site <site> --date <SQL_DATE>
+####################################################################################
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Digest::MD5 qw(md5_hex);
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+our $table = "";
+our $date = "";
+
+sub main {
+    my ($site, $logFile);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "table=s" => \$table,
+        "site=s"    => \$site,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 1 ) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my $bcpFile = parseData($logFile);
+    removeOldData();
+    loadDb($bcpFile);
+    $dbh->disconnect();
+    if( $DEBUG > 1 ) {
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my $logFile = shift;
+    my $tmpDir = "/data/tmp";
+    my @userTypeArrayData = ();
+    my @userTypeList = ();
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "$tmpDir/${table}_metrics.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    open FILE, "<$logFile" or die "Cannot open file to read $logFile";
+    <FILE>;
+    while ( my $line = <FILE> ) {
+        if ( $table eq "bis_active_users_list" ) {
+            my ($time, $userName) = (split /,/, $line);
+            my $dateTime = convertDateToSql($time);
+            printf BCP "%s|%d|%s",
+            $dateTime, $siteId, $userName;
+        } elsif ( $table eq "bis_users_list" ) {
+            if ($line =~ /NULL|\d+.\d+.\d+.\d+.\d+.\d+/) {
+                my ($siName, $time) = (split /,/, $line);
+                my $dateTime = sqlDateFormat($time);
+                if ($siName eq "Administrator") {
+                    $siName = "Administrator";
+                } elsif ($siName eq "eniq_alarm") {
+                    $siName = "eniq_alarm";
+                } else {
+                    $siName = "BO_USER_" . substr(md5_hex( $siName ),0,8);
+                }
+                my %userTypeData = (
+                    userType => "$siName",
+                    dateTime => "$dateTime"
+                );
+                push (@userTypeArrayData, \%userTypeData);
+                push (@userTypeList, $siName);
+            }
+        } elsif ( $table eq "bis_report_instances" && grep {/\"/} $line ) {
+            my ($time, $reportName, $numberOfInstance) = $line =~ /(.*),\"(.*)\",(\d+)/;
+            my $dateTime = convertDateToSql($time);
+            printf BCP "%s|%d|%s|%d\n",
+            $dateTime, $siteId, $reportName, $numberOfInstance;
+        } elsif ( $table eq "bis_report_refresh_time" && grep {/\"/} $line ) {
+            my @array = split(",", $line);
+            if( $#array == 8 ) {
+                my ($time, $userName, $reportName, $reportStatus, $reportType, $duration, $starttime, $cuid) = $line =~ /(.*),\'(.*)\',\"(.*)\",\'(.*)\',\'(.*)\',(\d+),(.*)\.\d+,\'(.*)\',\'(.*)\'/;
+                my $dateTime = convertDateToSql($time);
+                printf BCP "%s|%d|%s|%s|%s|%s|%d|%s|%s\n",
+                $dateTime, $siteId, $userName, $reportName, $reportStatus, $reportType, $duration, $starttime, $cuid;
+            } else {
+                my ($time, $userName, $reportName, $reportStatus, $reportType, $duration) = $line =~ /(.*),\'(.*)\',\"(.*)\",\'(.*)\',\'(.*)\',(\d+)/;
+                my $dateTime = convertDateToSql($time);
+                printf BCP "%s|%d|%s|%s|%s|%s|%d\n",
+                $dateTime, $siteId, $userName, $reportName, $reportStatus, $reportType, $duration;
+            }
+         } elsif ( $table eq "bis_report_list" && grep {/\'/} $line ) {
+             my ($time, $reportName, $reportLastupatedTime, $reportLastRunTime) = $line =~ /(.*),\'(.*)\',(.*),(.*)/;
+             my $dateTime = convertDateToSql($time);
+             my $formatedLastUpdateTime = sqlDatePattern($reportLastupatedTime);
+             my $formatedLlastRunTime = sqlDatePattern($reportLastRunTime);
+             printf BCP "%s|%d|%s|%s|%s\n",
+             $dateTime, $siteId, $reportName, $formatedLastUpdateTime, $formatedLlastRunTime;
+        } elsif ( $table eq "bis_scheduling_info" && grep {/\"/} $line ) {
+            #2017-09-24-09:38:02,"ERBS, Overview (ERBS Raw Data)",2017.09.29.23.39.00,1,2017.09.14.04.05.00,0,2,0,0,Administrator,Hourly ,Hour:2 Minute:0 (log sammple)
+            my ($time, $reportName, $endDate, $recurrenceCode, $startDate, $scheduleIntervalMin, $scheduleIntervalHour, $scheduleIntervalMonth, $scheduleIntervalDay, $userName, $recurrence, $interval) = $line =~ /(.*)\,"(.*)\",(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*)/;
+            my $dateTime = convertDateToSql($time);
+            my $formattedStartDate = sqlDateFormat($startDate);
+            my $formattedEndDate = sqlDateFormat($endDate);
+            printf BCP "%s|%d|%s|%s|%s|%d|%d|%d|%d|%d|%s|%s|%s\n",
+            $dateTime, $siteId, $reportName, $formattedStartDate, $formattedEndDate, $recurrenceCode, $scheduleIntervalMin, $scheduleIntervalHour, $scheduleIntervalMonth, $scheduleIntervalDay, $userName, $recurrence, $interval;
+        } elsif( $table eq "bis_prompt_info" && grep {/\"/} $line ) {
+            my ($reportName, $cuid, $noOfPrompt, $promptName, $countOfPrompt, $promptValue)  = $line =~ /\"(.*?)\",(.*?),(\d+),(.*):?,(\w+),(.*)/;
+            printf BCP "%s|%s|%s|%s|%d|%s|%s|%s\n",
+            $date, $siteId, $reportName, $cuid, $noOfPrompt, $promptName, $countOfPrompt, $promptValue;
+        }
+    }
+    if (scalar @userTypeList > 0) {
+        my $userTypeIdMap = getIdMap($dbh, "eniq_bis_netan_user_type_id_mapping", "id", "userType", \@userTypeList);
+        foreach my $data_element ( @userTypeArrayData ) {
+            printf BCP "%s|%d|%s|%s|%d\n",
+                $date,
+                $siteId,
+                '',
+                $data_element->{dateTime},
+                $userTypeIdMap->{$data_element->{'userType'}};
+        }
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub convertDateToSql {
+    my $timeStamp = shift;
+    if ( defined $timeStamp && $timeStamp ne "NULL" ) {
+        if ( my ($y, $m, $d, $h, $M, $s) = $timeStamp =~ /(\d{4})-(\d{2})-(\d{2})-(\d{2}):(\d{2}):(\d{2})/ ) {
+            return "$y-$m-$d $h:$M:$s";
+        }
+    }
+}
+
+sub sqlDateFormat {
+    my $timeStamp = shift;
+    $timeStamp =~ s/^\s+|\s+$//g;
+    if ( defined $timeStamp && $timeStamp ne "NULL" ) {
+        if ( my ($y, $m, $d, $h, $M, $s) = $timeStamp =~ /(\d{4})\.(\d{2})\.(\d{2})\.(\d{2})\.(\d{2})\.(\d{2})/ ) {
+            return "$y-$m-$d $h:$M:$s"
+        }
+    } else {
+        return "NULL";
+    }
+}
+
+sub sqlDatePattern {
+    my $timeStamp = shift;
+    $timeStamp =~ s/^\s+|\s+$//g;
+    if ( my ($y, $m, $d, $h, $M, $s) = $timeStamp =~ /(\d{4})\-(\d{2})\-(\d{2})\s+(\d{2})\:(\d{2})\:(\d{2})/ ) {
+         return "$y-$m-$d $h:$M:$s";
+    }
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 2 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main()

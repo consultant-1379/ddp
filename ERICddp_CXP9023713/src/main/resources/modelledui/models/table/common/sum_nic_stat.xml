@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="sum_nic_stat">
+    <reference table="network_interfaces" condition="sum_nic_stat.nicid = network_interfaces.id"/>
+  </dbtables>
+
+  <param name="serverid"/>
+  <param name="date"/>
+  <where>sum_nic_stat.serverid = %serverid% AND sum_nic_stat.date BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="sum_nic_stat.nicid"/>
+  </groupby>
+
+  <column db="sum_nic_stat.nicid" label="nicid" id="nicid" visible="false"/>
+  <column db="network_interfaces.name" id="nic" label="Interface Name"/>
+  <column db="ibytes_per_sec" label="Bytes / s (in)"/>
+  <column db="obytes_per_sec" label="Bytes / s (out)"/>
+  <column db="ipkts_per_sec" label="Pkts / s (in)"/>
+  <column db="opkts_per_sec" label="Pkts / s (out)"/>
+
+  <ctxmenu keycol="nicid" targettype="modelledgraph" multiselect="false">
+    <item id="common/nic_stat_bandwidth" label="Plot Bandwidth"/>
+    <item id="common/nic_stat_pkts" label="Plot Packets/s"/>
+  </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_open_am_authorization">
+    <reference table="sites" condition="enm_open_am_authorization.siteid = sites.id"/>
+    <reference table="servers" condition="enm_open_am_authorization.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_open_am_authorization.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="IFNULL(servers.hostname, 'All Instances')" label="Instance" />
+  <column db="SUM(amAuthorizationPolicySetEvaluateActionCount)" label="Total Authorization Allowed Count" />
+  <column id="Total" db="SUM(IF(enm_open_am_authorization.amAuthorizationPolicySetEvaluateActionCount &lt; enm_open_am_authorization.amAuthorizationPolicySetEvaluateCount, 0, enm_open_am_authorization.amAuthorizationPolicySetEvaluateActionCount - enm_open_am_authorization.amAuthorizationPolicySetEvaluateCount))" label="Total Authorization Denied Count"/>
+
+</modelledtable>

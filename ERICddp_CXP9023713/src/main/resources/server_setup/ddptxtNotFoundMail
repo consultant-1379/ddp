@@ -1,0 +1,59 @@
+#!/usr/bin/env perl
+
+#======================================================================================#
+## Script  : ddptxtNotFoundMail                                                       ##
+## Purpose : The purpose of this script is to send mail when ddp.txt is incorrect     ##
+## Usage   : /data/ddp/current/server_setup/ddptxtNotFoundMail --instance ${INSTANCE} ##
+##           --ddpTxtContent ${DATA_FILE_DDP_ACCOUNT}                                 ##
+##           --ftpuser ${FTP_ACCOUNT_NAME} --file ${FILE}                             ##
+#======================================================================================#
+
+use strict;
+use warnings;
+use lib '/data/ddp/current/analysis/common';
+use StatsDB;
+use Data::Dumper;
+use Getopt::Long;
+our $DEBUG = 0;
+use DBI;
+
+require SendEmail;
+
+sub main() {
+    my ($instance, $ftpuser, $file, $ddpTxtContent);
+    my $result = GetOptions(
+        "instance=s" => \$instance,
+        "ddptxtcontent=s" => \$ddpTxtContent,
+        "ftpuser=s" => \$ftpuser,
+        "file=s" => \$file,
+        "debug=s" => \$DEBUG
+    );
+
+    if($instance eq 'ddp' || $instance eq 'ddp2'){
+        my $user;
+        my $CurrTime = localtime();
+        my $dbh = connect_db();
+
+        my $sth = $dbh->prepare('SELECT name FROM sites, ddpadmin.ftpusers WHERE sites.id = ddpadmin.ftpusers.siteid AND ddpadmin.ftpusers.userid=?')
+            or die "Couldn't prepare statement: " . $dbh->errstr;
+
+        $sth->execute($ftpuser) or die "Couldn't execute statement: " . $sth->errstr;
+        while (my @row = $sth->fetchrow_array ) {
+            $user = "@row";
+        }
+
+        $sth->finish;
+        $dbh->disconnect();
+
+        my $subject = "$user($file): Incorrect ftp account name in ddp.txt.";
+
+        my $to = 'PDLDDPCSAD@pdl.internal.ericsson.com';
+        my $message = "Instance: $instance<br>";
+        $message .= "Date: $CurrTime<br><br>";
+        $message .= "ERROR: ddp.txt content, $ddpTxtContent, does not match FTP account name $ftpuser. The DDC file, $file, will not be processed on $instance. Please set ddp.txt correctly.";
+        SendEmail::sendEmail($subject, $message, $to, 'localhost');
+    }
+}
+
+main();
+

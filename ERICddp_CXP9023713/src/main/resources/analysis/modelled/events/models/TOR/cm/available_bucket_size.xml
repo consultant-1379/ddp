@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_dynamic_flow_control" timecol="time">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="comecimpolicy"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="instance"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="value" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+    <!--MS_WISE_FLOW_CONTROL_BUCKET_SIZE.AVAILABLE {"BucketSize_Available":"[{\"instance\":\"svc-1-mscmce\",\"value\":86}]"}"-->
+    <event name="MS_WISE_FLOW_CONTROL_BUCKET_SIZE.AVAILABLE" explode_array="BucketSize_Available">
+      <metric source="instance" target="serverid"/>
+      <metric source="value" target="value"/>
+    </event>
+  </events>
+</modelledevents>
+

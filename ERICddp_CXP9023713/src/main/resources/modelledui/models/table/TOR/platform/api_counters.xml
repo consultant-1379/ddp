@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="enm_api_counters">
+  <reference table="sites" condition="enm_api_counters.siteid = sites.id"/>
+  <reference table="servers" condition="enm_api_counters.serverid = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+
+ <where>sites.name = '%site%' AND enm_api_counters.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <column db="servers.hostname" label="Instance"/>
+ <column db="SUM(cinderv2ApiCount)" label="Cinderv2 Count"/>
+ <column db="SUM(cinderv3ApiCount)" label="Cinderv3 Count"/>
+ <column db="SUM(glanceApiCount)" label="Glance Count"/>
+ <column db="SUM(heatApiCount)" label="Heat Count"/>
+ <column db="SUM(keystoneApiCount)" label="Keystone Count"/>
+ <column db="SUM(neutronApiCount)" label="Neutron Count"/>
+ <column db="SUM(novaApiCount)" label="Nova Count"/>
+</modelledtable>

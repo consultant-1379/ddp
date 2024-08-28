@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_sam_server_failure_report"/>
+
+  <services>
+    <service name="serviceregistry"/>
+  </services>
+
+  <events>
+    <!-- Critical_Members {\"reason\":\"Health Check\",\"members\":\"ieatenmc5b03-ipsmserv-0\",\"count\":\"1\",\"notifiedLCM\":\"true\"} -->
+    <event name="Critical_Members">
+      <metric source="reason" target="reason"/>
+      <metric source="members" target="members" filtervalue="^(.)+"/>
+      <metric source="count" target="count"/>
+      <metric source="notifiedLCM" target="notifiedLCM"/>
+    </event>
+  </events>
+
+</modelledevents>

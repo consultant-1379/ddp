@@ -1,0 +1,124 @@
+#!/bin/bash
+
+BASEDIR=$1
+OSSDIR=${BASEDIR}/OSS
+
+OSS_FILES="
+HAS_ISP_LOG
+HAS_MDA
+NotificationService.log
+ExternalNotificationService.log
+WRAN
+access_log.txt
+alarmList.stat
+alarmList.txt
+alarmlog.txt
+all.events
+arne_imports.txt
+bcg
+cex-csHandler.log
+cex-neSyncRecoveryAndRefresh.log
+cex-recoveryTasks.log
+cex-serverToClientEvents.log                                                                                   
+cex-threadPoolExecutor.log                                                                                     
+cha_cfh.txt                                                                                                    
+cha_scf.txt                                                                                                    
+countmo.rnc
+cmd.log
+cnaBscCount.txt                                                                                                
+cnaCellCount.txt                                                                                               
+cp.status                                                                                                      
+cs                                                                                                             
+dbaudit.txt                                                                                                    
+eam                                                                                                            
+eba                                                                                                            
+error.log                                                                                                      
+error.log.eid                                                                                                  
+exportperf.txt                                                                                                 
+ext_nsusers.txt                                                                                                
+granCm                                                                                                         
+importperf.txt                                                                                                 
+int_nsusers.txt
+lvlog.log
+melist.txt                                                                                                     
+mirrormib.txt                                                                                                  
+nead.log
+neadState.txt
+nestatus.log
+netop                                                                                                          
+network_size.txt                                                                                               
+ne_corbasec.txt
+nodelist.txt                                                                                                   
+notif.cfg                                                                                                      
+notif.log                                                                                                      
+onrm_me.txt                                                                                                    
+ops                                                                                                            
+oss_ver.txt                                                                                                    
+pm_ftpDataOutput.txt
+pm_gsnListPmJobs.txt                                                                                           
+pm_mgwscannerlist.txt                                                                                          
+pm_pmslistpm.txt                                                                                               
+pm_pmsprofiles.txt                                                                                             
+pm_scannerlist.txt                                                                                             
+pm_verifyScanners.txt                                                                                          
+pms
+rla.cfg                                                                                                        
+rla.log                                                                                                        
+rpmo                                                                                                           
+sdm
+sdmCommon                                                                                                      
+sdmc                                                                                                           
+sdmg
+smo_jobs.txt                                                                                                   
+swVersion_me.txt                                                                                               
+syb_repcollect.txt                                                                                             
+system.env                                                                                                     
+system.log
+system.log.eid                                                                                                 
+telis.trace                                                                                                    
+telis.trace.count
+tz.txt
+"
+
+moveFile()
+{
+    FROM=$1
+    TO=$2
+
+    [ ! -d "${OSSDIR}" ] && mkdir $OSSDIR
+    echo "Moving ${FROM} -> ${TO}"
+    mv ${FROM} ${TO}
+}
+
+for file in ${OSS_FILES} ; do
+    [ -r ${BASEDIR}/${file} ] && moveFile ${BASEDIR}/${file} ${OSSDIR}/${file}
+    # copy compressed versions too
+    [ -r ${BASEDIR}/${file}.gz ] && moveFile ${BASEDIR}/${file}.gz ${OSSDIR}/${file}.gz
+done
+
+# ISP logs, may have various names
+for file in $(find ${BASEDIR}/server/ -name "isp_Ericsson*") ; do
+    moveFile $file ${OSSDIR}
+done
+
+# files in server dir
+SVR_FILES="
+smtool_start.txt
+smtool_stop.txt
+smtool_config.txt
+smtool.txt
+sp_helpdb.txt
+sp_whocount.log
+sp_whoisw2.log
+sybase_mda.log
+symon.log
+"
+for file in ${SVR_FILES} ; do
+    [ -r ${BASEDIR}/server/${file} ] && moveFile ${BASEDIR}/server/${file} ${OSSDIR}/${file}
+done
+
+ROOT_TO_SRV_FILES="cron.log jps.log"
+for file in ${ROOT_TO_SRV_FILES} ; do
+    [ -r ${BASEDIR}/${file} ] && moveFile ${BASEDIR}/${file} ${BASEDIR}/server/${file}
+done
+

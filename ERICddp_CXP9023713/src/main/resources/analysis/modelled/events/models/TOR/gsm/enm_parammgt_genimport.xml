@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_parammgt_genimport"/>
+
+  <services>
+      <service name="cmutilities"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <events>
+      <!-- CPM.GENERATE_IMPORT_FILE {"application":"parametermanagement","importFileSizeInBytes":17385,"importFileName":"EUtranCellFDD_20190110_145720___1547112409265.xml","importFileType":"THREE_GPP","fileWriteDurationInMs":65,"_Thread":"ajp-executor-threads - 101","totalMOsToUpdate":14} -->
+      <event name="CPM.GENERATE_IMPORT_FILE">
+        <metric source="importFileSizeInBytes" target="size"/>
+        <metric source="importFileType" target="type"/>
+        <metric source="fileWriteDurationInMs" target="duration"/>
+        <metric source="totalMOsToUpdate" target="n_mo"/>
+      </event>
+  </events>
+
+</modelledevents>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="bis_prompt_info">
+    <reference table="sites" condition="bis_prompt_info.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND bis_prompt_info.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="false">
+    <column db="bis_prompt_info.promptName"/>
+    <column db="bis_prompt_info.countOfPrompt"/>
+    <column db="bis_prompt_info.promptValue"/>
+  </groupby>
+
+  <column db="bis_prompt_info.promptName" label="Prompt Name"/>
+  <column db="bis_prompt_info.countOfPrompt" label="Prompt Count"/>
+  <column db="bis_prompt_info.promptValue" label="Prompt Value"/>
+
+</modelledtable>

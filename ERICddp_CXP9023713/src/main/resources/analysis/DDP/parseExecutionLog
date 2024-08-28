@@ -1,0 +1,137 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+use StatsCommon;
+
+our $DEBUG=0;
+
+sub storeData($$) {
+    my ($r_stats, $date) = @_;
+
+    setStatsDB_Debug($DEBUG);
+
+
+    my $dbh = connect_db();
+
+    # Don't use db.table as this breaks replication
+    dbDo( $dbh, "use ddpadmin");
+
+    my @scriptNames = keys %{$r_stats};
+    my $r_scriptIdMap = getIdMap($dbh, "ddp_script_names", "id", "name", \@scriptNames );
+
+    my $bcpFileName = getBcpFileName("ddp_script_exec");
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+    while ( my ($script, $r_scriptStats) = each %{$r_stats} ) {
+        printf BCP "%s\t%d\t%d\t%d\n",
+            $date,
+            $r_scriptIdMap->{$script},
+            $r_scriptStats->{'count'},
+            $r_scriptStats->{'duration'};
+    }
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM ddp_script_exec WHERE date = '$date'")
+        or die "Failed to remove data from script_exe";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE ddp_script_exec (date,scriptid,execs,duration)")
+        or die "Failed to load data to script_exe";
+
+    $dbh->disconnect;
+}
+
+sub getFiles($$) {
+    my ($inDir,$r_Incr) = @_;
+
+    my $fileIndex = 0;
+    if ( exists $r_Incr->{'fileIndex'} ) {
+        $fileIndex = $r_Incr->{'fileIndex'};
+    }
+
+    my @fileList = ();
+    my $keepGoing = 1;
+    while ( $keepGoing ) {
+        my $filename = sprintf("execution.log.%d", $fileIndex + 1);
+        my $filePath = $inDir . "/" . $filename;
+        if ( -r $filePath ) {
+            push @fileList, $filePath;
+            $fileIndex++;
+        } else {
+            $keepGoing = 0;
+        }
+    }
+
+    $r_Incr->{'fileIndex'} = $fileIndex;
+
+    if ( $::DEBUG > 0 ) { print Dumper("getFiles: fileList",\@fileList); }
+
+    return \@fileList;
+}
+
+sub loadData($$) {
+    my ($dataDir, $r_incrData) = @_;
+
+    my $r_fileList = getFiles($dataDir, $r_incrData);
+
+    my $r_stats = $r_incrData->{'stats'};
+    if ( ! defined $r_stats ) {
+        $r_stats = {};
+        $r_incrData->{'stats'} = $r_stats;
+    }
+
+    my $invalidLines = 0;
+    foreach my $dataFile ( @{$r_fileList} ) {
+        open DATA, $dataFile or die "Cannot open $dataFile";
+        while ( my $line = <DATA> ) {
+            my ($day,$time,$site, $tardate, $duration, $script) = $line =~
+                /^(\S+) (\S+) (\S+) (\S+)\s+(\d+)\s+\"(\S+)\"/;
+
+            if ( defined $day ) {
+                $script =~ s/^\/data\/ddp\/DDP-[^\/]+\/analysis\///;
+                $script =~ s/^\/data\/ddp\/current\/analysis\///;
+                $script =~ s/^\/data\/ddp\/DDP-[^\/]+\///;
+                $script =~ s/^\/data\/ddp\/current\///;
+
+                my $r_scriptStats = $r_stats->{$script};
+                if ( ! defined $r_scriptStats ) {
+                    $r_scriptStats = {
+                        'count' => 0,
+                        'duration' => 0
+                    };
+                    $r_stats->{$script} = $r_scriptStats;
+                }
+                $r_scriptStats->{'count'}++;
+                $r_scriptStats->{'duration'} += $duration;
+            } else {
+                $invalidLines++;
+            }
+        }
+        close DATA;
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("loadData stats", $r_stats);
+    }
+    return $r_stats;
+}
+
+sub main() {
+    my ($dataDir, $incrFile, $date);
+    my $result = GetOptions("dir=s"  => \$dataDir,
+                            "date=s" => \$date,
+                            "incr=s" => \$incrFile,
+                            "debug=n" => \$DEBUG,
+                        );
+    my $r_Incr = incrRead($incrFile);
+    my $r_stats = loadData($dataDir, $r_Incr);
+    storeData($r_stats, $date);
+    incrWrite($incrFile, $r_Incr);
+}
+
+main();

@@ -1,0 +1,46 @@
+#!/bin/sh
+
+
+DATA_FILE=$1
+DEST=$2
+
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+OPERATIONS="CREATE BEGIN COMMIT ROLLBACK GET_ID END DELETE"
+
+cat > ${TMP_DIR}/cmd.txt <<EOF
+set xdata time
+set timefmt "%H:%M:%S"
+set xrange [ "00:00":"23:59" ]
+set yrange [ 0: ]
+set format x "%H:%M"
+set terminal png
+EOF
+
+INDEX=1
+for OPERATION in $OPERATIONS; do
+	INDEX=`expr $INDEX + 1`
+	cat >> ${TMP_DIR}/cmd.txt << EOF
+set output "${TMP_DIR}/csgraphs/CountByMin_${OPERATION}.png"
+set title "$OPERATION"
+plot "$DATA_FILE" using 1:$INDEX notitle with lines
+EOF
+done
+
+rm -rf ${TMP_DIR}/csgraphs
+mkdir ${TMP_DIR}/csgraphs
+
+gnuplot ${TMP_DIR}/cmd.txt
+if [ $? -eq 0 ]; then
+	cd ${TMP_DIR}/csgraphs
+	for GRAPHFILE in `ls *.png`; do
+		GRAPHNAME=`basename $GRAPHFILE .png`
+		convert $GRAPHFILE $DEST/${GRAPHNAME}.jpg
+	done
+	cd /
+	rm -rf ${TMP_DIR}/csgraphs ${TMP_DIR}/cmd.txt
+fi
+

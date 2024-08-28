@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_pm_file_del_stats">
+    <keycol name="datatypeid" reftable="enm_pmic_datatypes"/>
+  </table>
+
+  <services>
+    <service name="fls"/>
+  </services>
+
+  <events>
+    <!-- FILE_DELETION_STATISTICS {"FILES_DELETED_FROM_FS":1,"DELETION_TIME_IN_FS_in_ms":2241,"FILES_TO_BE_DELETED":1,"DATATYPE":"PM_STATISTICAL","FILES_DELETED_FROM_FLSDB":1} -->
+    <event name="FILE_DELETION_STATISTICS">
+      <metric source="DATATYPE" target="datatypeid"/>
+      <metric source="FILES_TO_BE_DELETED" target="filesToDelete"/>
+      <metric source="FILES_DELETED_FROM_FS" target="filesDeletedFS"/>
+      <metric source="FILES_DELETED_FROM_FLSDB" target="filesDeletedFLSDB"/>
+      <metric source="DELETION_TIME_IN_FS_in_ms" target="timeToDelete"/>
+    </event>
+  </events>
+</modelledevents>

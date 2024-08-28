@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_aim_kpi_training_status">
+  </table>
+
+  <services>
+      <service name="imkpianomalydetection"/>
+  </services>
+
+  <events>
+      <!--  2019-12-26 12:32:08,291 INFO  [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] AIM.KPI_TRAINING_STATUS \{\"_Thread\":\"EJB default - 75\",\"KPI_NAME\":\"Uplink_Volume\",\"TECHNOLOGY\":\"LTE\",\"CELL_TRAINING\":100,\"OVER_TRAINING\":100} -->
+      <event name="AIM.KPI_TRAINING_STATUS">
+        <metric source="KPI_NAME" target="kpiname"/>
+        <metric source="CELL_TRAINING" target="celltraining"/>
+        <metric source="OVER_TRAINING" target="overtraining"/>
+      </event>
+  </events>
+</modelledevents>
+

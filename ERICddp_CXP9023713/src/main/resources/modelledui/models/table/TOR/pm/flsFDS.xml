@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_flsdb_file_del_stats">
+    <reference table="sites" condition="enm_flsdb_file_del_stats.siteid = sites.id"/>
+    <reference table="enm_pmic_datatypes" condition="enm_pmic_datatypes.id = enm_flsdb_file_del_stats.datatypeid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="filter"/>
+  <where>sites.name = '%site%' AND enm_flsdb_file_del_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND filter = '%filter%'</where>
+
+  <groupby rollup="true">
+    <column db="enm_pmic_datatypes.name"/>
+  </groupby>
+
+  <column db="CONCAT(enm_flsdb_file_del_stats.filter, ':', enm_pmic_datatypes.name)" label="id" id="id" visible="false"/>
+  <column db="enm_pmic_datatypes.name" label="Data Type"/>
+  <column db="SUM(expiredRowsToBeDeleted)" label="Total Rows to be deleted"/>
+  <column db="SUM(actualRowsDeleted)" label="Rows Deleted"/>
+  <column db="SEC_TO_TIME(ROUND(SUM(rowsDeletionTime)/1000))" label="Total Time Taken to Delete(HH:MM:SS)" formatter="ddpFormatTime"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="true">
+    <item id="filterFLSFdsByType" label="Show detail for selected type(s)"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

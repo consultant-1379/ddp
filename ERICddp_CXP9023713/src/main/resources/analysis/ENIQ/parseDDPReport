@@ -1,0 +1,62 @@
+#!/usr/bin/perl
+
+######################################################################################################################
+# Description ---------   parseDDPReport ----------------------------------------
+# This script parses the DDP report log and stores data to DB for DDP
+# @author - POOJA NAGAJE (zpoonag)
+# usage parseDDPReport --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE} --type ${TYPE}
+######################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($site, $server, $logFile, $siteId, $serverId, $date, $type, $dbh);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s"  => \$server,
+        "date=s" => \$date,
+        "type=s"  => \$type,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $fileStatus;
+    if (-e $logFile) {
+        $fileStatus = "Yes";
+    }
+    my $table = "eniq_ddp_report";
+    removeOldData($table, $siteId, $serverId, $dbh, $date, $type);
+    loadDb($fileStatus, $table, $dbh, $siteId, $serverId, $date, $type);
+    $dbh->disconnect();
+}
+
+sub removeOldData($$$$$$) {
+    my ($table, $siteId, $serverId, $dbh, $date, $type) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverId = $serverId AND date = '$date' AND fileType = '$type'";
+    if ($DEBUG > 2) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$$$$$) {
+    my ($fileStatus, $table, $dbh, $siteId, $serverId, $date, $type) = @_;
+    my $loadSql = "INSERT INTO $table (date, siteid, serverId, status, fileType) VALUES ('$date', $siteId, $serverId, '$fileStatus', '$type')";
+    if ($DEBUG > 3) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

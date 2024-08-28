@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+
+sub loadData($) {
+    my ($dataFile) = @_;
+
+    my %data = ();
+
+    open DATA, $dataFile or die "Cannot open $dataFile";
+    <DATA>;                     # Skip header
+    while ( my $line = <DATA> ) {
+        my ($column,$table,$datatype,$autoinc) = $line =~
+            /^(\S+)\s+(\S+)\s+(\S+)\s+(\d+)/;
+        if ( defined $table ) {
+            $data{$table} = {
+                'datatype' => $datatype,
+                'autoinc' => $autoinc
+            };
+        } else {
+            print "WARN: Cannot parse $line";
+        }
+    }
+    close DATA;
+    if ( $DEBUG > 5 ) {
+        print Dumper("loadData data", \%data);
+    }
+    return \%data;
+}
+
+
+sub storeData($$) {
+    my ($r_data,$date) = @_;
+
+    my $dbh = connect_db();
+
+    # Don't use db.table as this breaks replication
+    dbDo( $dbh, "use ddpadmin");
+
+    my @tableNames = keys %{$r_data};
+    my $r_tableIdMap = getIdMap($dbh, "ddp_table_names", "id", "name", \@tableNames );
+
+    dbDo( $dbh, "DELETE FROM ddp_id_tables WHERE date = '$date'");
+
+    foreach my $table ( keys %{$r_data} ) {
+        dbDo($dbh,
+             sprintf("INSERT INTO ddp_id_tables (date,tableid,datatype,maxid) VALUES ( '%s', %d, '%s', %d )",
+                     $date, $r_tableIdMap->{$table},
+                     $r_data->{$table}->{'datatype'},
+                     $r_data->{$table}->{'autoinc'} - 1)
+         ) or die "Failed to insert row";
+    }
+
+    $dbh->disconnect;
+}
+
+sub main() {
+    my ($dataFile, $date);
+    my $result = GetOptions("data=s"  => \$dataFile,
+                            "date=s" => \$date,
+                            "debug=n" => \$DEBUG,
+                        );
+    setStatsDB_Debug($DEBUG);
+
+    my $r_data = loadData($dataFile);
+    if ( $date ) {
+        storeData($r_data,$date);
+    }
+}
+
+main();

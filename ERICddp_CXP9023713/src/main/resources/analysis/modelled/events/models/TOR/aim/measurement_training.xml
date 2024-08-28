@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_aim_measurement_training">
+    <keycol name="netypeid" reftable="ne_types"/>
+    <keycol name="motypeid" reftable="mo_names"/>
+  </table>
+
+  <services>
+    <service name="imkpianomalydetection"/>
+  </services>
+
+  <events>
+    <!--  [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] AIM.MEASUREMENT_OBJECT_TRAINING_STATUS {\"NODE_TYPE\":\"RNC\",\"MEASUREMENT_OBJECTS_COUNT\":13,\"MEASUREMENT_OBJECTS_TRAINING\":100,\"_Thread\":\"default task-1\",\"MEASUREMENT_OBJECT_TYPE\":\"RncFunction\"} -->
+    <event name="AIM.MEASUREMENT_OBJECT_TRAINING_STATUS">
+      <metric source="NODE_TYPE" target="netypeid"/>
+      <metric source="MEASUREMENT_OBJECT_TYPE" target="motypeid"/>
+      <metric source="MEASUREMENT_OBJECTS_COUNT" target="measurementObjectsCount" />
+      <metric source="MEASUREMENT_OBJECTS_TRAINING" target="measurementObjectsTraining"/>
+    </event>
+  </events>
+</modelledevents>

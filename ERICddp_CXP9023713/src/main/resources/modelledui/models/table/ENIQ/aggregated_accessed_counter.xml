@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_aggregated_accessed_counter_details">
+    <reference table="sites" condition="eniq_aggregated_accessed_counter_details.siteid = sites.id"/>
+    <reference table="eniq_aggregated_counter_table_name_id_mapping" condition="eniq_aggregated_counter_table_name_id_mapping.id = eniq_aggregated_accessed_counter_details.tableNameId"/>
+    <reference table="eniq_aggregated_counter_name_id_mapping" condition="eniq_aggregated_counter_name_id_mapping.id = eniq_aggregated_accessed_counter_details.counterNameId"/>
+    <reference table="eniq_aggregated_counter_feature_name_id_mapping" condition="eniq_aggregated_counter_feature_name_id_mapping.id = eniq_aggregated_accessed_counter_details.featureNameId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_aggregated_accessed_counter_details.date = '%date%'</where>
+
+  <column db="eniq_aggregated_counter_table_name_id_mapping.tableName" label="Table Name"/>
+  <column db="eniq_aggregated_counter_name_id_mapping.counterName" label="Counter Name"/>
+  <column db="eniq_aggregated_accessed_counter_details.accessedCount" label="Accessed Count"/>
+  <column db="eniq_aggregated_accessed_counter_details.lastAccessedDate" label="Last Accessed Date"/>
+  <column db="eniq_aggregated_counter_feature_name_id_mapping.featureName" label="Feature Name"/>
+
+</modelledtable>

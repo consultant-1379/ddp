@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="elasticsearch_tp_names.name">
+    <dbtables main="elasticsearch_tp">
+      <reference table="sites" condition="elasticsearch_tp.siteid = sites.id"/>
+      <reference table="elasticsearch_tp_names" condition="elasticsearch_tp.tpid = elasticsearch_tp_names.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="name"/>
+    <param name="servicetype"/>
+    <where>sites.name = '%s' AND elasticsearch_tp.tpid IN (%s) AND elasticsearch_tp.servicetype = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="completed" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Completed"/>
+      <column db="completed" label = "Completed"/>
+    </graph>
+    <graph name="rejected" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Rejected"/>
+      <column db="rejected" label = "Rejected"/>
+    </graph>
+    <graph name="active" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Active"/>
+      <column db="active" label = "Active"/>
+    </graph>
+    <graph name="queue" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Queue"/>
+      <column db="queue" label = "Queue"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>completed</member>
+      <member>rejected</member>
+      <member>active</member>
+      <member>queue</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

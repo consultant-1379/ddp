@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="pmservice"/>
+    <service name="saservice"/>
+  </services>
+
+  <table name="enm_pmserv_uplink_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.pmul.instrumentation.pmul-service:type=UlsaFileCollectionInstrumentation$">
+      <metric source="averageCollectionDuration" target="averageCollectionDuration"/>
+      <metric source="collectionDuration" target="collectionDuration"/>
+      <metric source="maximumCollectionDuration" target="maximumCollectionDuration"/>
+      <metric source="minimumCollectionDuration" target="minimumCollectionDuration"/>
+      <metric source="numberOfFileTransferNotifications" target="numberOfFileTransferNotifications"/>
+      <metric source="numberOfFilesCollected" target="numberOfFilesCollected"/>
+      <metric source="numberOfFilesFailed" target="numberOfFilesFailed"/>
+      <metric source="numberOfFilesRecovered" target="numberOfFilesRecovered" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.pm.pmul.instrumentation.pmul-service:type=UlsaStartRequestInstrumentation$">
+      <metric source="numberOfCliStartSnapshotRequests" target="numberOfCliStartSnapshotRequests" delta="true"/>
+      <metric source="numberOfCliStartSnapshotFailedRequests" target="numberOfCliStartSnapshotFailedRequests" delta="true"/>
+      <metric source="numberOfCliStartContinuousRequests" target="numberOfCliStartContinuousRequests" delta="true"/>
+      <metric source="numberOfCcliStartContinuousFailedRequests" target="numberOfCcliStartContinuousFailedRequests" delta="true"/>
+      <metric source="numberOfCliStartConditionalRequests" target="numberOfCliStartConditionalRequests" delta="true"/>
+      <metric source="numberOfCliStartConditionalFailedRequests" target="numberOfCliStartConditionalFailedRequests" delta="true"/>
+      <metric source="numberOfCliStartScheduledRequests" target="numberOfCliStartScheduledRequests" delta="true"/>
+      <metric source="numberOfCliStartScheduledFailedRequests" target="numberOfCliStartScheduledFailedRequests" delta="true"/>
+      <metric source="numberOfRestStartSnapshotRequests" target="numberOfRestStartSnapshotRequests" delta="true"/>
+      <metric source="numberOfRestStartSnapshotFailedRequests" target="numberOfRestStartSnapshotFailedRequests" delta="true"/>
+      <metric source="numberOfRestStartContinuousRequests" target="numberOfRestStartContinuousRequests" delta="true"/>
+      <metric source="numberOfRestStartContinuousFailedRequests" target="numberOfRestStartContinuousFailedRequests" delta="true"/>
+      <metric source="numberOfRestStartConditionalRequests" target="numberOfRestStartConditionalRequests" delta="true"/>
+      <metric source="numberOfRestStartConditionalFailedRequests" target="numberOfRestStartConditionalFailedRequests" delta="true"/>
+      <metric source="numberOfRestStartScheduledRequests" target="numberOfRestStartScheduledRequests" delta="true"/>
+      <metric source="numberOfRestStartScheduledFailedRequests" target="numberOfRestStartScheduledFailedRequests" delta="true"/>
+      <metric source="numberOfScheduledStartSnapshotRequests" target="numberOfScheduledStartSnapshotRequests" delta="true"/>
+      <metric source="numberOfScheduledStartSnapshotFailedRequests" target="numberOfScheduledStartSnapshotFailedRequests" delta="true"/>
+      <metric source="numberOfScheduledStartSnapshotDiscardedRequests" target="numberOfScheduledStartSnapshotDiscardedRequests" delta="true"/>
+      <metric source="numberOfScheduledStartContinuousRequests" target="numberOfScheduledStartContinuousRequests" delta="true"/>
+      <metric source="numberOfScheduledStartContinuousFailedRequests" target="numberOfScheduledStartContinuousFailedRequests" delta="true"/>
+      <metric source="numberOfScheduledStartContinuousDiscardedRequests" target="numberOfScheduledStartContinuousDiscardedRequests" delta="true"/>
+      <metric source="averageStartCommandDuration" target="averageStartCommandDuration"/>
+      <metric source="maximumStartCommandDuration" target="maximumStartCommandDuration"/>
+      <metric source="minimumStartCommandDuration" target="minimumStartCommandDuration"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

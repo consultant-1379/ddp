@@ -1,0 +1,287 @@
+#!/bin/bash
+
+# To install MySQL
+# mkdir /export/home
+# groupadd mysql
+# useradd -g mysql -m -d /export/home/mysql mysql
+# setup.sh.sol -t mount3pp
+# setup.sh.sol -t createAdminFile
+# setup.sh.sol -t installMySQL
+
+# /opt/Navisphere/bin/naviseccli -Address 10.32.228.228 -AddUserSecurity -user admin -password <passwd> -scope 0
+# /opt/Navisphere/bin/naviseccli -Address 10.32.228.228 server -register -host atrcxb3447
+# /opt/Navisphere/bin/naviseccli -Address 10.32.228.228 storagegroup -connecthost -host 10.44.91.40 -gname 3447 -o
+
+# zfs create -o mountpoint=/data/repl_ddp -o compression=on -o sharenfs='rw=atrnstats5-bup1.athtem.eei.ericsson.se,root=atrnstats5-bup1.athtem.eei.ericsson.se' datapool/repl_ddp
+# chown mysql:mysql /data/repl_ddp
+
+#
+# cd /opt
+# gzip -dc /tmp/mariadb-5.5.39-solaris10-x86_64.tar.gz | tar xf -
+# mv mariadb* mariadb
+#
+
+writeCfg()
+{
+    CFG=$1
+
+    PID_FILE=${REPL_ROOT}/var/mysqld.pid
+    LOG_FILE=${REPL_ROOT}/log/mysqld.log
+
+cat > ${CFG} <<EOF
+[mysqld]
+datadir=${REPL_ROOT}/data
+socket=${REPL_ROOT}/var/mysql_rep.sock
+tmpdir=${REPL_ROOT}/tmpdir
+slow_query_log=1
+slow_query_log_file=${REPL_ROOT}/log/mysqld-slowquery.log
+log-error=${LOG_FILE}
+pid-file=${PID_FILE}
+relay-log=${REPL_ROOT}/log/relay
+relay-log-info-file=${REPL_ROOT}/var/relay-log.info
+master-info-file=${REPL_ROOT}/var/master.info
+expire_logs_days=1
+port=${PORT}
+user=mysql
+
+default-storage-engine=${DB_ENIGNE}
+innodb-file-per-table=1
+innodb_buffer_pool_size = 5G
+innodb_log_file_size = 1G
+
+# server id for replication
+server-id=${SERVER_ID}
+report_host=${HOSTNAME}
+report_port=${PORT}
+replicate-do-db=statsdb
+slave_net_timeout=120
+
+ssl-ca = /etc/certs/repl-${SERVICE_NAME}/allca.cer
+ssl-cert = /etc/certs/ddprepl-db.cer
+ssl-key = /etc/certs/ddprepl.key
+
+#
+# Tuning params taken from my-huge.cnf
+# Also info from http://www.day32.com/MySQL/tuning-primer.sh
+#
+key_buffer_size=384M
+max_allowed_packet = 16M
+# Lower this from 512 to try and combat erro 23 probs
+table_open_cache = 256
+sort_buffer_size = 2M
+read_buffer_size = 2M
+read_rnd_buffer_size = 8M
+myisam_sort_buffer_size = 64M
+thread_cache_size = 8
+query_cache_size = 32M
+# thread_concurrency = 8
+join_buffer_size = 8M
+tmp_table_size = 64M
+max_heap_table_size = 64M
+# Stop errno 23 problems
+open-files-limit=8192
+${TIMESTAMP_FLAG}
+
+[mysqld_safe]
+log-error=${REPL_ROOT}/log/mysql_safe.err
+datadir=${REPL_ROOT}/data
+pid-file=${PID_FILE}
+socket=${REPL_ROOT}/var/mysql_rep.sock
+
+[client]
+socket = ${REPL_ROOT}/var/mysql_rep.sock
+port = ${PORT}
+
+EOF
+}
+
+installMySQLdb() {
+    DB_ROOT=$1
+    CFG=$2
+    if [ ! -d "${DB_ROOT}" ] ; then
+        echo "installMySQLdb: directory doesn't exist ${DB_ROOT}"
+    fi
+
+    for DIR in data log var tmpdir ; do
+        mkdir ${DB_ROOT}/${DIR}
+    done
+    chown -R mysql:mysql ${DB_ROOT}
+
+    # MySQL needs --insecure
+    mysql_install_db --defaults-file=${CFG} --datadir=${DB_ROOT}/data --user=mysql > /tmp/install_db.txt 2>&1
+    #echo /usr/sbin/mysqld --defaults-file=${CFG} --initialize --datadir=${DB_ROOT}/data --basedir=/usr --user=mysql
+    #exit
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to install db in ${DB_ROOT}"
+        cat /tmp/install_db.txt
+        exit 1
+    fi
+
+    chown -R mysql:mysql ${DB_ROOT}
+}
+
+configService() {
+    DB_NAME=$1
+    CFG=$2
+
+    PID_FILE=${REPL_ROOT}/var/mysqld.pid
+    LOG_FILE=${REPL_ROOT}/log/mysqld.log
+
+    cat > /usr/lib/systemd/system/${DB_NAME}.service <<EOF
+[Unit]
+Description=Replica DB for ${DB_NAME}
+After=network.target
+After=syslog.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+User=mysql
+Group=mysql
+Type=simple
+PIDFile=${PID_FILE}
+PrivateTmp=true
+LimitNOFILE = 16000
+ExecStart=/usr/bin/mysqld_safe --defaults-file=${CFG}  --pid-file=${PID_FILE} --log-error=${LOG_FILE}
+ExecStartPost=/repl/bin/replWaitReady \$MAINPID ${CFG}
+TimeoutSec=1800
+EOF
+
+}
+
+init() {
+    if [ -z "${REPL_ROOT}" ] || [ ! -d ${REPL_ROOT} ] ; then
+        echo "ERROR: ${REPL_ROOT} must be a directory"
+        exit 1
+    fi
+
+    if [ -z "${SERVER_ID}" ] ; then
+        echo "ERROR: No value given for serverid"
+        exit 1
+    fi
+
+    DB_NAME=$(basename ${REPL_ROOT})
+
+    echo "Remove existing files"
+    rm -rf ${REPL_ROOT}/* > /dev/null 2>&1
+
+    CFG=/etc/my_${DB_NAME}.cnf
+    writeCfg ${CFG}
+
+    echo "Setup database"
+    installMySQLdb ${REPL_ROOT} ${CFG}
+
+    echo "Create Service"
+    configService ${DB_NAME} ${CFG}
+
+    systemctl daemon-reload
+    systemctl enable ${DB_NAME}.service
+    systemctl start ${DB_NAME}.service
+
+    mysql --defaults-file=${CFG} mysql <<EOF
+CREATE USER repladm@'%' IDENTIFIED BY '_repladm'
+ REQUIRE ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Ericsson/OU=IT/CN=${SERVICE_NAME}-repl-repladm-ca';
+GRANT SELECT, CREATE USER, REPLICATION CLIENT, SUPER, RELOAD ON *.* TO repladm@'%' WITH GRANT OPTION;
+EOF
+
+    MASTER_IP=$(getent hosts ${SERVICE_NAME}-db | awk '{print $1}')
+    RSYNCD_CONF=/etc/rsyncd.conf
+    if [ -r ${RSYNCD_CONF} ] ; then
+        egrep "^path = ${REPL_ROOT}/data\$" ${RSYNCD_CONF}
+        if [ $? -eq 0 ] ; then
+            echo "Not updating ${RSYNCD_CONF}"
+        else
+            cat >> /etc/rsyncd.conf <<EOF
+
+[${DB_NAME}]
+path = ${REPL_ROOT}/data
+read only = false
+list = false
+hosts allow = ${MASTER_IP}
+EOF
+            # According to the man page for rsyncd.conf
+            # rsync.conf "is re-read on each client connection" so
+            # we shouldn't need to restart it
+            # systemctl restart rsyncd
+        fi
+    fi
+}
+
+createReplCerts() {
+    local DIR=/etc/certs/repl-${SERVICE_NAME}
+    if [ ! -d ${DIR} ] ; then
+        mkdir -p ${DIR}
+    fi
+
+    local KEY_FILE=/etc/certs/ddprepl.key
+    if [ ! -r ${KEY_FILE} ] ; then
+        openssl genrsa -out ${KEY_FILE} 2048
+    fi
+
+    local ALL_CA_FILE=${DIR}/allca.cer
+
+
+    local CA_CERT_FILE=${DIR}/ca.cer
+    openssl req -new -key ${KEY_FILE} -subj "/C=SE/ST=Stockholm/L=Stockholm/O=Ericsson/OU=IT/CN=${SERVICE_NAME}-repl-ca" -out /tmp/ca.csr
+    cat > /tmp/cert.ext <<EOF
+basicConstraints=critical,CA:true,pathlen:5
+keyUsage=critical,keyCertSign,cRLSign
+EOF
+    openssl x509 -req -set_serial 1 -days 3650 -in /tmp/ca.csr -extfile /tmp/cert.ext -signkey ${KEY_FILE} -out ${CA_CERT_FILE}
+    cat ${CA_CERT_FILE} > ${ALL_CA_FILE}
+
+    for USER in repladm ; do
+        USER_CA_KEY_FILE=${DIR}/${USER}-ca.key
+        openssl genrsa -out ${USER_CA_KEY_FILE} 2048
+        openssl req -new -key ${USER_CA_KEY_FILE} -subj "/C=SE/ST=Stockholm/L=Stockholm/O=Ericsson/OU=IT/CN=${SERVICE_NAME}-repl-${USER}-ca" -out /tmp/user.csr
+        USER_CA_CERT_FILE=${DIR}/${USER}-ca.cer
+        openssl x509 -req -set_serial 1 -days 3650 -in /tmp/user.csr -extfile /tmp/cert.ext -CA ${CA_CERT_FILE} -CAkey ${KEY_FILE} -out ${USER_CA_CERT_FILE}
+        cat ${USER_CA_CERT_FILE} >> ${ALL_CA_FILE}
+    done
+
+    openssl req -new -key ${KEY_FILE} -subj "/C=SE/ST=Stockholm/L=Stockholm/O=Ericsson/OU=IT/CN=${SERVICE_NAME}-db-repl" -out ${DIR}/db-client-repl.csr
+
+    if [ ! -r /etc/certs/ddprepl-db.cer ] ; then
+        cat > /etc/certs/ddprepl-db.csr_conf <<EOF
+[ req ]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = req_ext
+prompt = no
+
+[ req_distinguished_name ]
+countryName = SE
+stateOrProvinceName = Stockholm
+localityName = Stockholm
+organizationName = Ericsson AB
+OU = IT
+commonName = ddprepl.athtem.eei.ericsson.se
+
+[ req_ext ]
+subjectAltName = DNS: ddprepl.athtem.eei.ericsson.se
+EOF
+        openssl req -verbose -batch -new -key ${KEY_FILE} -out /etc/certs/ddprepl-db.csr -config /etc/certs/ddprepl-db.csr_conf
+    fi
+
+    chown mysql:mysql ${DIR}/*
+}
+
+DB_ENIGNE=InnoDB
+while getopts r:p:s:t:n: OPT ; do
+    case $OPT in
+        r) REPL_ROOT="${OPTARG}";;
+        p) PORT="${OPTARG}";;
+        s) SERVER_ID="${OPTARG}";;
+        d) DB_ENIGNE="${OPTARG}";;
+        n) SERVICE_NAME="${OPTARG}";;
+        t) TASK="${OPTARG}";;
+    esac
+done
+
+if [ "${TASK}" = "init" ] ; then
+    init
+elif [ "${TASK}" = "certs" ] ; then
+    createReplCerts
+fi
+

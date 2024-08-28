@@ -1,0 +1,102 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($inputFile,$site);
+    my $result = GetOptions(
+			    "input=s" => \$inputFile,
+			    "site=s" => \$site,
+			    "debug=s" => \$DEBUG,
+			    );
+    ($result == 1) or die "Invalid args"; 
+
+    my $r_data = readData($inputFile);
+    if ( $#{$r_data} > -1 ) {
+	storeData($site,$r_data);
+    }
+}
+
+sub readData
+{
+    my ($inputFile) = @_;
+
+    open DATA, $inputFile or die "Cannot open $inputFile";
+    my @data = ();
+    my $r_CurrData;
+    while ( my $line = <DATA> ) {
+	if ( $line =~ /^(\d{6,6}:\d{2,2}:\d{2,2})/ ) {
+	    my $timestamp = $1;
+	    $r_CurrData = {
+		'timestamp' => $timestamp,
+		'logins' => {}
+	    };
+	    push @data, $r_CurrData;
+	} else {
+	    chop $line;
+	    my @parts = split(/ +/, $line);
+	    if ( $#parts == 3 ) { 
+		$r_CurrData->{'logins'}->{$parts[1]}->{$parts[2]} = $parts[3]; 
+	    } elsif ( $#parts == 4 ) {
+		$r_CurrData->{'logins'}->{$parts[1]}->{$parts[2] . " " . $parts[3]} = $parts[4]; 
+	    } 
+	}
+    }
+    close DATA;
+
+    if ( $DEBUG > 3 ) { print Dumper("readData, data", \@data); }
+
+    return \@data;
+}
+
+sub storeData
+{
+    my ($site,$r_data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $minTime = $r_data->[0]->{'timestamp'};
+    my $maxTime = $r_data->[$#{$r_data}]->{'timestamp'};
+    dbDo($dbh, sprintf("DELETE FROM sybase_logins WHERE siteid = $siteId AND time BETWEEN '%s' AND '%s'",
+		       formatTime( parseTime($minTime, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL),
+		       formatTime( parseTime($maxTime, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL)))
+	or die "Failed to delete existing data";
+		     
+    my %allUsers = ();
+    foreach my $r_sample ( @{$r_data} ) {
+	foreach my $user ( keys %{$r_sample->{'logins'}} ) {
+	    $allUsers{$user} = 1;
+	}
+    }
+    my @users = keys %allUsers;
+    my $r_userIdMap = getIdMap($dbh,"sybase_users", "id", "name", \@users );
+
+    foreach my $r_sample ( @{$r_data} ) {
+	my $timestamp = formatTime( parseTime($r_sample->{'timestamp'}, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL);
+	foreach my $user ( keys %{$r_sample->{'logins'}} ) {
+	    foreach my $status ( keys %{$r_sample->{'logins'}->{$user}} ) {
+		dbDo($dbh, sprintf("INSERT INTO sybase_logins (time,siteid,userid,status,num) VALUES ('%s',%d, %d,'%s',%d)",
+				   $timestamp, $siteId, $r_userIdMap->{$user}, $status,
+				   $r_sample->{'logins'}->{$user}->{$status}))
+		    or die "Failed to insert sample";
+	    }
+	}
+    }
+
+    $dbh->disconnect;
+}
+			

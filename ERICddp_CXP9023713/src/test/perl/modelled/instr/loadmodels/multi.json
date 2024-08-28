@@ -1,0 +1,10 @@
+{
+    "model": "multi.xml",
+    "checks": [
+        {
+            "desc": "Verfiy multi",
+            "path": [ "multi" ],
+            "expected": [ "port" ]
+        }
+    ]
+}

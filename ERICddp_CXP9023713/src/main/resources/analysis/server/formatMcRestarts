@@ -1,0 +1,186 @@
+#!/usr/bin/env perl
+use strict;
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($startdate,$enddate,$dataFile,$site) = @_;
+
+    my $result = GetOptions("start=s" => \$startdate,
+			    "end=s"  => \$enddate,
+			    "data=s"  => \$dataFile,
+			    "site=s" => \$site,
+			    "debug=s" => \$DEBUG
+			    );
+    ( $result == 1 ) or die("Invalid Args");
+
+    my @restartedMCs = ();
+    getRestarts($site,$startdate,$enddate,\@restartedMCs);
+    writeData(\@restartedMCs, $startdate,$enddate, $dataFile);
+}
+
+sub writeData
+{
+    my ($r_restartedMCs,$startdate,$enddate,$dataFile) = @_;
+
+    my %restartsByMc = ();
+    my %mcRestartsByDate = ();
+    foreach my $r_RestartInfo ( @{$r_restartedMCs} )
+    {
+	$restartsByMc{$r_RestartInfo->{'mc'}}++;
+	my ($date) = $r_RestartInfo->{'time'} =~ /^(\S+)/;
+	$mcRestartsByDate{$date}->{$r_RestartInfo->{'mc'}}++;
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("writeData: restartsByMc", \%restartsByMc ); }
+    if ( $DEBUG > 4 ) { print Dumper("writeData: mcRestartsByDate", \%mcRestartsByDate ); }
+
+    # Now find the top N restarting MCs
+    my $mcIndex = 0;
+    my %restartCount;
+    foreach my $mc ( sort keys %restartsByMc )
+    {    
+	$mcIndex++;
+	my $restartCount = $restartsByMc{$mc};
+	my $uniqueKey = sprintf "%d%02d", $restartCount, $mcIndex;
+	$restartCount{$uniqueKey} = $mc;
+    }
+    my @sortedKeys = sort by_number keys %restartCount;
+    my $topN = 7;
+    if ( $#sortedKeys + 1 < $topN )
+    {
+	$topN = $#sortedKeys + 1;
+    }
+    my @topRestartingMCs = ();
+    for ( my $i = ($#sortedKeys - $topN + 1); $i <= $#sortedKeys; $i++ )
+    {
+	$topRestartingMCs[$i - ($#sortedKeys - $topN + 1)] = 
+	    $restartCount{$sortedKeys[$i]};
+    }
+
+    #
+    # Now generate data file showing the number of times per day
+    # the topN mcs restart
+    #
+    open DATA, ">$dataFile" or die "Cannot open $dataFile";
+    my ($year,$month,$day) = $startdate =~ /^(\d+)-(\d+)-(\d+)/;
+    my $starttime = timelocal(0,0,0,$day,$month-1,$year-1900);
+    my ($year,$month,$day) = $enddate =~ /^(\d+)-(\d+)-(\d+)/;
+    my $endtime = timelocal(59,59,23,$day,$month-1,$year-1900);
+
+    for ( my $time = $starttime; $time < $endtime; $time += (24*60*60) )
+    {
+	my @timeFields = localtime($time);
+	
+	my $date = sprintf "%4d-%02d-%02d", $timeFields[5] + 1900, $timeFields[4] + 1, $timeFields[3];
+	printf DATA $date;
+
+	my $runningTotal = 0;
+
+	#
+	# Print num restarts for topN on this day
+	# deleting them as we go. The the remaining
+	# entries are for other mcs
+	#
+	for ( my $j = 0; $j < $topN; $j++ )
+	{
+	    if ( $mcRestartsByDate{$date}->{$topRestartingMCs[$j]} )
+	    {
+		$runningTotal += $mcRestartsByDate{$date}->{$topRestartingMCs[$j]}; 
+		delete $mcRestartsByDate{$date}->{$topRestartingMCs[$j]};
+		print DATA " ", $runningTotal;
+	    }
+	    else
+	    {
+		print DATA " 0";
+	    }
+	}
+
+	#
+	# Now calculate total number of restarts of other MCs on this 
+	# day
+	#
+	my $otherRestarts = 0;
+	foreach my $mc ( keys %{$mcRestartsByDate{$date}} )
+	{
+	    $otherRestarts += $mcRestartsByDate{$date}->{$mc};
+	}
+	print DATA " ", ($runningTotal + $otherRestarts), "\n";
+    }
+    close DATA;
+
+    push @topRestartingMCs, "Other";
+    my $plotCmd = "";
+    for ( my $i = $#topRestartingMCs; $i >=0; $i-- )
+    {
+	if ( $plotCmd ne "" )
+	{
+	    $plotCmd .= ", ";
+	}
+
+	$plotCmd .= "\"$dataFile\" using 1:" .($i+2) . " title \"" . $topRestartingMCs[$i] . "\" with boxes";
+    }
+    print "plot $plotCmd\n";
+
+}
+
+sub getRestarts
+{
+    my ($site,$startdate,$enddate,$r_restartedMCs) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+
+    my $sql = "
+SELECT mc_restarts.time, mc_names.name 
+FROM mc_restarts, mc_names, sites, mc_restart_types
+WHERE 
+ sites.name = \"$site\" AND sites.id = mc_restarts.siteid AND 
+ mc_restarts.nameid = mc_names.id AND 
+ mc_restarts.time BETWEEN \"$startdate 00:00:00\" AND \"$enddate 23:59:59\" AND
+ mc_restarts.ind_warm_cold = 'COLD' AND
+ mc_restarts.typeid = mc_restart_types.id AND 
+ mc_restart_types.type != 'SYSTEM_SHUTDOWN'
+ORDER BY mc_restarts.time";
+    if ( $DEBUG > 2 ) { print "getRestarts: query=$sql\n"; }
+    my $sth = $dbh->prepare($sql)
+	or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute()             # Execute the query
+	or die "Couldn't execute statement: " . $sth->errstr;
+
+    while ( my $r_row = $sth->fetchrow_arrayref() )
+    {
+	if ( $DEBUG > 3 ) { print "getRestarts: mc=$r_row->[1] time=$r_row->[0]\n"; }
+
+	my $r_RestartInfo = {
+	    'mc' => $r_row->[1],
+	    'time' => $r_row->[0]
+	    };
+	push @{$r_restartedMCs}, $r_RestartInfo;
+    }
+    $sth->finish;
+    $dbh->disconnect;
+
+    if ( $DEBUG > 2 ) { print Dumper("getRestarts: restarts", $r_restartedMCs); }
+
+}    
+
+sub by_number {
+    if ($a < $b) {
+        return -1;
+    } elsif ($a == $b) {
+        return 0;
+    } elsif ($a > $b) {
+        return 1;
+    }
+}
+

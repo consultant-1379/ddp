@@ -1,0 +1,138 @@
+#!/usr/bin/env perl
+
+$dataDir = $ARGV[0];
+$outputFile = $ARGV[1];
+
+open RESULT, "$dataDir/result.txt" or die "Cannot open $dataDir/result.txt";
+$state = 0;
+while ( $line = <RESULT> )
+{
+    if ( $state == 0 )
+    {
+	if ( $line =~ /^Alarm List Mismatch: Alarms in OSS Alarms list that do not exist in network/ )
+	{
+	    $state = 1;
+	}
+    }
+    elsif ( $state == 1 )
+    {
+	if ( $line =~ /^Alarm List Mismatch: Alarms in Network that do not exist in OSS Alarms list/ )
+	{
+	    $state = 2;
+	}
+	elsif ( $line =~ /^SubNetwork/ )
+	{
+	    #($rns,$meCon,$alarmId) = $line =~ /^SubNetwork=[^,]+,SubNetwork=([^,]*),MeContext=(\S+)_(\d+) \d+/;
+	    # 2005.05.17 13:29:14 UTC
+	    my ($fdn, $sp) = $line =~ /^(\S+) (.*) \d{4,4}\.\d{2,2}\.\d{2,2} \d{2,2}:\d{2,2}:\d{2,2} UTC$/;
+	    my $node = getShortNode($fdn);
+	    my ($ldn) = $fdn =~ /ManagedElement=1,(.*)/;
+
+	    $extraAlarmIds = $extraAlarms{$node};
+	    if ( ! $extraAlarmIds )
+	    {
+		$extraAlarmIds = "";
+	    }
+	    else
+	    {
+		$extraAlarmIds .= "  ";
+	    }
+	    $extraAlarmIds .= $ldn . ":" . $sp;
+	    $extraAlarms{$node} = $extraAlarmIds;
+	}
+    }
+    elsif ( $state == 2 )
+    {
+	if ( $line =~ /^NoPrefix/ )
+	{
+	    $_ = $line;
+	    ($node) = /^NoPrefix_(\S+)_\d+ \d+.*$/;
+	    $noPrefixNodes{$node} = 1;
+	}
+	elsif ( $line =~ /^SubNetwork/ )
+	{
+	    #$_ = $line;
+	    #($rns,$meCon,$alarmId) = /^SubNetwork=[^,]+,SubNetwork=([^,]*),MeContext=(\S+)_(\d+) \d+/;
+
+	    my ($fdn, $sp) = $line =~ /^(\S+) (.*) \d{4,4}\.\d{2,2}\.\d{2,2} \d{2,2}:\d{2,2}:\d{2,2} UTC$/;
+	    my $node = getShortNode($fdn);
+	    my ($ldn) = $fdn =~ /ManagedElement=1,(.*)/;
+
+	    $missingAlarmIds = $missingAlarms{$node};
+	    if ( ! $missingAlarmIds )
+	    {
+		$missingAlarmIds = "";
+	    }
+	    else
+	    {
+		$missingAlarmIds .= " ";
+	    }
+	    $missingAlarmIds .= $ldn . ":" . $sp;
+	    $missingAlarms{$node} = $missingAlarmIds;
+	}
+    }
+}    
+close RESULT;
+
+open OUTPUT, ">$outputFile" or die "Cannot open $outputFile";
+print OUTPUT << "EOFHEADER1";
+<H3>Alarm List Mismatch</H3>
+<table border>
+ <tr> <td><b>Node</b></td> <td><b>Missing Alarms</b></td> <td><b>Extra Alarms</b></td> </tr>
+EOFHEADER1
+
+foreach $node( keys %extraAlarms )
+{
+    $nodeList{$node} = 1;
+}
+foreach $node( keys %missingAlarms )
+{
+    $nodeList{$node} = 1;
+}
+foreach $node ( sort keys %nodeList )
+{
+    $missingAlarmIds = $missingAlarms{$node};
+    if ( ! $missingAlarmIds )
+    {
+	$missingAlarmIds = "";
+    }
+    $extraAlarmIds = $extraAlarms{$node};
+    if ( ! $extraAlarmIds )
+    {
+	$extraAlarmIds = "";
+    }
+
+    printf OUTPUT " <tr> <td>%s<\/td> <td>%s<\/td> <td>%s<\/td> <\/tr>\n",
+    $node, $missingAlarmIds, $extraAlarmIds;
+}
+
+print OUTPUT << "EOFHEADER2";
+</table>
+<H3>Nodes with no mib prefix</H3>
+<ul>
+EOFHEADER2
+foreach $node ( sort keys %noPrefixNodes )
+{
+    printf OUTPUT " <li>%s<\/li>\n", $node;
+}
+printf OUTPUT "<\/ul>\n";
+close OUTPUT;
+
+
+sub getShortNode
+{
+    my ($mcFdn) = @_;
+
+    my $nodeName = "";
+    if ( $mcFdn =~ /^SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=([^, ]*)/ )
+    {
+	$nodeName = $1 . "," . $2;
+    }
+    else
+    {
+	($nodeName) = $mcFdn =~ /,MeContext=([^, ]*)/;
+    }
+
+    return $nodeName;
+}
+    

@@ -1,0 +1,980 @@
+<?xml version='1.0'?>
+<report>
+  <ruleinst>
+    <rulename>cpuHealthDefault</rulename>
+    <ruledef>cpuHealth</ruledef>
+    <desc>CPU Usage (Spikes)</desc>
+    <conditional operation="and">
+      <condition def="hasGen9EventHost" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="notlike"/>
+      <condition name="type" value="WORKLOAD" type="notlike"/>
+    </filter>
+    <threshold name='avgcpu' value="70"/>
+    <threshold name='maxcpu' value="99" warn="98"/>
+    <threshold name='avgiowait' value="25"/>
+    <threshold name='maxiowait' value="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuHealthEbsmFiltered</rulename>
+    <ruledef>cpuHealth</ruledef>
+    <desc>CPU Usage (Spikes)</desc>
+    <conditional operation="and">
+      <condition def="hasGen9EventHost" type="more" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="notlike"/>
+      <condition name="type" value="WORKLOAD" type="notlike"/>
+      <condition name="host" value="ebsm\d+" type="notlike"/>
+    </filter>
+    <threshold name='avgcpu' value="70"/>
+    <threshold name='maxcpu' value="99" warn="98"/>
+    <threshold name='avgiowait' value="25"/>
+    <threshold name='maxiowait' value="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuLoadDefault</rulename>
+    <ruledef>cpuLoad</ruledef>
+    <desc>CPU Load (Sustained)</desc>
+    <conditional operation="and">
+      <condition def="hasGen9EventHost" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="notlike"/>
+      <condition name="type" value="WORKLOAD" type="notlike"/>
+    </filter>
+    <parameter name='MAX_CPU' value="90"/>
+    <parameter name='COUNT_PER_INTERVAL' value="5"/>
+    <threshold name='intervalCount' value="10" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuLoadEbsmFiltered</rulename>
+    <ruledef>cpuLoad</ruledef>
+    <desc>CPU Load (Sustained)</desc>
+    <conditional operation="and">
+      <condition def="hasGen9EventHost" type="more" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="notlike"/>
+      <condition name="type" value="WORKLOAD" type="notlike"/>
+      <condition name="host" value="ebsm\d+" type="notlike"/>
+    </filter>
+    <parameter name='MAX_CPU' value="90"/>
+    <parameter name='COUNT_PER_INTERVAL' value="5"/>
+    <threshold name='intervalCount' value="10" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuHealthNetsim</rulename>
+    <ruledef>cpuHealth</ruledef>
+    <desc>Netsim CPU Usage (Spikes)</desc>
+    <conditional operation="and">
+      <condition def="hasNetsim" type="more" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="like"/>
+      <condition name="type" value="WORKLOAD" type="like"/>
+    </filter>
+    <threshold name='avgcpu' value="70"/>
+    <threshold name='maxcpu' value="99" warn="98"/>
+    <threshold name='avgiowait' value="25"/>
+    <threshold name='maxiowait' value="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuLoadNetsim</rulename>
+    <ruledef>cpuLoad</ruledef>
+    <desc>Netsim CPU Load (Sustained)</desc>
+    <conditional operation="and">
+      <condition def="hasNetsim" type="more" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="like"/>
+      <condition name="type" value="WORKLOAD" type="like"/>
+    </filter>
+    <parameter name='MAX_CPU' value="90"/>
+    <parameter name='COUNT_PER_INTERVAL' value="5"/>
+    <threshold name='intervalCount' value="10" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>gcHealth</rulename>
+    <parameter name="GC_RATIO_MIN_OLD" value="60000"/>
+    <threshold name='gc_avg_msec' value="30000" warn="8000"/>
+    <threshold name='gc_max_msec' value="55000" warn="30000"/>
+    <threshold name='gc_ratio' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>containerLivenessReadiness</rulename>
+    <threshold name='severityLevel' value="2" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>vcsResourceHealth</rulename>
+    <threshold name='severityLevel' value="2" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jBossKilledEvents</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jGroupViewMismatches</rulename>
+    <filter operation="and">
+        <condition name="cluster" value="VNFLCMServiceCluster" type="notlike"/>
+    </filter>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>hadleyHealthCheckFailures</rulename>
+    <threshold name='failure_count' value="86400" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>consulMemberFailures</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsQueue</rulename>
+    <threshold name="messageCount" value="70000" warn="40000"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsQueueServicing</rulename>
+    <threshold name='severityLevel' value="2" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsTopic</rulename>
+    <threshold name="messageCount" value="70000" warn="40000"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsTopicServicing</rulename>
+    <threshold name='severityLevel' value="2" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>pmHealthPerformance</rulename>
+    <threshold name='avgrop_duration' value="820" warn="780"/>
+    <threshold name='maxrop_duration' value="895" warn="840"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>pmHealthSuccess</rulename>
+    <threshold name='succ_rate' value="90" warn="95"/>
+    <threshold name='files_succ' value="0"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>exportRate</rulename>
+    <parameter name='MIN_EXPORT_TIME_SEC' value="600"/>
+    <parameter name='TYPE' value="3GPP"/>
+    <parameter name='FILTER_CHOICE' value="NO_FILTER"/>
+    <parameter name='KPI' value="7900"/>
+    <threshold name='percent_kpi_average' value='50' warn='100'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>exportRateFiltered3GPP</rulename>
+    <parameter name='MIN_EXPORT_TIME_SEC' value="600"/>
+    <parameter name='TYPE' value="3GPP"/>
+    <parameter name='NOT_FILTER_CHOICE' value="NO_FILTER"/>
+    <parameter name='KPI' value="2400"/>
+    <threshold name='percent_kpi_average' value='50' warn='100'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>exportRateFullDynamic</rulename>
+    <parameter name='MIN_EXPORT_TIME_SEC' value="600"/>
+    <parameter name='TYPE' value="dynamic"/>
+    <parameter name='FILTER_CHOICE' value="NO_FILTER"/>
+    <parameter name='KPI' value="7900"/>
+    <threshold name='percent_kpi_average' value='50' warn='100'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>exportRateFilteredDynamic</rulename>
+    <parameter name='MIN_EXPORT_TIME_SEC' value="600"/>
+    <parameter name='TYPE' value="dynamic"/>
+    <parameter name='NOT_FILTER_CHOICE' value="NO_FILTER"/>
+    <parameter name='KPI' value="2400"/>
+    <threshold name='percent_kpi_average' value='50' warn='100'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>exportIncomplete</rulename>
+    <threshold name='pct_exported' value="50" warn="90"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>importToLiveLimitCheck</rulename>
+    <parameter name='CREATE_MO_RATE' value="8"/>
+    <parameter name='UPDATE_MO_RATE' value="2"/>
+    <parameter name='DELETE_MO_RATE' value="4"/>
+    <parameter name='MINIMUM_DURATION' value="300"/>
+    <threshold name="KPI" value="50" warn="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>importToNonLiveLimitCheck</rulename>
+    <parameter name='CREATE_MO_RATE' value="33"/>
+    <parameter name='UPDATE_MO_RATE' value="28"/>
+    <parameter name='DELETE_MO_RATE' value="32"/>
+    <parameter name='MINIMUM_DURATION' value="300"/>
+    <threshold name="KPI" value="50" warn="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cppFullSyncHealth</rulename>
+    <threshold name='avg_sync_rate' value="23" warn="33"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cppDiscardedNotificationsPercent</rulename>
+    <threshold name='percentDiscarded' value='50' warn='25'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cppDiscardedNotificationsRatio</rulename>
+    <threshold name='ratio' value='20' warn='10'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>deadMscms</rulename>
+    <threshold name='count' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cppFullHourSync</rulename>
+    <threshold name='percent_full_synced' value="50" warn="10"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cppDeltaSync</rulename>
+    <threshold name='percent_delta_synced' value="50" warn="10"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cppSubscriptionNSync</rulename>
+    <threshold name='min_cpp_subscribed_pct' value='80' warn='95'/>
+    <threshold name='min_cpp_synced_pct' value='80' warn='95'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>COMECIMFullHourSync</rulename>
+    <threshold name='percent_full_synced' value="50" warn="10"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>COMECIMDeltaSync</rulename>
+    <threshold name='percent_delta_synced' value="50" warn="10"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>COMECIMSubscriptionNSync</rulename>
+    <threshold name='comecim_synced_pct' value='80' warn='95'/>
+  </ruleinst>
+
+  <ruleinst>
+      <rulename>syncRateBSC</rulename>
+      <ruledef>COMsyncPerNEType</ruledef>
+      <desc>Sync Rate For BSC NE Type</desc>
+      <filter operation="and">
+          <condition name="NodeType" value="BSC" type="like"/>
+      </filter>
+      <threshold name='rate' value='185' warn='372'/>
+  </ruleinst>
+
+  <ruleinst>
+      <rulename>syncRateRadioNode</rulename>
+      <ruledef>COMsyncPerNEType</ruledef>
+      <desc>Sync Rate For RadioNode NE Type</desc>
+      <filter operation="and">
+          <condition name="NodeType" value="RadioNode" type="like"/>
+      </filter>
+      <threshold name='rate' value='134' warn='201'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>versantDumpLogs</rulename>
+    <threshold name='count' warn="1" value="1000"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>versantConsistencyCheckDbBackup</rulename>
+    <threshold name='daysSinceLastSuccess' value="6" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>versantConsistencyCheckVersantCc</rulename>
+    <threshold name='daysSinceLastSuccess' value="6" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>versantConsistencyCheckDpsCc</rulename>
+    <threshold name='daysSinceLastSuccess' value="6" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>versantLock</rulename>
+    <threshold name='PCT_wait' value="10" warn="5"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>coreHealth</rulename>
+    <ruledef>enmDumps</ruledef>
+    <desc>Core Dump</desc>
+    <parameter name='TYPE' value="Core"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>heapHealth</rulename>
+    <ruledef>enmDumps</ruledef>
+    <desc>Heap Dump</desc>
+    <parameter name='TYPE' value="Heap"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>loghealth</rulename>
+    <ruledef>loghealthAmount</ruledef>
+    <desc>Log Rate</desc>
+    <filter operation="and">
+      <condition name="server" value="httpd" type="notlike"/>
+      <condition name="server" value="smrsserv" type="notlike"/>
+      <condition name="server" value="fmx" type="notlike"/>
+      <condition name="server" value="opendj" type="notlike"/>
+      <condition name="server" value="filetransferservice" type="notlike"/>
+      <condition name="server" value="fileaccountservice" type="notlike"/>
+      <condition name="server" value="secserv" type="notlike"/>
+    </filter>
+    <threshold name='entries' value='10000' warn='1250'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>loghealthMedLimit</rulename>
+    <ruledef>loghealthAmount</ruledef>
+    <desc>Log Rate(Medium Limits)</desc>
+    <filter operation="or">
+      <condition name="server" value="secserv" type="like"/>
+    </filter>
+    <threshold name='entries' value='75000' warn='65000'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>loghealthHighLimit</rulename>
+    <ruledef>loghealthAmount</ruledef>
+    <desc>Log Rate(Higher Limits)</desc>
+    <filter operation="or">
+      <condition name="server" value="opendj" type="like"/>
+    </filter>
+    <threshold name='entries' value='1600000' warn='1500000'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>loghealthUserDrivenService</rulename>
+    <ruledef>loghealthAmount</ruledef>
+    <desc>Log Rate For User Driven Service</desc>
+    <filter operation="or">
+      <condition name="server" value="httpd" type="like"/>
+      <condition name="server" value="smrsserv" type="like"/>
+      <condition name="server" value="fmx" type="like"/>
+      <condition name="server" value="filetransferservice" type="like"/>
+      <condition name="server" value="fileaccountservice" type="like"/>
+    </filter>
+    <threshold name='entries' value='80000' warn='15000'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitCheck</rulename>
+    <ruledef>ddpLogAmount</ruledef>
+    <desc>DDP's Elasticsearch Parsing Limits</desc>
+    <filter operation="and">
+      <condition name="server" value="httpd" type="notlike"/>
+      <condition name="server" value="smrsserv" type="notlike"/>
+      <condition name="server" value="filetransferservice" type="notlike"/>
+      <condition name="server" value="fileaccountservice" type="notlike"/>
+      <condition name="server" value="secserv" type="notlike"/>
+    </filter>
+    <threshold name='entries' value="1000000"/>
+    <threshold name='size' value="1048576"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitCheckHigher</rulename>
+    <ruledef>ddpLogAmount</ruledef>
+    <desc>DDP's Elasticsearch Parsing Limits(Higher Limits)</desc>
+    <filter operation="or">
+      <condition name="server" value="secserv" type="like"/>
+    </filter>
+    <threshold name='entries' value="1500000"/>
+    <threshold name='size' value="1048576"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitCheckUserDrivenService</rulename>
+    <ruledef>ddpLogAmount</ruledef>
+    <desc>DDP's Elasticsearch Parsing Limits For User Driven Service</desc>
+    <filter operation="or">
+      <condition name="server" value="httpd" type="like"/>
+      <condition name="server" value="smrsserv" type="like"/>
+      <condition name="server" value="filetransferservice" type="like"/>
+      <condition name="server" value="fileaccountservice" type="like"/>
+    </filter>
+    <threshold name='entries' value="1000000"/>
+    <threshold name='size' value="1048576"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>LastESTime</rulename>
+    <threshold name='secondsSinceLastES' value="86400" warn="1800"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitPerServ</rulename>
+    <ruledef>ddpLogLimitCheckPerServ</ruledef>
+    <desc>Elasticsearch Log Limits Per Service</desc>
+    <filter operation="and">
+      <condition name="service" value="httpd" type="notlike"/>
+      <condition name="service" value="opendj" type="notlike"/>
+      <condition name="service" value="securityservice" type="notlike"/>
+    </filter>
+    <threshold name='size' value="232" warn="116"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitPerServMedLimit</rulename>
+    <ruledef>ddpLogLimitCheckPerServ</ruledef>
+    <desc>Elasticsearch Log Limits Per Service(Medium Limit)</desc>
+    <filter operation="or">
+      <condition name="service" value="securityservice" type="like"/>
+    </filter>
+    <threshold name='size' value="2000" warn="1500"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitPerServHighLimit</rulename>
+    <ruledef>ddpLogLimitCheckPerServ</ruledef>
+    <desc>Elasticsearch Log Limits Per Service(Higher Limit)</desc>
+    <filter operation="or">
+      <condition name="service" value="opendj" type="like"/>
+    </filter>
+    <threshold name='size' value="20000" warn="16260"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpLogLimitPerServUserDrivenService</rulename>
+    <ruledef>ddpLogLimitCheckPerServ</ruledef>
+    <desc>Elasticsearch Log Limits For User Driven Service</desc>
+    <filter operation="or">
+      <condition name="service" value="httpd" type="like"/>
+    </filter>
+    <threshold name='size' value="400" warn="200"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ESIndexHealth</rulename>
+    <threshold name='health_status_int' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>criticalErrors</rulename>
+    <ruledef>criticalErrors</ruledef>
+    <desc>Critical Errors</desc>
+    <filter operation="and">
+        <condition name="errorMsg" value="Multicast" type="notlike"/>
+    </filter>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>multicastChainLimit</rulename>
+    <ruledef>criticalErrors</ruledef>
+    <desc>Multicast Chain Limit</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+        <condition name="errorMsg" value="Multicast" type="like"/>
+        <condition name="serverType" value="TOR_MANAGEMENT_SERVER" type="notlike"/>
+    </filter>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsErrorsConsumersHanging</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsErrorsMaximumDeliveryAttempts</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jmsErrorsQueueFull</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>javaProcessHealth</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nicInterfaceUsageVM</rulename>
+    <ruledef>nicInterfaceUsage</ruledef>
+    <desc>NIC Interface Usage in VMs</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="servertype" value="ENM_VM" type="like"/>
+      <condition name="hostname" value="lvsrouter" type="notlike"/>
+      <condition name="hostname" value="scripting" type="notlike"/>
+    </filter>
+    <threshold name='inavg' value="80" warn="60"/>
+    <threshold name='outavg' value="80" warn="60"/>
+  </ruleinst>
+
+  <ruleinst>
+   <rulename>nicInterfaceUsageVMScripting</rulename>
+   <ruledef>nicInterfaceUsage</ruledef>
+   <desc>NIC Interface Usage VM (Scripting)</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+   <filter operation="and">
+     <condition name="servertype" value="ENM_VM" type="like"/>
+     <condition name="hostname" value="scripting" type="like"/>
+   </filter>
+   <threshold name='inavg' value="200" warn="130"/>
+   <threshold name='outavg' value="200" warn="130"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nicInterfaceUsagePhyiscal</rulename>
+    <ruledef>nicInterfaceUsage</ruledef>
+    <desc>NIC Interface Usage Physical Hosts</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="servertype" value="ENM_VM" type="notlike"/>
+      <condition name="servertype" value="ENM_STREAMING_HOST'" type="notlike"/>
+    </filter>
+    <threshold name='inavg' value="600" warn="500"/>
+    <threshold name='outavg' value="600" warn="500"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nicInterfaceUsageStreaming</rulename>
+    <ruledef>nicInterfaceUsage</ruledef>
+    <desc>NIC Interface Usage Streaming Hosts</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="servertype" value="ENM_STREAMING_HOST'" type="like"/>
+    </filter>
+    <threshold name='inavg' value="950" warn="900"/>
+    <threshold name='outavg' value="950" warn="900"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nicErrors</rulename>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="notlike"/>
+      <condition name="type" value="WORKLOAD" type="notlike"/>
+    </filter>
+    <threshold name='coll' value="10" warn="1"/>
+    <threshold name='rxdrop' value="650" warn="200"/>
+    <threshold name='rxerr' value="2000" warn="400"/>
+    <threshold name='rxfifo' value="2000" warn="400"/>
+    <threshold name='rxfram' value="10" warn="1"/>
+    <threshold name='txcarr' value="10" warn="1"/>
+    <threshold name='txdrop' value="10" warn="1"/>
+    <threshold name='txerr' value="10" warn="1"/>
+    <threshold name='txfifo' value="10" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nicErrorsNetsim</rulename>
+    <ruledef>nicErrors</ruledef>
+    <desc>Netsim NIC Errors</desc>
+    <conditional operation="and">
+      <condition def="hasNetsim" type="more" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="type" value="NETSIM" type="like"/>
+      <condition name="type" value="WORKLOAD" type="like"/>
+    </filter>
+    <threshold name='coll' value="5" warn="1"/>
+    <threshold name='rxdrop' value="65" warn="13"/>
+    <threshold name='rxerr' value="200" warn="40"/>
+    <threshold name='rxfifo' value="200" warn="40"/>
+    <threshold name='rxfram' value="5" warn="1"/>
+    <threshold name='txcarr' value="5" warn="1"/>
+    <threshold name='txdrop' value="5" warn="1"/>
+    <threshold name='txerr' value="5" warn="1"/>
+    <threshold name='txfifo' value="5" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>fileDescriptorsHealth</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>fileDescriptorsVariation</rulename>
+    <threshold name='pct_increase' value='400' warn="100"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>puppetFailures</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>puppetStatus</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>puppetExecutionTime</rulename>
+    <threshold name='max_execution_time' value="180"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>diskPerformance</rulename>
+    <threshold name='maxbusy' value="100" warn="95"/>
+    <threshold name='avgbusy' value="85" warn="40"/>
+    <threshold name='avgserv' value="15" warn="5"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>diskUsageSustained</rulename>
+    <parameter name='BUSY' value="80"/>
+    <parameter name='COUNT' value="5"/>
+    <threshold name='intervalCount' value="16" warn="4"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>diskServiceTimeSustained</rulename>
+    <parameter name='AVSERV' value="5"/>
+    <parameter name='COUNT' value="5"/>
+    <parameter name='BLKS' value="100"/>
+    <threshold name='intervalCount' value="16" warn="4"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nasDiskPerformance</rulename>
+    <conditional operation="and">
+      <condition def="hasNAS" type="more" value="0"/>
+    </conditional>
+    <threshold name='maxbusy' value="85" warn="70"/>
+    <threshold name='avgbusy' value="50" warn="40"/>
+    <threshold name='avgserv' value="20" warn="15"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nasDiskPerformanceSustained</rulename>
+    <conditional operation="and">
+      <condition def="hasNAS" type="more" value="0"/>
+    </conditional>
+    <parameter name='BUSY' value="70"/>
+    <parameter name='AVSERV' value="25"/>
+    <parameter name='COUNT' value="5"/>
+    <threshold name='intervalCount' value="6" warn="2"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>SOLRCoreFailures</rulename>
+    <threshold name='count' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>CMEventsNBIRateSolr</rulename>
+    <threshold name='hr' value="0"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>CMEventsNBIRateEshistory</rulename>
+    <threshold name='hr' value="0"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>BladeSysHealth</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>BladePowerSetting</rulename>
+  </ruleinst>
+
+  <!-- Temporarily Removed 06/07/2018
+  <ruleinst>
+   <rulename>recentENMBackupBur</rulename>
+    <threshold name='count' value="10" warn="5"/>
+  </ruleinst>
+  -->
+
+  <ruleinst>
+    <rulename>FMLatency</rulename>
+    <parameter name='LATENCY_TIME' value="5"/>
+    <parameter name='COUNT' value="2"/>
+    <parameter name='MINUTES' value="15"/>
+    <threshold name='interval_count' value="10" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>FM_Overload_Protection</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>fmSnmpHeartbeat</rulename>
+    <parameter name='minNumNodes' value="50"/>
+    <threshold name='ratio' value='20' warn='10'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>fmCppHeartbeat</rulename>
+    <parameter name='minNumNodes' value="50"/>
+    <threshold name='ratio' value='20' warn='10'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>FM_APS</rulename>
+    <threshold name='count' value='1000' warn='100'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>FM_Open_Alarms</rulename>
+    <threshold name='alarms' value='140000' warn='100000'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>VersantFreeSpace</rulename>
+    <threshold name='percentagefree' value="20" warn="30"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>stealHealth</rulename>
+    <parameter name='MAX_STEAL' value="5"/>
+    <parameter name='COUNT_PER_INTERVAL' value="3"/>
+    <parameter name='MINUTES' value="15"/>
+    <threshold name='intervalCount' value="10" warn="2"/>
+  </ruleinst>
+
+  <ruleinst>
+   <rulename>versantDeadTxHealth</rulename>
+    <threshold name='count' value="50" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+   <rulename>versantLongRunningTxHealth</rulename>
+    <threshold name='count' value="50" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>QueueMessageVariance</rulename>
+    <threshold name='standard_dev' value="10000" warn="750"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>VersantDeadlocks</rulename>
+    <threshold name='Count' value="3000" warn="1000"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>AMOSSessions</rulename>
+    <threshold name='max' value="150" warn="130"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>jbossLoggingLevels</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>emc_alerts</rulename>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <threshold name='count' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ESTpRej</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NeoChkPntDur</rulename>
+    <threshold name='AvgDuration' value="400" warn="200"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NeoNonLiveMos</rulename>
+    <threshold name='nonLivePercentageOfTotal' value="20" warn="5"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NeoRaftEventsSTART_ELECTION</rulename>
+    <ruledef>NeoRaftEvents</ruledef>
+    <desc>Neo4j Raft Events</desc>
+    <filter operation="and">
+      <condition name="type" value="START_ELECTION" type="like"/>
+    </filter>
+    <threshold name='count' value='0'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NEO_TX_Delay</rulename>
+    <threshold name='metric' value='100' warn='80'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NeoOrphanMOs</rulename>
+    <threshold name='max_count' value='0'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NeoAvgMsgTime</rulename>
+    <threshold name='boltAvgProcTimeperhour' value='40' warn='30'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>emc_snapshot_age</rulename>
+    <threshold name="age" value="5" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>rejected_threads</rulename>
+    <threshold name="slots" value="5" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>httpd_503</rulename>
+    <threshold name="count" value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>mdt_execution_phys</rulename>
+    <ruledef>mdt_execution</ruledef>
+    <conditional operation="and">
+      <condition def="isPhysical" type="more" value="0"/>
+    </conditional>
+    <threshold name="totaltime" value="162" warn="144"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>mdt_execution_cloud</rulename>
+    <ruledef>mdt_execution</ruledef>
+    <conditional operation="and">
+      <condition def="isPhysical" type="equals" value="0"/>
+    </conditional>
+    <threshold name="totaltime" value="162" warn="144"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>VersantCheckpoints</rulename>
+    <threshold name='count' value='500' warn='50'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>netsimFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>Netsim Filesystem Usage</desc>
+    <conditional operation="and">
+      <condition def="hasNetsim" type="more" value="0"/>
+    </conditional>
+    <filter operation="and">
+        <condition name="serverType" value="NETSIM" type="like"/>
+        <condition name="serverType" value="WORKLOAD" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value="80"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>vmHostLocalFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>VM Host Local Filesystem Usage VM</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+        <condition name="filesystem" value="^mapper/vg_vmvg-vg3_lv_vms$" type="like"/>
+        <condition name="serverType" value="ENM_VM" type="notlike"/>
+    </filter>
+    <threshold name='pc_usage' value="85"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>vmGuestLocalFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>VM Guest Local Filesystem Usage</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+        <condition name="filesystem" value="^mapper/VolGroup00-LogVol00$" type="like"/>
+        <condition name="serverType" value="ENM_VM" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value="80"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>esmLocalFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>ESM Local Filesystem Usage</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+      <condition name="filesystem" value="^mapper/VolGroup00-LogVol00$" type="like"/>
+      <condition name="serverType" value="MONITORING" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value="80"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>LVMFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>LVM Filesystem Usage</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+        <condition name="filesystem" value="^mapper" type="like"/>
+        <condition name="filesystem" value="^mapper/vg_vmvg-vg3_lv_vms$" type="notlike"/>
+        <condition name="filesystem" value="^mapper/VolGroup00-LogVol00$" type="notlike"/>
+        <condition name="filesystem" value="^mapper/repovg-repovol$" type="notlike"/>
+    </filter>
+    <threshold name='pc_usage' value="80" warn="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>managementServerVarUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>Management Server /var Usage</desc>
+    <conditional operation="and">
+      <condition def="isCloudNative" type="equals" value="0"/>
+    </conditional>
+    <filter operation="and">
+        <condition name="filesystem" value="^var$" type="like"/>
+        <condition name="serverType" value="TOR_MANAGEMENT_SERVER" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value="80" warn="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>DPSPerformance</rulename>
+    <threshold name='AvgFindPOTime' value='200' warn='50'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>lvsStates</rulename>
+    <threshold name='count' value="0"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nfsd_getattr</rulename>
+    <threshold name='requests' value='50000000' warn='40000000'/>
+  </ruleinst>
+
+</report>
+

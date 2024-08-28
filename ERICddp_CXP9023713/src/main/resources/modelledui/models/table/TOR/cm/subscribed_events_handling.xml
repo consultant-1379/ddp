@@ -1,0 +1,30 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_subscriptions_nbi">
+    <reference table="sites" condition="enm_cm_subscriptions_nbi.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_subscriptions_nbi.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_subscriptions_nbi.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(createEventsReceived)" label="Number of Create Events received"/>
+  <column db="SUM(vesEventsToBePushedNotifyMoiCreation)" label="Number of VES Events to be pushed for type notifyMOICreation"/>
+  <column db="SUM(vesEventsToBePushedNotifyMoiChangesCreate)" label="Number of VES Events to be pushed of type notifyMOIChanges  - operation CREATE"/>
+  <column db="SUM(updateEventsReceived)" label="Number of AVC Events received"/>
+  <column db="SUM(vesEventsToBePushedNotifyMoiAvc)" label="Number of VES Events to be pushed of type notifyMOIAttributeValueChanges"/>
+  <column db="SUM(vesEventsToBePushedNotifyMoiChangesReplace)" label="Number of VES Events to be pushed of type notifyMOIChanges - operation REPLACE"/>
+  <column db="SUM(deleteEventsReceived)" label="Number of Delete Events received"/>
+  <column db="SUM(vesEventsToBePushedNotifyMoiDeletion)" label="Number of VES Events to be pushed of type notifyMOIDeletion"/>
+  <column db="SUM(vesEventsToBePushedNotifyMoiChangesDelete)" label="Number of VES Events to be pushed of type notifyMOIChanges - operation DELETE"/>
+  <column db="SUM(totalEventsReceived)" label="Total Number of Events Received"/>
+  <column db="SUM(totalVesEventsToBePushed)" label="Total Number of VES Events to be pushed"/>
+  <column db="SUM(totalVesEventsPushedSuccessfully)" label="Total Number of VES Events pushed Successfuly"/>
+  <column db="SUM(totalVesEventsPushedError)" label="Total Number of VES Events pushed Failed"/>
+  <column db="SUM(totalVesEventsPushedCancelled)" label="Total Number of VES Events pushed Cancelled"/>
+</modelledtable>

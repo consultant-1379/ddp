@@ -1,0 +1,270 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use DataStore;
+
+our $DEBUG = 0;
+
+sub readCsv {
+    my ($inputFile,$r_Cfg,$r_sarDate) = @_;
+    my %timeMap = ();
+    my %data = ();
+    $data{'time'} = [];
+    my $r_CurrSect;
+    # read the first line of the file to get the headers
+    open CSV, $inputFile or die "Could not open input file " . $inputFile . ": " . $!;
+    my $headerLine = <CSV>;
+    chop $headerLine;
+    my @cols = split(';', $headerLine);
+    if ( $DEBUG > 5 ) { print "readCsv: cols ", Dumper(\@cols); }
+    foreach my $csvCol (keys %{$r_Cfg}) {
+        if ( $DEBUG > 5 ) { print "readCsv: searching for csvCol=$csvCol\n"; }
+        my $index = -1;
+        for (my $i = 0 ; $i <= $#cols ; $i++) {
+            if ($csvCol eq $cols[$i]) {
+                if ( $DEBUG > 5 ) { print "readCsv: matched index $i\n"; }
+                $index = $i;
+                last;
+            }
+        }
+        $r_Cfg->{$csvCol}{'colnum'} = $index;
+        if ($index > 0) { $data{$r_Cfg->{$csvCol}{'dbcol'}} = []; }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("readCsv: cfg", $r_Cfg); }
+
+    # HL33746: discard the first line to avoid midnight zeros (first line is all empty)
+    my $line = <CSV>;
+  PARSE_CSV_FILE: while ($line = <CSV>) {
+      if ( $DEBUG > 9 ) { print "readCsv: line=$line"; }
+
+      chomp($line);
+      my @cols = split(';', $line);
+
+      # Handle different time formats, (kSar => Thu Mar 16 13:01:01 GMT 2017, parseIncrSar => 2017-03-16 13:01:01)
+      my $time = undef;
+      if ( $cols[0] =~ /^2\d+-\d+-\d+ (\d+:\d+:\d+)/ ) {
+          $time = $1;
+      } elsif ( $cols[0] =~ /\S+\s+$$r_sarDate\s+(\d+:\d+:\d+)/ ) {
+          $time = $1;
+      } else {
+          if ( $DEBUG > 5 ) { print "readCsv: cannot extract time stamp : $line" }
+          next PARSE_CSV_FILE;
+      }
+
+      # First validate that all the columns have a value
+      foreach my $csvCol (keys %{$r_Cfg}) {
+          if ($r_Cfg->{$csvCol}{'colnum'} > 0) {
+              if ( $cols[$r_Cfg->{$csvCol}{'colnum'}] eq '' ) {
+                  printf "WARN: Blank found for %s in column %d, line=%s\n", $csvCol, $r_Cfg->{$csvCol}{'colnum'}, $line;
+                  next PARSE_CSV_FILE;
+              }
+          }
+      }
+
+      # Okay, line looks okay so extract the values
+      push @{$data{'time'}}, $time;
+      foreach my $csvCol (keys %{$r_Cfg}) {
+          if ($r_Cfg->{$csvCol}{'colnum'} > 0) {
+              my $value = int(($cols[$r_Cfg->{$csvCol}{'colnum'}] / $r_Cfg->{$csvCol}{'scale'}) + 0.5);
+              if ( $DEBUG > 8 ) { print "readCsv: csvCol=$csvCol value=$value\n"; }
+              push @{$data{$r_Cfg->{$csvCol}{'dbcol'}}}, $value;
+          }
+      }
+  }
+    close CSV;
+
+    if ( $DEBUG > 6 ) { print Dumper("readCsv: data", \%data); }
+    return \%data;
+}
+
+sub store($$$$$$) {
+    my ($date,$site,$hostname,$r_Data,$incremental,$service) = @_;
+
+    my @dbColNames=();
+    foreach my $colName ( keys %{$r_Data} ) {
+        if ( $colName ne 'time' ) {
+            push @dbColNames, $colName;
+        }
+    }
+
+    my @samples = ();
+    for (my $index = 0; $index <= $#{$r_Data->{'time'}}; $index++ ) {
+        my $timestamp = $date . " " . $r_Data->{'time'}->[$index];
+        my %sample = (
+            'timestamp' => $timestamp,
+            'time' => parseTime($timestamp, $StatsTime::TIME_SQL)
+        );
+        foreach my $colName ( @dbColNames ) {
+            $sample{$colName} = $r_Data->{$colName}->[$index];
+        }
+        push @samples, \%sample;
+    }
+
+    my %tableModel = (
+        'name' => 'hires_server_stat',
+        'keycol' => [ { 'name' => 'serverid', 'reftable' => 'servers' } ]
+    );
+
+    my %columnMap = ();
+    foreach my $colName ( @dbColNames ) {
+        $columnMap{$colName} =  $colName;
+    }
+
+    my %propertyValues = (
+        'site' => $site,
+        'server' => $hostname,
+        'incremental' => $incremental
+    );
+
+    DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 $service,
+                                 \%propertyValues,
+                                 \%columnMap,
+                                 [ { 'properties' => {}, 'samples' => \@samples } ] );
+}
+
+sub storeNfsd($$$$$$) {
+    my ($date,$site,$hostname,$r_Data,$incremental,$service) = @_;
+
+    my @dbColNames=();
+    foreach my $colName ( keys %{$r_Data} ) {
+        if ( $colName ne 'time' ) {
+            push @dbColNames, $colName;
+        }
+    }
+
+    my @samples = ();
+    for (my $index = 0; $index <= $#{$r_Data->{'time'}}; $index++ ) {
+        my $timestamp = $date . " " . $r_Data->{'time'}->[$index];
+        my %sample = (
+            'timestamp' => $timestamp,
+            'time' => parseTime($timestamp, $StatsTime::TIME_SQL)
+        );
+        foreach my $colName ( @dbColNames ) {
+            $sample{$colName} = $r_Data->{$colName}->[$index];
+        }
+        push @samples, \%sample;
+    }
+
+    my %tableModel = (
+        'name' => 'nfsd_stat',
+        'keycol' => [ { 'name' => 'serverid', 'reftable' => 'servers' } ]
+    );
+
+    my %columnMap = ();
+    foreach my $colName ( @dbColNames ) {
+        $columnMap{$colName} =  $colName;
+    }
+
+    my %propertyValues = (
+        'site' => $site,
+        'server' => $hostname,
+        'incremental' => $incremental
+    );
+
+    DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 $service,
+                                 \%propertyValues,
+                                 \%columnMap,
+                                 [ { 'properties' => {}, 'samples' => \@samples } ] );
+}
+
+sub readCfg
+{
+    my ($cfgFile) = @_;
+
+    my %cfg = ();
+    open CFG, $cfgFile or die "Cannot open $cfgFile";
+    while ( my $line = <CFG> ) {
+        chomp($line);
+        next if ($line =~ /^#.*/ || $line =~ /^$/);
+        if ( $DEBUG > 9 ) { print "readCfg: line=$line\n"; }
+        my ($colIndex,$dbColName,$scale) = split(/,/, $line);
+        $cfg{$colIndex} = {
+            'dbcol' => $dbColName,
+                'scale' => $scale
+        };
+    }
+    close CFG;
+
+    if ( $DEBUG > 5 ) { print Dumper("readCfg: cfg", \%cfg); }
+
+    return \%cfg;
+}
+
+# If we have values for soft and irq, set sys = sys + soft + irq
+sub mergeIrq($) {
+    my ($r_Data) = @_;
+
+    if ( ! exists $r_Data->{'soft'} || ! exists $r_Data->{'irq'} ) {
+        return;
+    }
+
+    my $r_sys = $r_Data->{'sys'};
+    my $r_soft = delete $r_Data->{'soft'};
+    my $r_irq = delete $r_Data->{'irq'};
+    for (my $index = 0; $index <= $#{$r_Data->{'sys'}}; $index++ ) {
+        $r_sys->[$index] += $r_soft->[$index] + $r_irq->[$index];
+    }
+}
+
+sub main() {
+    my ($inputFile,$cfgFile,$site,$hostname,$date,$service,$graphiteHost);
+    my $incremental = 0;
+    my $nfsd = 0;
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "cfg=s" => \$cfgFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "hostname=s" => \$hostname,
+        'incr' => \$incremental,
+        "service=s" => \$service,
+        "nfsd" => \$nfsd,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+    if ( ! defined $date ) {
+        print "ERROR: date required\n";
+        exit 1;
+    }
+
+    # Get the date in the format used in the sar csv file
+    my ($ccyy,$mm,$dd) = split(/\-/, $date);
+
+    my %months = ( "01" => "Jan", "02" => "Feb", "03" => "Mar", "04" => "Apr", "05" => "May", "06" => "Jun", "07" => "Jul", "08" => "Aug", "09" => "Sep", "10" => "Oct", "11" => "Nov", "12" => "Dec");
+    my $sarDate = $months{$mm} . " " . $dd;
+
+    my $r_Cfg = readCfg($cfgFile);
+    my $r_Data = readCsv($inputFile, $r_Cfg, \$sarDate);
+
+    mergeIrq($r_Data);
+
+    if ( defined $site ) {
+        store($date,$site,$hostname,$r_Data,$incremental,$service);
+    }
+
+    if ( $nfsd ) {
+        my %nfsConfig = ();
+        foreach my $col ( 'scall/s', 'badcall/s', 'packet/s', 'sread/s', 'swrite/s', 'saccess/s', 'sgetatt/s' ) {
+            my ($dbCol) = $col =~ /(\S+)\/s/;
+            $nfsConfig{$col} = { 'dbcol' => $dbCol, 'scale' => 1 };
+            my $r_Data = readCsv($inputFile, \%nfsConfig, \$sarDate);
+            storeNfsd($date,$site,$hostname,$r_Data,$incremental,$service);
+        }
+    }
+}
+
+main();

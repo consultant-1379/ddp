@@ -1,0 +1,55 @@
+#!/usr/bin/env perl
+
+use strict;
+
+our %monthMap = 
+    (
+     'Jan' => 1,
+     'Feb' => 2,
+     'Mar' => 3,
+     'Apr' => 4,
+     'May' => 5,
+     'Jul' => 7,
+     'Jun' => 6,
+     'Aug' => 8,
+     'Sep' => 9,
+     'Oct' => 10,
+     'Nov' => 11,
+     'Dec' => 12
+     );
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    while ( my $line = <STDIN> )
+    {
+	if ( $DEBUG > 9 ) { print "line=$line"; }
+
+	if ( $line =~ /([A-Za-z]{3,3}\s+\d+ \d{4,4}\s+\d+:\d{2,2}[AMP]{2,2})/ )
+	{
+	    my $sybDate = $1;
+	    if ( $DEBUG > 5 ) { print "sybDate=$sybDate\n"; }
+
+	    my ($monthName,$date,$year,$hour,$min,$amPm) = $sybDate =~
+		/^([A-Za-z]{3,3})\s+(\d+) (\d{4,4})\s+(\d+):(\d{2,2})([AMP]{2,2})$/;	    
+	    if ( $amPm eq "PM" && $hour != 12 )
+	    {
+		$hour += 12;
+	    }
+	    elsif ( $amPm eq "AM" && $hour == 12 )
+	    {
+		$hour = 0;
+	    }
+	    my $newDate = sprintf("%04d-%02d-%02d:%02d:%02d", $year,$monthMap{$monthName},$date,$hour,$min);
+	    
+	    $line =~ s/$sybDate/$newDate/;	    	    
+	}
+
+	print $line;
+    }
+}
+
+			      

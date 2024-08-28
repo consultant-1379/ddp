@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Locks"/>
+ <queries>
+  <query timecol="time" multiseries="enm_postgres_names.name">
+   <dbtables main="postgres_locks">
+    <reference table="sites" condition="postgres_locks.siteid = sites.id"/>
+    <reference table="servers" condition="postgres_locks.serverid = servers.id"/>
+    <reference table="enm_postgres_names" condition="postgres_locks.dbid  = enm_postgres_names.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="serverid"/>
+   <where> sites.name = '%s' AND postgres_locks.serverid= '%s' </where>
+   <column db="postgres_locks.locks" label="Locks"/>
+  </query>
+ </queries>
+ <size width="600" height="400"/>
+</modelledgraph>

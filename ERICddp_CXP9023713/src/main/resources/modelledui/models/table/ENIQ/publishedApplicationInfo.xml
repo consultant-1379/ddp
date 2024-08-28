@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_ocs_published_application">
+    <reference table="sites" condition="eniq_ocs_published_application.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_ocs_published_application.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_ocs_published_application.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <column db="eniq_ocs_published_application.time" label="Time" />
+  <column db="eniq_ocs_published_application.biWirc" label="BI_WIRC" />
+  <column db="eniq_ocs_published_application.biUdt" label ="BI_UDT" />
+  <column db="eniq_ocs_published_application.biIdt" label ="BI_IDT" />
+  <column db="eniq_ocs_published_application.netanAnalyst" label ="NetAn_Analyst" />
+</modelledtable>

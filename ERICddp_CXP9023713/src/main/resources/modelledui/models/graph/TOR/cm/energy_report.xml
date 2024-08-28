@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="Count"
+ timespan="day"
+>
+  <title value="Energy Elements MO Count In PM File (%s)">
+    <param name="hostname"/>
+  </title>
+
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_cm_site_energy_visualization_instr">
+        <reference table="sites" condition="enm_cm_site_energy_visualization_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_site_energy_visualization_instr.serverid = servers.id"/>
+      </dbtables>
+
+      <param name="site"/>
+      <param name="serverid"/>
+
+      <where>sites.name = '%s' AND servers.id = '%s'</where>
+      <column db="numberOfEnergyElementTankInPmFiles" label="TANK"/>
+      <column db="numberOfEnergyElementDieselGeneratorInPmFiles" label="DIESEL_GENERATOR"/>
+      <column db="numberOfEnergyElementGridInPmFiles" label="GRID"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

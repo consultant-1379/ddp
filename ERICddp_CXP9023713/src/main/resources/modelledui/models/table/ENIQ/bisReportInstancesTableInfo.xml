@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="bis_report_instances">
+    <reference table="sites" condition="bis_report_instances.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+
+  <where>sites.name = '%site%' AND bis_report_instances.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <groupby>
+    <column db="bis_report_instances.reportName"/>
+  </groupby>
+  <order columnid="noOfInstance" direction="DESC"/>
+
+  <column db="bis_report_instances.reportName" label="Report Name"/>
+  <column db="MAX(bis_report_instances.noOfInstance)" label="Number Of Instances" id="noOfInstance"/>
+</modelledtable>

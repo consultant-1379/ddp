@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_flow_asu_overallsummary">
+  </table>
+  <services>
+    <service name="flowautomation"/>
+  </services>
+  <events>
+    <!-- FLOW.ASU.OVERALLSUMMARY {\"FlowVersion\":\"1.40.5\",\"TotalTimeTaken\":1127000,\"NodesCompletedwithwarnings\":4,\"TimeTakenForPreparation\":183000,\"OverallResult\":\"FAILED\",\"TimeTakenForInitialization\":27000,\"NodesFailed\":0,\"NodeswithDegradedHealth\":0,\"FlowId\":\"com.ericsson.oss.services.shm.asu.flow.asd\",\"NodesSuccessful\":0,\"TimeTakenForActivation\":917000,\"TotalNodes\":4,\"FlowExecutionName\":\"ASUP1\",\"_Thread\":\"pool-7-thread-86804\",\"TimeTakenForSetup\":224000} -->
+    <event name="FLOW.ASU.OVERALLSUMMARY">
+      <metric source="FlowExecutionName" target="flowExecutionName"/>
+      <metric source="TotalNodes" target="totalNodes"/>
+      <metric source="NodesSuccessful" target="nodesSuccessful"/>
+      <metric source="NodesFailed" target="nodesFailed"/>
+      <metric source="NodesCancelled" target="nodesCancelled"/>
+      <metric source="TotalTimeTaken" target="totalTimetaken" scale="1000"/>
+      <metric source="TimeTakenForSetup" target="timeTakenForSetup" scale="1000"/>
+      <metric source="TimeTakenForInitialization" target="timeTakenForInitialization"/>
+      <metric source="TimeTakenForPreparation" target="timeTakenForPreparation" scale="1000"/>
+      <metric source="TimeTakenForActivation" target="timeTakenForActivation" scale="1000"/>
+      <metric source="OverallResult" target="result"/>
+      <metric source="NodesCompletedwithwarnings" target="nodesCompletedwithwarnings"/>
+      <metric source="NodeswithDegradedHealth" target="nodeswithDegradedHealth"/>
+      <metric source="AdaptiveRestartNodes" target="adaptiveRestartNodes"/>
+      <property name="eventName" xsi:type="fixedproperty" value="ASU"/>
+    </event>
+      <!--  FLOW.ORUSU.OVERALLSUMMARY {\"FlowId\":\"com.ericsson.oss.services.oran.su.flow\",\"FlowVersion\":\"1.4.1\",\"TotalTimeTaken\":23000,\"NodesSuccessful\":1,\"TimeTakenForPreparation\":8000,\"TimeTakenForActivation\":15000,\"TotalNodes\":1,\"OverallResult\":\"SUCCESS\",\"FlowExecutionName\":\"ASU-ORU-TAF-FLOW-1598957354705\",\"_Thread\":\"pool-11-thread-2356\",\"TimeTakenForSetup\":25000,\"NodesFailed\":0}"} -->
+    <event name="FLOW.ORUSU.OVERALLSUMMARY">
+      <metric source="FlowExecutionName" target="flowExecutionName"/>
+      <metric source="TotalNodes" target="totalNodes"/>
+      <metric source="NodesSuccessful" target="nodesSuccessful"/>
+      <metric source="NodesFailed" target="nodesFailed"/>
+      <metric source="TotalTimeTaken" target="totalTimetaken" scale="1000"/>
+      <metric source="TimeTakenForSetup" target="timeTakenForSetup" scale="1000"/>
+      <metric source="TimeTakenForPreparation" target="timeTakenForPreparation" scale="1000"/>
+      <metric source="TimeTakenForActivation" target="timeTakenForActivation" scale="1000"/>
+      <metric source="OverallResult" target="result"/>
+      <property name="eventName" xsi:type="fixedproperty" value="ORAN"/>
+    </event>
+  </events>
+</modelledevents>

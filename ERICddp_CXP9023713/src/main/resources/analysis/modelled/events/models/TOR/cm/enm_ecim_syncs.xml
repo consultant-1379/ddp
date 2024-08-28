@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_ecim_syncs" timecol="start">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="comecimmscm"/>
+    <service name="mscmapg"/>
+    <service name="mscmip"/>
+  </services>
+
+  <events>
+    <event name="COM_ECIM_SYNC_NODE.FINALIZESYNCHANDLER_COMPLETE_SYNC">
+      <metric source="host" target="serverid"/>
+      <metric source="Number_of_ManagedObjects_Attribute_Transformed" target="n_mo_attr_trans"/>
+      <metric source="Number_of_ManagedObjects_Attribute_Read" target="n_mo_attr_read"/>
+      <metric source="Number_of_ManagedObjects_Created" target="n_mo_create"/>
+      <metric source="Number_of_ManagedObjects_Attribute_NULL_value" target="n_mo_attr_null"/>
+      <metric source="Time_Read_ManagedObjects_from_NE" target="t_read_mo_ne"/>
+      <metric source="Number_of_ManagedObjects_Updated" target="n_mo_update"/>
+      <metric source="Time_ManagedObjects_Write(ms)" target="t_mo_write"/>
+      <metric source="Time_ManagedObjects_Delta_Calculation" target="t_mo_delta"/>
+      <metric source="Number_of_ManagedObjects_Parsed" target="mo_parsed"/>
+      <metric source="Number_of_ManagedObjects_Deleted" target="n_mo_delete"/>
+      <metric source="Time_Transformed_ManagedObjects_from_NE" target="t_ne_trans_mo"/>
+      <metric source="Number_of_ManagedObjects_Write" target="n_mo_write"/>
+      <metric source="Number_of_ManagedObjects_Attribute_Delegate" target="n_mo_attr_discard"/>
+      <metric source="Total_Time" target="duration"/>
+      <metric source="FDN" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="Time_taken_to_send_NotificationsCMEventNBI" target="timeToSendNotificationsCmEventNBI"/>
+      <metric source="Number_of_Notifications_send_to_CmEventsNBI" target="numOfNotificationsSendToCmEventsNBI"/>
+    </event>
+  </events>
+</modelledevents>

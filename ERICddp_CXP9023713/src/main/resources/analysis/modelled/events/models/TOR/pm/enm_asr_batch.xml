@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_asr_batch" timecol="time"/>
+
+  <services>
+    <service name="sparkworkerdef"/>
+  </services>
+
+  <events>
+    <event name="ASR.SPARK_BATCH">
+      <metric source="totalBatchTime" target="duration"/>
+      <metric source="schDelay" target="schDelay"/>
+      <metric source="batchProcTime" target="batchProcTime"/>
+    </event>
+    <event name="ASRN.SPARK_BATCH">
+      <metric source="totalBatchTime" target="duration"/>
+      <metric source="schDelay" target="schDelay"/>
+      <metric source="batchProcTime" target="batchProcTime"/>
+    </event>
+  </events>
+</modelledevents>

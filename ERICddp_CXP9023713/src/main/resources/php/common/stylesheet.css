@@ -1,0 +1,499 @@
+body {
+    /*background: #414141;*/
+    font-family: sans-serif;
+    font-size: 67.5%;
+}
+
+input, select, th, td, textarea {
+    /* These don't inherit from body */
+    font-size: 1em;
+    font-family: sans-serif;
+}
+
+label {
+    padding: 3px;
+    display: block;
+    background-color: #ddeeff;
+}
+
+#wrapper {
+    /*min-width: 95%;*/
+    background-color: #fff;
+    color: #333;
+    /*border: 1px solid gray;*/
+    /*line-height: 130%;*/
+}
+
+#header {
+    border: 1px solid gray;
+    float: left;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#title {
+    padding: 0.2em;
+    margin: 0em;
+    float: left;
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+#title a {
+    color: #2222ff;
+    text-decoration: none;
+}
+
+a.helplink {
+    color: #2222ff;
+    text-decoration: none;
+    cursor: help;
+}
+
+#help {
+    padding: 0.2em;
+    float: right;
+    margin: 0.3em;
+    background-color: #ccc;
+    border: 1px solid gray;
+}
+
+#help a {
+    color: #2222ff;
+    font-weight: bold;
+    font-size: 1.2em;
+    text-decoration: none;
+}
+
+.helpbox {
+    position: absolute;
+    /*position: fixed;*/
+    left: 120px;
+    top: 40px;
+    border: 1px solid black;
+    display: none;
+    width: auto;
+    z-index: 10;
+}
+
+.helptitle {
+    background-color: #ccc;
+    border-bottom: 1px solid black;
+}
+
+.helpbody {
+    background-color: #fff;
+    padding: 0.3em;
+    /*overflow: auto;*/
+}
+
+#notice {
+    display: var(--notice-display);
+    border: 1px solid gray;
+    float: left;
+    clear: left;
+    width: 100%;
+    margin-top: 10px;
+    padding: 0px;
+}
+
+#noticecontent {
+    padding: 2px;
+    padding-left: 10px;
+    padding-right: 10px;
+    color: #aa0000;
+}
+
+.custom {
+    display: none;
+    position: absolute;
+    border: 1px solid black;
+    left: 100px;
+    top: 100px;
+    width: 400px;
+    background-color: #aaa;
+}
+
+.custombody {
+    border: 1px solid black;
+    background-color: #fff;
+    margin: 20px;
+    padding: 10px;
+}
+
+#cal {
+    display: var(--cal-display);
+    float: left;
+    clear: left;
+    width: 130px;
+    margin: 10px;
+    padding: 10px;
+    margin-right: 0px;
+    border: 1px solid gray;
+}
+
+#cal h2 {
+    font-size: 1.2em;
+}
+
+#cal a {
+    color: #2222ff;
+    text-decoration: none;
+}
+
+#cal a.selected, #cal a:hover {
+    color: #cccccc;
+    background-color: #2222ff;
+    text-decoration: none;
+}
+
+#content {
+    margin-left: var(--content-marginleft);
+    margin-top: 10px;
+    padding-top: 10px;
+    padding-left: 0px;
+    font-size: 1.1em;
+}
+
+
+.h1-inline-text h1 {
+    display: inline;
+}
+
+#content h1 {
+    font-size: 2em;
+}
+
+#content h2 {
+    font-size: 1.6em;
+}
+
+#content table {
+    border-collapse: collapse;
+    border: 1px solid black;
+}
+
+#content .yui-dt-col-compact {
+    padding: 1px;
+}
+
+#content .yui-dt-col-align-top {
+    vertical-align: top;
+}
+
+#content td, #content th {
+    border: 1px solid #999;
+    padding: 4px;
+}
+
+#content th {
+    border: 1px solid #000;
+}
+
+#content th a, #content th a.visited {
+    color: #2222ff;
+    text-decoration: none;
+}
+
+#content th.sorted a, #content th.sorted a.visited {
+    font-weight: bold;
+    text-decoration: underline;
+    color: #2222ff;
+    background-color: #eee;
+}
+
+#content th.sorted, #content td.sorted {
+    font-weight: bold;
+    background-color: #eee;
+}
+
+#content h3.faq {
+    color: #000077;
+}
+
+.yui-skin-sam .yui-dt-data tr.health-in-red td.yui-dt-first,
+.yui-skin-sam .yui-dt-data tr.health-in-red td.yui-dt-first td.yui-dt-asc,
+.yui-skin-sam .yui-dt-data tr.health-in-red td.yui-dt-first td.yui-dt-desc {
+    background-color: #ea2630;
+    color: #fff;
+}
+
+.yui-skin-sam .yui-dt-data tr.health-in-amber td.yui-dt-first,
+.yui-skin-sam .yui-dt-data tr.health-in-amber td.yui-dt-first td.yui-dt-asc,
+.yui-skin-sam .yui-dt-data tr.health-in-amber td.yui-dt-first td.yui-dt-desc {
+    background-color: #d9a200;
+    color: #fff;
+}
+
+.yui-skin-sam .yui-dt-data tr.health-in-green td.yui-dt-first,
+.yui-skin-sam .yui-dt-data tr.health-in-green td.yui-dt-first td.yui-dt-asc,
+.yui-skin-sam .yui-dt-data tr.health-in-green td.yui-dt-first td.yui-dt-desc {
+    background-color: #257c28;
+    color: #fff;
+}
+
+.yui-skin-sam .yui-dt-data tr.health-in-red td.yui-dt-first a,
+.yui-skin-sam .yui-dt-data tr.health-in-red td.yui-dt-first td.yui-dt-asc a,
+.yui-skin-sam .yui-dt-data tr.health-in-red td.yui-dt-first td.yui-dt-desc a,
+.yui-skin-sam .yui-dt-data tr.health-in-amber td.yui-dt-first a,
+.yui-skin-sam .yui-dt-data tr.health-in-amber td.yui-dt-first td.yui-dt-asc a,
+.yui-skin-sam .yui-dt-data tr.health-in-amber td.yui-dt-first td.yui-dt-desc a,
+.yui-skin-sam .yui-dt-data tr.health-in-green td.yui-dt-first a,
+.yui-skin-sam .yui-dt-data tr.health-in-green td.yui-dt-first td.yui-dt-asc a,
+.yui-skin-sam .yui-dt-data tr.health-in-green td.yui-dt-first td.yui-dt-desc a {
+    color: #fff;
+    text-decoration: none;
+}
+
+#details h1 {
+    font-size: 1.3em;
+}
+
+#details h2 {
+    font-size: 1.1em;
+}
+
+#footer {
+    clear: both;
+    margin: 0;
+    padding: .5em;
+    color: #333;
+    background-color: #ddd;
+    border: 1px solid gray;
+    text-align: center;
+    font-weight: bold;
+}
+
+#footer a {
+    text-decoration: none;
+}
+
+/* elements for site_type menu on site_index.php */
+#site_type_menu, #site_type_menu ul {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    line-height: 1.5;
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+#site_type_menu a {
+    text-decoration: none;
+    color: #2222ff;
+    padding-left: 0.2em;
+    padding-right: 0.2em;
+}
+
+#site_type_menu li.selected a, #site_type_menu li:hover a {
+    text-decoration: none;
+    color: #000;
+    padding-left: 0.2em;
+    padding-right: 0.2em;
+}
+
+#site_type_menu li {
+    float: left;
+    padding-right: 1em;
+    width: 15em;
+    background-color: #ccc;
+    margin: 1px;
+    margin-bottom: 0px;
+    margin-left: 0px;
+    border: 1px solid gray;
+    text-align: center;
+}
+
+#site_type_menu li:hover, #site_type_menu li.selected {
+    background-color: #fff;
+    color: #000;
+}
+
+#site_list {
+    float: left;
+    clear: left;
+    border: 0px solid white;
+    margin-left: 1px;
+    margin-top: 0px;
+    margin-bottom: 4px;
+    padding-bottom: 10px;
+    width: 100%;
+}
+
+#site_list h2 {
+    padding: 1em;
+}
+
+#site_list td, #site_list th {
+    padding-right: 1em;
+    padding-left: 1em;
+    padding-top: 0.4em;
+    padding-bottom: 0.4em;
+}
+
+#menutree table {
+    border: 0px;
+}
+
+#menutree tr {
+    line-height: 100%;
+}
+
+#menutree td, #menutree th {
+    border: 0px;
+    padding: 0px;
+}
+
+.collapsableList {
+    margin-right: 10px;
+    padding: 0px 2px 0px 2px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.dataset {
+    width: 45%;
+    border: 0px solid #cccccc;
+    padding: 0.8em;
+    margin-right: 0.3em;
+    margin-bottom: 0.5em;
+    float: left;
+}
+
+.emailTable {
+    padding: 4px 10px 4px 10px;
+}
+
+.emailTableData {
+    color: white;
+}
+
+.emailTableData a:link {
+    color : white;
+    text-decoration: none;
+}
+
+#MonitorTimeout_id {
+    color: red;
+}
+
+#MonitorOffline_id {
+    color: red;
+}
+
+#CleanStart_id {
+    color: red;
+}
+
+#Faulted_id {
+    color: red;
+}
+
+#healthCheckTable {
+    width: 400px;
+    border-collapse: collapse;
+    font-style: normal;
+    border: 1px solid black;
+}
+
+// Classes are used in the following to avoid applying styles to the help bubbles in the cells.
+#healthCheckTable th.hcSummaryHeader {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    padding: 8px;
+    border: 1px solid black;
+    background-color: #FFFFFF;
+    color: #2222FF;
+}
+
+#healthCheckTable td.hcSummaryRow {
+    padding: 8px 14px 8px 14px;
+    border: 1px solid #999999;
+}
+
+#healthCheckTable span.hcTitle {
+    font-size: 13px;
+    font-family: sans-serif;
+    color: #FFFFFF;
+
+}
+
+#healthCheckTable span.hcTitle  a:link{
+    color: #FFFFFF;
+}
+
+#healthCheckTable span.hcTitle  a:visited{
+    color: #FFFFFF;
+}
+
+#healthCheckTable span.hcTitle  a:hover{
+    color: #FFFFFF;
+}
+
+#healthCheckTable span.hcTitle  a:active{
+    color: #FFFFFF;
+}
+
+span.header-extra-link {
+    font-size: 9px;
+}
+
+div.drill-down-table {
+    width:100%;
+    height:100%;
+    overflow:auto;
+    overflow-x:hidden;
+    overflow-y:scroll;
+    max-height:580px;
+}
+
+pre.prewrap {
+    white-space: pre-wrap;
+    white-space: -moz-pre-wrap;
+    white-space: -pre-wrap;
+    white-space: -o-pre-wrap;
+    word-wrap: break-word;
+}
+
+.ddp_numeric {
+    text-align: right;
+}
+
+.quickform form {
+    max-width: 800px;
+}
+
+.quickform fieldset {
+    border: 1px solid #808080;
+    margin: 0.2em 0 0 0;
+    padding: 0.5em;
+}
+.quickform fieldset legend {
+    white-space: nowrap;
+    font-weight: bold;
+    background-color: #CCCCCC;
+    padding: 0.1em 0.5em;
+    display: block;
+    margin: 0;
+}
+
+.quickform p.label {
+    display: inline-block;
+    width: 20em;
+    text-align: left;
+    vertical-align: top;
+    margin: 1.0em 0 0.2em 1em;    
+}
+
+.quickform label {
+    display: inline;
+}
+
+.quickform div.element {
+    display: inline-block;
+}
+
+.quickform input, .quickform select {
+    display: inline;
+}

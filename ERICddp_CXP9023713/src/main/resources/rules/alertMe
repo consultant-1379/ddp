@@ -1,0 +1,442 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+# Script  : alertMe
+# Author  : Rory Kelly (erorkel)
+# Purpose : The purpose of this script is to send alert emails to users when health checks deteriorate.
+#           The script stores the previous health check results in the database.
+#           The previous health check is sompared against the current health check.
+#           If any values are worse in the current health check compared to the previoushealth check
+#           emails will be sent to the subscribers of that health check.
+# Usage   : alertMe --site ${SITE} --fqdn ${FQDN} --dir ${DATE} --date ${SQL_DATE} --time ${LAST_SAR_DATA_TIME} --oss ${LC_SITE_TYPE} --ruledefs ${RULESXML}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use JSON;
+use Net::SMTP;
+use File::Basename;
+use Time::HiRes;
+
+use StatsDB;
+use lib dirname($0);
+use Report;
+require SendEmail;
+
+our $DEBUG = 0;
+
+# Get the datetime of the last health check comparrison for the given site.
+sub getPreviousTime($$$) {
+    my ($dbh,$siteId,$reportId) = @_;
+
+    my $r_sqlResults = dbSelectAllArr($dbh, "SELECT time FROM ddp_alert_previous_results WHERE siteid = $siteId AND reportid = $reportId");
+
+    my $previousTime = 0;
+    if (@{$r_sqlResults}) {
+        $previousTime = $r_sqlResults->[0]->[0];
+    }
+
+    if ( $DEBUG > 2 ) { print "getPreviousTime:: reportId=$reportId previousTime=$previousTime\n"; }
+
+    return $previousTime;
+}
+
+sub getTimesValid($$) {
+    my ($currentTime,$previousTime) = @_;
+    my $timesValid = 1;
+
+    if ($previousTime && $currentTime lt $previousTime) {
+        $timesValid = 0;
+    }
+
+    return $timesValid;
+}
+
+# Get the current Health Check for each report which has at least 1 subscriber.
+# Returns a hash of the report name mapping to the health check for that report.
+sub getCurrentHC($$$$) {
+    my ($dbh, $siteId, $date, $reportId) = @_;
+    my $sql = "
+SELECT
+  hr.data AS data
+FROM
+ healthcheck_results AS hr
+WHERE
+  hr.siteid = $siteId AND
+  hr.date = '$date' AND
+  hr.reportid = $reportId";
+    my $r_sqlResults = dbSelectAllArr($dbh, $sql);
+
+    return $r_sqlResults->[0]->[0];
+}
+
+# Get the Reprot name from the report id
+sub getReportName($$) {
+    my ($dbh, $reportId) = @_;
+    if ( $reportId != 0 ) {
+        my $sql = "SELECT reportname FROM ddp_custom_reports WHERE id = $reportId";
+        my $r_sqlResults = dbSelectAllArr($dbh, $sql);
+        return $r_sqlResults->[0]->[0];
+    } else {
+        return 'Default';
+    }
+}
+
+# Get the previous Health Check for each report for the current site.
+# Returns a hash of the report name mapping to the health check for that report.
+sub getPreviousHC($$$) {
+    my ($dbh, $siteId, $reportId) = @_;
+
+    my $sql = "
+SELECT
+  dapr.data AS data
+FROM
+ ddp_alert_previous_results AS dapr
+WHERE
+  dapr.siteid = $siteId AND
+  dapr.reportid = $reportId";
+    my $r_sqlResults = dbSelectAllArr($dbh, $sql);
+    if ( $#{$r_sqlResults} == -1 ) {
+        return undef;
+    } else {
+        return $r_sqlResults->[0]->[0];
+    }
+}
+
+sub getRulesOrderedList($) {
+    my ($healthCHeckJSON) = @_;
+    my $json = JSON->new;
+    my $decodedHC = $json->decode($healthCHeckJSON);
+    my @rules;
+
+    foreach my $item (@$decodedHC) {
+        push @rules, $item->{rulename};
+    }
+
+    return \@rules;
+}
+
+sub getSeveritiesMap($) {
+    my ($healthCHeckJSON) = @_;
+    my $json = JSON->new;
+    my $decodedHC = $json->decode($healthCHeckJSON);
+    my %hashedHealthcheck;
+
+    # Used for mapping severities to numeric values from the source file which are currently stored as words.
+    my %ruleSeverities = (
+        'warning' => {'level' => 1, 'description' => 'Amber', 'style' => 'background-color: #D9A200'},
+        'critical' => {'level' => 2, 'description' => 'Red', 'style' => 'background-color: #EA2630'}
+    );
+    my $maxSeverity = $ruleSeverities{'critical'};
+
+    foreach my $item (@$decodedHC)
+    {
+        my $severity = {'level' => 0, 'description' => 'Green', 'style' => 'background-color: #257C28; color: white'};
+
+        foreach my $failure (@{$item->{'failures'}}) {
+            foreach my $threshold (@{$failure->{'threshold'}}) {
+                my $currentLevel = $severity->{'level'};
+                my $comparrisonLevel = $ruleSeverities{$threshold->{'severity'}}->{'level'};
+                if ($comparrisonLevel > $currentLevel) {
+                    $severity = $ruleSeverities{$threshold->{'severity'}};
+                }
+                # If we've already reached the maximum severity there is no need to keep checking.
+                my $maxLevel = $maxSeverity->{'level'};
+                if ( $currentLevel == $maxLevel) {
+                    last;
+                }
+            }
+            # If the failure has no defined severity we will just assume that it has the worst severity.
+            if ($severity->{'level'} == 0) {
+                $severity = $maxSeverity;
+            }
+            if ( $severity->{'level'} == $maxSeverity->{'level'}) {
+                last;
+            }
+        }
+        $hashedHealthcheck{$item->{rulename}} = $severity;
+    }
+
+    return \%hashedHealthcheck;
+}
+
+sub getStatusTableCell($$$){
+    my ($r_severities, $r_ruleDescriptions, $ruleName) = @_;
+
+    my $cell;
+    if ( exists $r_severities->{$ruleName} ){
+        my $style = $r_severities->{$ruleName}->{'style'};
+        $cell = "<td style='$style'>" . $r_ruleDescriptions->{$ruleName} . "</td>";
+    }
+    else {
+        $cell = "<td>" . $r_ruleDescriptions->{$ruleName} . "</td>";
+    }
+
+    return $cell;
+}
+
+# Compares 2 sets of healthcheck JSON. If there are any differences
+# it returns a string containing a html report with the result.
+sub getComparrisonReport($$$$$$$$) {
+    my ($currentHC, $previousHC,
+        $currentTime, $previousTime,
+        $hcURL, $site, $report, $fqdn) = @_;
+
+    if ( $currentHC eq $previousHC ) {
+        if ( $DEBUG > 3 ) { print "getComparrisonReport: HC the same\n"; }
+        return undef;
+    }
+
+    my $sendEmail = 0;
+
+    my $deterioratedHTML = "";
+    my $newHTML = "";
+    my $improvedHTML = "";
+
+    my $r_ruleList = getRulesOrderedList($currentHC);
+
+    my %ruleDescriptions = ();
+    foreach my $r_ruleInst ( @{$report->getRuleInsts()} ) {
+        $ruleDescriptions{$r_ruleInst->{'rulename'}} =
+            $report->getRuleDescription($r_ruleInst);
+    }
+
+    my $r_currentSeverities = getSeveritiesMap($currentHC);
+    my $r_previousSeverities = getSeveritiesMap($previousHC);
+    foreach my $ruleName (@{$r_ruleList}) {
+        if ( $r_previousSeverities && exists $r_previousSeverities->{$ruleName} ) {
+            if ( $r_currentSeverities->{$ruleName}->{'level'} > $r_previousSeverities->{$ruleName}->{'level'} ) {
+                $deterioratedHTML .= "<li><b>". $ruleDescriptions{$ruleName} . " :</b> '".$r_previousSeverities->{$ruleName}->{'description'}
+                    . "' to '".$r_currentSeverities->{$ruleName}->{'description'}."'.</li>\r\n";
+                $sendEmail = 1;
+            } elsif ( $r_currentSeverities->{$ruleName}->{'level'} < $r_previousSeverities->{$ruleName}->{'level'} ) {
+                $improvedHTML .= "<li><b>" . $ruleDescriptions{$ruleName} . " :</b> '".$r_previousSeverities->{$ruleName}->{'description'}
+                    . "' to '".$r_currentSeverities->{$ruleName}->{'description'}."'.</li>\r\n";
+            }
+        } elsif ( $r_currentSeverities->{$ruleName}->{'level'} > 0) {
+            $newHTML .= "<li><b>" . $ruleDescriptions{$ruleName} . " :</b> "
+                . $r_currentSeverities->{$ruleName}->{'description'}."</li>\r\n";
+            $sendEmail = 1;
+        }
+        if ( $DEBUG > 5 ) { print "getComparrisonReport: ruleName=$ruleName sendEmail=$sendEmail\n"; }
+    }
+
+    my $comparrisonReport = undef;
+    if ( $sendEmail == 1) {
+        $comparrisonReport = "<h3>Status Changes for Current Health Summary:</h3>";
+        if ( $deterioratedHTML ne "") {
+            $comparrisonReport .= "</ul>-Deteriorated-<ul>";
+            $comparrisonReport .= $deterioratedHTML;
+            $comparrisonReport .= "</ul>";
+        }
+        if ( $newHTML ne "") {
+            $comparrisonReport .= "</ul>-New or Renamed-<ul>";
+            $comparrisonReport .= $newHTML;
+            $comparrisonReport .= "</ul>";
+        }
+        if ( $improvedHTML ne "") {
+            $comparrisonReport .= "</ul>-Improved-<ul>";
+            $comparrisonReport .= $improvedHTML;
+            $comparrisonReport .= "</ul>";
+        }
+
+        my $unSubURL = "https://$fqdn/adminui/hcSubs.php";
+        $comparrisonReport .= <<EOS;
+<p>You can view the full details of the current health status for site $site <a href="$hcURL">here</a>.</p>
+<p>Unsubscribe from this report <a href="$unSubURL">here</a>.</p>
+<table border='6' bordercolor=black style='border-collapse: collapse;'>
+ <tr> <th>Previous Health Summary ($previousTime)</th> <th>Current Health Summary ($currentTime)</th> <tr>
+EOS
+
+        foreach my $rule (@{$r_ruleList}) {
+            $comparrisonReport .= " <tr>" .
+                getStatusTableCell($r_previousSeverities, \%ruleDescriptions, $rule) .
+                getStatusTableCell($r_currentSeverities, \%ruleDescriptions, $rule) .
+                "</tr>\n";
+        }
+
+        $comparrisonReport .= "</table>";
+    }
+
+    return $comparrisonReport;
+}
+
+# Return a hash containing the names of all reports for the given site and their subscriber emails.
+sub getReportSubscriberEmails($$$) {
+    my ($dbh,$siteId,$reportId) = @_;
+
+    my $sql="
+SELECT
+  dase.email AS email
+FROM
+ ddp_alert_subscriptions AS das
+  JOIN ddp_alert_subscriber_emails AS dase
+    ON das.signum = dase.signum
+WHERE
+  das.siteid = $siteId AND
+  das.reportid = $reportId";
+    my $r_sqlResults = dbSelectAllArr($dbh, $sql);
+
+    my @reportSubscribers = ();
+    foreach my $r_record (@{$r_sqlResults}) {
+        push @reportSubscribers, $r_record->[0];
+    }
+    if ($DEBUG > 3) { printf("getReportSubscriberEmails reportId=%d, reportSubscribers=%s\n", $reportId, join(",", @reportSubscribers)); }
+    return \@reportSubscribers;
+}
+
+# Send an e-mail to each subscriber who is subscribed to a report which has changed
+sub sendEmails($$$$$) {
+    my ($site, $r_comparrisonReport, $r_reportSubscribers, $mailhost, $reportName) = @_;
+
+    if ($DEBUG > 3) { print "sendEmails: reportName=$reportName\n"; }
+
+    my $subject = "DDP $site Health Status for $reportName";
+    my $mailBodyHtml = $r_comparrisonReport;
+    my $to = join(',', @{ $r_reportSubscribers });
+
+    SendEmail::sendEmail($subject, $mailBodyHtml, $to, $mailhost);
+}
+
+# Store the current Health Checks as the previous Health Checks for next time.
+sub storeNewPreviousHC($$$$$) {
+    my ($dbh,$siteId, $reportId, $time, $r_currentHC) = @_;
+
+    dbDo($dbh, "DELETE FROM ddp_alert_previous_results WHERE siteid = $siteId AND reportid = $reportId")
+        or die "Failed to remove old results";
+
+    my $sth = $dbh->prepare('INSERT INTO ddp_alert_previous_results (time,siteid,reportid,data) VALUES (?, ?, ?, ?)');
+    my @values = ($time,$siteId,$reportId,$r_currentHC);
+    $sth->execute(@values) or die "Failed to insert results";
+}
+
+sub main() {
+    my ( $site, $fqdn, $dir, $date, $time, $oss, $mailhost, $reportId );
+
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "fqdn=s" => \$fqdn,
+        "dir=s" => \$dir,
+        "date=s" => \$date,
+        "time=s" => \$time,
+        "oss=s" => \$oss,
+        "mailhost=s" => \$mailhost,
+        "reportid=s" => \$reportId,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid arguments";
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    dbDo($dbh,"use ddpadmin") or die "Failed to switch to ddpadmin";
+
+    #Either takes the passed reportId or if none passed gets a list of valid reportIds from the DB.
+    my %reportIds;
+    if ( defined $reportId ) {
+        $reportIds{$reportId} = getReportName($dbh, $reportId);
+    } else {
+        $reportIds{0} = 'Default';
+        my $sql = "
+SELECT
+    DISTINCT ddp_alert_subscriptions.reportid,
+    ddp_custom_reports.reportname
+FROM
+    ddp_alert_subscriptions,
+    ddp_custom_reports
+WHERE
+    siteid = $siteId AND
+    ddp_alert_subscriptions.reportid = ddp_custom_reports.id
+ORDER BY reportid";
+
+        my $r_resultRows = dbSelectAllArr($dbh, $sql);
+        foreach my $r_row ( @{$r_resultRows} ) {
+            $reportIds{$r_row->[0]} = $r_row->[1];
+        }
+    }
+
+    if (! %reportIds) {
+        return 0;
+    }
+    if ( $DEBUG > 2 ) { print Dumper("main: reportIds", \%reportIds); }
+
+    my $hcBaseURL = sprintf("https://%s/php/common/hc.php?site=%s&dir=%s&date=%s&oss=%s&displayId=",
+                            $fqdn,
+                            $site, $dir, $date, $oss);
+
+    while ( my ($reportId,$reportName) = each %reportIds) {
+        my $r_reportSubscribers = getReportSubscriberEmails($dbh,$siteId,$reportId);
+        if ( $DEBUG > 3 ) { print Dumper( "main: r_reportSubscribers", $r_reportSubscribers ); }
+        print "Trying to process reportid=$reportId name=$reportName, #subscribers=", ($#{$r_reportSubscribers}+1), "\n";
+
+        my $currentTime = "$date $time";
+        my $previousTime = getPreviousTime($dbh, $siteId, $reportId);
+        my $timesValid = getTimesValid($currentTime, $previousTime);
+        if ( $DEBUG > 0 ) { print "main: reportId=$reportId timesValid=$timesValid\n"; }
+
+        my $report = new Report($oss,$reportId,$dbh);
+
+        if ( defined $report ) {
+            my @times = ();
+            push @times, [ 'start', Time::HiRes::time ];
+
+            my $r_currentHC = getCurrentHC($dbh, $siteId, $date, $reportId);
+            push @times, [ 'getCurrentHC', Time::HiRes::time ];
+            if ( $DEBUG > 8 ) { print Dumper( "main: r_currentHC", $r_currentHC ); }
+            (defined $r_currentHC) or die "Cannot find healthcheck_results for reportid $reportId";
+
+            # Default is always added to %reportIds, there might be zero subscribers for it
+            if ( $DEBUG > 0 ) { printf("main: timesValid=%d #subscribers=%d\n", $timesValid, ($#{$r_reportSubscribers} + 1)); }
+
+            if ($timesValid && $#{$r_reportSubscribers} > -1) {
+                my $r_previousHC = getPreviousHC($dbh, $siteId, $reportId);
+                if ( $DEBUG > 3 ) { printf( "main: r_previousHC defined=%s\n", (defined $r_previousHC ? "yes" : "no")); }
+
+                push @times, [ 'getPreviousHC', Time::HiRes::time ];
+                if ( $DEBUG > 8 ) { print Dumper( "main: r_previousHC", $r_previousHC ); }
+
+                if ( defined $r_previousHC ) {
+                    push @times, [ 'getReportSubscriberEmails', Time::HiRes::time ];
+
+                    my $r_comparrisonRep = getComparrisonReport(
+                            $r_currentHC,
+                            $r_previousHC,
+                            $currentTime,
+                            $previousTime,
+                            $hcBaseURL . $reportId,
+                            $site,
+                            $report,
+                            $fqdn
+                    );
+                    if ( $DEBUG > 3 ) { printf( "main: r_comparrisonRep defined=%s\n", (defined $r_comparrisonRep ? "yes" : "no")); }
+
+                    push @times, [ 'getComparrisonReport', Time::HiRes::time ];
+                    if ( $DEBUG > 7 ) { print Dumper( "main: r_comparrisonRep", $r_comparrisonRep ); }
+
+                    if (defined $r_comparrisonRep) {
+                        sendEmails($site, $r_comparrisonRep, $r_reportSubscribers, $mailhost, $reportName);
+                        push @times, [ 'sendEmails', Time::HiRes::time ];
+                    }
+                }
+            }
+
+            storeNewPreviousHC($dbh,$siteId, $reportId, $currentTime, $r_currentHC);
+            push @times, [ 'storeNewPreviousHC', Time::HiRes::time ];
+
+            if ( $DEBUG > 0 ) {
+                for ( my $index = 1; $index <= $#times; $index++ ) {
+                    printf "%35s %6.2f\n", $times[$index]->[0], $times[$index]->[1] - $times[$index-1]->[1];
+                }
+            }
+        } else {
+            print "Undefined report, reportid=$reportId name=$reportName\n";
+        }
+    }
+}
+
+main();

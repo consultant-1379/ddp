@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="fmhistory"/>
+      <service name="consfm"/>
+  </services>
+
+  <table name="enm_fmack">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.alarm.action.service.instrumentation.AlarmActionService:type=AASInstrumentedBean$">
+      <metric source="ackAlarmCount" target="ackAlarmCount" delta="true"/>
+      <metric source="failedAckAlarmCount" target="failedAckAlarmCount" delta="true"/>
+      <metric source="unAckAlarmCount" target="unAckAlarmCount" delta="true"/>
+      <metric source="failedUnAckAlarmCount" target="failedUnAckAlarmCount" delta="true"/>
+      <metric source="failedClearAlarmCount" target="failedClearAlarmCount" delta="true"/>
+      <metric source="manualClearAlarmCount" target="manualClearAlarmCount" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^neo4j@neo4j$">
+  <table name="enm_neo4j_srv">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^neo4j-cache$">
+      <metric source="BytesRead" target="cacheKbRead" delta="true" scale="1024"/>
+      <metric source="BytesWritten" target="cacheKbWritten" delta="true" scale="1024"/>
+      <metric source="EvictionExceptions" target="cacheEvictionExceptions" delta="true"/>
+      <metric source="Evictions" target="cacheEvictions" delta="true"/>
+      <metric source="Faults" target="cacheFaults" delta="true"/>
+      <metric source="Flushes" target="cacheFlushes" delta="true"/>
+      <metric source="Pins" target="cachePins" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-trans$">
+      <metric source="LastCommittedTxId" target="transLastCommitted"/>
+      <metric source="NumberOfCommittedTransactions" target="transCommitted" delta="true"/>
+      <metric source="NumberOfOpenedTransactions" target="transOpened" delta="true"/>
+      <metric source="NumberOfOpenTransactions" target="transOpen"/>
+      <metric source="NumberOfRolledBackTransactions" target="transRolledBack" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

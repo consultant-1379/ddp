@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="eo_jboss_connection_pool_names.name">
+    <dbtables main="eo_jboss_connection_pool">
+      <reference table="sites" condition="eo_jboss_connection_pool.siteid = sites.id"/>
+      <reference table="servers" condition="eo_jboss_connection_pool.serverid = servers.id"/>
+      <reference table="eo_jboss_connection_pool_names" condition="eo_jboss_connection_pool.poolid = eo_jboss_connection_pool_names.id"/>
+    </dbtables>
+
+    <param name="site"/>
+    <param name="serverid"/>
+    <param name="poolid"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s ) AND eo_jboss_connection_pool.poolid IN ( %s )</where>
+  </query>
+
+  <graphs>
+
+    <graph name="created_count" type="sb">
+      <title value="Total Connections Created"/>
+      <column db="createdCount" label="Total Connections Created"/>
+    </graph>
+
+    <graph name="destroyed_count" type="sb">
+      <title value="Total Connections Destroyed"/>
+      <column db="destroyedCount" label="Total Connections Destroyed"/>
+    </graph>
+
+    <graph name="blockingFailure_count" type="sb">
+      <title value="Total Blocking Failures"/>
+      <column db="blockingFailureCount" label="Total Blocking Failures"/>
+    </graph>
+
+    <graph name="totalTimed_out" type="sb">
+      <title value="Total Timed Out"/>
+      <column db="timedOut" label="Total Timed Out"/>
+    </graph>
+
+    <graph name="totalBlocking_time" type="sb" ylabel="millisec">
+      <title value="Total Blocking Time"/>
+      <column db="totalBlockingTime" label="Total Blocking Time"/>
+    </graph>
+
+    <graph name="totalCreation_time" type="sb" ylabel="millisec">
+      <title value="Total Creation Time"/>
+      <column db="totalCreationTime" label="Total Creation Time"/>
+    </graph>
+
+    <graph name="wait_count" type="tsc">
+      <title value="Total in Wait request"/>
+      <column db="waitCount" label="Total in Wait request"/>
+    </graph>
+
+  </graphs>
+
+  <groups>
+    <group name="pool">
+      <member>created_count</member>
+      <member>destroyed_count</member>
+      <member>blockingFailure_count</member>
+      <member>totalTimed_out</member>
+      <member>totalBlocking_time</member>
+      <member>totalCreation_time</member>
+      <member>wait_count</member>
+    </group>
+  </groups>
+</modelledgraphset>

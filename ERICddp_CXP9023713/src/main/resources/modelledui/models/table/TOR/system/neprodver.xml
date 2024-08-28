@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ne_up">
+  <reference table="sites" condition="ne_up.siteid = sites.id"/>
+  <reference table="ne_up_ver" condition="ne_up.upid = ne_up_ver.id"/>
+  <reference table="ne_types" condition="ne_up.netypeid = ne_types.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ne_up.date = '%date%'</where>
+
+ <column db="ne_types.name" label="NE Type"/>
+ <column db="ne_up_ver.name" label="NE Product Version"/>
+ <column db="ne_up.numne" label="Count"/>
+
+</modelledtable>

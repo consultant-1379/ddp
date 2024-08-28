@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="pkiraservice"/>
+  </services>
+
+  <table name="enm_raserv_cdps_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.security.pki.cdps.notification.instrumentation.pki-cdps:type=CRLInstrumentationBean$">
+      <metric source="publishMethodInvocations" target="publishMethodInvocations" delta="true" filteridle="true"/>
+      <metric source="publishMethodSuccess" target="publishMethodSuccess" delta="true" filteridle="true"/>
+      <metric source="unPublishMethodInvocations" target="unPublishMethodInvocations" delta="true" filteridle="true"/>
+      <metric source="unPublishMethodSuccess" target="unPublishMethodSuccess" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

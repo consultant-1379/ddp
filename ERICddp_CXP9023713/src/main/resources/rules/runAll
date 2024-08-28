@@ -1,0 +1,25 @@
+#!/bin/bash
+
+RULES_DIR=`dirname $0`
+RULES_DIR=`cd ${RULES_DIR} ; pwd`
+
+ANALYSIS_DIR=`cd ${RULES_DIR} ; cd ../analysis ; pwd`
+export PERL5OPT="-I${ANALYSIS_DIR}/common"
+
+if [ -d /data/ruleinst ] ; then
+    RULE_INST_DIR=/data/ruleinst
+else
+    RULE_INST_DIR=/tmp
+fi
+
+YESTERDAY=`/usr/local/bin/date --date "-24hours" "+%Y-%m-%d"`
+RULE_INST_LIST=`find ${RULE_INST_DIR} -name '*.xml'`
+
+for RULE_INST in ${RULE_INST_LIST} ; do
+    SITE=`basename ${RULE_INST} .xml`
+    START_DATE=`date +%H:%M:%S`
+    echo "${START_DATE} BEGIN ${SITE}"
+    ${RULES_DIR}/executeRules --ruledefs ${RULES_DIR}/rules.xml --ruleinsts ${RULE_INST} --site ${SITE} --date ${YESTERDAY}
+    END_DATE=`date +%H:%M:%S`
+    echo "${END_DATE} END ${SITE}"
+done

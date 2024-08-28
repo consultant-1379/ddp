@@ -1,0 +1,5 @@
+[
+    "common/nic_stats.xml$",
+    "common/hires_disk_stat.xml$",
+    "common/hires_server_stat.xml$"
+]

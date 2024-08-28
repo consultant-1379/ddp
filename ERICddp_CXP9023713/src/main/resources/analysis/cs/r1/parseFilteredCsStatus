@@ -1,0 +1,163 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+our $MB=1048576;
+our $DEBUG=0;
+
+my ($inFile,$outFile);
+my $result = GetOptions(
+			"infile=s"  => \$inFile,
+			"outfile=s"  => \$outFile,
+			"debug" => \$DEBUG
+			);
+($result == 1) or die "Invalid args"; 
+
+# First line in file contains the number of fields (excluding the time stamp)
+open INPUT, $inFile or die "Failed to open $inFile";
+open OUTPUT, ">$outFile" or die "Failed to open $outFile";
+
+my $line = <INPUT>;
+my @fields = ();
+if ( $line =~ /^FIELDS/ ) 
+{
+    chop $line;
+    (@fields) = split / /, $line;
+    shift @fields; # removes FIELDS
+}
+else
+{
+    $_ = $line;
+    my ($numFields) = /^(\d+)/;
+    
+    push @fields, "cs.session.nof";
+    if ( $numFields >= 18 )
+    {
+	push @fields, "cs.session.dead.nof";
+    }
+    push @fields,"cs.session.persistence.dump";
+    push @fields,"cs.memory.total";
+    push @fields,"cs.memory.free";
+    push @fields,"cs.thread.active";
+    push @fields,"cs.thread.existing";
+    push @fields,"cs.thread.sys";
+    push @fields,"cs.thread.orb.active";
+    push @fields,"cs.thread.orb.existing";
+    push @fields,"cs.thread.dump";
+
+    if ( $numFields >= 12 )
+    {
+	push @fields,"cs.time.setbulk";
+    }
+    if ( $numFields >= 18 )
+    {	
+	push @fields,"cs.time.purger.session.work";
+	push @fields, "cs.time.purger.session.sleep";
+	push @fields, "cs.time.purger.transaction.work";
+	push @fields, "cs.time.purger.transaction.sleep";
+    }
+   
+    push @fields,"cs.distribution.mibs";
+    push @fields,"cs.distribution.cs";
+    push @fields,"cs.distribution.ns";
+}
+
+if ( $DEBUG ) { print Dumper( \@fields, undef ); }
+
+my %fieldMap = ();
+for ( my $i = 0; $i <= $#fields; $i++ )
+{
+    $fieldMap{$fields[$i]} = $i + 1;
+}
+
+my @optSections = ( "cs.time.setbulk", "cs.time.purger.session.work", "cs.session.dead.nof", "cs.mocache.hit" );
+my $optSectStr = "OPT_SECTIONS";
+foreach my $optSect ( @optSections )
+{
+    if ( $fieldMap{$optSect} )
+    {
+	$optSectStr .= " " . $optSect;
+    }
+}
+print $optSectStr, "\n";
+
+while ( $line = <INPUT> )
+{
+    my (@parts) = split /\|\|/, $line;
+
+    my  ($roAvail,$roInUse,$rwAvail,$rwInUse) =
+	$parts[$fieldMap{"cs.session.persistence.dump"}] =~ /^ReadOnlyPool,(\d+),(\d+).*::ReadWritePool,(\d+),(\d+)/;
+    
+    if ( (! $roAvail) && (! $roInUse ) )
+    {
+	next;
+    }
+
+    print OUTPUT $parts[0], " ", # time
+    $parts[$fieldMap{"cs.session.nof"}], " ", # num sess
+    int ($parts[$fieldMap{"cs.memory.total"}]/$MB), " ", # total mem
+    int (($parts[$fieldMap{"cs.memory.total"}]-$parts[$fieldMap{"cs.memory.free"}])/$MB), " ", # free mem
+    $parts[$fieldMap{"cs.thread.active"}], " ", # thread.active
+    $parts[$fieldMap{"cs.thread.existing"}], " ", # thread.existing
+    $parts[$fieldMap{"cs.thread.sys"}], " ", # thread.sys
+    $parts[$fieldMap{"cs.thread.orb.active"}], " ", # thread.orb.active
+    $parts[$fieldMap{"cs.thread.orb.existing"}], " ", # thread.orb.existing
+    ($roAvail + $roInUse), " ",
+    $roInUse, " ",
+    ($rwAvail + $rwInUse), " ",
+    $rwInUse;    
+    
+    if ( $fieldMap{"cs.time.setbulk"} )
+    {
+	my @bulkParts = split /\//, $parts[$fieldMap{"cs.time.setbulk"}];
+	print OUTPUT " $bulkParts[0] $bulkParts[1] $bulkParts[2] $bulkParts[3]";
+    }
+    else
+    {
+	print OUTPUT " - - - -";
+    }
+
+    my $purgeIndex = $fieldMap{"cs.time.purger.session.work"};
+    if ( $purgeIndex )
+    {
+	for ( my $i = $purgeIndex; $i < $purgeIndex + 4; $i++ )
+	{
+	    my @purgeParts = split /\//, $parts[$i];
+	    print OUTPUT " $purgeParts[0] $purgeParts[1] $purgeParts[2] $purgeParts[3]";
+	}
+    }
+    else
+    {
+	print OUTPUT " - - - - - - - - - - - - - - - -";
+    }
+
+    if (  $fieldMap{"cs.session.dead.nof"} )
+    {
+	print OUTPUT " ", $parts[$fieldMap{"cs.session.dead.nof"}];
+    }    
+    else
+    {
+	print OUTPUT " -";
+    }
+	    
+
+    my $cacheIndex = $fieldMap{"cs.mocache.hit"};
+    if ( $cacheIndex )
+    {
+	for ( my $i = $cacheIndex; $i < ($cacheIndex + 4); $i++ )
+	{
+	    print OUTPUT " ", $parts[$i];
+	}
+    }
+    else
+    {
+	print " - - - -";
+    }
+
+    print OUTPUT "\n";
+}
+
+close INPUT;
+close OUTPUT;

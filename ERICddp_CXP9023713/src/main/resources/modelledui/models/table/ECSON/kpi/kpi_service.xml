@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_kpi_service">
+    <reference table="sites" condition="ecson_kpi_service.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_kpi_service.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <column db="SEC_TO_TIME(SUM(ecson_kpi_service.calculation_time))" label="Total Calculation Time (hh:mm:ss)"/>
+ <column db="SEC_TO_TIME(ROUND(AVG(ecson_kpi_service.calculation_time)))" label="Average Calculation Time (hh:mm:ss)"/>
+ <column db="SEC_TO_TIME(MAX(ecson_kpi_service.calculation_time))" label="Max Calculation Time(hh:mm:ss)"/>
+
+</modelledtable>

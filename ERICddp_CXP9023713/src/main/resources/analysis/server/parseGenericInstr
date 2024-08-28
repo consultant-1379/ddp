@@ -1,0 +1,297 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Storable qw(dclone);
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use Instr;
+use StatsTime;
+
+our $DEBUG = 0;
+
+our %ATTR_MAP = (
+    'jvm-memory' => {
+        'HeapMemoryUsage-committed'    => 'hp_committed',
+        'HeapMemoryUsage-init'         => 'hp_init',
+        'HeapMemoryUsage-max'          => 'hp_max',
+        'HeapMemoryUsage-used'         => 'hp_used',
+        'NonHeapMemoryUsage-committed' => 'nh_committed',
+        'NonHeapMemoryUsage-init'      => 'nh_init',
+        'NonHeapMemoryUsage-max'       => 'nh_max',
+        'NonHeapMemoryUsage-used'      => 'nh_used'
+    },
+    'threads' => {
+        'ThreadCount'                  => 'threadcount',
+        'PeakThreadCount'              => 'peakthreadcount'
+    },
+    'os' => {
+        'ProcessCpuTime'               => 'cputime',
+        'OpenFileDescriptorCount'      => 'fd'
+    },
+    'nio-memory-mapped' => {
+        'MemoryUsed' => 'nio_mem_mapped',
+    },
+    'nio-memory-direct' => {
+        'MemoryUsed' => 'nio_mem_direct'
+    },
+    'jvmgc' => {
+        'young-count'                  => 'gc_youngcount',
+        'young-time'                   => 'gc_youngtime',
+        'old-count'                    => 'gc_oldcount',
+        'old-time'                     => 'gc_oldtime'
+    }
+);
+
+my %ATTR_SCALE = (
+    'jvm-memory' => {
+        'HeapMemoryUsage-committed'    => ( 1024 * 1024 ),
+        'HeapMemoryUsage-init'         => ( 1024 * 1024 ),
+        'HeapMemoryUsage-max'          => ( 1024 * 1024 ),
+        'HeapMemoryUsage-used'         => ( 1024 * 1024 ),
+        'NonHeapMemoryUsage-committed' => ( 1024 * 1024 ),
+        'NonHeapMemoryUsage-init'      => ( 1024 * 1024 ),
+        'NonHeapMemoryUsage-max'       => ( 1024 * 1024 ),
+        'NonHeapMemoryUsage-used'      => ( 1024 * 1024 ),
+    },
+    'nio-memory-mapped' => {
+        'MemoryUsed' => ( 1024 * 1024 ),
+    },
+    'nio-memory-direct' => {
+        'MemoryUsed' => ( 1024 * 1024 ),
+    },
+    'os' => {
+        'ProcessCpuTime' => ( 1000 * 1000 * 1000 )
+    }
+);
+
+sub readIncr($) {
+    my ($incrFile) = @_;
+
+    my %incrData = ();
+    my $dataOffset = 0;
+    if ( defined $incrFile && -r $incrFile ) {
+        my $incrDataStr;
+        do {
+            local $/ = undef;
+            open(INC, $incrFile) or die "Could not open $incrFile: $!";;
+            $incrDataStr = <INC>;
+            close INC;
+        };
+
+        my $VAR1 = {};
+        eval($incrDataStr);
+        %incrData = %{$VAR1};
+        if ( $DEBUG > 3 ) { print Dumper("readIncr: incrData", \%incrData); }
+    }
+
+    return \%incrData;
+}
+
+sub writeIncr($$$) {
+    my ($incrFile, $instrData, $incrData) = @_;
+    if ( defined $incrFile ) {
+        $incrData->{'offset'} = instrGetOffset($instrData);
+        my $incrDataStr = Dumper($incrData);
+        open(INC, ">$incrFile");
+        print INC $incrDataStr;
+        close INC;
+    }
+}
+
+sub getCfg($$) {
+    my ($instrCfgDir, $instrCfgFiles) = @_;
+
+    my %providers = ();
+
+    foreach my $instrCfgFile ( split( /,/, $instrCfgFiles ) ) {
+        my $fullPath = $instrCfgDir . "\/" . $instrCfgFile;
+        my $r_thisCfg    = parseConfig($fullPath);
+        if ( $DEBUG > 6 ) {
+            print Dumper( "getCfgFiles fullPath=$fullPath r_thisCfg", $r_thisCfg );
+        }
+
+        while ( my ($profileName,$r_profile) = each %{$r_thisCfg} ) {
+            while ( my ($providerName,$r_provider) = each %{$r_profile->{'providers'}} ) {
+                if ( $DEBUG > 5 ) { print "getCfg: providerName=$providerName\n"; }
+                if ( $r_provider->{'type'} eq 'jvmgc' ) {
+                    $providers{$providerName . "-jvmgc"} = $r_provider;
+                } else {
+                    foreach my $name ( sort keys %ATTR_MAP ) {
+                        if ( $providerName =~ /^(\S+)-$name$/ ) {
+                            $providers{$providerName} = $r_provider;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    my @providerNames = keys %providers;
+    if ( $DEBUG > 6 ) { print "getCfg: providerNames: [", join(",",@providerNames), "]\n"; }
+
+    if ( $#providerNames > -1 ) {
+        return { 'profile' => { 'providers' => \%providers } };
+    } else {
+        return undef;
+    }
+}
+
+sub processJVM($$$$$$$) {
+    my ($jvm, $site, $serverId, $jvmId, $r_names, $r_data, $incrData) = @_;
+
+    my %columnMap = ();
+    my %deltaNames = ();
+    foreach my $name ( 'ProcessCpuTime', 'young-count', 'old-count', 'young-time', 'old-time' ) {
+        $deltaNames{$name} = 1;
+    }
+
+    my @deltaFullNames = ();
+    my %scaleMap = ();
+    while ( my ($name,$r_attr) = each %ATTR_MAP ) {
+        my $fullName = undef;
+        foreach my $providerName ( @{$r_names} ) {
+            if ( $providerName =~ /$name$/ ){
+                $fullName = $providerName;
+            }
+        }
+        if ( defined $fullName ) {
+            while ( my ($attrJmxName,$attrDbName) = each %{$r_attr} ) {
+                my $attrFullName = $fullName . "-" . $attrJmxName;
+                $columnMap{$attrFullName} = $attrDbName;
+
+                if ( exists $deltaNames{$attrJmxName} ) {
+                    push @deltaFullNames, $attrFullName;
+                }
+
+                if ( exists $ATTR_SCALE{$name} && exists $ATTR_SCALE{$name}->{$attrJmxName} ) {
+                    $scaleMap{$attrFullName} = $ATTR_SCALE{$name}->{$attrJmxName};
+                }
+            }
+        } else {
+            if ( $DEBUG > 0 ) { print "WARN: Could not find match for $name\n"; }
+        }
+    }
+
+    my %jvmData = ();
+    foreach my $name ( @{$r_names} ) {
+        $jvmData{$name} = $r_data->{$name};
+    }
+    if ( $DEBUG > 9 ) { print Dumper("processJVM: jvmData", \%jvmData); }
+
+    my $r_samples = instrGroupDataFunc(\%jvmData,\&instrJoinMetrics);
+    if ( $DEBUG > 8 ) { print Dumper("processJVM: r_samples", $r_samples); }
+
+    # Consider the last sample of the previous incremental processing for the given JVM
+    # if it exists, for delta calculation with the first sample of the present processing
+    my $lastRunSampleInserted = 0;
+    if ( exists $incrData->{'lastsample'} && exists $incrData->{'lastsample'}->{$jvm} ) {
+        unshift @{$r_samples}, $incrData->{'lastsample'}->{$jvm};
+        $lastRunSampleInserted = 1;
+    }
+
+    # Store the last sample of the present incremental processing for the given JVM for
+    # delta calculation with the first sample in the next processing
+    if ( scalar @{$r_samples} > 0 ) {
+        $incrData->{'lastsample'}->{$jvm} = dclone($r_samples->[$#{$r_samples}]);
+    }
+
+    deltaSamples($r_samples, \@deltaFullNames );
+    if ( $lastRunSampleInserted ) {
+        shift @{$r_samples};
+    }
+    instrScaleSamples( $r_samples, \%scaleMap );
+
+    my %extraCols = ( 'serverid' => $serverId, 'nameid' => $jvmId );
+    instrStoreData("generic_jmx_stats", $site, \%extraCols, $r_samples, \%columnMap);
+}
+
+sub main() {
+    my ( $instrCfgDir, $instrCfgFiles, $instrData, $dashDate, $incrFile, $service, $site, $server );
+    my $result = GetOptions(
+        "cfgDir=s"         => \$instrCfgDir,
+        "cfgFiles=s"       => \$instrCfgFiles,
+        "data=s"           => \$instrData,
+        "site=s"           => \$site,
+        "server=s"         => \$server,
+        "date=s"           => \$dashDate,
+        "incr=s"           => \$incrFile,
+        "service=s"        => \$service,
+        "debug=s"          => \$DEBUG
+        );
+    ($result == 1) or die "Invalid options";
+
+    setStatsDB_Debug($DEBUG);
+    setInstr_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_cfg = getCfg( $instrCfgDir, $instrCfgFiles );
+    if ( ! defined $r_cfg ) {
+        print "WARN: No Generic Instr MBeans found in cfg files\n";
+        exit 0;
+    }
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ( $dd, $mm, $yy ) = split( /\-/, $dashDate );
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    my $incrData = {};
+    $incrData = readIncr( $incrFile );
+
+    my $dataOffset = 0;
+    if ( defined $incrData->{'offset'} ) {
+        $dataOffset = $incrData->{'offset'};
+    }
+
+    my $r_data = parseDataForCfg( $r_cfg, $instrData, $dataOffset );
+    if ( $DEBUG > 8 ) { print Dumper( "main r_data", $r_data ); }
+
+    # In OSS-RC, we can have multiple JVMs being monitored by the same instr
+    # So the "key" below, idenitifies the JVM and the "name" is a bean within
+    # that JVM
+    my %namesMap = ();
+    foreach my $name ( sort( keys(%$r_data) ) ) {
+        my $jvm = undef;
+        if ( defined $service ) {
+            $jvm = $service;
+        } else {
+            my @nameParts = split( /\-/, $name );
+            $jvm = $nameParts[0];
+        }
+        if ( ! exists $namesMap{$jvm} ) {
+            $namesMap{$jvm} = [];
+        }
+        push @{$namesMap{$jvm}}, $name;
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("main: namesMap", \%namesMap); }
+    my @jvms = sort keys %namesMap;
+
+    my $dbh = connect_db();
+
+    my $r_idMap = getIdMap( $dbh, "jmx_names", "id", "name", \@jvms );
+
+    my $siteId = getSiteId( $dbh, $site );
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId( $dbh, $siteId, $server );
+
+    $dbh->disconnect();
+
+    foreach my $jvm ( @jvms ) {
+        processJVM( $jvm, $site, $serverId, $r_idMap->{$jvm}, $namesMap{$jvm}, $r_data, $incrData );
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("main: incrData", $incrData); }
+    writeIncr( $incrFile, $instrData, $incrData );
+}
+
+main();

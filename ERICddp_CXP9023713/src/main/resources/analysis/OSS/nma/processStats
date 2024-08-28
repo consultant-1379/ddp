@@ -1,0 +1,45 @@
+#!/bin/bash
+
+DATADIR=$1
+SITE=$2
+DATE=$3
+OUTPUT_DIR=$4
+
+SQL_DATE=$(echo ${DATE} | sed 's/^\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)$/20\3-\2-\1/g')
+DASH_DATE=$(echo ${DATE} | sed 's/^\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)$/\1-\2-\3/g')
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd ../.. ; pwd`
+
+#If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+run ${ANALYSIS_BIN}/OSS/nma/parseInstr --site ${SITE} --datadir ${DATADIR}
+run ${ANALYSIS_BIN}/OSS/nma/syncs --lvlogdir ${TMP_DIR}/lvlog --site ${SITE}
+run ${ANALYSIS_BIN}/OSS/nma/notif --nma ${DATADIR}/OSS/nma --site ${SITE} --date ${SQL_DATE}
+
+ME_CONTEXT_EVENTS="${TMP_DIR}/mecon_wran.events"
+# Might be already created by NEAD analysis scripts
+if [ ! -r ${ME_CONTEXT_EVENTS} ] ; then
+    EVENTS_FILE="${TMP_DIR}/events/0c1A"
+    if [ -r ${EVENTS_FILE} ] ; then    
+	cat ${EVENTS_FILE} | ${ANALYSIS_BIN}/events/filterEvents -p 'moc="MeContext"' | ${ANALYSIS_BIN}/events/filterEvents -r ONRM_CS > ${ME_CONTEXT_EVENTS}
+    fi
+fi
+
+if [ -r ${ME_CONTEXT_EVENTS} ] ; then
+    cat ${ME_CONTEXT_EVENTS} | ${ANALYSIS_BIN}/events/filterEvents -p 'ATTRIBUTE_VALUE_CHANGE VALID' | \
+	${ANALYSIS_BIN}/events/filterEvents -p connectionStatus | \
+	${ANALYSIS_BIN}/events/filterEvents -p 'cs_client_app="NMAMcServernma' > ${TMP_DIR}/nma_conn.events
+    
+    NUM_CONN_STAT=`egrep -c connectionStatus ${TMP_DIR}/nma_conn.events`     
+    if [ ${NUM_CONN_STAT} -gt 0 ] ; then
+	if [ ! -d ${OUTPUT_DIR}/nma ] ; then
+	    mkdir ${OUTPUT_DIR}/nma
+	fi
+	run ${ANALYSIS_BIN}/cms/plotConnDisc ${TMP_DIR}/nma_conn.events ${OUTPUT_DIR}/nma/conn_disc_table.html OSS ${OUTPUT_DIR}/nma/conn_disc.json
+    fi
+fi

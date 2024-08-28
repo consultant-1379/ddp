@@ -1,0 +1,217 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use JSON;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+our %TYPE_HANDLER = (
+    'ERBS' => 'mscm',
+    'RadioNode' => 'comecimmscm',
+    'MSRBS_V1' => 'comecimmscm',
+    'RBS' => 'mscm',
+    'RNC' => 'mscm',
+    'SGSN-MME' => 'comecimmscm',
+    'MGW' => 'mscm',
+    'RadioTNode' => 'comecimmscm',
+    'EPG' => 'comecimmscm',
+    'vEPG' => 'comecimmscm',
+    'SAPC' => 'comecimmscm',
+    'CSCF' => 'comecimmscm',
+    'SBG' => 'comecimmscm',
+    'MGW' => 'comecimmscm',
+    'BSC' => 'mscmapg',
+    'DSC' => 'comecimmscm',
+    'MTAS' => 'comecimmscm'
+);
+
+our $FIND_START = 1;
+our $FIND_END = 2;
+our $FOUND_END = 3;
+
+sub readEvent {
+    my @eventLines = ();
+    my $line;
+    my $state = $FIND_START;
+    while ( $state != $FOUND_END && defined($line = <IN>) ) {
+        if ( $DEBUG > 9 ) { print "readEvent: state=$state line=$line"; }
+        if ( $line !~ /^$/) {
+            if ( $state == $FIND_START ) {
+                $state = $FIND_END;
+            }
+            chop $line;
+            push @eventLines, $line;
+        } elsif ( $state == $FIND_END ) {
+            $state = $FOUND_END;
+        }
+    }
+
+    my $result = undef;
+    if ( $#eventLines > -1 ) {
+        $result = \@eventLines;
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("readEvent: result", $result); }
+
+    return $result;
+}
+
+sub parseEvents($) {
+    my ($eventsFile) = @_;
+    open IN, $eventsFile or die "Failed to open $eventsFile";
+    my @events = ();
+    while ( my $r_event = readEvent() ) {
+        my $eventHeader = shift @{$r_event};
+        my ($timestamp, $delta) = $eventHeader =~
+            /^([\d\-:]+)\.\d+ ([\d\-]+)$/;
+        my $typeLine = shift @{$r_event};
+        if ( $typeLine =~ /^Attribute Changed/ ) {
+            my $bucketLine = shift @{$r_event};
+            if ( $bucketLine =~ /^\s+Bucket Name:: Live; Namespace::OSS_NE_CM_DEF; Type::CmFunction;.* FDN::NetworkElement=([^,]+),CmFunction/ ) {
+                my $ne = $1;
+                shift @{$r_event}; # Skip Attributes changed: line
+                my %parsedEvent = (
+                    'timestamp' => $timestamp,
+                    'ne' => $ne,
+                    'attr' => {}
+                    );
+                foreach my $attribLine ( @{$r_event} ) {
+                    my ($name,$value) = $attribLine =~ /^\s+Attribute name=(\S+); old value=[^;]+; new value=([^;]+);/;
+                    if ( defined $name ) {
+                        $parsedEvent{'attr'}->{$name} = $value;
+                    }
+                }
+                if ( $DEBUG > 5 ) { print Dumper("parseEvents: parsedEvent",\%parsedEvent); }
+                push @events, \%parsedEvent;
+            }
+        }
+    }
+    close IN;
+
+    return \@events;
+}
+
+sub readCmSGDir($) {
+    my ($servicegrpDir) = @_;
+    opendir(my $dh, $servicegrpDir) || die "can't opendir bur dir: $!";
+    while ( my $file = readdir($dh) ) {
+        if ( $file =~ /^\./ ) {
+            next;
+        }
+        my $file_path = $servicegrpDir."/".$file;
+        my ($serviceGrp) = $file =~ /_([a-z]+)\.json/;
+        my $file_content = do {
+            open(my $cm_fh, "<:encoding(UTF-8)", $file_path)
+                or die("Can't open \$filename\": $!\n");
+            local $/;
+            <$cm_fh>
+        };
+        my $neTypeRef = decode_json($file_content);
+        foreach my $neTypeData (@{$neTypeRef}) {
+            $TYPE_HANDLER{$neTypeData} = $serviceGrp;
+        }
+    }
+}
+
+sub main {
+    my ($eventsFile, $outDir, $site, $servicegrpDir);
+    my $result = GetOptions (
+        "site=s" => \$site,
+        "events=s" => \$eventsFile,
+        "servicegrp=s" => \$servicegrpDir,
+        "outdir=s" => \$outDir,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $r_neList = dbSelectAllHash($dbh, "SELECT enm_ne.name AS name, ne_types.name AS type FROM enm_ne,ne_types WHERE enm_ne.siteid = $siteId AND enm_ne.netypeid = ne_types.id");
+    $dbh->disconnect();
+
+    if ( defined $servicegrpDir ) {
+        readCmSGDir($servicegrpDir);
+    }
+
+    my %neTypeMap = ();
+    foreach my $r_ne ( @{$r_neList} ) {
+        $neTypeMap{$r_ne->{'name'}} = $r_ne->{'type'};
+    }
+    if ( $DEBUG > 12 ) { print Dumper("main: neTypeMap", \%neTypeMap); }
+
+    my $r_events = parseEvents($eventsFile);
+    my %nodeIndexByType = ( 'mscm' => 1, 'comecimmscm' => 1, 'mscmapg' => 1, 'mssnmpcm' => 1, 'mscmip' => 1 );
+    my %seriesByType = ();
+
+    foreach my $NodeType ( keys %nodeIndexByType ) {
+        my $statsHash = {
+            'UNSYNCHRONIZED' => [],
+            'PENDING' => [],
+            'TOPOLOGY' => [],
+            'DELTA' => [],
+            'SYNCHRONIZED' => []
+        };
+
+        $seriesByType{$NodeType} = $statsHash;
+    }
+    my %nodeIndexMap = ();
+    foreach my $r_event ( @{$r_events} ) {
+        my $syncStatus = $r_event->{'attr'}->{'syncStatus'};
+        my $neType = $neTypeMap{$r_event->{'ne'}};
+        if ( defined $syncStatus && defined $neType ) {
+            my $typeGroup = $TYPE_HANDLER{$neType};
+            if ( $DEBUG > 7 ) { print "main: ne=$r_event->{'ne'} neType=$neType typeGroup=$typeGroup\n"; }
+            if ( defined $typeGroup ) {
+                my $nodeNumber = $nodeIndexMap{$r_event->{'ne'}};
+                if ( ! defined $nodeNumber ) {
+                    $nodeNumber = $nodeIndexByType{$typeGroup};
+                    $nodeIndexMap{$r_event->{'ne'}} = $nodeNumber;
+                    $nodeIndexByType{$typeGroup}++;
+                }
+                push @{$seriesByType{$typeGroup}->{$syncStatus}},
+                    [
+                     parseTime($r_event->{'timestamp'}, $StatsTime::TIME_YYYYMDHMS) * 1000,
+                     $nodeNumber
+                    ];
+            }
+        }
+    }
+
+    foreach my $typeGroup ( keys %nodeIndexByType ) {
+        if ( $nodeIndexByType{$typeGroup} > 1 ) {
+            my $plotFile = $outDir . "/syncStatus_" . $typeGroup . ".json";
+            open OUTPUT, ">$plotFile" or die "Cannot open $plotFile";
+            while ( my ($syncStatus,$r_events) = each %{$seriesByType{$typeGroup}} ) {
+                if ( $#{$r_events} > -1 ) {
+                    print OUTPUT encode_json({ 'name' => $syncStatus, 'data' => $r_events }), "\n";
+                }
+            }
+            close OUTPUT;
+
+            my @indexTable = ();
+            while ( my ($ne,$nodeNumber) = each %nodeIndexMap ) {
+                my $thisNeTypeGroup = $TYPE_HANDLER{$neTypeMap{$ne}};
+                if ( $thisNeTypeGroup eq $typeGroup ) {
+                    push @indexTable, { 'ne' => $ne, 'index' => $nodeNumber };
+                }
+            }
+            my $tableFile = $outDir . "/index_" . $typeGroup . ".json";
+            open OUTPUT, ">$tableFile" or die "Cannot open $tableFile";
+            print OUTPUT encode_json(\@indexTable);
+            close OUTPUT;
+        }
+    }
+}
+
+main();

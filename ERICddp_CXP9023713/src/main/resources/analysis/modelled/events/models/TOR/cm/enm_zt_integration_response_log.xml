@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_zt_integration_time_response_log">
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="autoprovisioning"/>
+    <service name="consautoprov"/>
+  </services>
+
+  <events>
+  <!-- 2019-06-05 10:41:58,207 INFO  [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] (EJB async - 13) ZT_INTEGRATION_TIME_RESPONSE {"NODE_TYPE":"ERBS","TIME_FROM_START_TO_INTEGRATION_COMPLETE":321409,"TIME_FROM_AIWS_TO_INTEGRATION_COMPLETE":241685,"NODE_NAME":"LTE02ERBS00021","_Thread":"EJB async - 13","PROJECT_NAME":"apTafProject89"} -->
+    <event name="ZT_INTEGRATION_TIME_RESPONSE">
+      <metric source="PROJECT_NAME" target="projectName"/>
+      <metric source="NODE_NAME" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="NODE_TYPE" target="netypeid"/>
+      <metric source="TIME_FROM_START_TO_INTEGRATION_COMPLETE" target="startIntegrationTime"/>
+      <metric source="TIME_FROM_AIWS_TO_INTEGRATION_COMPLETE" target="downloadIntegrationTime"/>
+    </event>
+  </events>
+</modelledevents>

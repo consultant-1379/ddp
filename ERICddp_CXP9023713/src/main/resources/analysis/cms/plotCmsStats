@@ -1,0 +1,207 @@
+#!/bin/bash
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN}; cd .. ; pwd)
+
+DATA_DIR=$1
+OUTPUT_DIR=$2
+DATE=$3
+
+SITE=$4
+SQL_DATE=$5
+
+DASH_DATE=`echo ${DATE} | sed 's/^\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)$/\1-\2-\3/g'`
+
+# Log stuff
+LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+
+if [ ! -d ${OUTPUT_DIR}/cms ]; then
+    mkdir ${OUTPUT_DIR}/cms
+fi
+
+OSSVER=`cat ${DATA_DIR}/OSS/oss_ver.txt`
+
+# Do this as early as possible so that the ne table get populated by
+# storeMeList only
+if [ -r ${DATA_DIR}/OSS/melist.txt ]; then
+    SWLIST_ARG=""
+    if [ -r ${DATA_DIR}/OSS/swVersion_me.txt ] ; then
+	SWLIST_ARG="--swlist ${DATA_DIR}/OSS/swVersion_me.txt"
+    fi
+
+    run ${ANALYSIS_BIN}/cms/storeMeList --melist ${DATA_DIR}/OSS/melist.txt --date ${SQL_DATE} --site ${SITE} ${SWLIST_ARG}
+fi
+
+#
+# Process event data from RNCs
+#
+if [ -r ${DATA_DIR}/monitorRnc/events.data ]; then
+    echo " RNC Event Data"
+    OFFSET=""
+    if [ -r ${DATA_DIR}/OSS/tz.txt ]; then 
+	UTC_HOUR=`cat ${DATA_DIR}/OSS/tz.txt | awk -F:: '{print $3}'`
+	LOCAL_HOUR=`cat ${DATA_DIR}/OSS/tz.txt | awk -F:: '{print $2}'`
+	DELTA=`expr ${LOCAL_HOUR} - ${UTC_HOUR}`
+	OFFSET="--offset ${DELTA}"
+    fi
+    RNCS=`${ANALYSIS_BIN}/cms/parseCfgEventData --data ${DATA_DIR}/monitorRnc/events.data --outputdir ${OUTPUT_DIR}/cms --plotdata ${TMP_DIR}/data.txt ${OFFSET}`
+    MAX=`echo ${RNCS} | awk '{print NF}'`
+    INDEX=${MAX}
+    PLOTCMD="plot"
+    while [ ${INDEX} -ge 2 ]; do
+	if [ ${INDEX} -ne ${MAX} ]; then
+	    PLOTCMD="${PLOTCMD}, "
+	fi
+
+	RNC=`echo ${RNCS} | awk "{print \\$${INDEX}}"`
+	PLOTCMD="${PLOTCMD} \"${TMP_DIR}/data.txt\" using 1:${INDEX} title \"${RNC}\" with boxes"
+
+	INDEX=`expr ${INDEX} - 1`
+    done
+    gnuplot <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set format x "%H:%M"
+set style fill solid
+set key under
+set terminal jpeg
+set output"${OUTPUT_DIR}/cms/rnc_eventrate.jpg
+set title "Events Per Hour Per RNC"
+${PLOTCMD}
+EOF
+    
+    cp ${ANALYSIS_BIN}/template/monitorRnc.html ${OUTPUT_DIR}/cms/monitorRnc.html
+    chmod 755 ${OUTPUT_DIR}/cms/monitorRnc.html
+fi
+
+if [ ! -d ${DATA_DIR}/cms_plots ] ; then
+    mkdir ${DATA_DIR}/cms_plots
+fi
+
+echo " NEAD Stats"
+
+# Remove any data pre-midnight from nead.log
+DAY=`echo ${DASH_DATE} | awk -F\- '{print $1}'`
+FILTERED_LOG=${TMP_DIR}/fnead.log
+FIRST_LINE_NUM=`egrep  -a -m 1 -n "^DUMP START [^ ]* [^ ]* ${DAY}" ${DATA_DIR}/OSS/nead.log | awk -F: '{print $1}'`
+tail -n +${FIRST_LINE_NUM} ${DATA_DIR}/OSS/nead.log > ${FILTERED_LOG}
+
+# Process NOTIFICATIONRECEIVEDSTATS if present
+egrep -a -m 1 '^NOTIFICATIONRECEIVEDSTATS' ${FILTERED_LOG} > /dev/null
+if [ $? -eq 0 ] ; then
+    egrep -a '^NOTIFICATIONRECEIVEDSTATS|^NOTIFICATIONNODETOP10|^DUMP' ${FILTERED_LOG} > ${TMP_DIR}/NOTIFICATIONRECEIVEDSTATS.txt
+    run ${ANALYSIS_BIN}/cms/parseYYNotifRec --input ${TMP_DIR}/NOTIFICATIONRECEIVEDSTATS.txt --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -r ${DATA_DIR}/P21 ] ; then
+    ${ANALYSIS_BIN}/cms/plotYinYang --cfg ${ANALYSIS_BIN}/cms/p21_yinyang.cfg --date ${DASH_DATE} --plotcmd ${ANALYSIS_BIN}/cms/plotNeadStat --neadlog ${FILTERED_LOG} --outputdir ${OUTPUT_DIR}/cms --tmpdir ${TMP_DIR} --plotdir ${DATA_DIR}/cms_plots
+else
+    # Process THREADPOOL2 if present
+    CFG_FILE=${ANALYSIS_BIN}/cms/p30_yinyang.cfg
+    egrep -a -m 1 '^NOTIFICATIONNODESTATS' ${FILTERED_LOG} > /dev/null
+    if [ $? -eq 0 ] ; then
+        egrep -a -m 1 '^SYNCHRONIZATION_ONGOING_ERBS' ${FILTERED_LOG} > /dev/null
+        if [ $? -eq 0 ] ; then
+            CFG_FILE=${ANALYSIS_BIN}/cms/r63_lte_yinyang.cfg
+        else
+            CFG_FILE=${ANALYSIS_BIN}/cms/r63_yinyang.cfg
+        fi
+    else
+	egrep -a -m 1 '^THREADPOOL2' ${FILTERED_LOG} > /dev/null
+	if [ $? -eq 0 ] ; then
+	    CFG_FILE=${ANALYSIS_BIN}/cms/r52_yinyang.cfg
+	fi
+    fi
+    
+    run ${ANALYSIS_BIN}/cms/plotYinYang --cfg ${CFG_FILE} --date ${DASH_DATE} --plotcmd ${ANALYSIS_BIN}/cms/plotNeadStat --neadlog ${FILTERED_LOG} --outputdir ${OUTPUT_DIR}/cms --tmpdir ${TMP_DIR} --plotdir ${DATA_DIR}/cms_plots --site ${SITE}
+fi
+
+#
+# Connection Status events
+#
+OSS="OSS"
+if [ -r ${DATA_DIR}/P21 ]; then
+    OSS="RANOS"
+fi
+echo " Connect/Disconnect"
+EVENTS_FILE="${DATA_DIR}/OSS/all.events"
+if [ -d ${TMP_DIR}/events ] ; then
+    EVENTS_FILE="${TMP_DIR}/events/0c1A"
+fi
+
+ME_CONTEXT_EVENTS=${TMP_DIR}/mecon_wran.events
+# Might be created by the NMA analysis scripts
+if [ ! -r ${ME_CONTEXT_EVENTS} ] ; then
+    if [ -r ${EVENTS_FILE} ] ; then
+	cat ${EVENTS_FILE} | ${ANALYSIS_BIN}/events/filterEvents -p 'moc="MeContext"' | ${ANALYSIS_BIN}/events/filterEvents -r ONRM_CS > ${ME_CONTEXT_EVENTS}
+    fi
+fi
+
+NUM_CONN_STAT=0
+if [ -r ${ME_CONTEXT_EVENTS} ] ; then
+    cat ${ME_CONTEXT_EVENTS} |  ${ANALYSIS_BIN}/events/filterEvents -p 'ATTRIBUTE_VALUE_CHANGE VALID' | \
+	${ANALYSIS_BIN}/events/filterEvents -p connectionStatus | \
+	${ANALYSIS_BIN}/events/filterEvents -p 'cs_client_app="CMS_NEAD"' > ${TMP_DIR}/conn.events
+    NUM_CONN_STAT=`egrep -c connectionStatus ${TMP_DIR}/conn.events` 
+    
+    if [ ${NUM_CONN_STAT} -gt 0 ] ; then
+	run ${ANALYSIS_BIN}/cms/plotConnDisc ${TMP_DIR}/conn.events ${OUTPUT_DIR}/cms/conn_disc_table.html ${OSS} ${DATA_DIR}/cms_plots/conn_disc.json
+    fi
+fi
+
+NEAD_CONN_SQL=${TMP_DIR}/nead_connections.sql
+cat > ${NEAD_CONN_SQL} <<EOF
+SET @siteid=(SELECT id FROM sites WHERE sites.name = "${SITE}");
+DELETE FROM nead_connections WHERE siteid = @siteid AND date = "${SQL_DATE}"; 
+INSERT INTO nead_connections (date,siteid,conn) VALUES ( "${SQL_DATE}", @siteid, ${NUM_CONN_STAT} );
+EOF
+${ANALYSIS_BIN}/sql/runSql ${NEAD_CONN_SQL} 
+
+#
+# SYNC analysis
+#
+if [ -r ${TMP_DIR}/lvlog/cms_nead_seg ] ; then
+    echo " Sync stats"
+    run ${ANALYSIS_BIN}/cms/syncs --lvlog ${TMP_DIR}/lvlog/cms_nead_seg --site ${SITE} --sqldate ${SQL_DATE}
+fi
+
+#
+# NEAD Failed Notifications [OSS-RC 12 WP00558: CR 862/109 18-FCP 103 8147/13 A, BG 2011-11-15]
+#
+CNT=`grep 'cms_nead_seg.*Failed to introduce notifications from' ${DATA_DIR}/OSS/lvlog.log | wc -l`
+if [ ${CNT} -gt 0 ] ; then
+    echo " NEAD Failed notifications"
+    run ${ANALYSIS_BIN}/cms/parseNEADFailedNotif --logfile ${DATA_DIR}/OSS/lvlog.log --site ${SITE} --date ${DASH_DATE}
+fi
+
+#
+# NEAD Heap usage
+#
+INSTR_FILE=${DATA_DIR}/instr.txt
+if [ -r ${INSTR_FILE} ] ; then
+    head --lines=100 ${INSTR_FILE} | grep "cms_nead_seg" >> /dev/null
+    if [ $? -eq 0 ]; then
+	${ANALYSIS_BIN}/server/plotHeap ${INSTR_FILE} cms_nead_seg ${DASH_DATE} ${OUTPUT_DIR}/cms/nead_memory.jpg 1,0.5 ${DATA_DIR}/cms_plots/heap.txt
+    fi
+fi
+    
+run ${ANALYSIS_BIN}/cms/netSync ${DASH_DATE} ${DATA_DIR} ${SITE}
+
+if [ -r ${ME_CONTEXT_EVENTS} ] && [ -r ${DATA_DIR}/OSS/melist.txt ] ; then
+    # Only valid for networks that have RNCs
+    grep '@RNC_NODE_MODEL@' ${DATA_DIR}/OSS/melist.txt > /dev/null
+    if [ $? -eq 0 ] ; then
+	run ${ANALYSIS_BIN}/cms/reParent --site ${SITE} --date ${SQL_DATE} --events ${ME_CONTEXT_EVENTS}
+    fi
+fi
+
+

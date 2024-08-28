@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="MB"
+>
+  <title value="Total MB Read"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="spark_executor">
+        <reference table="sites" condition="spark_executor.siteid = sites.id"/>
+        <reference table="servers" condition="spark_executor.serverid = servers.id"/>
+      </dbtables>
+
+      <param name="site"/>
+      <param name="serverids"/>
+      <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+      <column db="spark_executor.shuftotalmbread" label="Total MB Read"/>
+    </query>
+  </queries>
+  <size width="600" height="240"/>
+</modelledgraph>

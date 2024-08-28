@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+
+use DataStore;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub readI($) {
+    my ($file) = @_;
+
+    my @samples = ();
+    open INPUT, $file or die "Cannot open $file";
+    my $r_sample = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "readI: line=$line"; }
+
+        if ( $line =~ /^\d{2}:\d{2}:\d{2}\.\d{3}\s+\S+\s+(\S+)\s+(\d+)\s+([\d:]+) (\d{4})/ ) {
+            my ( $monthName, $date, $time, $year ) = ( $1, $2, $3, $4, );
+            my $unixDate = sprintf("%s %d %s XXX %d", $monthName, $date, $time, $year);
+
+            if ( $DEBUG > 5 && defined $r_sample ) { print Dumper("readI: r_sample", $r_sample); }
+            $r_sample = {
+                'time' => parseTime( $unixDate, $StatsTime::TIME_UNIX_DATE )
+            };
+            if ( $DEBUG > 6 ) { print "readI: timestamp=$r_sample->{'time'}\n"; }
+            push @samples, $r_sample;
+        } elsif ( $line =~ /^\s*(\d+)\s+inodes current/ ) {
+            $r_sample->{'inodes'} = $1;
+        } elsif ( $line =~/^\s*(\d+) lookups\s+([\d\.]+)%/ ) {
+            $r_sample->{'lookups'} = $1;
+            $r_sample->{'hr'} = $2;
+        } elsif ( $line =~ /^\s*(\d+)\s+sec recycle age/ ) {
+            $r_sample->{'recycle'} = $1;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("readI: samples", \@samples); }
+
+    return \@samples;
+}
+
+sub readV($$) {
+    my ($file, $r_samples) = @_;
+
+    open INPUT, $file or die "Cannot open $file";
+    my $r_sample = undef;
+    my $sampleIndex = 0;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "readV: line=$line"; }
+        if ( $line =~ /^\d{2}:\d{2}:\d{2}\.\d{3}\s+\S+\s+(\S+)\s+(\d+)\s+([\d:]+) (\d{4})/ ) {
+            my ( $monthName, $date, $time, $year ) = ( $1, $2, $3, $4, );
+            my $unixDate = sprintf("%s %d %s XXX %d", $monthName, $date, $time, $year);
+            my $timestamp = parseTime( $unixDate, $StatsTime::TIME_UNIX_DATE );
+            if ( $DEBUG > 5 ) { print "readV: timestamp=$timestamp unixDate=$unixDate sampleIndex=$sampleIndex\n"; }
+
+            if ( $r_samples->[$sampleIndex]->{'time'} == $timestamp ) {
+                $r_sample = $r_samples->[$sampleIndex];
+                $sampleIndex++;
+            } else {
+                $r_sample = undef;
+            }
+        } elsif ( defined $r_sample && $line =~ /^vxi_icache_inuseino\s+(\d+)/  ) {
+            $r_sample->{'vxi_icache_inuseino'} = $1;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("readV: r_samples", $r_samples); }
+}
+
+sub storeData($$$) {
+    my ($site,$server,$r_data) = @_;
+
+    my %tableModel = (
+        'name' => 'vxfs_inode_cache',
+        'keycol' => [
+            { 'name' => 'serverid', 'reftable' => 'servers' }
+        ]
+    );
+
+    my %commonProps = (
+        'site' => $site,
+        'server' => $server
+    );
+
+    my %columnMap = (
+        'inodes' => 'inodes',
+        'hr' => 'hitrate',
+        'recycle' => 'recycle',
+        'lookups' => 'lookups',
+        'vxi_icache_inuseino' => 'vxi_icache_inuseino'
+    );
+
+    DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 undef,
+                                 \%commonProps,
+                                 \%columnMap,
+                                 [ { 'samples' => $r_data, 'properties' => {} } ] );
+}
+
+sub main() {
+    my ($ifile,$vfile,$site,$server);
+    my $result = GetOptions(
+    "i=s" => \$ifile,
+    "v=s" => \$vfile,
+    "site=s" => \$site,
+    "server=s" => \$server,
+    "debug=s" => \$DEBUG,
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_data = readI($ifile);
+    readV($vfile, $r_data);
+    # Drop the first sample because it's an absolute
+    shift @{$r_data};
+
+    storeData($site,$server,$r_data);
+}
+
+main();

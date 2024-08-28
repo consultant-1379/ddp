@@ -1,0 +1,114 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use DBI;
+
+use StatsDB;
+use StatsCommon;
+
+our $DEBUG=0;
+our %EXCEPTIONS = (
+    'org.jboss.as.config' => 1
+);
+
+sub parseLog($) {
+    my ($logFile) = @_;
+
+    my $dateTime;
+    my %loggingLevels = ();
+
+    open READ_LOG, $logFile or die "Cannot open $logFile";
+    while ( my $line = <READ_LOG> ) {
+        my ( $subSystem, $loggingLevel );
+        if ( $DEBUG > 9 ) { print "parseLog: line=$line"; }
+
+        if ($line =~ /#\s*DDC\s*:\s*CollectionTime\s*=\s*\'(.*)\'/) {
+            $dateTime = $1;
+        }
+        elsif ( ($line =~ /logger\.(.*)\.level=.*TRACE/) || ($line =~ /logger\.level=.*TRACE/) ) {
+            $subSystem = $1;
+            $subSystem = "root" if ( ! defined $subSystem);
+            $loggingLevel = "TRACE";
+        }
+        elsif ( ($line =~ /logger\.(.*)\.level=.*DEBUG/) || ($line =~ /logger\.level=.*DEBUG/) ) {
+            $subSystem = $1;
+            $subSystem = "root" if (! defined $subSystem);
+            $loggingLevel = "DEBUG";
+        }
+
+        if ( defined $subSystem ) {
+            if ( exists $EXCEPTIONS{$subSystem} ) {
+                if ( $DEBUG > 5 ) { print "parseLog: Skipping '$subSystem' as it's an exception and can have DEBUG/TRACE level logging\n"; }
+            }
+            else {
+                if ( $DEBUG > 9 ) { print "parseLog: Logging level for '$subSystem': $loggingLevel\n"; }
+                $loggingLevels{$subSystem} = $loggingLevel;
+            }
+        }
+    }
+    close READ_LOG;
+
+    ( defined $dateTime ) or die "Unable to fetch the time for the log file";
+
+    if ( $DEBUG > 9 ) { print Dumper("parseLog: loggingLevels", \%loggingLevels); }
+    return (\%loggingLevels, $dateTime);
+}
+
+sub storeResults($$$$) {
+    my ( $loggingLevels, $site, $server, $dateTime ) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId($dbh, $siteId, $server);
+    ( $serverId != -1 ) or die "Failed to get serverId for $server under $site\n";
+
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $bcpFileName = "$tmpDir/enm_jboss_logging_levels.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    # Get ID maps for logging subsystem names
+    my @subsystemNames = keys %{$loggingLevels};
+    my $subsysNameIdMap = getIdMap($dbh, 'enm_logging_subsystem_names', 'id', 'name', \@subsystemNames);
+
+    foreach(sort keys %{$loggingLevels}) {
+        print BCP "$siteId\t$dateTime\t$serverId\t$subsysNameIdMap->{$_}\t$loggingLevels->{$_}\n";
+    }
+    close BCP;
+
+    dbDo( $dbh, sprintf("DELETE FROM enm_jboss_logging_levels WHERE siteid = $siteId AND serverid = $serverId AND time = '$dateTime'"))
+        or die "Failed to delete old data from enm_jboss_logging_levels";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_jboss_logging_levels" )
+        or die "Failed to load new data from '$bcpFileName' file to 'enm_jboss_logging_levels' table" . $dbh->errstr;
+
+    unlink($bcpFileName);
+    $dbh->disconnect;
+}
+
+sub main {
+    my ($logFile, $site, $server);
+
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s"    => \$site,
+        "server=s"  => \$server,
+        "debug=s"   => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my ($loggingLevels, $dateTime) = parseLog($logFile);
+
+    # Store the data
+    storeResults($loggingLevels, $site, $server, $dateTime);
+}
+
+main();

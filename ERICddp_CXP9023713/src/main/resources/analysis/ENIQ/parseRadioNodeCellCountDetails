@@ -1,0 +1,246 @@
+#!/usr/bin/perl
+
+
+###################################################################################################################################################
+# Description ---------   parseRadioNodeCellCountDetails -------------------------------------
+# This script parses the radio node cell count log file and stores data to DB for DDP
+# @author - POOJA NAGAJE (zpoonag)
+# usage parseRadioNodeCellCountDetails --dir ${DIR} --site ${SITE} --date ${SQL_DATE}
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+
+our $DEBUG = 0;
+
+sub main {
+    my ( $site, $siteId, $dir, $dbh, $date);
+    my $result = GetOptions(
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    parseData($dir, $siteId, $dbh, $date);
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData($$$$) {
+    my ( $dir, $siteId, $dbh, $date ) = @_;
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    closedir DIR;
+    if ( $DEBUG > 2 ) {
+        print Dumper("Files to be parsed", @files);
+    }
+    my ( $table, $bcpFile );
+
+    foreach my $file (@files) {
+        next if $file =~ /^\./;
+        if ( $file =~ /^radio_G1_G2_mixed_node_*/ ) {
+            $bcpFile = parseNodeCountLog($file, $siteId, $dir, $date);
+            $table = "eniq_radio_node_count_details";
+        } elsif ( $file =~ /^radio_G1_G2_mixed_cell_*/ ) {
+            $bcpFile = parseCellCountLog($file, $siteId, $dir, $date);
+            $table = "eniq_radio_cell_count_details";
+        } elsif ( $file =~ /^radio_pico_rnc_node_*/ ) {
+            $bcpFile = parsePicoRncNodeLog($file, $siteId, $dir, $date);
+            $table = "eniq_pico_rnc_node_count_details";
+        } elsif ( $file =~ /^radio_pico_rnc_cell_*/ ) {
+            $bcpFile = parsePicoRncCellLog($file, $siteId, $dir, $date);
+            $table = "eniq_pico_rnc_cell_count_details";
+        } else {
+            return;
+        }
+        removeOldData($table, $siteId, $dbh, $date);
+        loadDb($bcpFile, $table, $dbh);
+    }
+}
+
+sub parseNodeCountLog($$$$) {
+    my ( $file, $siteId, $dir, $date ) = @_;
+    my @radioNodeCountArrayData = ();
+    my $bcpFile = getBcpFileName("nodeCountBcp");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ($line =~ /^(.*):(\d+):(\d+):(\d+):(\d+)$/ ) {
+            my %radioNodeCountData = (
+                technology => $1,
+                g1Count => $2,
+                g2Count => $3,
+                mixedCount => $4,
+                totalCount => $5,
+            );
+            push (@radioNodeCountArrayData, \%radioNodeCountData);
+        }
+    }
+    foreach my $dataElement ( @radioNodeCountArrayData ) {
+        printf BCP "%s|%d|%s|%d|%d|%d|%d\n",
+        $date,
+        $siteId,
+        $dataElement->{technology},
+        $dataElement->{g1Count},
+        $dataElement->{g2Count},
+        $dataElement->{mixedCount},
+        $dataElement->{totalCount};
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parseCellCountLog($$$$) {
+    my ( $file, $siteId, $dir, $date) = @_;
+    my @radioCellCountArrayData = ();
+    my $bcpCellCountFile = getBcpFileName("cellCountBcp");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpCellCountFile" or die "Cannot open BCPFile $bcpCellCountFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ($line =~ /^(.*):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+)$/ ) {
+            my %radioCellCountData = (
+                technology => $1,
+                g1CellCount => $2,
+                g2CellCount => $3,
+                mixedCellCount => $4,
+                totalCellCount => $5,
+                g1NodeCount => $6,
+                g2NodeCount => $7,
+                mixedNodeCount => $8,
+                totalNodeCount => $9,
+            );
+            push (@radioCellCountArrayData, \%radioCellCountData);
+        }
+    }
+    foreach my $dataElement ( @radioCellCountArrayData ) {
+        printf BCP "%s|%d|%s|%d|%d|%d|%d|%d|%d|%d|%d\n",
+        $date,
+        $siteId,
+        $dataElement->{technology},
+        $dataElement->{g1CellCount},
+        $dataElement->{g2CellCount},
+        $dataElement->{mixedCellCount},
+        $dataElement->{totalCellCount},
+        $dataElement->{g1NodeCount},
+        $dataElement->{g2NodeCount},
+        $dataElement->{mixedNodeCount},
+        $dataElement->{totalNodeCount}
+    }
+    close BCP;
+    close FILE;
+    return $bcpCellCountFile;
+}
+
+sub parsePicoRncNodeLog($$$$) {
+    my ( $file, $siteId, $dir, $date ) = @_;
+    my @radioPicoNodeArrayData = ();
+    my $bcpFile = getBcpFileName("picoRncNodeCountBcp");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ($line =~ /^(.*):(\d+):(\d+):(\d+)$/ ) {
+            my %radioPicoRncNodeCountData = (
+                technology => $1,
+                picoCount => $2,
+                rncCount => $3,
+                totalCount => $4
+            );
+            push (@radioPicoNodeArrayData, \%radioPicoRncNodeCountData);
+        }
+    }
+    foreach my $dataElement ( @radioPicoNodeArrayData ) {
+        printf BCP "%s|%d|%s|%d|%d|%d\n",
+        $date,
+        $siteId,
+        $dataElement->{technology},
+        $dataElement->{picoCount},
+        $dataElement->{rncCount},
+        $dataElement->{totalCount};
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePicoRncCellLog($$$$) {
+    my ( $file, $siteId, $dir, $date ) = @_;
+    my @radioPicoCellArrayData = ();
+    my $bcpFile = getBcpFileName("picoRncCellCountBcp");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ($line =~ /^(.*):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+)$/ ) {
+            my %radioPicoRncCellCountData = (
+                technology => $1,
+                picoCellCount => $2,
+                rncCellCount => $3,
+                totalCellCount => $4,
+                picoNodeCount => $5,
+                rncNodeCount => $6,
+                totalNodeCount => $7
+            );
+            push (@radioPicoCellArrayData, \%radioPicoRncCellCountData);
+        }
+    }
+    foreach my $dataElement ( @radioPicoCellArrayData ) {
+        printf BCP "%s|%d|%s|%d|%d|%d|%d|%d|%d\n",
+        $date,
+        $siteId,
+        $dataElement->{technology},
+        $dataElement->{picoCellCount},
+        $dataElement->{rncCellCount},
+        $dataElement->{totalCellCount},
+        $dataElement->{picoNodeCount},
+        $dataElement->{rncNodeCount},
+        $dataElement->{totalNodeCount};
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+
+sub removeOldData($$$$) {
+    my ( $table, $siteId, $dbh, $date ) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date' ";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ( $bcpFile, $table, $dbh ) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 5 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

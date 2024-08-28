@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<instr>
+    <DbTable>glassfish_time_dimension_aggregation</DbTable>
+    <MetricSet>
+        <metric>date</metric>
+        <metric>siteid</metric>
+        <metric>time_dim</metric>
+        <metric>total_request</metric>
+        <metric>success</metric>
+        <metric>failure</metric>
+    </MetricSet>
+</instr>

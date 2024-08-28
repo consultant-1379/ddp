@@ -1,0 +1,235 @@
+#!/usr/bin/env perl
+
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($result,$dfFile,$site,$host,$sqlDate,$prefix);
+    $result = GetOptions(
+        "df=s" => \$dfFile,
+        "site=s" => \$site,
+        "sqldate=s" => \$sqlDate,
+        "host=s" => \$host,
+        "prefix=s" => \$prefix,
+        "debug=s" => \$DEBUG
+        );
+
+    ( $result == 1 ) or die("Invalid Args");
+
+    my %volStat = ();
+    processFile($dfFile,$prefix,\%volStat);
+    if ( $site ) {
+        storeTotals($site,$host,$sqlDate,\%volStat);
+    }
+}
+
+sub stripPool($$) {
+    my ($volName, $r_poolMap) = @_;
+
+    foreach my $pool ( keys %{$r_poolMap} ) {
+        if ( $volName =~ /^$pool(.*)/ ) {
+            my $remainder = $1;
+            my $result = sprintf("[%s]%s", $r_poolMap->{$pool}, $remainder);
+            if ( $DEBUG > 5 ) { print "stripPool $volName => $result\n"; }
+            return $result;
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print "stripPool volName=$volName\n"; }
+
+    return $volName;
+}
+
+sub processFile
+{
+    my ($dfFile,$prefix,$r_totals) = @_;
+
+    my %poolMap = ();
+    my $prefixCount = 0;
+    if ( defined $prefix && $prefix ne '' ) {
+        foreach my $pool ( sort {$b cmp $a} split(/,/, $prefix) ) {
+            my $prefix = "PREFIX";
+            if ( $prefixCount > 0 ) {
+                $prefix .= $prefixCount;
+            }
+            $poolMap{$pool} = $prefix;
+            $prefixCount++;
+        }
+    }
+    if ( $DEBUG > 2 ) { print Dumper("processFile: poolMap", \%poolMap); }
+
+###
+# Header can be of the following forms:
+# Filesystem            kbytes    used   avail capacity  Mounted on
+# Filesystem            1K-blocks      Used Available Use% Mounted on
+#
+# /dev/vx/dsk/bootdg/rootvol 35263557 26174841 8736081    75%    /
+# /proc                      0       0       0     0%    /proc
+# mnttab                     0       0       0     0%    /etc/mnttab
+# fd                         0       0       0     0%    /dev/fd
+# swap                 52148024     104 52147920     1%    /var/run
+# dmpfs                52147920       0 52147920     0%    /dev/vx/dmp
+# dmpfs                52147920       0 52147920     0%    /dev/vx/rdmp
+# swap                 56329480 4181560 52147920     8%    /tmp
+# /dev/vx/dsk/ossdg/export 22221824 17587630 4345369    81%    /export
+# /dev/vx/dsk/ossdg/dbdumps 117071872 50288894 62609079    45%    /export/dbdumps
+# /dev/vx/dsk/ossdg/home 8704000 6022328 2514122    71%    /export/home
+# /dev/vx/dsk/ossdg/sybdev 477652992 467119181 9875509    98%    /export/sybdev
+# /dev/vx/dsk/ossdg/ericsson 76800000 49554513 25549433    66%    /export/var/opt/ericsson
+# /dev/vx/dsk/ossdg/sdmu 37754880 8117532 29637348    22%    /export/var/opt/ericsson/sdm
+###
+
+    open DF, "$dfFile" or die "Cannot open $dfFile";
+    <DF>; # Skip header
+    while ( my $line = <DF> )
+    {
+        if ( $DEBUG > 5 ) {
+            print "processFile: line=$line\n";
+        }
+        # Veritas volumes
+        if ( $line =~ /^\/dev\/vx\/dsk\/[^\/ ]+\/([^\/ ]+)\s+(\d+)\s+(\d+)/ )
+        {
+            my ($volName,$size,$used) = ($1,$2,$3);
+            # Snapshots starting with L_ are not stored
+            if ( $volName !~ /^L_/ ) {
+                $volName = stripPool($volName,\%poolMap);
+                $r_totals->{$volName} = [ $size, $used ];
+            }
+        }
+        # HO14046 - DDP: show volume sizes for NAS mounted filesystems [2011-09-15 RK]
+        # NAS volumes
+        elsif ( $line =~ /^nas\d\:\/vx\/[^\/ ]+\-([^\/ ]+)\s+(\d+)\s+(\d+)/ )
+        {
+            $r_totals->{$1} = [ $2, $3 ];
+        }
+        # tmp
+        elsif ( $line =~ /^swap\s+(\d+)\s+(\d+).*tmp$/ )
+        {
+            $r_totals->{'tmp'} = [ $1, $2 ];
+        }
+        # local disks on app servers
+        elsif ( $line =~ /^\/dev\/dsk\/\S+\s+(\d+)\s+(\d+)\s+\d+\s+\S+\s+(\S+)/ )
+        {
+            $r_totals->{$3} = [ $1, $2 ];
+
+            if ( $DEBUG > 4 ) { print "processFile: Matched local file system $3\n"; }
+        }
+        # Solstice mirrored filesystems (e.g. R6 root volume)
+        elsif ( $line =~ /^\/dev\/md\/dsk\/\S+\s+(\d+)\s+(\d+)\s+\d+\s+\S+\s+(\S+)/ )
+        {
+            $r_totals->{$3} = [ $1, $2 ];
+            if ( $DEBUG > 4 ) { print "processFile: Matched solstice mirrored filesystem $3\n"; }
+        }
+        # eniq zfs
+        elsif ( $line =~ /^eniq_sp_1\/(\S+)\s+(\d+)\s+(\d+)/ )
+        {
+            my ($volName,$size,$used) = ($1,$2,$3);
+            $r_totals->{$volName} = [ $size, $used ];
+        }
+        elsif ( $line =~ /\/dev\/mapper\/VolGroup.*\S+\s+(\d+)\s+(\d+)\s+\d+\s+\S+\s+\/data/ ) {
+            my ($size,$used) = ($1,$2);
+            $r_totals->{'data'} = [ $size, $used ];
+        }
+        #Can match either:
+        #/dev/mapper/vg_data-data      104806400   88573560   16232840      85% /data
+        #OR
+        #/dev/mapper/vg_data-db        104806400   31150488   73655912      30% /data/db
+        elsif ( $line =~ /^\/dev\/mapper\S+\s+(\d+)\s+(\d+)\s+\d+\s+\S+\s+\/(data\Z|data\/db)/ ) {
+            my ($size,$used,$mntPnt) = ($1,$2,$3);
+            $r_totals->{$mntPnt} = [ $size, $used ];
+        }
+        # DDP
+        # datapool/data        4201021440 5544439 1911344396     1%    /data
+        # For Solaris ZFS
+         elsif ( $line =~ /^\S+\s+\d+\s+(\d+)\s+\d+\s+\S+\s+\/data(.*)/ ) {
+            my ($used,$mntPnt) = ($1,$2);
+            $r_totals->{'data' . $mntPnt} = [ 0, $used ];
+        }
+        ###
+        # TDDDCDDP-27: Get storage volumes for TOR machines [BG 2013-03-07]
+        ###
+        # MS root, home, var
+        elsif ( $line =~ /\/dev\/mapper\/vg_\S+-lv_(\S+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($fs, $size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5, $6);
+            $r_totals->{$fs} = [ $size, $used ];
+        # SC root
+        } elsif ( $line =~ /\/dev\/mapper\/root_vg-root_lv\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5);
+            $r_totals->{'root'} = [ $size, $used ];
+        # Boot device
+        } elsif ( $line =~ /\/dev\/mapper\/boot_device\S+\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5);
+            $r_totals->{'boot'} = [ $size, $used ];
+        # MS other devices
+        } elsif ( $line =~ /\/dev\/(\S+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($fs, $size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5, $6);
+            $r_totals->{$fs} = [ $size, $used ];
+        # Temp FS
+        } elsif ( $line =~ /tmpfs\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5);
+            $r_totals->{'tmpfs'} = [ $size, $used ];
+        # Shares
+        } elsif ( $line =~ /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\:\/vx\/\S+\-(\S+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($fs, $size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5, $6);
+            $r_totals->{'NFS:' . $fs} = [ $size, $used ];
+        # NAS volumes
+        } elsif ( $line =~ /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\:\/vx\/(stor\S+)_home_\S+\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($fs, $size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5, $6);
+            $r_totals->{$fs} = [ $size, $used ];
+        # Cluster volumes
+        } elsif ( $line =~ /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\:\/vx\/\S+_cluster\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)%\s+(\S+)/ ) {
+            my ($size, $used, $avail, $usedPc, $mountedOn) = ($1, $2, $3, $4, $5);
+            $r_totals->{'cluster'} = [ $size, $used ];
+        }
+    }
+
+
+    close DF;
+
+    if ( $DEBUG > 3 ) { print Dumper("processFile totals",$r_totals); }
+
+}
+
+sub storeTotals
+{
+    my ($site,$host,$date, $r_totals) = @_;
+
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 2 ) { print "storeTotals: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId($dbh,$siteId,$host);
+
+    my @volList = keys %{$r_totals};
+    my $r_volMap = getIdMap($dbh,"volumes","id","name",\@volList);
+
+    my $sql = "DELETE FROM volume_stats WHERE serverid = $serverId AND date = \'" . $date . "\'";
+    if ( $DEBUG > 2 ) { print "storeTotals: $sql\n"; }
+    $dbh->do($sql);
+
+    foreach my $volName ( @volList )
+    {
+        my $volId = $r_volMap->{$volName};
+        my $sizeMB = int(($r_totals->{$volName}->[0] / 1024) + 0.5);
+        my $usedMB = int(($r_totals->{$volName}->[1] / 1024) + 0.5);
+
+        my $sql = sprintf("INSERT INTO volume_stats (date,serverid,volid,size,used) VALUES (\'%s\', %d, %d, %d, %d)",
+                          $date, $serverId, $volId, $sizeMB,$usedMB);
+        if ( $DEBUG > 2 ) { print "storeTotals: $sql\n"; }
+        $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+    }
+
+    $dbh->disconnect;
+}

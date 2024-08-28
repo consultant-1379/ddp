@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This model is to deal with the problem that the queues that are being sampled -->
+<!-- at a 60 second resolution appear in a different profile from the queues being -->
+<!-- at 300 seconds resolution                                                     -->
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-JMS-QUEUE-HiRes@jmsqueuejmx_\S+$">
+  <table name="enm_jmsqueue">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="queueid" reftable="enm_jmsqueue_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>queueid</multi>
+
+    <metricgroup name="^%1%-JmsQueue-(\S+)">
+      <metric source="consumerCount" target="consumerCount"/>
+      <metric source="deliveringCount" target="deliveringCount"/>
+      <metric source="messageCount" target="messageCount" filteridle="true"/>
+      <metric source="messagesAdded" target="messagesAdded" delta="true" filteridle="true"/>
+      <metric source="scheduledCount" target="scheduledCount"/>
+      <property name="queueid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

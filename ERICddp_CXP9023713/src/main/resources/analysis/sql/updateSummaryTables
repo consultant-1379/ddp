@@ -1,0 +1,184 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+
+while getopts s:d:t: OPT ; do
+    case $OPT in
+        s) SITE="${OPTARG}" ;;
+        d) SQL_DATE="${OPTARG}" ;;
+        t) SITE_TYPE="${OPTARG}" ;;
+    esac
+done
+
+cat > ${TMP_DIR}/summary.sql <<EOF
+SET @siteid=(SELECT id FROM sites WHERE sites.name = "${SITE}");
+
+DELETE FROM sum_generic_jmx_stats WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_generic_jmx_stats (siteid,date,serverid,nameid,cputime,gc_youngtime,gc_oldtime,threadcount,fd)
+SELECT
+ @siteid, "${SQL_DATE}", serverid, nameid,
+ SUM(cputime), SUM(gc_youngtime), SUM(gc_oldtime),
+ MAX(threadcount), MAX(fd)
+FROM generic_jmx_stats
+WHERE
+ siteid = @siteid AND
+ time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid, nameid;
+
+DELETE FROM sum_nic_stat WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_nic_stat (siteid,date,serverid,nicid,ibytes_per_sec,obytes_per_sec,ipkts_per_sec,opkts_per_sec)
+SELECT
+ @siteid, "${SQL_DATE}", serverid, nicid,
+ AVG(nic_stat.ibytes_per_sec),
+ AVG(nic_stat.obytes_per_sec),
+ AVG(nic_stat.ipkts_per_sec),
+ AVG(nic_stat.opkts_per_sec)
+FROM nic_stat
+WHERE
+ siteid = @siteid AND
+ time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid, nicid;
+
+DELETE FROM sum_proc_stats WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_proc_stats (date,siteid,serverid,procid,cpu,mem,thr,fd,rss,nproc,cpu_rate)
+SELECT
+ "${SQL_DATE}", @siteid, serverid, procid,
+ SUM(cpu),
+ MAX(mem),
+ MAX(thr),
+ MAX(fd),
+ MAX(rss),
+ MAX(nproc),
+ TRUNCATE(AVG(proc_stats.cpu * 60 / proc_stats.sample_interval), 2)
+FROM proc_stats
+WHERE
+ siteid = @siteid AND
+ time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid, procid;
+EOF
+
+if [ "${SITE_TYPE}" = "TOR" ] ; then
+    cat >> ${TMP_DIR}/summary.sql <<EOF
+
+DELETE FROM sum_enm_route_instr WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_enm_route_instr (siteid,date,serverid,routeid,ExchangesTotal,ExchangesCompleted,ExchangesFailed,TotalProcessingTime)
+SELECT
+ @siteid, "${SQL_DATE}", serverid, routeid,
+ SUM(ExchangesTotal), SUM(ExchangesCompleted), SUM(ExchangesFailed), SUM(TotalProcessingTime)
+FROM enm_route_instr
+WHERE
+ siteid = @siteid AND
+ time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid, routeid;
+
+DELETE FROM sum_netsim_requests WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_netsim_requests (siteid,date,serverid,NETCONF,CPP,SNMP,SIMCMD,ecim_get,ecim_edit,ecim_MOaction,cpp_createMO,cpp_deleteMO,cpp_setAttr,cpp_getMIB,cpp_nextMOinfo,cpp_get,cpp_MOaction,snmp_get,snmp_bulk_get,snmp_get_next,snmp_set,AVCbursts,MCDbursts,AlarmBursts,SFTP,sftp_FileOpen,sftp_get_cwd)
+SELECT
+ @siteid, "${SQL_DATE}", serverid,
+ SUM(netsim_requests.NETCONF),
+ SUM(netsim_requests.CPP),
+ SUM(netsim_requests.SNMP),
+ SUM(netsim_requests.SIMCMD),
+ SUM(netsim_requests.ecim_get),
+ SUM(netsim_requests.ecim_edit),
+ SUM(netsim_requests.ecim_MOaction),
+ SUM(netsim_requests.cpp_createMO),
+ SUM(netsim_requests.cpp_deleteMO),
+ SUM(netsim_requests.cpp_setAttr),
+ SUM(netsim_requests.cpp_getMIB),
+ SUM(netsim_requests.cpp_nextMOinfo),
+ SUM(netsim_requests.cpp_get),
+ SUM(netsim_requests.cpp_MOaction),
+ SUM(netsim_requests.snmp_get),
+ SUM(netsim_requests.snmp_bulk_get),
+ SUM(netsim_requests.snmp_get_next),
+ SUM(netsim_requests.snmp_set),
+ SUM(netsim_requests.AVCbursts),
+ SUM(netsim_requests.MCDbursts),
+ SUM(netsim_requests.AlarmBursts),
+ SUM(netsim_requests.SFTP),
+ SUM(netsim_requests.sftp_FileOpen),
+ SUM(netsim_requests.sftp_get_cwd)
+FROM netsim_requests
+WHERE
+ netsim_requests.siteid = @siteid AND
+ netsim_requests.time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid;
+
+DELETE FROM sum_netsim_response WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_netsim_response (siteid,date,serverid,NETCONF,CORBA,SNMP,SSH,SFTP,ecim_avc,ecim_MOcreated,ecim_MOdeleted,ecim_reply,cpp_avc,cpp_MOcreated,cpp_MOdeleted,cpp_reply,sftp_FileClose,snmp_response,snmp_traps)
+SELECT
+ @siteid, "${SQL_DATE}", serverid,
+ SUM(netsim_response.NETCONF),
+ SUM(netsim_response.CORBA),
+ SUM(netsim_response.SNMP),
+ SUM(netsim_response.SSH),
+ SUM(netsim_response.SFTP),
+ SUM(netsim_response.ecim_avc),
+ SUM(netsim_response.ecim_MOcreated),
+ SUM(netsim_response.ecim_MOdeleted),
+ SUM(netsim_response.ecim_reply),
+ SUM(netsim_response.cpp_avc),
+ SUM(netsim_response.cpp_MOcreated),
+ SUM(netsim_response.cpp_MOdeleted),
+ SUM(netsim_response.cpp_reply),
+ SUM(netsim_response.sftp_FileClose),
+ SUM(netsim_response.snmp_response),
+ SUM(netsim_response.snmp_traps)
+FROM netsim_response
+WHERE
+ netsim_response.siteid = @siteid AND
+ netsim_response.time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid;
+
+DELETE FROM sum_enm_dps_neo4jtx WHERE siteid = @siteid AND date = '${SQL_DATE}';
+INSERT INTO sum_enm_dps_neo4jtx (siteid,date,serverid,readTx100MillisecondsCount,readTx10MillisecondsCount,readTx10SecondsCount,readTx1MinuteCount,readTx1SecondCount,readTx2MinutesCount,readTx3MinutesCount,readTx4MinutesCount,readTx500MillisecondsCount,readTx50MillisecondsCount,readTx5MillisecondsCount,readTx5MinutesCount,readTxCount,readTxOver5MinutesCount,writeTx100MillisecondsCount,writeTx10MillisecondsCount,writeTx10SecondsCount,writeTx1MinuteCount,writeTx1SecondCount,writeTx2MinutesCount,writeTx3MinutesCount,writeTx4MinutesCount,writeTx500MillisecondsCount,writeTx50MillisecondsCount,writeTx5MillisecondsCount,writeTx5MinutesCount,writeTxCount,writeTxOver5MinutesCount,acquiredTxPermitsCount,failedToAcquireTxPermitsCount,failureOrTimeoutCount,totalDuration,txPermitsProcedureCount,writeTxWithoutChangesCount,totalWriteOperationsPerformed)
+SELECT
+ @siteid, "${SQL_DATE}", serverid,
+ SUM(enm_dps_neo4jtx.readTx100MillisecondsCount),
+ SUM(enm_dps_neo4jtx.readTx10MillisecondsCount),
+ SUM(enm_dps_neo4jtx.readTx10SecondsCount),
+ SUM(enm_dps_neo4jtx.readTx1MinuteCount),
+ SUM(enm_dps_neo4jtx.readTx1SecondCount),
+ SUM(enm_dps_neo4jtx.readTx2MinutesCount),
+ SUM(enm_dps_neo4jtx.readTx3MinutesCount),
+ SUM(enm_dps_neo4jtx.readTx4MinutesCount),
+ SUM(enm_dps_neo4jtx.readTx500MillisecondsCount),
+ SUM(enm_dps_neo4jtx.readTx50MillisecondsCount),
+ SUM(enm_dps_neo4jtx.readTx5MillisecondsCount),
+ SUM(enm_dps_neo4jtx.readTx5MinutesCount),
+ SUM(enm_dps_neo4jtx.readTxCount),
+ SUM(enm_dps_neo4jtx.readTxOver5MinutesCount),
+ SUM(enm_dps_neo4jtx.writeTx100MillisecondsCount),
+ SUM(enm_dps_neo4jtx.writeTx10MillisecondsCount),
+ SUM(enm_dps_neo4jtx.writeTx10SecondsCount),
+ SUM(enm_dps_neo4jtx.writeTx1MinuteCount),
+ SUM(enm_dps_neo4jtx.writeTx1SecondCount),
+ SUM(enm_dps_neo4jtx.writeTx2MinutesCount),
+ SUM(enm_dps_neo4jtx.writeTx3MinutesCount),
+ SUM(enm_dps_neo4jtx.writeTx4MinutesCount),
+ SUM(enm_dps_neo4jtx.writeTx500MillisecondsCount),
+ SUM(enm_dps_neo4jtx.writeTx50MillisecondsCount),
+ SUM(enm_dps_neo4jtx.writeTx5MillisecondsCount),
+ SUM(enm_dps_neo4jtx.writeTx5MinutesCount),
+ SUM(enm_dps_neo4jtx.writeTxCount),
+ SUM(enm_dps_neo4jtx.writeTxOver5MinutesCount),
+ SUM(enm_dps_neo4jtx.acquiredTxPermitsCount),
+ SUM(enm_dps_neo4jtx.failedToAcquireTxPermitsCount),
+ SUM(enm_dps_neo4jtx.failureOrTimeoutCount),
+ SUM(enm_dps_neo4jtx.totalDuration),
+ SUM(enm_dps_neo4jtx.txPermitsProcedureCount),
+ SUM(enm_dps_neo4jtx.writeTxWithoutChangesCount),
+ SUM(enm_dps_neo4jtx.totalWriteOperationsPerformed)
+FROM
+ enm_dps_neo4jtx
+WHERE
+ enm_dps_neo4jtx.siteid = @siteid AND
+ enm_dps_neo4jtx.time BETWEEN '${SQL_DATE} 00:00:00' AND '${SQL_DATE} 23:59:59'
+GROUP BY serverid;
+EOF
+fi
+
+${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/summary.sql

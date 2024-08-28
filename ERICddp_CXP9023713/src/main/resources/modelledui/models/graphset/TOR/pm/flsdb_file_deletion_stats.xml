@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="enm_pmic_datatypes.name">
+    <dbtables main="enm_flsdb_file_del_stats">
+      <reference table="sites" condition="enm_flsdb_file_del_stats.siteid = sites.id"/>
+      <reference table="enm_pmic_datatypes" condition="enm_flsdb_file_del_stats.datatypeid = enm_pmic_datatypes.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="type"/>
+    <param name="filter"/>
+    <where>sites.name = '%s' AND enm_pmic_datatypes.name = '%s' AND enm_flsdb_file_del_stats.filter = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="expiredRowsToBeDeleted" type="sb" ylabel="Count">
+      <title value="Total Rows to be deleted"/>
+      <column db="expiredRowsToBeDeleted" label="Total Rows to be deleted"/>
+    </graph>
+    <graph name="actualRowsDeleted" type="sb" ylabel="Count">
+      <title value="Rows Deleted"/>
+      <column db="actualRowsDeleted" label="Rows Deleted"/>
+    </graph>
+    <graph name="rowsDeletionTime" type="tsc" ylabel="Time(ms)">
+      <title value="Total Time Taken to Delete"/>
+      <column db="rowsDeletionTime" label="Total Time Taken to Delete"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="all">
+      <member>expiredRowsToBeDeleted</member>
+      <member>actualRowsDeleted</member>
+      <member>rowsDeletionTime</member>
+    </group>
+  </groups>
+</modelledgraphset>

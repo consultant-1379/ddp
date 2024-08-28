@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_stats_aggregator_sessions">
+    <reference table="sites" condition="eniq_stats_aggregator_sessions.siteid = sites.id"/>
+    <reference table="eniq_stats_types" condition="eniq_stats_aggregator_sessions.typeid = eniq_stats_types.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_stats_aggregator_sessions.start BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+  <column db="eniq_stats_types.name" label="Type"/>
+  <column db="eniq_stats_aggregator_sessions.timelevel" label="Time Level"/>
+  <column db="eniq_stats_aggregator_sessions.rowcount" label="Rows"/>
+  <column db="TIME(eniq_stats_aggregator_sessions.start)" label="Start Time"/>
+  <column db="TIMEDIFF(eniq_stats_aggregator_sessions.end,eniq_stats_aggregator_sessions.start)" label="Duration"/>
+</modelledtable>

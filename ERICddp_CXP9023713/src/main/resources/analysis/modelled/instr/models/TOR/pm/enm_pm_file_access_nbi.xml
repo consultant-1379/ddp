@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+   namespace="prometheus@enm_pm_file_access_nbi">
+
+  <table name="enm_pm_file_access_nbi">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="apache_accesses_total">
+      <metric source="apache_accesses_total" target="apacheAccessesTotal" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="apache_sent_kilobytes_total">
+      <metric source="apache_sent_kilobytes_total" target="apacheSentKilobytesTotal" delta="true" filteridle="true" />
+    </metricgroup>
+    <metricgroup name="apache_cpuload">
+      <metric source="apache_cpuload" target="apacheCpuload"/>
+    </metricgroup>
+    <metricgroup name="apache_workers_busy">
+      <metric source="apache_workers" target="apacheWorkersStateValueBusy">
+        <labelfilter name="state" value="busy"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="apache_workers_idle">
+      <metric source="apache_workers" target="apacheWorkersStateValueIdle">
+        <labelfilter name="state" value="idle"/>
+      </metric>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

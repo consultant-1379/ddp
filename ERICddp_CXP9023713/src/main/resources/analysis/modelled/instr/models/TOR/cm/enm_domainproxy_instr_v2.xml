@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="dpcoordinator"/>
+    <service name="dpmediation"/>
+  </services>
+
+  <table name="enm_domainproxy_v2_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.sas.instrumentation.domain-proxy:type=DomainProxyInstrumentation$">
+      <metric source="MOsReadFromDPSCount" target="MOsReadFromDPSCount" delta="true" filteridle="true"/>
+      <metric source="MOsReadFromDPSTimeRunningTotal" target="MOsReadFromDPSTimeRunningTotal" delta="true" filteridle="true"/>
+      <metric source="hbResponseTimeFromSas" target="hbResponseTimeFromSas" delta="true" filteridle="true"/>
+      <metric source="minTransmitExpiryTimePerMinute" target="minTransmitExpiryTimePerMinute" filteridle="true"/>
+      <metric source="numberOfActiveCells" target="numberOfActiveCells" filteridle="true"/>
+      <metric source="numberOfDeregistrationRequests" target="numberOfDeregistrationRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfDeregistrationResponses" target="numberOfDeregistrationResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedAttemptsWithSas" target="numberOfFailedAttemptsWithSas" delta="true" filteridle="true"/>
+      <metric source="numberOfGrantRequests" target="numberOfGrantRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfGrantResponses" target="numberOfGrantResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfHeartbeatRequests" target="numberOfHeartbeatRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfHeartbeatResponses" target="numberOfHeartbeatResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfInactiveCells" target="numberOfInactiveCells" filteridle="true"/>
+      <metric source="numberOfMaintainedGrants" target="numberOfMaintainedGrants" filteridle="true"/>
+      <metric source="numberOfRegisteredCbsds" target="numberOfRegisteredCbsds" filteridle="true"/>
+      <metric source="numberOfRegistrationRequests" target="numberOfRegistrationRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfRegistrationResponses" target="numberOfRegistrationResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfRelinquishmentRequests" target="numberOfRelinquishmentRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfRelinquishmentResponses" target="numberOfRelinquishmentResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfRenewedGrants" target="numberOfRenewedGrants" delta="true" filteridle="true"/>
+      <metric source="numberOfRequestsPostedToSAS" target="numberOfRequestsPostedToSAS" delta="true" filteridle="true"/>
+      <metric source="numberOfSpectrumInquiryRequests" target="numberOfSpectrumInquiryRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfSpectrumInquiryResponses" target="numberOfSpectrumInquiryResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfSuspendedGrants" target="numberOfSuspendedGrants" delta="true" filteridle="true"/>
+      <metric source="numberOfTerminatedGrants" target="numberOfTerminatedGrants" delta="true" filteridle="true"/>
+      <metric source="numberOfTimesFrequenciesChanged" target="numberOfTimesFrequenciesChanged" delta="true" filteridle="true"/>
+      <metric source="numberOfTimesNodeUpdatedWithExpiryTime" target="numberOfTimesNodeUpdatedWithExpiryTime" delta="true" filteridle="true"/>
+      <metric source="numberOfTransmitExpiryTimePerHbResponseFromSas" target="numberOfTransmitExpiryTimePerHbResponseFromSas" delta="true" filteridle="true"/>
+      <metric source="numberOfTransmitExpiryTimesSetOnCells" target="numberOfTransmitExpiryTimesSetOnCells" delta="true" filteridle="true"/>
+      <metric source="numberOfValidGrants" target="numberOfValidGrants" filteridle="true"/>
+      <metric source="slowestHbResponseTimePerMinute" target="slowestHbResponseTimePerMinute" filteridle="true"/>
+      <metric source="timeTakenToPostRequestsToSas" target="timeTakenToPostRequestsToSas" delta="true" filteridle="true"/>
+      <metric source="timeTakenToUpdateExpiryTimeOnNode" target="timeTakenToUpdateExpiryTimeOnNode" delta="true" filteridle="true" scale="1000"/>
+      <metric source="valueOfTransmitExpiryTimePerHbResponseFromSas" target="valueOfTransmitExpiryTimePerHbResponseFromSas" delta="true" filteridle="true" scale="1000"/>
+      <metric source="valueOfTransmitExpiryTimeSetOnCells" target="valueOfTransmitExpiryTimeSetOnCells" delta="true" filteridle="true" scale="1000"/>
+    </metricgroup>
+
+    <!-- MBean renamed TORF-498700 -->
+    <metricgroup name="^%1%-com.ericsson.oss.sas.instrumentation.domain-proxy-service:type=DomainProxyInstrumentation$">
+      <metric source="MOsReadFromDPSCount" target="MOsReadFromDPSCount" delta="true" filteridle="true"/>
+      <metric source="MOsReadFromDPSTimeRunningTotal" target="MOsReadFromDPSTimeRunningTotal" delta="true" filteridle="true"/>
+      <metric source="hbResponseTimeFromSas" target="hbResponseTimeFromSas" delta="true" filteridle="true"/>
+      <metric source="minTransmitExpiryTimePerMinute" target="minTransmitExpiryTimePerMinute" filteridle="true"/>
+      <metric source="numberOfActiveCells" target="numberOfActiveCells" filteridle="true"/>
+      <metric source="numberOfDeregistrationRequests" target="numberOfDeregistrationRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfDeregistrationResponses" target="numberOfDeregistrationResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedAttemptsWithSas" target="numberOfFailedAttemptsWithSas" delta="true" filteridle="true"/>
+      <metric source="numberOfGrantRequests" target="numberOfGrantRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfGrantResponses" target="numberOfGrantResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfHeartbeatRequests" target="numberOfHeartbeatRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfHeartbeatResponses" target="numberOfHeartbeatResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfInactiveCells" target="numberOfInactiveCells" filteridle="true"/>
+      <metric source="numberOfMaintainedGrants" target="numberOfMaintainedGrants" filteridle="true"/>
+      <metric source="numberOfRegisteredCbsds" target="numberOfRegisteredCbsds" filteridle="true"/>
+      <metric source="numberOfRegistrationRequests" target="numberOfRegistrationRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfRegistrationResponses" target="numberOfRegistrationResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfRelinquishmentRequests" target="numberOfRelinquishmentRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfRelinquishmentResponses" target="numberOfRelinquishmentResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfRenewedGrants" target="numberOfRenewedGrants" delta="true" filteridle="true"/>
+      <metric source="numberOfRequestsPostedToSAS" target="numberOfRequestsPostedToSAS" delta="true" filteridle="true"/>
+      <metric source="numberOfSpectrumInquiryRequests" target="numberOfSpectrumInquiryRequests" delta="true" filteridle="true"/>
+      <metric source="numberOfSpectrumInquiryResponses" target="numberOfSpectrumInquiryResponses" delta="true" filteridle="true"/>
+      <metric source="numberOfSuspendedGrants" target="numberOfSuspendedGrants" delta="true" filteridle="true"/>
+      <metric source="numberOfTerminatedGrants" target="numberOfTerminatedGrants" delta="true" filteridle="true"/>
+      <metric source="numberOfTimesFrequenciesChanged" target="numberOfTimesFrequenciesChanged" delta="true" filteridle="true"/>
+      <metric source="numberOfTimesNodeUpdatedWithExpiryTime" target="numberOfTimesNodeUpdatedWithExpiryTime" delta="true" filteridle="true"/>
+      <metric source="numberOfTransmitExpiryTimePerHbResponseFromSas" target="numberOfTransmitExpiryTimePerHbResponseFromSas" delta="true" filteridle="true"/>
+      <metric source="numberOfTransmitExpiryTimesSetOnCells" target="numberOfTransmitExpiryTimesSetOnCells" delta="true" filteridle="true"/>
+      <metric source="numberOfValidGrants" target="numberOfValidGrants" filteridle="true"/>
+      <metric source="slowestHbResponseTimePerMinute" target="slowestHbResponseTimePerMinute" filteridle="true"/>
+      <metric source="timeTakenToPostRequestsToSas" target="timeTakenToPostRequestsToSas" delta="true" filteridle="true"/>
+      <metric source="timeTakenToUpdateExpiryTimeOnNode" target="timeTakenToUpdateExpiryTimeOnNode" delta="true" filteridle="true"/>
+      <metric source="valueOfTransmitExpiryTimePerHbResponseFromSas" target="valueOfTransmitExpiryTimePerHbResponseFromSas" delta="true" filteridle="true"/>
+      <metric source="valueOfTransmitExpiryTimeSetOnCells" target="valueOfTransmitExpiryTimeSetOnCells" delta="true" filteridle="true"/>
+      <metric source="numberOfTransmittingCells" target="numberOfTransmittingCells" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

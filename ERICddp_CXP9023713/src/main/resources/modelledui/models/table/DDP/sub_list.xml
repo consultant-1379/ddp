@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="ddpadmin.ddp_alert_subscriptions">
+    <reference table="sites" condition="ddpadmin.ddp_alert_subscriptions.siteid = sites.id"/>
+    <reference table="ddpadmin.ddp_custom_reports" condition="ddpadmin.ddp_custom_reports.id = ddpadmin.ddp_alert_subscriptions.reportid"/>
+  </dbtables>
+  <where>0=0</where>
+
+  <column db="CONCAT(sites.id, ',', reportid)" label="Id" id="id" visible="false"/>
+  <column db="ddpadmin.ddp_custom_reports.reportname" label="Report"/>
+  <column db="sites.name" label="Site"/>
+  <column db="ddpadmin.ddp_alert_subscriptions.signum" label="Subscriber"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="false">
+    <item id="unsubInst" label="Unsubscribe this instance"/>
+    <item id="unsubAll" label="Unsubscribe all instances of this report"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

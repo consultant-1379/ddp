@@ -1,0 +1,160 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseEdeFdnWiseOutputDetailsLogs -----------
+#       This script is generic script to parse OutputDetails EDE logs
+#       in CSV format and store data to DB.
+#       @author - Vinod Sharma (xvinosh)
+#       usage  parseEdeFdnWiseOutputDetailsLogs --logfile <FDNWiseOutputDetails_[SOURCE NAME]_[Location|Server]_[n].csv> --instance <EDE Instance Name>
+#                --site <site> --date <YYYY-MM-DD>
+######################################################################
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+use POSIX 'strftime';
+
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $siteId = "";
+our $dbh = "";
+our $logFile = "";
+our $edeInstance = "";
+our $table = "ede_node_event_details";
+our $date = "";
+our $firstTimestamp = "";
+our $lastTimestamp = "";
+our $bcpFile = "";
+our @dataSource = ();
+our $dataSource_id_map = 0;
+our $temporary_logFile = "";
+
+sub main {
+    my $site = "";
+    GetOptions(
+        "logfile=s" => \$logFile,
+        "instance=s" => \$edeInstance,
+        "site=s"    => \$site,
+        "date=s"    => \$date,
+        "debug:s"   => \$DEBUG
+        );
+
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    @dataSource = $logFile =~ /^.*FDNWiseOutputDetails_(\w+)_(\w+)_\d+.csv$/;
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $bcpFile = "${tmpDir}/${table}_metrics.bcp";
+    temporaryLogFileCreation();
+    parseData();
+    loadDb();
+    if($DEBUG>1){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub temporaryLogFileCreation {
+    my @dataSourceList = ();
+    push (@dataSourceList,$dataSource[0]);
+    $dataSource_id_map = getIdMap($dbh, "data_source_id_mapping", "id", "data_source", \@dataSourceList);
+    my @logFileName = $logFile =~ /^.*(FDNWiseOutputDetails_.*.csv)$/;
+    $temporary_logFile = "$tmpDir/tmp_$logFileName[0]";
+    my $current_date = "$date 00:00:00";
+    my $current_date_epoch_seconds = parseTime( $current_date, $StatsTime::TIME_YYYYMD_HMS );
+    my $current_date_stamp = strftime("%Y%m%d", localtime $current_date_epoch_seconds);
+    my $one_day_ago_epoch_seconds = $current_date_epoch_seconds - 24*60*60;
+    my $previous_date_stamp = strftime("%Y%m%d", localtime $one_day_ago_epoch_seconds);
+    `egrep "$previous_date_stamp|$current_date_stamp|\/|ROP" $logFile > $temporary_logFile`;
+}
+
+sub parseData {
+    my @header_line_data = ();
+    my @fdn_names = ();
+    open FILE, "<$temporary_logFile" or die "Can't open file to read $logFile\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+
+    if ($dataSource[1] eq "Location") {
+        my $log_output_path = <FILE>;
+    }
+    my $header_line = <FILE>;
+    $header_line =~ s/\n//g;
+    if ( $header_line =~ /SubNetwork=/ ) {
+        my ($new_header_line) = $header_line =~ /^\w+,\w+,(.*)/;
+        $new_header_line =~ s/,//g;
+        @fdn_names = (split /SubNetwork=/, $new_header_line);
+    }
+    else {
+        @header_line_data = (split /\,/, $header_line);
+        @fdn_names = splice @header_line_data, 2;
+    }
+
+    my $node_id = getIdMap($dbh, "ede_node_id_mapping", "id", "node_name", \@fdn_names);
+    my $count = 0;
+    while (my $line = <FILE>){
+        $line =~ s/\n//g;
+        my @linedata = (split /\,/, $line);
+        print Dumper("Line Data is : ",\@linedata);
+        my $total_events_sent = $linedata[1];
+        if ( $DEBUG > 2 ) { print Dumper("LINE's DATA",@linedata);}
+        my $rop_time = convertDateToSql($linedata[0]);
+        if ($count == 0) {
+            $firstTimestamp = $rop_time;
+        }
+        $count++;
+        $lastTimestamp = $rop_time;
+        my $counter_for_event_count = 2;
+        foreach my $nodeName (@fdn_names) {
+            printf BCP "%s,%d,%s,%d,%s,%d,%d\n",
+                $rop_time,
+                $siteId,
+                $edeInstance,
+                $dataSource_id_map->{$dataSource[0]},
+                $linedata[0],
+                $node_id->{$nodeName},
+                $linedata[$counter_for_event_count];
+                $counter_for_event_count++;
+        }
+    }
+    close BCP;
+    close FILE;
+    unlink($temporary_logFile);
+}
+
+sub convertDateToSql {
+    my $timeStamp = shift;
+    my $s = '00';
+    my ($y, $m, $d, $h, $M) = $timeStamp =~ /^([1-9][0-9][0-9][0-9])([0-1][0-9])([0-3][0-9])([0-2][0-9])([0-5][0-9])$/;
+    return "$y-$m-$d $h:$M:$s";
+}
+
+sub removeOldData {
+    my $dataSourceId = $dataSource_id_map->{$dataSource[0]};
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND ede_instance = '$edeInstance' AND data_source_id = $dataSourceId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ( $DEBUG > 5 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 5 ) { print "SQL query for inserting data: $sth \n" };
+    removeOldData();
+    dbDo($dbh,$sth) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

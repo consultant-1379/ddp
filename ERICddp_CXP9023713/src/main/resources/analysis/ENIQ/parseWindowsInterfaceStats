@@ -1,0 +1,122 @@
+#!/usr/bin/perl
+
+###################################################################################################################################################
+# Description ---------   parseWindowsInterfaceStats --------------------
+# This script parses the Memory related counters information of windows interfaces stats of BIS/Netan/OCS and stores data to DB for DDP
+# @author - POOJA NAGAJE (zpoonag)
+# usage parseWindowsInterfaceStats --logfile ${LOG_FILE} --table <table name> --columns <coulmn names> --site ${SITE}
+# --server ${SERVER} }
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+
+our $DEBUG = 0;
+
+sub main {
+    my ($site, $server, $siteId, $serverId, $dbh, $logFile, $requiredColumnNames, $table, $bcpFile, $firstTimestamp, $lastTimestamp);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "columns=s" => \$requiredColumnNames,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "debug=s" => \$DEBUG
+    );
+
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    $table = "eniq_windows_interface_stats";
+    $bcpFile = getBcpFileName("windowsInterfaceStats");
+    ($bcpFile, $firstTimestamp, $lastTimestamp) = parseData($table, $bcpFile, $siteId, $serverId, $logFile, $requiredColumnNames, $firstTimestamp, $lastTimestamp);
+    removeOldData($table, $siteId, $serverId, $dbh, $firstTimestamp, $lastTimestamp);
+    loadDb($bcpFile, $table, $dbh);
+}
+
+sub parseData($$$$$$$$) {
+    my ($table, $bcpFile, $siteId, $serverId, $logFile, $requiredColumnNames, $firstTimestamp, $lastTimestamp) = @_;
+    my $count = 0;
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    my $firstLine = <FILE>;
+    $firstLine =~ s/"//g;
+    my @requiredColumnNumber = getColumnNumbers($firstLine, $logFile, $requiredColumnNames);
+    while (my $line = <FILE>) {
+        $line =~ s/\"//g;
+        my @lineData = (split /\t/, $line) [@requiredColumnNumber];
+        my $dateTime = convertDateToSql($lineData[0]);
+        if ($count == 0) {
+            $firstTimestamp = $dateTime;
+        }
+        $count++;
+        $lastTimestamp = $dateTime;
+        printf BCP
+            "%s,%d,%d",
+            $dateTime,
+            $siteId,
+            $serverId;
+
+        for my $i (1 .. $#lineData) {
+            if ($lineData[$i] =~ /^\s*$/) {
+                print BCP ",".0;
+            } else {
+                print BCP ",".$lineData[$i];
+            }
+        }
+        print BCP "\n";
+    }
+    close BCP;
+    return ($bcpFile, $firstTimestamp, $lastTimestamp);
+}
+
+sub getColumnNumbers($$$) {
+    my ($allColumnNames, $logFile, $requiredColumnNames) = @_;
+    my @requiredColumnNumber;
+    my @requiredColumnList = split(/\,/, $requiredColumnNames);
+    my @actualColumnsList = split(/\t/, $allColumnNames);
+
+    push(@requiredColumnNumber,0);
+    foreach my $requiredColumn ( @requiredColumnList ) {
+        my @firstList = (0..$#actualColumnsList);
+        my $index = first { $actualColumnsList[$_] =~ m/${requiredColumn}$/ } @firstList;
+        if ($index) {
+            push(@requiredColumnNumber, $index);
+        }
+    }
+    my $noOfColumns = @requiredColumnNumber;
+    if ( $noOfColumns <= 1 ) {
+        print "Required columns are not present in $logFile.\n";
+        exit 1;
+    }
+    return @requiredColumnNumber;
+}
+
+sub convertDateToSql($) {
+    my ($timeStamp) = @_;
+    if ($timeStamp =~ /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d+):(\d+):(\d+).(\d+)/ ) {
+        return "$3-$1-$2 $4:$5:$6";
+    }
+}
+
+sub removeOldData($$$$$$) {
+    my ($table, $siteId, $serverId, $dbh, $firstTimestamp, $lastTimestamp) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid= $serverId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ( $DEBUG > 5 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($bcpFile, $table, $dbh) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 5 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

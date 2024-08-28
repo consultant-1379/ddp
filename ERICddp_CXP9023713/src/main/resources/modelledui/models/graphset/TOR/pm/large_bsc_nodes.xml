@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="enm_ne.name">
+    <dbtables main="enm_large_bsc_nodes">
+      <reference table="sites" condition="enm_large_bsc_nodes.siteid = sites.id"/>
+      <reference table="servers" condition="enm_large_bsc_nodes.serverid = servers.id"/>
+      <reference table="enm_ne" condition="enm_large_bsc_nodes.neid = enm_ne.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="ropPeriod"/>
+    <where>sites.name = '%s' AND enm_large_bsc_nodes.ropPeriod = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="totalvolume" type="sb" forcelegend="true">
+      <title value="Total Volume (KB)"/>
+      <column db="ROUND(totalVolume)" label="Total Volume (KB)"/>
+    </graph>
+    <graph name="filescollected" type="sb" forcelegend="true">
+      <title value="Total Number Of Files Collected"/>
+      <column db="totalNumberOfFilesCollected" label="Total Number Of Files Collected"/>
+    </graph>
+    <graph name="filesize" type="sb" forcelegend="true">
+      <title value="Avg Largest File Size (MB)"/>
+      <column db="ROUND(largestFileSize)" label="Avg Largest File Size (MB)"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="nodes">
+      <member>totalvolume</member>
+      <member>filescollected</member>
+      <member>filesize</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

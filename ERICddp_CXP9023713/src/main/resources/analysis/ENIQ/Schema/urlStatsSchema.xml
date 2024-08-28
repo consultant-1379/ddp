@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<instr>
+    <DbTable>glassfish_url_aggregation</DbTable>
+    <MetricSet>
+        <metric>date</metric>
+        <metric>siteid</metric>
+        <metric>url</metric>
+        <metric>business_case</metric>
+        <metric>total_request</metric>
+        <metric>success</metric>
+        <metric>failure</metric>
+    </MetricSet>
+</instr>

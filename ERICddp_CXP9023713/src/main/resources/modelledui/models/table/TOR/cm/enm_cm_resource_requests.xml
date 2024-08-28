@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_resource_requests">
+    <reference table="sites" condition="enm_cm_resource_requests.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_resource_requests.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_resource_requests.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="IFNULL(TIMEDIFF(time(time),SEC_TO_TIME(ROUND(executionTime/1000))), 'NA')" label="Start Time" formatter="ddpFormatTime"/>
+  <column db="time" label="EndTime" formatter="ddpFormatTime"/>
+  <column db="requestResource" label="Request Resource"/>
+  <column db="requestTechnologyType" label="Request Technology Type"/>
+  <column db="CASE WHEN requestIncludeMscOperations=0 THEN 'FALSE' ELSE 'TRUE' END" label="Request Include Msc Operations"/>
+  <column db="requestSize" label="Request Size"/>
+  <column db="responseStatus" label="Response Status"/>
+  <column db="responseSize" label="Response Size"/>
+  <column db="SEC_TO_TIME(ROUND(executionTime/1000))" label="Execution Time(HH:MM:SS)"/>
+  <column db="responseSize/ROUND(executionTime/1000) * 60" label="Processing Rate"/>
+</modelledtable>

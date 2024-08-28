@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-jmx@threadpooljmx_\S+">
+
+  <table name="enm_sg_specific_threadpool">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="threadpoolid" reftable="enm_sg_specific_threadpool_names"/>
+  </table>
+
+  <services>
+    <service name="autoprovisioning"/>
+    <service name="consautoprov"/>
+  </services>
+
+  <metricgroups>
+    <multi>threadpoolid</multi>
+
+    <metricgroup name="^%1%-threadpool-(\S+)$">
+      <metric source="completedTaskCount" target="completedTaskCount" delta="true" filteridle="true"/>
+      <metric source="activeCount" target="activeCount" filteridle="true"/>
+      <metric source="queueSize" target="queueSize" filteridle="true"/>
+      <metric source="rejectedCount" target="rejectedCount" delta="true"  filteridle="true"/>
+      <property name="threadpoolid" xsi:type="nameproperty"  index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

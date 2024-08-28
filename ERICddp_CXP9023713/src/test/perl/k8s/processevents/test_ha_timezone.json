@@ -1,0 +1,15 @@
+{
+    "desc": "Test HA event timezone handling",
+    "deltafile": "delta_ha_timezone.json",
+    "timezone": "America/Los_Angeles",
+    "expected_ha_events": [
+        {
+            "timestamp":1624264414,
+            "time":"2021-06-21 01:33:34",
+            "pod":"jms-0",
+            "type":"UnhealthyLiveness",
+            "container":"jms",
+            "worker": "control-plane-lbn01c01"
+        }
+    ]
+}

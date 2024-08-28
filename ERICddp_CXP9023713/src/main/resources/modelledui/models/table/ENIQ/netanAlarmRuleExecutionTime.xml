@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pma_details">
+    <reference table="sites" condition="eniq_netan_pma_details.siteid = sites.id"/>
+    <reference table="eniq_netan_pma_process_name_id_mapping_details" condition="eniq_netan_pma_details.processID = eniq_netan_pma_process_name_id_mapping_details.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_netan_pma_details.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <groupby>
+    <column db="eniq_netan_pma_details.processID"/>
+  </groupby>
+
+  <column db="MIN(eniq_netan_pma_details.time)" label="Timestamp"/>
+  <column db="GROUP_CONCAT(DISTINCT eniq_netan_pma_details.alarmID, '')" label="Alarm ID"/>
+  <column db="ROUND(TIMESTAMPDIFF(SECOND, MIN(time), MAX(time))/COUNT(alarmID))" label="Execution Time per Alarm (sec)"/>
+</modelledtable>

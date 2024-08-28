@@ -1,0 +1,1013 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use Time::Local;
+
+use DBI;
+use StatsDB;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($eventsFile,$jobsFile,$site,$date,$storeJobs);
+    my $result = GetOptions(
+			    "events=s" => \$eventsFile,
+			    "site=s" => \$site,
+			    "date=s" => \$date,
+			    "jobs=s" => \$jobsFile,
+			    "storejobs" => \$storeJobs,
+			    "debug=s" => \$DEBUG	
+			    );	
+    ($result == 1) or die "Invalid options";
+    
+
+    #
+    # Detail of all jobs
+    # key: activityId
+    # value:    
+    #   starttime -> time of first event
+    #   state     -> state from last event
+    #   count     -> count from last countChange event
+    #   parameter -> name-value hashmap
+    #   completed -> timestamp from completed event
+    #   ne        -> hashmap of ne Id to 
+    #                 activityList sequnce of activities
+    #                   each entry is a hashmap where
+    #                     actType -> activity name
+    #                     msg     -> list of [timestamp,msg] pairs
+    #                 activityMap maps activity name to position in activityList
+    my %jobState = ();
+
+
+    if ( $jobsFile )
+    {
+	loadState( $jobsFile, \%jobState );
+	# Leave only SCHEDULED jobs or jobs which are still running (as they could be peroidic)
+	foreach my $activityId ( keys %jobState )
+	{
+	    if ( $DEBUG > 5 ) { trace("main: activityId=$activityId state=" . $jobState{$activityId}->{'state'}); }
+	
+	    if ( $jobState{$activityId}->{'state'} !~ /SCHEDULED|RUNNING/ ) {
+		delete $jobState{$activityId};
+	    }
+	}
+
+	if ( $DEBUG > 5 ) { traceDump("main: loaded sch jobs", \%jobState); }
+    }
+
+    my $r_Data = parseEvents($eventsFile,\%jobState);
+
+
+    if ( $storeJobs )
+    {
+	storeJobs($site,$r_Data);
+    }
+    else
+    {
+	my %batchInfo = ();
+	my %neFailures = ();
+	getTotals($r_Data,\%batchInfo,\%neFailures);    
+	storeTotals($site,$date,\%batchInfo,\%neFailures);
+    }
+
+}
+
+sub storeTotals
+{
+    my ($site,$date,$r_batchInfo, $r_neFailures) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    #
+    # Update smo_activities
+    # 
+    $dbh->do("DELETE FROM smo_activities WHERE siteid = $siteId AND date = \'" . $date . "\'");    
+    my @activityList = keys %{$r_batchInfo};
+    my $r_actTypeMap = getIdMap($dbh,"smo_activity_name", "id", "name", \@activityList );
+
+
+    for my $actType ( keys %{$r_batchInfo} )
+    {
+	foreach my $batchSize ( keys %{$r_batchInfo->{$actType}} )
+	{
+	    my $sql = sprintf("INSERT INTO smo_activities (date,siteid,actTypeId,batchsize,numbatch,nesuccess,nefailed) VALUES (\'%s\', %d, %d, %d, %d, %d, %d)", 
+			      $date, $siteId, 
+			      $r_actTypeMap->{$actType},
+			      $batchSize, $r_batchInfo->{$actType}->{$batchSize}->{'numbatch'},
+			      $r_batchInfo->{$actType}->{$batchSize}->{'success'}, $r_batchInfo->{$actType}->{$batchSize}->{'fail'});
+	    if ( $DEBUG > 2 ) { print "storeData: $sql\n"; }
+	    $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+	}
+    }
+
+    #
+    # Update smo_nefailures
+    # 
+    $dbh->do("DELETE FROM smo_nefailures WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    my %neFailureReasons = ();
+    for my $actType ( keys %{$r_neFailures} )
+    {
+	foreach my $failReason ( keys %{$r_neFailures->{$actType}} )
+	{
+	    $neFailureReasons{$failReason} = 1;
+	}
+    }
+    my @neFailureReasonList = keys %neFailureReasons;
+    my $r_failReasonMap = getIdMap($dbh, "smo_failreason", "id", "name", \@neFailureReasonList);
+
+    for my $actType ( keys %{$r_neFailures} )
+    {
+	foreach my $failReason ( keys %{$r_neFailures->{$actType}} )
+	{
+	    my $sql = sprintf("INSERT INTO smo_nefailures (date,siteid,actTypeId,reasonId,count) VALUES (\'%s\', %d, %d, %d, %d)", 
+			      $date, $siteId, 
+			      $r_actTypeMap->{$actType},
+			      $r_failReasonMap->{$failReason}, $r_neFailures->{$actType}->{$failReason});
+	    if ( $DEBUG > 2 ) { print "storeData: $sql\n"; }
+	    $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+	}
+    }
+
+    $dbh->disconnect;
+}
+
+
+sub storeJobs
+{
+    my ($site,$r_Data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+
+    #
+    # The the id map for all ne,activities and results
+    #
+    my %allNe = ();
+    my %allResults = ();
+    my %allAct = ();
+    foreach my $activityId ( keys %{$r_Data} )
+    {
+	my $r_Job = $r_Data->{$activityId};
+	if ( exists $r_Job->{'ne'} )
+	{
+	    foreach my $ne ( keys %{$r_Job->{'ne'}} )
+	    {
+		$allNe{$ne} = 1;
+		foreach my $r_Activity ( @{$r_Job->{'ne'}->{$ne}->{'activityList'}} )
+		{
+		    $allAct{$r_Activity->{'actType'}} = 1;
+		    $allResults{getResult($r_Job,$r_Activity,$activityId,$ne)} = 1;
+		}
+	    }
+	}
+	else
+	{
+	    if ( $DEBUG > 2 ) { print "storeJobs: no ne in job $activityId\n"; }
+	}
+    }
+
+    my @neList = keys %allNe;
+    my $r_neMap = getIdMap($dbh,"smo_ne_name", "id", "name", \@neList, $siteId );
+
+    my @resultList = keys %allResults;
+    my $r_resultMap = getIdMap($dbh,"smo_activity_result", "id", "name", \@resultList );
+
+
+    my @actList = keys %allAct;
+    my $r_actTypeMap = getIdMap($dbh,"smo_activity_name", "id", "name", \@actList );
+    
+
+
+
+    foreach my $activityId ( keys %{$r_Data} )
+    {
+	my $r_Job = $r_Data->{$activityId};
+
+	if ( $DEBUG > 9 ) { traceDump("storeJobs: Job $activityId", $r_Job); }
+
+	if ( exists $r_Job->{'ne'} || exists $r_Job->{'name'} )
+	{
+	    my $jobId = getJobId($r_Job,$siteId,$activityId,$dbh);
+	    my $executionId = getExecutionId($r_Job,$jobId,$dbh);
+	    storeNeDetail($r_Job,$activityId,$executionId,$dbh,$r_actTypeMap,$r_neMap,$r_resultMap);
+	}
+	else
+	{
+	    if ( $DEBUG > 2 ) { trace("storeJobs: ignoring empty job activityId=$activityId"); }
+	}
+    }
+
+    $dbh->disconnect;
+}
+
+sub storeNeDetail
+{
+    my ($r_Job,$activityId,$executionId,$dbh,$r_actTypeMap,$r_neMap,$r_resultMap) = @_;
+
+    #
+    # Store detail on each ne in the job
+    #
+    my @neList = keys %{$r_Job->{'ne'}};
+    foreach my $ne ( @neList )
+    {
+	foreach my $r_Activity ( @{$r_Job->{'ne'}->{$ne}->{'activityList'}} )
+	{
+	    my $actType = $r_Activity->{'actType'};
+	    
+	    if ( $DEBUG > 5 ) { traceDump("storeNeDetail $ne activity", $r_Activity ); }
+	    
+	    my $result = getResult($r_Job,$r_Activity,$activityId,$ne);
+	    
+	    my $starttime = parseEventTime($r_Activity->{'msg'}->[0]->[0]);		    
+	    my $endtime = parseEventTime($r_Activity->{'msg'}->[$#{$r_Activity->{'msg'}}]->[0]);
+	    
+	    my $sql = sprintf("SELECT starttime,endtime FROM smo_job_ne_detail where exeid = %d and actTypeId = %d and neid = %d",
+			      $executionId,$r_actTypeMap->{$actType},$r_neMap->{$ne});
+	    if ( $DEBUG > 5 ) { trace( "storeNeDetail: sql = $sql"); }
+	    my $sth = $dbh->prepare($sql) or die "Couldn't prepare statement: " . $dbh->errstr;
+	    $sth->execute() or die "Couldn't execute statement: $sql error=" . $sth->errstr;
+	    if ( $sth->rows > 0  ) 
+	    {
+		my @row = $sth->fetchrow_array();
+		if ( $DEBUG > 5 ) { traceDump("storeNeDetail, row exists", \@row); }
+		
+		my $dbStart = parseSqlTime($row[0]);
+		my $dbEnd = parseSqlTime($row[1]);
+		my $reason = $row[2];
+		
+		if ( $starttime < $dbStart )
+		{
+		    my $sql = sprintf("UPDATE smo_job_ne_detail SET starttime = '%s' where exeid = %d and actTypeId = %d and neid = %d",
+				      toSqlDateTime($starttime),
+				      $executionId,$r_actTypeMap->{$actType},$r_neMap->{$ne});
+		    if ( $DEBUG > 5 ) { trace("storeNeDetail: sql = $sql"); }
+		    $dbh->do($sql) or die "Failed to update $sql " . $dbh->errstr;
+		}
+		
+		if ( $endtime > $dbEnd )
+		{
+		    my $sql = sprintf("UPDATE smo_job_ne_detail SET endtime = '%s', resultid = %d where exeid = %d and actTypeId = %d and neid = %d",
+				      toSqlDateTime($endtime), $r_resultMap->{$result},
+				      $executionId,$r_actTypeMap->{$actType},$r_neMap->{$ne});
+		    if ( $DEBUG > 5 ) { trace("storeJobs: sql = $sql"); }
+		    $dbh->do($sql) or die "Failed to update $sql " . $dbh->errstr;
+		}
+	    }
+	    else
+	    {
+		my $sql = sprintf("INSERT INTO smo_job_ne_detail (exeid,actTypeId,neid,starttime,endtime,resultid) VALUES ( %d, %d, %d,'%s','%s',%s )",
+				  $executionId,$r_actTypeMap->{$actType},$r_neMap->{$ne},
+				  toSqlDateTime($starttime),toSqlDateTime($endtime),
+				  $r_resultMap->{$result});
+		
+		if ( $DEBUG > 5 ) { trace("storeJobs: sql = $sql"); }
+		$dbh->do($sql) or die "Failed to update $sql " . $dbh->errstr;
+	    }		  
+	}
+    }
+}
+
+sub getJobId
+{
+    my ($r_Job,$siteId,$activityId,$dbh) = @_;
+
+    #
+    # Get jobid from smo_jobs
+    #
+    my $jobId;
+    my $r_rows = 
+	dbSelectAllArr($dbh, 
+		       sprintf("SELECT id,name FROM smo_job WHERE siteid = %d AND activityid = %d",$siteId,$activityId))
+	or die "Failed to get job";
+
+    if ( $#{$r_rows} > -1 ) {
+	$jobId = $r_rows->[0]->[0];
+
+	if ( $DEBUG > 3 ) { trace("getJobId: found existing jobId $jobId"); }
+
+	my $name = $r_rows->[0]->[1];
+	if ( $DEBUG > 3 ) { trace("getJobId: name=$name jobName=$r_Job->{'name'}"); }
+
+	if ( exists $r_Job->{'name'} && $name ne  $r_Job->{'name'} ) {
+	    dbDo( $dbh,
+		  sprintf("UPDATE smo_job SET name=%s, typeOfNe=%s, workflow=%s, comment=%s, param=%s WHERE id = %d",
+			  $dbh->quote($r_Job->{'name'}),
+			  $dbh->quote($r_Job->{'typeOfNe'}),
+			  $dbh->quote($r_Job->{'workFlow'}),
+			  $dbh->quote($r_Job->{'comment'}),
+			  $dbh->quote($r_Job->{'param'}),
+			  $jobId)) 
+		or die "Failed to update job";
+	}
+    } else {
+	dbDo( $dbh, 
+	      sprintf("INSERT INTO smo_job (siteid,activityid,name,typeOfNe,workflow,comment,param) VALUES ( %d,%d,%s,%s,%s,%s,%s )",
+		      $siteId, $activityId, 
+		      $dbh->quote($r_Job->{'name'}),
+		      $dbh->quote($r_Job->{'typeOfNe'}),
+		      $dbh->quote($r_Job->{'workFlow'}),
+		      $dbh->quote($r_Job->{'comment'}),
+		      $dbh->quote($r_Job->{'param'}))) 
+	    or die "Failed to insert job";
+	$jobId = $dbh->last_insert_id(undef,undef,"smo_job","id");
+    }
+
+    return $jobId;
+}
+
+sub getExecutionId
+{
+    my ($r_Job,$jobId,$dbh) = @_;
+
+    my @times = ( undef, undef );
+
+    #
+    # Try and figure out the start and end time of the execution
+    #
+
+    # Scheduled job checks
+    # We see the job being re-scheduled so this marks the end of this execution
+    if ( $r_Job->{'scheduled'} ) { 
+	if ( $DEBUG > 6 ) { print "getExecutionId: setting end time to scheduled\n"; }
+	$times[1] = toSqlDateTime(parseEventTime($r_Job->{'scheduled'}));
+    }  
+    # If we have a completed value, then this marks the end of the execution
+    # of a "single-shot" job
+    elsif ( exists $r_Job->{'completed'} ) {
+	if ( $DEBUG > 6 ) { print "getExecutionId: setting end time to completed\n"; }
+	$times[1] = toSqlDateTime(parseEventTime($r_Job->{'completed'}));
+    }
+    # If the job has been suspended use the suspension time as the end time
+    elsif ( exists $r_Job->{'suspended'} ) {
+	if ( $DEBUG > 6 ) { print "getExecutionId: setting end time to suspended\n"; }
+	$times[1] = toSqlDateTime(parseEventTime($r_Job->{'suspended'}));
+    }
+
+    # If the first log entry was "Activity in progress", then this marks the start
+    # of execution of a scheduled job
+    if ( $r_Job->{'firstlog'} =~ /^Activity in progress/ ) {
+	if ( $DEBUG > 6 ) { print "getExecutionId: setting start time time to starttime\n"; }
+	$times[0] = toSqlDateTime(parseEventTime($r_Job->{'starttime'}));
+    }
+    # For a "single-shot" job, the starttime is deemed to the first time we see
+    # the stateChange of RUNNING
+    elsif ( exists $r_Job->{'runtime'} ) {
+	if ( $DEBUG > 6 ) { print "getExecutionId: setting start time time to runtime\n"; }
+	$times[0] = toSqlDateTime(parseEventTime($r_Job->{'runtime'}));
+    }
+
+    if ( $DEBUG > 5 ) { print "getExecutionId: starttime=$times[0] endtime=$times[1]\n"; }
+
+    my $executionId = undef;
+    if ( defined $times[1] ) {
+	# We have the end time so the job is completed
+	
+	# Check if we have already loaded this execution
+	my $sql = sprintf("SELECT id FROM smo_execution WHERE jobid = %d AND stoptime = '%s'", 
+			  $jobId, $times[1]);
+	$executionId = getOneId($dbh,$sql);
+	if ( ! $executionId ) {
+	    # Now check if there is an incomplete peroid from "yesterday" or earlier today (MAKETAR while the execution is running)
+	    $sql = sprintf("SELECT id FROM smo_execution WHERE jobid = %d AND stoptime IS NULL AND DATEDIFF( '%s', starttime) <= 1",
+			   $jobId, $times[1] );
+	    $executionId = getOneId($dbh,$sql);
+	}
+    } elsif ( defined $times[0] ) {
+	my $sql = sprintf("SELECT id FROM smo_execution WHERE jobid = %d AND starttime = '%s'", 
+			  $jobId, $times[0] );
+	$executionId = getOneId($dbh,$sql);
+	if ( ! $executionId ) {
+	    # Now check if there is an incomplete peroid from "tomorrow"
+	    $sql = sprintf("SELECT id FROM smo_execution WHERE jobid = %d AND starttime IS NULL AND DATEDIFF( stoptime, '%s') = 1",
+			   $jobId, 
+			   $times[0]);
+	    $executionId = getOneId($dbh,$sql);
+	}
+    }
+    
+    if ( $executionId ) {
+	#
+	# We've already stored this execution, need to make sure the that starttime and stoptime match
+	#
+	if ( $DEBUG > 5 ) { print "getExecutionId: check if existing starttime,stoptime match what we have\n"; }
+	my $sql = sprintf("SELECT starttime,stoptime FROM smo_execution where id = %d",$executionId);
+	if ( $DEBUG > 5 ) { trace( "getExecutionId: sql = $sql"); }
+	my $sth = $dbh->prepare($sql) or die "Couldn't prepare statement: " . $dbh->errstr;
+	$sth->execute() or die "Couldn't execute statement: $sql error=" . $sth->errstr;
+	if ( $sth->rows > 0  )
+	{
+	    my @row = $sth->fetchrow_array();
+	    if ( $DEBUG > 5 ) { traceDump("getExecutionId, row exists", \@row); }
+
+	    my $dbStart = $row[0];
+	    my $dbEnd = ($row[1]);
+		
+	    # If we have a valid start time
+	    if ( defined $times[0] ) {
+		# If the start time in the DB is NULL or > this start time
+		if ( (! defined $dbStart) || 
+		     (parseSqlTime($dbStart) > parseSqlTime($times[0])) ) {
+		    dbDo( $dbh,
+			  sprintf("UPDATE smo_execution SET starttime = %s WHERE id = %d",
+				  $dbh->quote($times[0]),$executionId,) ) or
+				      die "Failed to update $sql " . $dbh->errstr;
+		}
+	    }
+
+	    if ( defined $times[1] ) { 
+		if ( (! defined $dbEnd) ||
+		     (parseSqlTime($times[1]) > parseSqlTime($dbEnd)) ) {
+		    dbDo( $dbh,
+			  sprintf("UPDATE smo_execution SET stoptime = %s WHERE id = %d",
+				  $dbh->quote($times[1]),$executionId,) ) or
+				      die "Failed to update $sql " . $dbh->errstr;
+		}
+	    }
+	}
+    } else {
+	dbDo( $dbh, sprintf("INSERT INTO smo_execution (jobid,starttime,stoptime) VALUES (%d,%s,%s)", 
+			    $jobId, 
+			    $dbh->quote($times[0]), 
+			    $dbh->quote($times[1])) )
+	    or "Failed to store execution";
+	$executionId = $dbh->last_insert_id(undef,undef,"smo_execution","id");
+
+    }
+    
+    return $executionId;
+}
+
+
+sub parseEvents
+{
+    my ($eventsFile,$r_initState) = @_;
+
+    my %job = ();
+    
+    if ( $eventsFile eq "-" )
+    {
+	open(EVENTS,  "<&=STDIN")  or die "Couldn't alias STDIN : $!";
+    }
+    else
+    {
+	open EVENTS, $eventsFile or die  "Cannot open eventsFile $eventsFile";
+    }
+
+    while ( my $header = getEventLine() )
+    {
+	#19-01-06:17:54:28.701   SMO     completed       1136886520958	
+	if ( $header =~ /^(\S+)\s+SMO\s+(\S+)\s+(\d+)/ )
+	{		
+	    my ($timestamp,$eventType,$activityId) = ( $1, $2, $3 );
+	    
+	    my @eventLines = ();
+	    my $line;
+	    while ( ($line = getEventLine()) && ($line !~ /^\s*$/) )
+	    {
+		push @eventLines, $line;
+	    }
+
+	    processEvent($header,$timestamp,$eventType,$activityId,\@eventLines,\%job,$r_initState);
+	    
+	}
+    }
+    close EVENTS;
+
+    if ( $DEBUG > 6 ) { print Dumper("parseEvents: jobs", \%job); }
+
+    return \%job;
+}
+
+sub processEvent
+{
+    my ($header,$timestamp,$eventType,$activityId, $r_eventLines, $r_job,$r_initState) = @_;
+
+    if ( $DEBUG > 8 ) { print "processEvent timestamp=$timestamp eventType=$eventType activityId=$activityId r_Job=", $r_job->{$activityId}, "\n"; }
+
+    if ( ! exists $r_job->{$activityId} )
+    {
+	$r_job->{$activityId}->{'starttime'} = $timestamp;		
+	
+	if ( $eventType eq "logUpdated" )
+	{
+	    my $foundMsg = 0;
+	    foreach my $eventLine ( @{$r_eventLines} )
+	    {
+		if ( ! $foundMsg )
+		{
+		    if ( $eventLine =~ /^\s+msg: (.*)/ )
+		    {
+			my $msg = $1;
+			$r_job->{$activityId}->{'firstlog'} = $msg;
+			$foundMsg = 1;
+		    }
+		}
+	    }
+	}
+
+	if ( exists $r_initState->{$activityId} )
+	{
+	    foreach my $field ( 'name', 'typeOfNe', 'swpName', 'operator', 'workFlow', 'comment' )
+	    {
+		if ( exists $r_initState->{$activityId}->{$field} )
+		{
+		    $r_job->{$activityId}->{$field} = $r_initState->{$activityId}->{$field};
+		}
+	    }
+
+	    if ( $DEBUG > 5 ) { print Dumper("processEvent: activityId=$activityId loaded intial values from initState", $r_job->{$activityId}); }
+	}
+    }
+
+
+    if ( $eventType eq "logUpdated" )
+    {
+	processLogUpdated($timestamp,$activityId,$r_eventLines,$r_job);
+    }
+    elsif ( $eventType eq "stateChange" )
+    {
+	my ($state) = $header =~ /\s+(\S+)$/;
+
+	if ( $DEBUG > 7 ) { print "processEvent: stateChange state=$state\n"; }
+	
+	$r_job->{$activityId}->{'state'} = $state;
+
+	if ( $state eq 'RUNNING' && ! exists $r_job->{$activityId}->{'runtime'} ) {
+	    $r_job->{$activityId}->{'runtime'} = $timestamp;
+	}
+    }
+    elsif ( $eventType eq "countChange" )
+    {
+	my ($count) = $header =~ /\s+(\d+)$/;
+
+	if ( $DEBUG > 7 ) { print "processEvent: countChange count=$count\n"; }
+
+	$r_job->{$activityId}->{'count'} = $count;
+    }	    
+    elsif ( ($eventType eq "insert") || ($eventType eq "modify") )
+    {
+	foreach my $jobLine ( @{$r_eventLines} )
+	{
+	    my ($name,$value) = $jobLine =~ /^\s+([^ :]+): ?(.*)/;
+	    
+	    if ( $DEBUG > 7 ) { print "processEvent: $eventType name=$name value=$value ", (defined $value), "\n"; }
+	    if ( $value ne "" ) {
+		if ( $name eq "parameter" ) {
+		    my ($pname,$pval) = $value =~ /^([^=]+)=(.*)/;
+		    $r_job->{$activityId}->{'parameter'}->{$pname} = $pval;
+		} else {
+		    $r_job->{$activityId}->{$name} = $value;
+		}
+	    }
+	}
+    }		
+    elsif ( $eventType eq "completed" )
+    {
+	$r_job->{$activityId}->{'completed'} = $timestamp;
+    }
+    elsif ( $eventType eq 'isSuspended' ) {
+	$r_job->{$activityId}->{'suspended'} = $timestamp;
+    }
+}
+
+sub processLogUpdated
+{
+    my ($timestamp,$activityId,$r_eventLines,$r_job) = @_;
+
+    while ( $#{$r_eventLines} >= 0 )
+    {
+	my $line = shift @{$r_eventLines}; 
+	if ( $line =~ /^\s+ne/ )
+	{
+	    my ($ne) = $line =~ /^\s+ne: (.*)/;
+	    my $line = shift @{$r_eventLines}; my ($activity) =  $line =~ /^\s+activity: (.*)/;
+	    my $line = shift @{$r_eventLines}; my ($msg) = $line =~ /^\s+msg: (.*)/;
+	    
+	    if ( $DEBUG > 7 ) { print "processLogUpdated: ne=$ne activity=$activity msg=$msg\n"; }
+	    
+	    if ( $ne ) # For some reason SMO sends empty logUpdated 
+	    {
+		if ( ! exists $r_job->{$activityId}->{'ne'}->{$ne} )
+		{
+		    $r_job->{$activityId}->{'ne'}->{$ne}->{'activityList'} = [];
+		    $r_job->{$activityId}->{'ne'}->{$ne}->{'activityMap'} = {};
+		}
+		
+
+		if ( $activity eq "" ) 
+		{
+		}
+		else
+		{
+		    if ( ! exists $r_job->{$activityId}->{'ne'}->{$ne}->{'activityMap'}->{$activity} )
+		    {
+			my $r_activity = {
+			    'actType' => $activity,
+			    'msg'  => []
+			    };
+			push @{$r_job->{$activityId}->{'ne'}->{$ne}->{'activityList'}}, $r_activity;
+			$r_job->{$activityId}->{'ne'}->{$ne}->{'activityMap'}->{$activity} = $r_activity;
+		    }
+		    
+		    my @event = ( $timestamp, $msg );			
+		    push @{$r_job->{$activityId}->{'ne'}->{$ne}->{'activityMap'}->{$activity}->{'msg'}}, \@event;
+		}
+		
+	    }
+	    else
+	    {
+		if ( $msg =~ /scheduled/ ) {
+		    $r_job->{$activityId}->{'scheduled'} = $timestamp;
+		}
+	    }
+	}
+
+    }
+}
+
+sub getEventLine
+{
+    my $line = <EVENTS>;
+    if ( $DEBUG > 9 ) { print "getEventLine: $line"; }
+    return $line;
+}
+
+
+sub getTotals
+{
+    my ($r_Data,$r_batchInfo,$r_neFailures) = @_;
+
+    foreach my $activityId ( keys %{$r_Data} )
+    {
+	my $r_Job = $r_Data->{$activityId};
+
+	my @neList = keys %{$r_Job->{'ne'}};
+
+	my $batchSize = $#neList + 1;
+
+	my %activityList = ();
+	foreach my $ne ( @neList )
+	{
+	    foreach my $r_Activity ( @{$r_Job->{'ne'}->{$ne}->{'activityList'}} )
+	    {
+		my $actType = $r_Activity->{'actType'};
+		$activityList{$actType} = 1;
+
+		my $failureReason;
+		if ( 
+		     ($r_Activity->{'msg'}->[$#{$r_Activity->{'msg'}}]->[1] ne 'Activity completed.') &&
+		     ($r_Activity->{'msg'}->[$#{$r_Activity->{'msg'}}]->[1] ne 'Activity completed with warnings.')
+		     )
+		{
+		    $failureReason = getFailureReason($r_Job,$r_Activity,$activityId,$ne);
+		}
+
+		if ( $failureReason )
+		{
+		    $r_batchInfo->{$actType}->{$batchSize}->{'fail'}++;
+		    $r_neFailures->{$actType}->{$failureReason}++;
+		}
+		else
+		{
+		    $r_batchInfo->{$actType}->{$batchSize}->{'success'}++;
+		}
+	    }
+	}
+
+	foreach my $actType ( keys %activityList )
+	{
+	    $r_batchInfo->{$actType}->{$batchSize}->{'numbatch'}++;
+	}
+    }
+
+    
+
+    if ( $DEBUG > 5 ) { print Dumper("getTotals: r_batchInfo", $r_batchInfo); }
+    if ( $DEBUG > 5 ) { print Dumper("getTotals: r_neFailures", $r_neFailures); }
+}
+
+sub getFailureReason
+{
+    my ($r_Job,$r_Activity,$activityId,$ne) = @_;
+
+
+    my $failureReason;
+
+    if ( ($r_Job->{'count'} == 100) && ($r_Job->{'state'} eq "HAS_SUCCESSFULL_THREADS") )
+    {
+	if ( $DEBUG > 5 ) { print "getFailureReason: Ignoring failure in $activityId for $ne\nq"; }       
+    }
+    else
+    {
+	#
+	# Sometimes the "Activity completed." is in an earlier log entry		       
+	#
+	my $isComplete = 0;
+	foreach my $r_entry ( @{$r_Activity->{'msg'}} )
+	{
+	    if ( 
+		 ($r_entry->[1] eq 'Activity completed.') ||
+		 ($r_entry->[1] eq 'Activity completed with warnings.')
+		 )
+	    {
+		if ( $DEBUG > 5  ) { print "getFailureReason: found complete in non-last log $ne $activityId\n"; }
+		$isComplete = 1;
+	    }
+	}
+
+	if ( ! $isComplete )
+	{
+	    if ( $DEBUG > 5  ) { print Dumper("getFailureReason: incomplete node $ne $activityId " . $r_Activity->{'actType'}, $r_Activity); }
+	    if ( $DEBUG > 6  ) { print Dumper("getFailureReason: activityList ", $r_Job->{'ne'}->{$ne}->{'activityList'}); }
+	    
+	    $failureReason = $r_Activity->{'msg'}->[$#{$r_Activity->{'msg'}}]->[1];
+	    
+	    # If SMO fails to delete one of a batch of CVs, the
+	    # error is may not be in the last msg
+	    if ( $r_Activity->{'actType'} eq 'DELETE_CV' )
+	    {
+		my $found = 0;
+		my $i = $#{$r_Activity->{'msg'}};
+		while ( !$found && ($i >= 0) )
+		{
+		    if ( $DEBUG > 5 ) { printf("getFailureReason: looking for delete failure message %s\nq", $r_Activity->{'msg'}->[$i]->[1]); }
+		    
+		    if ( $r_Activity->{'msg'}->[$i]->[1] =~ /^Delete not allowed/ )
+		    {
+			$failureReason = $r_Activity->{'msg'}->[$i]->[1];
+			$found = 1;
+		    }
+		    
+		    $i--;
+		}
+	    }
+	    
+	    
+	    $failureReason = filterReason($failureReason);
+
+	    
+	    if ( $DEBUG > 3 ) { print Dumper("getFailureReason: failureReason=$failureReason"); }
+	}
+    }
+
+    return $failureReason;
+}
+
+sub filterReason
+{
+    my ($failureReason) = @_;
+
+    $failureReason =~ s/^(.*) http:\S+/\1 NE_IOR/;
+    $failureReason =~ s/for NE: \S+/for NE NE_NAME/;
+    $failureReason =~ s/database\. file:\S+/database\. file FILE_NAME/;
+    $failureReason =~ s/^Could not retrieve \S+ from \S+. \(RETR \S+: 550 \S+: No such file or directory/Could not retrieve FROM_NODE/;
+    $failureReason =~ s/NE: \S+/NE NE_NAME/;    
+    $failureReason =~ s/CV \"\S+\"/ CV \[CV_NAME\]/;
+    $failureReason =~ s/CV with name \S+/CV \[CV_NAME\]/;
+    $failureReason =~ s/CV, \"\S+\"/CV \[CV_NAME\]/;    
+    $failureReason =~ s/CV,\S+,/CV \[CV_NAME\] /;    
+    $failureReason =~ s/http:\/\/[^\/]+\//\[URL\]\//;
+    $failureReason =~ s/Session ID=\d+/\[SESSION_ID\]/;    
+    $failureReason =~ s/PHASE_\d+/PHASE_\[ID\]/;   
+
+    $failureReason =~ s/UpgradePackage=\d+/UpgradePackage=\[ID\]/;
+    $failureReason =~ s/ConfigurationVersion=\d+/ConfigurationVersion=\[ID\]/;
+    $failureReason =~ s/SwManagement=\d+/SwManagement=\[ID\]/;
+
+    $failureReason =~ s/FTP service: \"[^\"]+\"/FTP service \[FTP_SERVICE\]/;
+    $failureReason =~ s/^\S+ failed to delete CV \S+/ \[USER_ID\] failed to delete CV \[CV_NAME\]/;		
+    $failureReason =~ s/\S+\.xml/\[XML_FILE\]/g;
+    $failureReason =~ s/^Could not retrieve (\S+) from \S+\./Could not retrieve $1 from \[NE\]/;
+
+    $failureReason =~ s/product number \S+/product number: \[PROD_NUM\]/;
+    $failureReason =~ s/product revision \S+/product revision: \[PROD_REV\]/;
+    $failureReason =~ s/productNumber = \S+/productNumber: \[PROD_NUM\]/;
+    $failureReason =~ s/productRevision = \S+/productRevision: \[PROD_REV\]/;
+    $failureReason =~ s/configurationVersionName=\S+/configurationVersionName: \[CV_NAME\]/;
+
+    $failureReason =~ s/directory: \S+/directory \[DIR_NAME\]/;
+    $failureReason =~ s/\S+ \(Is a directory/\[DIR_NAME\] \(\Is a directory/;
+    $failureReason =~ s/directory \"\S+\"/directory \[DIR_NAME\]/;
+
+    return $failureReason;
+}
+
+sub loadState
+{
+    my ($jobsFile,$r_Job) = @_;
+
+    my $activityId = -1;
+    open JOB_FILE, $jobsFile or die "Cannot open $jobsFile";
+    while ( my $line = <JOB_FILE> )
+    {
+	if ( $DEBUG > 9 ) { print "loadState: $line"; }
+
+	if ( $line =~ /^([a-zA-Z]+)\:(.*)/ )
+	{
+	    my ($name,$value) = ($1,$2);
+	    if ( $DEBUG > 5 ) { print "loadState: name=$name value=$value\n"; }
+	    
+	    if ( $name eq 'amJobId' )
+	    {
+		$activityId = $value;
+	    }
+	    elsif ( $activityId != -1 )
+	    {
+		if ( $name eq 'parameter' )
+		{
+		    my ($pname,$pval) = $value =~ /^([^=]+)=(.*)/;
+		    $r_Job->{$activityId}->{'parameter'}->{$pname} = $pval;
+		}
+		else
+		{
+		    $r_Job->{$activityId}->{$name} = $value;
+		}
+	    }
+	}
+	else
+	{
+	    $activityId = -1;
+	}
+    }
+    close JOB_FILE;
+
+    if ( $DEBUG > 3 ) { print Dumper ("loadState r_Job", $r_Job); }
+}
+
+
+
+sub parseEventTime
+{
+    my ($eventTime) = @_; #11-01-07:14:40:05.467
+
+    my ($day,$month,$year,$hour,$min,$sec,$msec) = $eventTime =~ /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d{2,2}):(\d{2,2}):(\d{2,2})\.(\d{3,3})$/;
+
+    if ( $DEBUG > 9 ) { print "parseEventTime: eventTime=$eventTime parts=$year,$month,$day,$hour,$min,$sec\n"; }
+
+    my $time = timelocal( $sec, $min, $hour, $day, $month - 1, $year + 100 );
+
+    return $time;
+}
+
+sub parseSqlTime
+{
+    my ($datetime) = @_; #2007-01-20 14:01:01
+    my ($year,$month,$day,$hour,$min,$sec) = $datetime =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2}):(\d{2,2})$/;   
+
+    if ( $DEBUG > 9 ) { print "parseSqlTime: datetime=$datetime parts=$year,$month,$day,$hour,$min,$sec\n"; }
+    if ( defined $year )
+    {
+	return timelocal( $sec, $min, $hour, $day, $month - 1, $year - 1900 );
+    }
+    else
+    {
+	return 0;
+    }
+}
+
+sub toSqlDateTime
+{
+    my ($time) = @_;
+
+    if ( ! $time )
+    {
+	return 'NULL';
+    }
+
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($time);
+
+    my $datetime = sprintf "%04d-%02d-%02d %02d:%02d:%02d", $year + 1900,$mon + 1,$mday,$hour,$min,$sec;
+
+    if ( $DEBUG > 9 ) { print "toSqlDateTime: time=$time datetime=$datetime parts=$year,$mon,$mday,$hour,$min,$sec\n"; }
+
+    return $datetime;
+}
+
+sub getResult
+{
+    my ($r_Job,$r_Activity,$activityId,$ne) = @_;
+
+
+    my $result;
+
+    if ( ($r_Job->{'count'} == 100) && ($r_Job->{'state'} eq "HAS_SUCCESSFULL_THREADS") )
+    {	
+	$result = 'Activity completed.';
+    }
+    else
+    {
+	#
+	# Sometimes the "Activity completed." is in an earlier log entry		       
+	#
+	my $isComplete = 0;
+	foreach my $r_entry ( @{$r_Activity->{'msg'}} )
+	{
+	    if ( 
+		 ($r_entry->[1] eq 'Activity completed.') ||
+		 ($r_entry->[1] eq 'Activity completed with warnings.')
+		 )
+	    {
+		$result = $r_entry->[1];
+		$isComplete = 1;
+	    }
+	}
+
+	if ( ! $isComplete )
+	{
+	    if ( $DEBUG > 9  ) { print Dumper("getResult: incomplete node $ne $activityId " . $r_Activity->{'actType'}, $r_Activity); }
+	    if ( $DEBUG > 9  ) { print Dumper("getResult: activityList ", $r_Job->{'ne'}->{$ne}->{'activityList'}); }
+	    
+	    $result = $r_Activity->{'msg'}->[$#{$r_Activity->{'msg'}}]->[1];
+	    
+	    # If SMO fails to delete one of a batch of CVs, the
+	    # error is may not be in the last msg
+	    if ( $r_Activity->{'actType'} eq 'DELETE_CV' )
+	    {
+		my $found = 0;
+		my $i = $#{$r_Activity->{'msg'}};
+		while ( !$found && ($i >= 0) )
+		{
+		    if ( $DEBUG > 9 ) { printf("getResult: looking for delete failure message %s\nq", $r_Activity->{'msg'}->[$i]->[1]); }
+		    
+		    if ( $r_Activity->{'msg'}->[$i]->[1] =~ /^Delete not allowed/ )
+		    {
+			$result = $r_Activity->{'msg'}->[$i]->[1];
+			$found = 1;
+		    }
+		    
+		    $i--;
+		}
+	    }
+	    
+	    
+	    $result = filterReason($result);
+	}
+    }
+
+
+    if ( $DEBUG > 9 ) { print "getResult: result=$result\n"; }
+
+    return $result;
+}
+
+sub getOneId
+{
+    my($dbh,$sql) = @_;
+    
+    my $result;
+
+    if ( $DEBUG > 5 ) { print "getOneId: sql = $sql\n"; }
+    my $sth = $dbh->prepare($sql) or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute() or die "Couldn't execute statement: $sql" . $sth->errstr;
+    my $numRows = $sth->rows;
+    if ( $DEBUG > 5 ) { print "getOneId: matched $numRows\n"; }
+
+    if (  $numRows > 0 ) 
+    {
+	my @row = $sth->fetchrow_array();
+	$result = $row[0];
+    }
+    else
+    {
+	$result = 0;
+    }
+
+    if ( $DEBUG > 5 ) { print "getOneId: result=$result\n";}
+
+    return $result;
+}
+
+sub traceDump
+{
+    my ($msg,$ref) = @_;
+    trace($msg);
+    print Dumper($ref);
+}
+
+sub trace
+{
+    my ($msg) = @_;
+    print scalar(localtime(time())), " ", $msg, "\n";
+}
+
+sub dbSelectAllArr
+{ 
+    my ($dbh,$sql) = @_;
+    
+
+    if ( $DEBUG > 2 ) { print "dbSelectAllArr: sql=$sql\n"; }    
+    my $r_rows = $dbh->selectall_arrayref($sql);
+    if ( ! defined $r_rows ) {
+	print "dbSelectAllArr: ERROR processing $sql\n", $dbh->errstr, "\n"; 
+    }
+    return $r_rows;
+}

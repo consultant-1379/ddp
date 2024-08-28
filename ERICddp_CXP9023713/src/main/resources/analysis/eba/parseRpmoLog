@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+# script to parse the RPMO RpmoAgent.log file
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use File::Basename;
+
+our $siteId;
+our $DEBUG = 0;
+
+sub main() {
+    my ($site,$file);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "file=s" => \$file,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+
+    my ($metricsStart, $metricsEnd);
+
+    my %valueHolders = ();
+    my %monitors = ();
+    my %repNotifs = ();
+    my %evtConsumers = ();
+
+    # match some lines to events
+    open LOGFILE, $file or die "Could not open log: " . $!;
+    while (my $line = <LOGFILE>) {
+        chomp($line);
+        # timestamps are like: 10-03-25 00:00:02.854610
+        if ($line =~ /^([0-9][0-9]-[0-1][0-9]-[0-3][0-9]) ([0-2][0-9]:[0-5][0-9]:[0-5][0-9])\.([0-9]+) (.*)/) {
+            my $date = $1;
+            my $time = $2;
+            my $ms = $3;
+            my $timestamp = $date . " " . $time . "." . $ms;
+            # first timestamp?
+            if (! defined($metricsStart)) { $metricsStart = $timestamp; }
+            $metricsEnd = $timestamp;
+            my $text = $4;
+            if ($text =~ /Time spent.* ValueHolders: ([0-9]+)/) {
+                $valueHolders{$timestamp} = $1;
+            } elsif ($text =~ /Resource consumption: Monitors:([0-9]+)/) {
+                $monitors{$timestamp} = $1;
+            } elsif ($text =~ /Delivering Statistics ReportNotification .* timeStamp = [A-Za-z]+ [A-Za-z]+ [0-3][0-9] ([0-2][0-9]:[0-5][0-9]:[0-5][0-9])/) {
+                my $statTime = $date . " " . $1;
+                if (defined($repNotifs{$statTime})) { $repNotifs{$statTime} = $repNotifs{$statTime} + 1; } else { $repNotifs{$statTime} = 1; }
+            } elsif ($text =~ /([A-Za-z]+) event consumer, total:([0-9]+)/) {
+                my $evt = $1;
+                my $total = $2;
+                $evtConsumers{$timestamp} = $total;
+            } elsif ($text =~ /([A-Za-z]+) event consumer with problem, remaining consumers:([0-9]+)/) {
+                my $evt = $1;
+                my $total = $2;
+                $evtConsumers{$timestamp} = $total;
+            }
+        }
+    }
+
+    if (! defined ($metricsStart)) { return; }
+    dbDo($dbh, "DELETE FROM rpmo_metrics WHERE time BETWEEN '" . $metricsStart . "' AND '" . $metricsEnd . "' AND siteid = " . $siteId);
+    my $sth = $dbh->prepare("INSERT INTO rpmo_metrics (time,siteid,type,value) VALUES (?,?,?,?)") or die "Could not prepare statement: " . $!;
+    foreach my $time ( keys %valueHolders) {
+        $sth->execute($time, $siteId, "valueHolders", $valueHolders{$time});
+    }
+    foreach my $time ( keys %monitors) {
+        $sth->execute($time, $siteId, "Monitor", $monitors{$time});
+    }
+    foreach my $time (keys %repNotifs) {
+        $sth->execute($time, $siteId, "StatisticsReportNotification", $repNotifs{$time});
+    }
+    foreach my $time (keys %evtConsumers) {
+        $sth->execute($time, $siteId, "EventConsumers", $evtConsumers{$time});
+    }
+}
+
+main;

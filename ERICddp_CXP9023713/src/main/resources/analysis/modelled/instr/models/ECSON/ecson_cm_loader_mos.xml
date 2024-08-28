@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_cm_loader_mos">
+
+  <table name="ecson_cm_loader_mos">
+  </table>
+
+  <services>
+    <service name="eric-prometheus-pushgateway"/>
+  </services>
+
+  <metricgroups>
+    <multi>exportjobid</multi>
+    <metricgroup name="eric-prometheus-pushgateway">
+      <metric source="number_invalid_mos" target="number_invalid_mos"/>
+      <metric source="number_processed_mos" target="number_processed_mos"/>
+      <metric source="number_invalid_parsed_nodes" target="number_invalid_parsed_nodes"/>
+      <property name="exportjobid" xsi:type="multilabelproperty" label="exported_job" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

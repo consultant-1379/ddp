@@ -1,0 +1,46 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+
+$DEBUG = 0;
+$result = GetOptions(
+		     "vxprint=s" => \$vxprintFile,
+		     "dg=s" => \$dg,
+		     "debug" => \$DEBUG
+		     );
+( $result == 1 ) or printUsageAndExit("Invalid Args");
+( -r $vxprintFile ) or printUsageAndExit("Could not read from vxprint File\n");
+( $dg ) or printUsageAndExit("No dg specified");
+
+open VXPRINT, "$vxprintFile" or die "Cannot open $vxprintFile";
+$done = 0;
+while ( ($line = <VXPRINT>) and ! $done )
+{
+    if ( $line =~ /^dg\s+$dg/ )
+    {
+	<VXPRINT>;
+	while ( ($line = <VXPRINT>) and ! $done )
+	{
+	    if ( $line =~ /^dm/ )
+	    {
+		$_ = $line;	    
+		($dmName,$pdName) = /^dm\s+(\S+)\s+(\S+)/;
+		print "$dmName:$pdName\n";
+	    }
+	    else
+	    {
+		$done = 1;
+	    }
+	}
+    }
+}
+close VXPRINT;
+
+sub printUsageAndExit
+{
+    my ($errMsg) = @_;    
+    print "$errMsg\n";
+
+    print "Usage: getDisks --vxprint vxprintFile --dg dg";
+}
+ 

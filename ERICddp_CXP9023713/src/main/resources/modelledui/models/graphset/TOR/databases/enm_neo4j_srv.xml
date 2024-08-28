@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_neo4j_srv">
+      <reference table="sites" condition="enm_neo4j_srv.siteid = sites.id"/>
+      <reference table="servers" condition="enm_neo4j_srv.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="inst"/>
+    <where>sites.name = '%s' AND servers.hostname = "%s"</where>
+  </query>
+
+  <graphs>
+    <graph name="cacheEvictionExceptions" type="tsc">
+      <title value="cacheEvictionExceptions"/>
+      <column db="cacheEvictionExceptions" label="cacheEvictionExceptions"/>
+    </graph>
+    <graph name="cacheEvictions" type="tsc">
+      <title value="cacheEvictions"/>
+      <column db="cacheEvictions" label="cacheEvictions"/>
+    </graph>
+    <graph name="cacheFaults" type="tsc">
+      <title value="cacheFaults"/>
+      <column db="cacheFaults" label="cacheFaults"/>
+    </graph>
+    <graph name="cacheFlushes" type="tsc">
+      <title value="cacheFlushes"/>
+      <column db="cacheFlushes" label="cacheFlushes"/>
+    </graph>
+    <graph name="cacheKbRead" type="tsc">
+      <title value="cacheKbRead"/>
+      <column db="cacheKbRead" label="cacheKbRead"/>
+    </graph>
+    <graph name="cacheKbWritten" type="tsc">
+      <title value="cacheKbWritten"/>
+      <column db="cacheKbWritten" label="cacheKbWritten"/>
+    </graph>
+    <graph name="cachePins" type="tsc">
+      <title value="cachePins"/>
+      <column db="cachePins" label="cachePins"/>
+    </graph>
+    <graph name="transCommitted" type="tsc">
+      <title value="transCommitted"/>
+      <column db="transCommitted" label="transCommitted"/>
+    </graph>
+    <graph name="transOpen" type="tsc">
+      <title value="transOpen"/>
+      <column db="transOpen" label="transOpen"/>
+    </graph>
+    <graph name="transOpened" type="tsc">
+      <title value="transOpened"/>
+      <column db="transOpened" label="transOpened"/>
+    </graph>
+    <graph name="transRolledBack" type="tsc">
+      <title value="transRolledBack"/>
+      <column db="transRolledBack" label="transRolledBack"/>
+    </graph>
+
+    <graph name="boltConnections" type="sb">
+      <title value="Connections"/>
+      <column db="boltConnRunning" label="Running"/>
+      <column db="boltConnIdle" label="Idle"/>
+    </graph>
+    <graph name="boltConnOpened" type="tsc">
+      <title value="Connections Opened"/>
+      <column db="boltConnOpened" label="boltConnOpened"/>
+    </graph>
+    <graph name="boltConnClosed" type="tsc">
+      <title value="Connections Closed"/>
+      <column db="boltConnClosed" label="boltConnClosed"/>
+    </graph>
+    <graph name="boltConnIdle" type="tsc">
+      <title value="Connections Idle"/>
+      <column db="boltConnIdle" label="boltConnIdle"/>
+    </graph>
+    <graph name="boltMsg" type="tsc">
+      <title value="Messages"/>
+      <column db="boltMsgRecv" label="Received"/>
+      <column db="boltMsgStarted" label="Started"/>
+      <column db="boltMsgDone" label="Done"/>
+    </graph>
+    <graph name="boltMsgFailed" type="tsc">
+      <title value="Message Failed"/>
+      <column db="boltMsgFailed" label="boltMsgFailed"/>
+    </graph>
+    <graph name="boltProcTime" type="tsc" ylabel="sec">
+      <title value="Message Processing Time"/>
+      <column db="boltProcTime" label="boltProcTime"/>
+    </graph>
+    <graph name="boltAvgProcTime" type="tsc" ylabel="msec">
+      <title value="Average Message Processing Time"/>
+      <column db="(boltProcTime/boltMsgDone)*1000" label="boltAvgProcTime"/>
+    </graph>
+    <graph name="boltQTime" type="tsc">
+      <title value="Message Queue Time"/>
+      <column db="boltQTime" label="boltQTime"/>
+    </graph>
+
+    <graph name="clustMsgProcDelay" type="tsc">
+      <title value="Message Processing Delay"/>
+      <column db="clustMsgProcDelay" label="clustMsgProcDelay"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="tx">
+      <member>transOpen</member>
+      <member>transOpened</member>
+      <member>transCommitted</member>
+      <member>transRolledBack</member>
+    </group>
+    <group name="pagecache">
+      <member>cacheKbRead</member>
+      <member>cacheKbWritten</member>
+      <member>cacheEvictions</member>
+      <member>cacheEvictionExceptions</member>
+      <member>cacheFaults</member>
+      <member>cacheFlushes</member>
+      <member>cachePins</member>
+    </group>
+    <group name="bolt">
+      <member>boltConnections</member>
+      <member>boltConnOpened</member>
+      <member>boltConnClosed</member>
+      <member>boltMsg</member>
+      <member>boltMsgFailed</member>
+      <member>boltQTime</member>
+      <member>boltProcTime</member>
+      <member>boltAvgProcTime</member>
+    </group>
+    <group name="raft">
+      <member>clustMsgProcDelay</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

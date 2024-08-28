@@ -1,0 +1,225 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+
+    my ( $file, $dashDate, $site );
+    my %dataForStorage;
+
+    my $results = GetOptions(
+        "file=s"  => \$file,
+        "site=s"  => \$site,
+        "date=s"  => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    #Validate the parameters passed to the file
+    if ( !$file ) {
+        printUsageAndExit("No feed file spciified");
+    }
+    if ( !$site ) {
+        printUsageAndExit("No feed file specified");
+    }
+    if ( !$site ) {
+        printUsageAndExit("No site specified");
+    }
+    if ( !$dashDate ) {
+        printUsageAndExit("No date specified");
+    }
+
+    # Get the siteid
+    my $dbh = connect_db();
+    my $siteid = getSiteId( $dbh, $site );
+    ( $siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ( $dd, $mm, $yy ) = split( /\-/, $dashDate );
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Parse the file
+    processData( $file, $sqlDate, $siteid, \%dataForStorage );
+
+    return 0;
+}
+
+sub processData() {
+    my ( $file, $sqlDate, $siteid ) = @_;
+    my %dataForStorage;
+    my $timestamp;
+    my $epoch;
+    my $cnt = 0;
+
+    if ( $DEBUG > 4 ) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+  LINE: while ( my $line = <DATA> ) {
+        chomp($line);
+        if ( $DEBUG > 4 ) { print $line . "\n"; }
+
+        # if the line is blank move to the next line.
+        # elsif the line starts with "DUMP START" then parse time for the timestamp from this line.
+        # else we gather the parameters and there values and store them in a datahash
+        if ( $line =~ /^$/ ) {
+            next LINE;
+        }
+        elsif ( $line =~ "^DUMP START" ) {
+
+            # performs the required parsing of of the line "DUMP START Thu Jul 12 00:07:56 IST 2012"
+            # convert time using common/StatsTime.pm function parseTime which returns the epoch time which we convert to TIME_SQL format.
+            $line =~ s/^(DUMP START)\s{1,2}(\w{3,3})\s{1,2}//;
+            $epoch = parseTime( $line, $StatsTime::TIME_UNIX_DATE );
+            $timestamp = formatTime( $epoch, $StatsTime::TIME_SQL );
+            $cnt++;
+            next LINE;
+        }
+        else {
+
+            if ($timestamp =~ m/$sqlDate.*/){
+                # Split the line to get the key parameter name and its value. "THREADPOOL2_COMPLETED = 0"
+                my @data  = split( /=/, $line );
+                my $key   = $data[0];
+                my $value = $data[1];
+
+                #We dont want to parse any line with DUMP STOP or SWITCHING DUMP FILE as they aren't required.
+                #Number of dead (unreachable) nodes. Not valid for SMARTEDGE nodes, always 0
+                #Synched Nodes always 0 as SYNCHRONIZED is not valid for smartedge
+                #Number of alive (reachable) nodes. Not valid for SMARTEDGE nodes, always equals to TOTAL_NODES.
+                unless ( $key =~ m/DUMP STOP|SWITCHING DUMP FILE|DEAD_NODES|^SYNCED_NODES|ALIVE_NODES/ ) {
+                    $key   =~ s/\s+$//;    #remove trailing spaces
+                    $value =~ s/^\s+//;    #remove leading spaces
+                    $key = lc($key);       #set key values to lowercase
+
+                    if ( $DEBUG > 4 ) { print $key . "::" . $value . "\n" }
+
+                   #Perform some editing of the key parameter value.
+                    #Line unformatted = 'UPGRADE_ATTEMPTS = 0 since Wed Jul 11 19:49:25 IST 2012'
+                    #Line unformatted = 'UPGRADE_SUCCESSES = 0 since Wed Jul 11 19:49:25 IST 2012'
+                    if ( $key eq "upgrade_successes" || $key eq "upgrade_attempts" )
+                    {
+                        $value =~ s/(since)\s{1,2}(\w{3,3})//;
+                    }
+                
+                    $dataForStorage{$timestamp}->{$key} = $value;
+                    $cnt++;
+                }
+                next LINE;
+            }
+        }
+    }
+    close(DATA);
+
+    #Parse, order and structure the data.
+    if ( $DEBUG > 7 ) { print Dumper %dataForStorage; }
+
+    if ( $cnt > 0 ) {
+        writeBulkImport( $sqlDate, $siteid, \%dataForStorage );
+    }
+
+    return 0;
+}
+
+sub writeBulkImport() {
+    my ( $sqlDate, $siteid, $r_dataForStorage ) = @_;
+
+    #initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/sema_stats.bcp";
+
+    if ( $DEBUG > 4 ) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile"
+      or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $timestamp ( sort( keys(%$r_dataForStorage) ) ) {
+        my $record;
+        my $dataset = $r_dataForStorage->{$timestamp};
+
+        if ( $DEBUG > 4 ) { print "Process: " . $dataset . "\n"; }
+
+        $record .= $timestamp . "," . $siteid;
+        $record .= "," . $dataset->{'adjust_numcalls'};
+        $record .= "," . $dataset->{'avedelaymecontextwrite'};
+        $record .= "," . $dataset->{'average_reply_time_netop'};
+        $record .= "," . $dataset->{'average_xslt_map_time_smartedge'};
+        $record .= "," . $dataset->{'compatible_nodes'};
+        $record .= "," . $dataset->{'max_reply_time_netop'};
+        $record .= "," . $dataset->{'max_xslt_map_time_smartedge'};
+        $record .= "," . $dataset->{'min_reply_time_netop'};
+        $record .= "," . $dataset->{'min_xslt_map_time_smartedge'};
+        $record .= "," . $dataset->{'neverconnected_nodes'};
+        $record .= "," . $dataset->{'nufailedmecontextwrites'};
+        $record .= "," . $dataset->{'nuignoredattachdetach'};
+        $record .= "," . $dataset->{'number_of_threads_system'};
+        $record .= "," . $dataset->{'num_smartedge_syncs_finished_last_output_period'};
+        $record .= "," . $dataset->{'num_smartedge_syncs_started_last_output_period'};
+        $record .= "," . $dataset->{'nuremovedmecontext'};
+        $record .= "," . $dataset->{'nusuccmecontextwrites'};
+        $record .= "," . $dataset->{'threadpool2_completed'};
+        $record .= "," . $dataset->{'threadpool2_queued'};
+        $record .= "," . $dataset->{'threadpool_executing'};
+        $record .= "," . $dataset->{'threadpool_waiting'};
+        $record .= "," . $dataset->{'total_nodes'};
+        $record .= "," . $dataset->{'unsynced_nodes'};
+        $record .= "," . $dataset->{'upgrade_attempts'};
+        $record .= "," . $dataset->{'upgrade_successes'} . "\n";
+
+
+        if ( $DEBUG > 2 ) { print $record; }
+        print BULK_INSERT $record;
+    }
+    close BULK_INSERT;
+
+    storeDataset( $sqlDate, $siteid, $bcpFile );
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ( $sqlDate, $siteid, $bcpFile ) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete =
+        "DELETE FROM sema_stats WHERE time BETWEEN '" 
+      . $sqlDate
+      . " 00:00:00' AND '"
+      . $sqlDate
+      . " 23:59:59' AND siteid = "
+      . $siteid;
+
+    if ( $DEBUG > 4 ) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+    print Dumper $rerunDelete;
+
+    # Run the DELETE
+    dbDo( $dbh, $rerunDelete )
+      or die "ERROR: Failed to clear data from sema_stats for rerun...\n";
+
+    # Run the bulk insert into the ipran_transport
+    dbDo( $dbh,
+"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE sema_stats FIELDS TERMINATED BY ','"
+    );
+    $dbh->disconnect;
+
+    return 0;
+}

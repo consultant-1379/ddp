@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^kafka@kafka$">
+
+  <table name="enm_kafka_topic">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="topicid" reftable="kafka_topic_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>topicid</multi>
+
+    <metricgroup name="^kafka-(((?!srv).)+)-BytesIn$">
+      <metric source="Count" target="MBytesIn" delta="true" scale="1048576"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-BytesOut$">
+      <metric source="Count" target="MBytesOut" delta="true" scale="1048576"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-BytesRejected$">
+      <metric source="Count" target="BytesRejected" delta="true"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-FailedFetchRequests$">
+      <metric source="Count" target="FailedFetchRequests" delta="true"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-FailedProduceRequests$">
+      <metric source="Count" target="FailedProduceRequests" delta="true"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-MessagesIn$">
+      <metric source="Count" target="MessagesIn" delta="true"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-TotalFetchRequests$">
+      <metric source="Count" target="TotalFetchRequests" delta="true"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^kafka-(((?!srv).)+)-TotalProduceRequests$">
+      <metric source="Count" target="TotalProduceRequests" delta="true"/>
+      <property name="topicid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

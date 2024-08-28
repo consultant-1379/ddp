@@ -1,0 +1,619 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+use XML::Simple qw(:strict);
+use JSON;
+
+use File::Basename;
+use lib dirname($0);
+use EMC;
+
+our $DEBUG = 0;
+
+our %ENCLOSURE_TYPES = (
+    "908" => "DAE 4GB FC",
+    "915" => "SPE",
+    "916" => "DAE 15 DRIVE 6G SAS",
+    "919" => "DPE",
+    "923" => "DPE",
+    "920" => "DAE 25 DRIVE 6G SAS"
+    );
+
+our %DRIVE_TYPES = (
+    '5' => 'SAS',
+    '0' => 'Fibre Channel'
+    );
+
+our %RAID_TYPES = (
+    1 => 'RAID5',
+    2 => 'RAID0',
+    3 => 'RAID1',
+    7 => 'RAID1/0',
+    10 => 'RAID6',
+    11 => 'RAID6',
+    12 => 'Mixed'
+);
+
+our %UNITY_HEALTH_ENUM = (
+    0 => 'UNKNOWN',
+    5 => 'OKAY',
+    7 => 'OK_BUT',
+    10 => 'DEGRADED',
+    15 => 'MINOR',
+    20 => 'MAJOR',
+    25 => 'CRITICAL',
+    30 => 'NON_RECOVERABLE'
+);
+
+sub parseUnityNas($) {
+    my ($r_data) = @_;
+
+    if ( (! exists $r_data->{'nasServer'}) || $#{$r_data->{'nasServer'}} == -1 ||
+        (! exists $r_data->{'filesystem'}) || $#{$r_data->{'filesystem'}} == -1 ) {
+        return ( [], [] );
+    }
+
+    my @nasServers = ();
+    foreach my $r_ns ( @{$r_data->{'nasServer'}} ) {
+        push @nasServers, {
+            'id' => $r_ns->{'id'},
+            'name' => $r_ns->{'name'},
+            'homesp' => $r_ns->{'homeSP'}->{'id'},
+            'currsp' => $r_ns->{'currentSP'}->{'id'}
+        };
+    }
+
+    my @filesystems = ();
+    foreach my $r_fs ( @{$r_data->{'filesystem'}}) {
+        push @filesystems, {
+            'id' => $r_fs->{'id'},
+            'pool' => $r_fs->{'pool'}->{'id'},
+            'nas' => $r_fs->{'nasServer'}->{'id'},
+            'name' => $r_fs->{'name'},
+            'size' => $r_fs->{'sizeTotal'},
+            'used' => $r_fs->{'sizeUsed'},
+            'sizeAllocatedTotal' => $r_fs->{'sizeAllocatedTotal'},
+            'snapsSizeAllocated' => $r_fs->{'snapsSizeAllocated'},
+            'metadataSizeAllocated' => $r_fs->{'metadataSizeAllocated'},
+            'snapCount' => $r_fs->{'snapCount'},
+            'dataReductionRatio' => $r_fs->{'dataReductionRatio'}
+        };
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseUnityNas: filesystems", \@filesystems); }
+
+    return (\@nasServers, \@filesystems);
+}
+
+sub parseUnity($) {
+    my ($dataFile) = @_;
+
+    open INPUT, $dataFile or die "Cannot open $dataFile";
+    my $json_str = <INPUT>;
+    close INPUT;
+
+    my $r_data = decode_json($json_str);
+    if ( $DEBUG > 8 ) { print Dumper("parseUnity: r_data", $r_data); }
+
+    my @pools = ();
+    my %poolIdMap = ();
+    foreach my $r_pool ( @{$r_data->{'pool'}} ) {
+        if ( $DEBUG > 7 ) { print Dumper("parseUnity: r_pool", $r_pool); }
+        my %pool = (
+            'id' => $r_pool->{'id'},
+            'name' => $r_pool->{'name'},
+            'sizeGB' => $r_pool->{'sizeTotal'} / (1024*1024*1024),
+            'usedGB' => $r_pool->{'sizeUsed'} / (1024*1024*1024),
+            'dataReductionRatio' => $r_pool->{'dataReductionRatio'},
+            'snapSizeUsedGB' => $r_pool->{'snapSizeUsed'} / (1024*1024*1024),
+            'metadataSizeUsedGB' => $r_pool->{'metadataSizeUsed'} / (1024*1024*1024),
+            'subscribedGB' => $r_pool->{'sizeSubscribed'} / (1024*1024*1024),
+            'raid' => $RAID_TYPES{$r_pool->{'raidType'}},
+            'disks' => 0,
+            'luns' => []
+            );
+        push @pools, \%pool;
+        $poolIdMap{$r_pool->{'id'}} = \%pool;
+    }
+
+    my $numDisksInArray = 0;
+    foreach my $r_disk ( @{$r_data->{'disk'}} ) {
+        if ( $DEBUG > 7 ) { print Dumper("parseUnity: r_disk", $r_disk); }
+        # Skip empty slots
+        if ( exists $r_disk->{'health'} &&
+                 $r_disk->{'health'}->{'descriptionIds'}->[0] eq 'ALRT_DISK_SLOT_EMPTY' ) {
+            if ( $DEBUG > 0 ) { print "parseUnity: skipping empty slot"; }
+            next;
+        }
+        $numDisksInArray++;
+        my $poolid = $r_disk->{'pool'}->{'id'};
+        if ( defined $poolid ) {
+            my $r_pool = $poolIdMap{$poolid};
+            if ( defined $r_pool ) {
+                $r_pool->{'disks'}++;
+            }
+        } else {
+            print "WARN: No pool id found for disk $r_disk->{'id'}\n";
+        }
+    }
+
+    my %lunNames = ();
+    foreach my $r_lun ( @{$r_data->{'lun'}} ) {
+        my $r_pool = $poolIdMap{$r_lun->{'pool'}->{'id'}};
+        if ( defined $r_pool ) {
+            push @{$r_pool->{'luns'}}, {
+                'name' => $r_lun->{'name'},
+                'dataReductionRatio' => $r_lun->{'dataReductionRatio'},
+                'sizeAllocatedGB' => $r_lun->{'sizeAllocated'} / (1024*1024*1024),
+                'snapsSizeAllocatedGB' => $r_lun->{'snapsSizeAllocated'} / (1024*1024*1024),
+                'snapCount' => $r_lun->{'snapCount'},
+                'metadataSizeAllocatedGB' => $r_lun->{'metadataSizeAllocated'} / (1024*1024*1024)
+            }
+        }
+        $lunNames{$r_lun->{'id'}} = $r_lun->{'name'};
+    }
+
+    my %info = (
+        'serial' => $r_data->{'system'}->{'serialNumber'},
+        'name' => $r_data->{'basicSystemInfo'}->{'name'},
+        'model' => $r_data->{'basicSystemInfo'}->{'model'},
+        'version' => $r_data->{'basicSystemInfo'}->{'softwareVersion'},
+        'totalmem' => $r_data->{'storageProcessor'}->[0]->{'memorySize'},
+        'dae' => ($#{$r_data->{'dae'}} + 1),
+        'disks' => $numDisksInArray,
+        'pools' => \@pools
+        );
+
+    my %snapById = ();
+    foreach my $r_snap ( @{$r_data->{'snap'}} ) {
+        $snapById{$r_snap->{'id'}} = $r_snap;
+    }
+    my @snapshots = ();
+    foreach my $r_snap ( @{$r_data->{'snap'}} ) {
+        if ( $DEBUG > 6 ) { print Dumper("parseUnity: processing snap", $r_snap); }
+        my $last_synced = $r_snap->{'creationTime'};
+        if ( exists $r_snap->{'lastRefreshTime'} ) {
+            $last_synced = $r_snap->{'lastRefreshTime'};
+        }
+        # For snapshots which are part of a consistent group, we should try and get
+        # the name for the snapGroup snapshot
+        my $snapName = $r_snap->{'name'};
+        if ( exists $r_snap->{'snapGroup'} ) {
+            $snapName = $snapById{$r_snap->{'snapGroup'}}->{'name'};
+        }
+        # Ignore the snapGroup (we'll store each member of the group)
+        if ( exists $r_snap->{'lun'} ) {
+            push @snapshots, {
+                'name' => $snapName,
+                'last_synced' => formatTime( parseTime($last_synced, $StatsTime::TIME_ELASTICSEARCH_MSEC),
+                                             $StatsTime::TIME_SQL),
+                'source_lun' => $lunNames{$r_snap->{'lun'}->{'id'}},
+            };
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseUnity: snapshots", \@snapshots); }
+
+    $info{'snapshots'} = \@snapshots;
+
+    # If the overall system health is not OKAY and we have entries in resourceHealth
+    if ( $r_data->{'system'}->{'health'}->{'value'} != 5 &&
+         exists $r_data->{'resourceHealth'} &&
+         $#{$r_data->{'resourceHealth'}} > -1 ) {
+        my @rh = ();
+        foreach my $r_rh ( @{$r_data->{'resourceHealth'}} ) {
+            # The UI seems to filter out anything with a health value of 5 or 7
+            # filter=(health.value ne 5) AND (health.value ne 7)
+            # HealthEnum 5 = OKAY, 7 = OKAY_BUT
+            my $health = $UNITY_HEALTH_ENUM{$r_rh->{'health'}->{'value'}};
+            if ( $health ne 'OKAY' && $health ne 'OKAY_BUT' ) {
+                push @rh, $r_rh->{'resource'}->{'id'} . " " .  $health . " " . $r_rh->{'health'}->{'descriptionIds'}->[0];
+            }
+        }
+        $info{'resourceHealth'} = \@rh;
+    }
+
+    my ($r_nasServers, $r_filesystems) = parseUnityNas($r_data);
+    $info{'nasServers'} = $r_nasServers;
+    $info{'filesystems'} = $r_filesystems;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseUnity: info", \%info); }
+
+    return \%info;
+}
+
+sub parse($) {
+    my ($dataFile) = @_;
+
+    my $r_config = XMLin($dataFile, ForceArray => ['CLAR:MLU', 'CLAR:Pool', 'CLAR:AutoTieringTierInfo', 'CLAR:Disk', 'CLAR:Snap', 'CLAR:RAIDGroup' ],  KeyAttr => []);#);
+    my $r_clarCfg = $r_config->{'SAN:SAN'}->{'SAN:Subsystems'}->{'CLAR:CLARiiON'};
+    if ( $DEBUG > 9 ) { $Data::Dumper::Indent = 1; print Dumper("parse: config", $r_clarCfg); }
+    my %info = (
+        'serial'   => $r_clarCfg->{'CLAR:SerialNumber'}->{'content'},
+        'name'     => $r_clarCfg->{'CLAR:Name'}->{'content'},
+        'model'    => $r_clarCfg->{'CLAR:ModelNumber'}->{'content'}
+        );
+    if ( exists $r_clarCfg->{'CLAR:HighWatermark'} ) {
+        $info{'hwm'} = $r_clarCfg->{'CLAR:HighWatermark'}->{'content'};
+        $info{'lwm'} = $r_clarCfg->{'CLAR:LowWatermark'}->{'content'};
+    }
+
+    # Get FLARE version
+    foreach my $r_software ( @{$r_clarCfg->{'CLAR:Softwares'}->{'CLAR:Software'}} ) {
+        my $name = $r_software->{'CLAR:Name'}->{'content'};
+        my $isActive = $r_software->{'CLAR:IsActive'}->{'content'};
+        my $version = $r_software->{'CLAR:Revision'}->{'content'};
+
+        if ( $name eq "VNX-Block-Operating-Environment" ) {
+            $info{'version'} = $version;
+        } elsif ( $name eq "FLARE-Operating-Environment" ) {
+            $info{'version'} = $version;
+        }
+        if ( $DEBUG > 6 ) { print "parse: r_software $name $isActive $version\n"; }
+    }
+
+    # SP Config (assume A & B are the same)
+    foreach my $r_sp ( @{$r_clarCfg->{'CLAR:Physicals'}->{'CLAR:StorageProcessors'}->{'CLAR:StorageProcessor'}} ) {
+        if ( $DEBUG > 8 ) { print Dumper("parse: r_sp",$r_sp); }
+
+        if ( $r_sp->{'CLAR:Name'}->{'content'} eq 'SP A' ) {
+            if ( $r_sp->{'CLAR:WriteCacheState'}->{'content'} == 3 && exists $r_sp->{'CLAR:WriteCacheSize'} ) {
+                $info{'writecache'} = $r_sp->{'CLAR:WriteCacheSize'}->{'content'};
+            }
+            if ( $r_sp->{'CLAR:ReadCacheState'}->{'content'} == 3 && exists $r_sp->{'CLAR:ReadCacheSize'} ) {
+                $info{'readcache'} = $r_sp->{'CLAR:ReadCacheSize'}->{'content'};
+            }
+            $info{'totalmem'} = $r_sp->{'CLAR:TotalMemory'}->{'content'};
+
+            if ( exists $r_sp->{'CLAR:FreeMemory'} ) {
+                $info{'freemem'} = $r_sp->{'CLAR:FreeMemory'}->{'content'};
+            }
+        }
+    }
+
+    # Encloures
+    my $numDAE = 0;
+    foreach my $r_enc ( @{$r_clarCfg->{'CLAR:Physicals'}->{'CLAR:Enclosures'}->{'CLAR:Enclosure'}} ) {
+        if ( $DEBUG > 8 ) { print Dumper("parse: r_enc",$r_enc); }
+
+        my $name = $r_enc->{'CLAR:Name'}->{'content'};
+        my $type = $r_enc->{'CLAR:Type'}->{'content'};
+
+        if ( exists $ENCLOSURE_TYPES{$type} ) {
+            if ( $DEBUG > 6 ) { print "parse: r_enc $name \"$type\" " . $ENCLOSURE_TYPES{$type} . "\n"; }
+
+            if ( $ENCLOSURE_TYPES{$type} =~ /^DAE/ ) {
+                $numDAE++;
+            }
+        } else {
+            print "WARN: Unknown type $type name=$name\n";
+        }
+    }
+    $info{'dae'} = $numDAE;
+
+    # Disks
+    my $numDisks = 0;
+    foreach my $r_disk ( @{$r_clarCfg->{'CLAR:Physicals'}->{'CLAR:Disks'}->{'CLAR:Disk'}} ) {
+        if ( $DEBUG > 8 ) { print Dumper("parse: disk", $r_disk);  }
+
+        my $size = $r_disk->{'CLAR:CapacityInMBs'}->{'content'};
+        my $type = $r_disk->{'CLAR:Type'}->{'content'};
+        my $product = $r_disk->{'CLAR:Product'}->{'content'};
+        if ( $DEBUG > 6 ) { print "parse: disk $size $type $product\n"; }
+        $numDisks++;
+        #my $ = $r_disk->{'CLAR:'}->{'content'};
+    }
+    $info{'disks'} = $numDisks;
+
+    my %poolLUNs = ();
+    my %poolLUNsByPool = ();
+    foreach my $r_pool ( @{$r_clarCfg->{'CLAR:Logicals'}->{'CLAR:PoolProvisioning'}->{'CLAR:PoolProvisioningFeature'}->{'CLAR:Pools'}->{'CLAR:Pool'}} ) {
+        my @lunNames = ();
+        foreach my $r_mlu ( @{$r_pool->{'CLAR:MLUs'}->{'CLAR:MLU'}} ) {
+            $poolLUNs{$r_mlu->{'CLAR:Number'}->{'content'}} = $r_mlu->{'CLAR:Name'}->{'content'};
+            push @lunNames, {
+                'name' => $r_mlu->{'CLAR:Name'}->{'content'}
+            };
+        }
+        $poolLUNsByPool{$r_pool->{'CLAR:Name'}->{'content'}} = \@lunNames;
+    }
+
+    # Snapshots
+    my @snapshots = ();
+    if ( exists $r_clarCfg->{'CLAR:Logicals'}->{'CLAR:AdvancedSnapFeature'} ) {
+        foreach my $r_snap ( @{$r_clarCfg->{'CLAR:Logicals'}->{'CLAR:AdvancedSnapFeature'}->{'CLAR:Snaps'}->{'CLAR:Snap'}} ) {
+            my ($year,$month,$day,$hour,$min,$sec) = $r_snap->{'CLAR:WhenSynced'}->{'content'} =~
+                /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/;
+            my $last_synced = sprintf('%04d:%02d:%02d %02d:%02d:%02d',
+                                      $year,$month,$day,$hour,$min,$sec);
+            my %snaphot = (
+                'name' => $r_snap->{'CLAR:ElementName'}->{'content'},
+                'last_synced' => $last_synced,
+                'source_lun' => $poolLUNs{$r_snap->{'CLAR:SourceLU'}->{'CLAR:Number'}->{'content'}}
+                );
+            push @snapshots, \%snaphot;
+        }
+    }
+    $info{'snapshots'} = \@snapshots;
+
+
+    # RGs
+    my %disksByRg = ();
+    foreach my $r_rg ( @{$r_clarCfg->{'CLAR:Logicals'}->{'CLAR:RAIDGroups'}->{'CLAR:RAIDGroup'}} ) {
+        $disksByRg{$r_rg->{'CLAR:ID'}->{'content'}} = $#{$r_rg->{'CLAR:Disks'}->{'CLAR:Disk'}} + 1;
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parse: disksByRg", \%disksByRg); }
+
+    # Pools
+    my @pools = ();
+    foreach my $r_pool ( @{$r_clarCfg->{'CLAR:Logicals'}->{'CLAR:PoolProvisioning'}->{'CLAR:PoolProvisioningFeature'}->{'CLAR:Pools'}->{'CLAR:Pool'}} ) {
+        if ( $DEBUG > 7 ) { print Dumper("parse r_pool", $r_pool); }
+
+        my $numDisks = 0;
+        foreach my $r_rg ( @{$r_pool->{'CLAR:RAIDGroups'}->{'CLAR:RAIDGroup'}} ) {
+            $numDisks += $disksByRg{$r_rg->{'CLAR:ID'}->{'content'}};
+        }
+
+        my $sizeBlks = 0;
+        my $freeBlks = 0;
+
+        foreach my $r_tier ( @{$r_pool->{'CLAR:AutoTieringTierInfos'}->{'CLAR:AutoTieringTierInfo'}} ) {
+            $sizeBlks += $r_tier->{'CLAR:totalCapacity'}->{'content'};
+            $freeBlks += $r_tier->{'CLAR:freeCapacity'}->{'content'};
+        }
+        my %pool = (
+            'name' => $r_pool->{'CLAR:Name'}->{'content'},
+            'sizeGB' => $sizeBlks / (2048 * 1024), # Raw data is blks
+            'usedGB' => ($sizeBlks - $freeBlks) / (2048 * 1024), # Raw data is blks,
+            'subscribedGB' => $r_pool->{'CLAR:TotalSubscribedCapacity'}->{'content'} / (2048 * 1024), # Raw data is blks
+            'raid' => $RAID_TYPES{$r_pool->{'CLAR:RAIDType'}->{'content'}},
+            'disks' => $numDisks,
+            'luns' => $poolLUNsByPool{$r_pool->{'CLAR:Name'}->{'content'}}
+        );
+        push @pools, \%pool;
+    }
+    $info{'pools'} = \@pools;
+
+    if ( $DEBUG > 5 ) { print Dumper("parse: r_info", \%info); }
+
+    return \%info;
+}
+
+sub storeNas($$$$$$) {
+    my ($dbh, $sysId, $date, $r_nasServers, $r_filesystems, $r_pools) = @_;
+
+    if ( $#{$r_nasServers} == -1 ) {
+        return;
+    }
+
+    my @nasNames = ();
+    my %emcNasId = ();
+    foreach my $r_nasServer ( @{$r_nasServers} ) {
+        push @nasNames, $r_nasServer->{'name'};
+        $emcNasId{$r_nasServer->{'id'}} = $r_nasServer->{'name'}
+    }
+    my $r_nasIdMap = getIdMap($dbh,"emc_nas","id","name", \@nasNames, $sysId, "sysid");
+
+    dbDo($dbh, "DELETE FROM emc_nas_state WHERE sysid = $sysId AND filedate = '$date'");
+    foreach my $r_nasServer ( @{$r_nasServers} ) {
+        dbDo(
+            $dbh,
+            sprintf(
+                "INSERT INTO emc_nas_state (sysid,filedate,nasid,homesp,currsp) VALUES (%s,'%s',%d,'%s','%s')",
+                $sysId,
+                $date,
+                $r_nasIdMap->{$r_nasServer->{'name'}},
+                $r_nasServer->{'homesp'},
+                $r_nasServer->{'currsp'}
+            )
+        ) or die "Failed to insert into emc_nas_state";
+    }
+
+    my @fsNames = ();
+    foreach my $r_fs ( @{$r_filesystems} ) {
+        push @fsNames, $r_fs->{'name'};
+    }
+    my $r_fsIdMap = getIdMap($dbh,"emc_filesystem","id","name", \@fsNames, $sysId, "sysid");
+
+    my $r_poolIdMap = getIdMap($dbh,"emc_pool","id","name", [], $sysId, "sysid");
+    my %emcPoolId = ();
+    foreach my $r_pool ( @{$r_pools} ) {
+        $emcPoolId{$r_pool->{'id'}} = $r_pool->{'name'};
+    }
+
+
+    dbDo($dbh, "DELETE FROM emc_filesystem_state WHERE sysid = $sysId AND filedate = '$date'");
+    foreach my $r_fs ( @{$r_filesystems} ) {
+        dbDo(
+            $dbh,
+            sprintf(
+                "INSERT INTO emc_filesystem_state (sysid,filedate,fsid,poolid,nasid,sizeGB,usedGB,sizeAllocatedTotalGB,metadataSizeAllocatedGB,snapsSizeAllocatedGB,snapCount,dataReductionRatio) VALUES (%s,'%s',%d,%d,%d,%d,%d,%d,%d,%d,%d,%f)",
+                $sysId,
+                $date,
+                $r_fsIdMap->{$r_fs->{'name'}},
+                $r_poolIdMap->{$emcPoolId{$r_fs->{'pool'}}},
+                $r_nasIdMap->{$emcNasId{$r_fs->{'nas'}}},
+                $r_fs->{'size'} / (1024*1024*1024),
+                $r_fs->{'used'} / (1024*1024*1024),
+                $r_fs->{'sizeAllocatedTotal'} / (1024*1024*1024),
+                $r_fs->{'metadataSizeAllocated'} / (1024*1024*1024),
+                $r_fs->{'snapsSizeAllocated'} / (1024*1024*1024),
+                $r_fs->{'snapCount'},
+                $r_fs->{'dataReductionRatio'}
+            )
+        ) or die "Failed to insert into emc_filesystem_state";
+    }
+}
+
+sub store($$$) {
+    my ($r_info,$site,$date) = @_;
+
+    if ( $DEBUG > 5 ) { print Dumper("store: r_info", $r_info); }
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $r_snapshots = delete $r_info->{'snapshots'};
+    my $r_pools = delete $r_info->{'pools'};
+    my $r_rh = delete $r_info->{'resourceHealth'};
+    my $r_nasServers = delete $r_info->{'nasServers'};
+    my $r_filesystems = delete $r_info->{'filesystems'};
+
+    $r_info->{'date'} = $date;
+
+    my $serialNumber = delete $r_info->{'serial'};
+
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_sysToId = EMC::registerSysForSite($dbh, $siteId, $date, [ $serialNumber ]);
+
+    my $sysId = $r_sysToId->{$serialNumber};
+    if ( $DEBUG > 6 ) { print "store: serialNumber=$serialNumber sysId=$sysId\n"; }
+
+    $r_info->{'sysid'} = $sysId;
+
+    dbDo($dbh, "DELETE FROM emc_config WHERE sysid = $sysId AND date = '$date'");
+
+    my @columns = ();
+    my @values = ();
+    foreach my $colName ( sort keys %{$r_info} ) {
+        if ( $DEBUG > 7 ) { print "store: colName=$colName, value=" . $r_info->{$colName} . "\n"; }
+
+        push @columns, $colName;
+
+        if ( $r_info->{$colName} =~ /^\d+$/ ) {
+            push @values, $r_info->{$colName};
+        } else {
+            push @values, "'" . $r_info->{$colName} . "'";
+        }
+    }
+    dbDo($dbh, "INSERT INTO emc_config (" . join(",", @columns) . ") VALUES (" . join(",",@values) . ")");
+
+    if ( $#{$r_snapshots} > -1 ) {
+        dbDo($dbh, "DELETE FROM emc_snapshot WHERE sysid = $sysId AND date = '$date'")
+            or die "Failed to delete";
+        my @snapRows = ();
+        foreach my $r_snap ( @{$r_snapshots} ) {
+            push @snapRows, sprintf( "(%d,'%s','%s','%s','%s')",
+                                     $sysId, $date, $r_snap->{'name'}, $r_snap->{'source_lun'},
+                                     $r_snap->{'last_synced'});
+        }
+        dbDo($dbh, "INSERT INTO emc_snapshot (sysid,date,name,source_lun,lastsynced) VALUES " . join(",",@snapRows))
+            or die "Failed to insert";
+    }
+
+    if ( defined $r_pools ) {
+        dbDo($dbh, "DELETE FROM emc_pool_cfg WHERE sysid = $sysId AND filedate = '$date'")
+            or die "Failed to delete";
+        my @poolNames = ();
+        my @lunNames = ();
+        foreach my $r_pool ( @{$r_pools} ) {
+            push @poolNames, $r_pool->{'name'};
+            foreach my $r_lun ( @{$r_pool->{'luns'}} ) {
+                push @lunNames, $r_lun->{'name'};
+            }
+        }
+        my $r_poolIdMap = getIdMap($dbh,"emc_pool","id","name", \@poolNames, $sysId, "sysid");
+        my $r_lunIdMap = getIdMap($dbh,"emc_lun","id","name", \@lunNames, $sysId, "sysid");
+        foreach my $r_pool ( @{$r_pools} ) {
+            my $poolId = $r_poolIdMap->{$r_pool->{'name'}};
+            my @poolColNames = ( 'sysid' , 'poolid', 'filedate', 'sizeGB', 'usedGB', 'subscribedGB', 'numdisks', 'raid' );
+            my @poolColValues = (
+                $sysId,
+                $poolId,
+                $dbh->quote($date),
+                $r_pool->{'sizeGB'},
+                $r_pool->{'usedGB'},
+                $r_pool->{'subscribedGB'},
+                $r_pool->{'disks'},
+                $dbh->quote($r_pool->{'raid'})
+            );
+            if ( exists $r_pool->{'dataReductionRatio'} ) {
+                foreach my $colName ( 'dataReductionRatio', 'snapSizeUsedGB', 'metadataSizeUsedGB' ) {
+                    push @poolColNames, $colName;
+                    push @poolColValues, $r_pool->{$colName};
+                }
+            }
+            dbDo(
+                $dbh,
+                sprintf(
+                    "INSERT INTO emc_pool_cfg (%s) VALUES (%s)",
+                    join(",", @poolColNames),
+                    join(",", @poolColValues)
+                )
+            ) or die "Failed to insert pool";
+
+            dbDo($dbh, "DELETE FROM emc_pool_lun WHERE sysid = $sysId AND poolid = $poolId AND filedate = '$date'");
+            foreach my $r_lun ( @{$r_pool->{'luns'}} ) {
+                my @lunColNames = ('sysid', 'poolid', 'filedate', 'lunid');
+                my @lunColValues =(
+                    $sysId,
+                    $r_poolIdMap->{$r_pool->{'name'}},
+                    $dbh->quote($date),
+                    $r_lunIdMap->{$r_lun->{'name'}}
+                );
+                if ( exists $r_lun->{'dataReductionRatio'} ) {
+                    foreach my $colName ( 'sizeAllocatedGB', 'snapsSizeAllocatedGB', 'metadataSizeAllocatedGB', 'snapCount', 'dataReductionRatio' ) {
+                        push @lunColNames, $colName;
+                        push @lunColValues, $r_lun->{$colName};
+                    }
+                }
+                dbDo(
+                    $dbh,
+                    sprintf(
+                        "INSERT INTO emc_pool_lun (%s) VALUES (%s)",
+                        join(",", @lunColNames),
+                        join(",", @lunColValues)
+                    )
+                ) or die "Failed to insert LUN";
+            }
+        }
+    }
+
+    dbDo($dbh, "DELETE FROM emc_alerts WHERE sysid = $sysId AND date = '$date'")
+        or die "Failed to remove old data";
+    if ( defined $r_rh ) {
+        foreach my $msg ( @{$r_rh} ) {
+            dbDo($dbh, "INSERT INTO emc_alerts (sysid,date,msg) VALUES ($sysId,'$date','$msg')")
+                or die "Failed to insert row";
+        }
+    }
+
+    storeNas($dbh, $sysId, $date, $r_nasServers, $r_filesystems, $r_pools);
+
+    $dbh->disconnect;
+}
+
+sub main()
+{
+    my ($dataFile,$site,$date);
+    my $result = GetOptions(
+        "config=s" => \$dataFile,
+        "date=s" => \$date,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+
+    my $r_info = undef;
+    if ( $dataFile =~ /\.xml$/ ) {
+        $r_info = parse($dataFile);
+    } elsif ( $dataFile =~ /_info\.json$/ ) {
+        $r_info = parseUnity($dataFile);
+    } else {
+        die "Unknown config file type";
+    }
+
+    store($r_info,$site,$date);
+}
+
+main();

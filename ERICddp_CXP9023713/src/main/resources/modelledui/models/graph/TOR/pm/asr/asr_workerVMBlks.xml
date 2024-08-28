@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="sb"
+  timespan="day"
+  useragg="true"
+  forcelegend="true"
+  ylabel="Blks/s"
+>
+  <title value="Disk Blks/s"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="hires_disk_stat">
+        <reference table="sites" condition="hires_disk_stat.siteid = sites.id"/>
+        <reference table="servers" condition="hires_disk_stat.serverid = servers.id"/>
+        <reference table="raw_devices" condition="raw_devices.serverid = servers.id AND raw_devices.diskid = hires_disk_stat.diskid"/>
+        <reference table="enm_servicegroup_instances" condition="enm_servicegroup_instances.serverid = servers.id"/>
+        <reference table="enm_servicegroup_names" condition="enm_servicegroup_instances.serviceid = enm_servicegroup_names.id AND enm_servicegroup_names.name = 'sparkworkerdef'"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="blks" label="Blks/s"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

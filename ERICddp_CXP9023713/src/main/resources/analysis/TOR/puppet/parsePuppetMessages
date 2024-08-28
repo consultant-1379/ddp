@@ -1,0 +1,195 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## Script  : parsePuppetMessages
+## Author  : Rory Kelly(erorkel)
+## Purpose : Parses in puppet messages from the messages file on the MS
+## Usage   : ${ANALYSIS_BIN}/TOR/puppet/parsePuppetMessages --site ${SITE} --file ${DATADIR}/server/messages --date ${SQL_DATE}
+##====================================================================
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ($site,$file,$date);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "file=s" => \$file,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    my ($r_puppetFailures, $r_puppetExecTimes) = parsePuppetMsgFile($file);
+    storePuppetStats($r_puppetFailures, $r_puppetExecTimes, $site, $date);
+}
+
+# This sub-routine will place a given puppet event and its timestamp against its server in
+#  a hash of hashes. It will also take care of the cases where two or more puppet events for
+#  a given server are having the exact same timestamps (i.e., HH:MM:SS)
+sub insertPuppetEvent($$$$);
+
+sub insertPuppetEvent($$$$) {
+    my ($eventHash, $server, $hhmmss, $value) = @_;
+
+    if ( exists $eventHash->{$server}->{$hhmmss} && $eventHash->{$server}->{$hhmmss} ne $value ) {
+        if ( $hhmmss =~ /^(\d{2}:\d{2}:\d{2})\.(\d{3})$/ ) {
+            $hhmmss = $1 . '.' . sprintf ( "%03d", ($2 + 1) );
+        }
+        else {
+            $hhmmss .= '.001';
+        }
+        insertPuppetEvent($eventHash, $server, $hhmmss, $value);
+    }
+    elsif ( ! exists $eventHash->{$server}->{$hhmmss} ) {
+        $eventHash->{$server}->{$hhmmss} = $value;
+    }
+}
+
+sub parsePuppetMsgFile($) {
+    my ($file) = @_;
+
+    open INPUT, $file or die "Cannot open $file";
+
+    my %puppetFailures = ();
+    my %puppetExecTimes = ();
+
+    while ( my $line = <INPUT> ) {
+        # Check for messages originating from puppet
+        if ( $line =~ /\s+puppet[^:]*:/ ) {
+            if ( $line =~ /Compiled\s+catalog\s+for\s+([^\s\.]+).*sec/i ) {
+                # Sample Log Line: Sep  8 00:00:04 lbl5lms1 puppet-master[6598]: Compiled catalog for lbl5svc5 in environment production in 11.98 seconds
+                my $server = $1;
+
+                if ( $line !~ /(\d{2}:\d{2}:\d{2})/ ) { next; }
+                my $hhmmss = $1;
+
+                if ($DEBUG > 8) { print "parsePuppetMsgFile: Found puppet 'Compiled catalog for...' message in the log - $line\n"; }
+                insertPuppetEvent(\%puppetExecTimes, $server, $hhmmss, 'CATALOG_COMPILED');
+            }
+            elsif ( $line =~ /\(\/\/([^\/.]*).*\// ) {
+                # Start of lineMessage containing the server name looks like the following: (//tssenm010db01//rest of message
+                # Sometimes also in the form of (//tssenm010svc04.enm.local//rest of message
+                my $server = $1;
+
+                if ( $line !~ /(\d{2}:\d{2}:\d{2})/ ) { next; }
+                my $hhmmss = $1;
+
+                if ( $line =~ /Finished\s+catalog\s+run\s+.*sec/i ) {
+                    # Sample Log Line: Sep  8 00:00:15 lbl5lms1 puppet-master[7358]: (//lbl5scp3/Puppet) Finished catalog run in 33.26 seconds
+                    if ($DEBUG > 8) { print "parsePuppetMsgFile: Found puppet 'Finished catalog run...' message in the log - $line\n"; }
+                    insertPuppetEvent(\%puppetExecTimes, $server, $hhmmss, 'CATALOG_RUN_FINISHED');
+                }
+                elsif ( $line =~ /has failures:/ ) {
+                    # Sample Log Line: Sep  8 12:16:51 lbl5lms1 puppet-master[5553]: (//lbl5svc6//File[/opt/mcollective/mcollective/util]) Dependency File[/opt/mcollective] has failures: true
+                    if ($DEBUG > 8) { print "parsePuppetMsgFile: Found puppet failure message in the log - $line\n"; }
+                    $puppetFailures{$server}{failures}++;
+                }
+                elsif ( $line =~ /Skipping because of failed dependencies/ ) {
+                    # Sample Log Line: Sep  8 12:16:51 lbl5lms1 puppet-master[5553]: (//lbl5svc6//File[/opt/mcollective/mcollective/util]) Skipping because of failed dependencies
+                    if ($DEBUG > 8) { print "parsePuppetMsgFile: Found puppet failed dependency message in the log - $line\n"; }
+                    $puppetFailures{$server}{failedDependencies}++;
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("parsePuppetMsgFile: puppetFailures", \%puppetFailures);
+        print Dumper("parsePuppetMsgFile: puppetExecTimes", \%puppetExecTimes);
+    }
+    return (\%puppetFailures, \%puppetExecTimes);
+}
+
+sub storePuppetStats($$$$) {
+    my ($r_puppetFailures, $r_puppetExecTimes, $site, $date) = @_;
+
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId > -1 ) or die "Failed to get siteid for $site";
+    my $r_serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId);
+
+    my $bcpPuppetFailuresFileName = "$tmpDir/puppetFailures.bcp";
+    open BCPPUPPETFAILURES, ">$bcpPuppetFailuresFileName" or die "Cannot open $bcpPuppetFailuresFileName";
+
+    foreach my $hostname (keys %{$r_puppetFailures}) {
+        my $failures = $r_puppetFailures->{$hostname}->{'failures'};
+        my $failedDependencies = $r_puppetFailures->{$hostname}->{'failedDependencies'};
+        # Only store hosts which have failures
+        if ( $failures > 0 || $failedDependencies > 0) {
+            my $serverId = $r_serverIdMap->{$hostname};
+            print BCPPUPPETFAILURES "$siteId\t$date\t$serverId\t$failures\t$failedDependencies\n";
+        }
+    }
+    close BCPPUPPETFAILURES;
+
+    dbDo( $dbh, "DELETE FROM enm_puppet_failures WHERE siteid = $siteId AND date = '$date'" )
+        or die "Failed to delete from enm_puppet_failures".$dbh->errstr."\n";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpPuppetFailuresFileName' INTO TABLE enm_puppet_failures" )
+        or die "Failed to load new data from '$bcpPuppetFailuresFileName' file to enm_puppet_failures table".$dbh->errstr."\n";
+
+    my $bcpPuppetExecTimesFileName = "$tmpDir/enm_puppet_execution_times.bcp";
+    open BCPPUPPETEXECTIMES, ">$bcpPuppetExecTimesFileName" or die "Cannot open $bcpPuppetExecTimesFileName";
+
+    foreach my $hostname (keys %{$r_puppetExecTimes}) {
+        my $previousEvent = '';
+        my $previousTimestamp = '';
+
+        foreach my $currentTimestamp (sort keys %{$r_puppetExecTimes->{$hostname}}) {
+            my $currentEvent = $r_puppetExecTimes->{$hostname}->{$currentTimestamp};
+            $currentTimestamp =~ s/\.\d*$//;
+
+            if ( $currentEvent eq 'CATALOG_COMPILED' ) {
+                $previousEvent = $currentEvent;
+                $previousTimestamp = $currentTimestamp;
+            }
+            elsif ( $currentEvent eq 'CATALOG_RUN_FINISHED' ) {
+                # Ignore the 'Finished catalog run...' messages that are not preceeded by their
+                #  corresponding 'Compiled catalog for...' messages
+                if ( $previousEvent eq '' ) {
+                    if ( $DEBUG > 5 ) {
+                        print "storePuppetStats: Ignoring the 'CATALOG_RUN_FINISHED' event as it is not preceeded by " .
+                              "'CATALOG_COMPILED' event. Timestamp - $currentTimestamp, Puppet Event - $currentEvent\n";
+                    }
+                    next;
+                }
+
+                if ( $DEBUG > 8 ) {
+                    print 'storePuppetStats: SERVER@' . $hostname . ', CATALOG_COMPILED@' . $previousTimestamp .
+                          ', CATALOG_RUN_FINISHED@' . $currentTimestamp . "\n";
+                }
+                my $serverId = $r_serverIdMap->{$hostname};
+                print BCPPUPPETEXECTIMES "$siteId\t$date\t$serverId\t$previousTimestamp\t$currentTimestamp\n";
+
+                $previousEvent = '';
+                $previousTimestamp = '';
+            }
+        }
+    }
+    close BCPPUPPETEXECTIMES;
+
+    dbDo( $dbh, "DELETE FROM enm_puppet_execution_times WHERE siteid = $siteId AND date = '$date'" )
+        or die "Failed to delete from enm_puppet_execution_times".$dbh->errstr."\n";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpPuppetExecTimesFileName' INTO TABLE enm_puppet_execution_times" )
+        or die "Failed to load new data from '$bcpPuppetExecTimesFileName' file to enm_puppet_execution_times table".$dbh->errstr."\n";
+
+    $dbh->disconnect();
+
+    unlink $bcpPuppetFailuresFileName;
+    unlink $bcpPuppetExecTimesFileName;
+}
+
+main();

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_import_ntn">
+    <reference table="sites" condition="enm_cm_import_ntn.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_import_ntn.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time" formatter="ddpFormatTime"/>
+  <column id="jobid" db="jobid" label="Job Id"/>
+  <column db="numberOfPartitionsWithBscmChanges" label="# Partitions"/>
+  <column db="ntnMosCreated" label="# MO Created"/>
+  <column db="ntnMosModified" label="# MO Modified"/>
+  <column db="ntnMosDeleted" label="# MO Deleted"/>
+  <column db="numberOfNtnResultEvents" label="# Result Events"/>
+  <column db="ntnNumberOfPartialEvents" label="# Partial Events"/>
+  <column db="ntnNumberOfFailedEvents" label="# Failed Events"/>
+  <column db="totalEventWaitTime" label="Event Wait Time (SUM)"/>
+  <column db="averageEventWaitTime" label="Event Wait Time (AVG)"/>
+  <column db="maxEventWaitTime" label="Event Wait Time (MAX)"/>
+  <column db="numberOfComNoResources" label="# ComNoResources"/>
+
+</modelledtable>

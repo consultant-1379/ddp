@@ -1,0 +1,595 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($date,$totalsFile,$sessionsFile,$loadSessionsFile,$aggSessionsFile,$site);
+    my $result = GetOptions (
+        "parsetotals=s" => \$totalsFile,
+        "parsesessions=s" => \$sessionsFile,
+        "loadsessions=s" => \$loadSessionsFile,
+        "aggsessions=s" => \$aggSessionsFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_parseTotals = parseTotals($totalsFile);
+    my $r_parseSessions = parseSessions($sessionsFile);
+    my $r_grpdParseSession = groupSession($r_parseSessions,$date);
+
+    my $r_loadSessions = loadSessions($loadSessionsFile);
+    my $r_aggSessions = aggSessions($aggSessionsFile);
+
+    my $r_runningLoaders = calRunning($r_loadSessions, "min_start", "max_end");
+    my $r_runningAgg = calRunning($r_aggSessions,"start","end");
+
+    storeData($site,$r_parseTotals,$r_grpdParseSession,
+              $r_loadSessions, $r_runningLoaders,
+              $r_aggSessions,$r_runningAgg);
+}
+
+sub groupSession($$) {
+    my ($r_sessions,$date) = @_;
+    my @groupedSessions = ();
+    my @groupedSessionsRop = ();
+    my @groupedSessionsBatch = ();
+    my $midnight = parseTime( "$date:00:00:00", $StatsTime::TIME_YYYYMDHMS );
+    # We pull in the last hour of the previous day, so start curr time back at 10PM
+    my ($currTime, $currTimeRop, $currTimeBatch);
+    $currTime=$currTimeRop=$currTimeBatch = $midnight - 7200;
+    my $r_timeSlot;
+    my $r_timeSlotRop;
+    my $r_timeSlotBatch;
+    my $workflow_type;
+    foreach my $r_session ( @{$r_sessions} ) {
+        if ( $r_session->{'workflow_type'} eq 'FRH_ROP' ) {
+            my $sessStart = parseTime($r_session->{'min_start'}, $StatsTime::TIME_YYYYMDHMS);
+            my $sessEnd   = parseTime($r_session->{'max_end'},  $StatsTime::TIME_YYYYMDHMS);
+            while ( $sessStart >= ($currTimeRop + 900) ) {
+                $currTimeRop += 900;
+                if ( $DEBUG > 6 ) {
+                    print "groupedSessionsRop: moving currTimeRop to " . formatTime( $currTimeRop, $StatsTime::TIME_SQL ) . "\n";
+                }
+                $r_timeSlotRop = {
+                    'time' => $currTimeRop,
+                    'sources' => {},
+                };
+                push @groupedSessionsRop, $r_timeSlotRop;
+            }
+            my  $r_sourceStats = $r_timeSlotRop->{'sources'}->{$r_session->{'source'}};
+            if ( ! defined $r_sourceStats ) {
+                $r_sourceStats = {
+                    'total_cntrs' => 0,
+                    'min_start' => $currTimeRop + 900,
+                    'max_end' => $currTimeRop,
+                    'workflow_type' => undef,
+                };
+                $r_timeSlotRop->{'sources'}->{$r_session->{'source'}} = $r_sourceStats;
+            }
+
+            if ( $DEBUG > 8 ) {
+                print "groupedSessionsRop: sessStart=$sessStart sessEnd=$sessEnd, ss start=" .$r_sourceStats->{'min_start'} . " ss end=" . $r_sourceStats->{'max_end'} ."\n";
+            }
+            $r_sourceStats->{'workflow_type'} = $r_session->{'workflow_type'};
+            $r_sourceStats->{'total_cntrs'} += $r_session->{'total_cntrs'};
+            if ( $sessStart < $r_sourceStats->{'min_start'} ) {
+                $r_sourceStats->{'min_start'} = $sessStart;
+            }
+            if ( $sessEnd > $r_sourceStats->{'max_end'} ) {
+                $r_sourceStats->{'max_end'} = $sessEnd;
+            }
+        } elsif ( $r_session->{'workflow_type'} eq 'FRH_BATCH' ) {
+            my $sessStart = parseTime($r_session->{'min_start'}, $StatsTime::TIME_YYYYMDHMS);
+            my $sessEnd   = parseTime($r_session->{'max_end'},  $StatsTime::TIME_YYYYMDHMS);
+            while ( $sessStart >= ($currTimeBatch + 900) ) {
+                $currTimeBatch += 900;
+                if ( $DEBUG > 6 ) {
+                    print "groupedSessionsBatch: moving currTimeBatch to " . formatTime( $currTimeBatch, $StatsTime::TIME_SQL ) . "\n";
+                }
+                $r_timeSlotBatch = {
+                    'time' => $currTimeBatch,
+                    'sources' => {},
+                };
+                push @groupedSessionsBatch, $r_timeSlotBatch;
+            }
+            my $r_sourceStats = $r_timeSlotBatch->{'sources'}->{$r_session->{'source'}};
+            if ( ! defined $r_sourceStats ) {
+                $r_sourceStats = {
+                    'total_cntrs' => 0,
+                    'min_start' => $currTimeBatch + 900,
+                    'max_end' => $currTimeBatch,
+                    'workflow_type' => undef,
+                };
+                $r_timeSlotBatch->{'sources'}->{$r_session->{'source'}} = $r_sourceStats;
+            }
+            if ( $DEBUG > 8 ) {
+                print "groupedSessionsBatch: sessStart=$sessStart sessEnd=$sessEnd, ss start=" .$r_sourceStats->{'min_start'} . " ss end=" . $r_sourceStats->{'max_end'} ."\n";
+            }
+            $r_sourceStats->{'workflow_type'} = $r_session->{'workflow_type'};
+            $r_sourceStats->{'total_cntrs'} += $r_session->{'total_cntrs'};
+            if ( $sessStart < $r_sourceStats->{'min_start'} ) {
+                $r_sourceStats->{'min_start'} = $sessStart;
+            }
+            if ( $sessEnd > $r_sourceStats->{'max_end'} ) {
+                $r_sourceStats->{'max_end'} = $sessEnd;
+            }
+        } else {
+            my $sessStart = parseTime($r_session->{'min_start'}, $StatsTime::TIME_YYYYMDHMS);
+            my $sessEnd   = parseTime($r_session->{'max_end'},  $StatsTime::TIME_YYYYMDHMS);
+            while ( $sessStart >= ($currTime + 900) ) {
+                $currTime += 900;
+                if ( $DEBUG > 6 ) {
+                    print "groupSession: moving currTime to " . formatTime( $currTime, $StatsTime::TIME_SQL ) . "\n";
+                }
+                $r_timeSlot = {
+                    'time' => $currTime,
+                    'sources' => {}
+                };
+                push @groupedSessions, $r_timeSlot;
+            }
+
+            my $r_sourceStats = $r_timeSlot->{'sources'}->{$r_session->{'source'}};
+            if ( ! defined $r_sourceStats ) {
+                $r_sourceStats = {
+                    'total_cntrs' => 0,
+                    'min_start' => $currTime + 900,
+                    'max_end' => $currTime,
+                    'workflow_type' => undef,
+                };
+                $r_timeSlot->{'sources'}->{$r_session->{'source'}} = $r_sourceStats;
+            }
+
+            if ( $DEBUG > 8 ) {
+                print "groupSession: sessStart=$sessStart sessEnd=$sessEnd, ss start=" .$r_sourceStats->{'min_start'} . " ss end=" . $r_sourceStats->{'max_end'} ."\n";
+            }
+            $r_sourceStats->{'workflow_type'} = $r_session->{'workflow_type'};
+            $r_sourceStats->{'total_cntrs'} += $r_session->{'total_cntrs'};
+            if ( $sessStart < $r_sourceStats->{'min_start'} ) {
+                $r_sourceStats->{'min_start'} = $sessStart;
+            }
+            if ( $sessEnd > $r_sourceStats->{'max_end'} ) {
+                $r_sourceStats->{'max_end'} = $sessEnd;
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) {
+        print Dumper("groupSession groupedSessions", \@groupedSessions);
+        print Dumper("groupSession groupedSessions", \@groupedSessionsBatch);
+        print Dumper("groupSession groupedSessions", \@groupedSessionsRop);
+    }
+
+    my @results = ();
+    foreach $r_timeSlot ( @groupedSessionsBatch, @groupedSessionsRop, @groupedSessions ) {
+        my $time = formatTime( $r_timeSlot->{'time'}, $StatsTime::TIME_SQL );
+        foreach my $source ( keys %{$r_timeSlot->{'sources'}} ) {
+            my $r_sourceStats = $r_timeSlot->{'sources'}->{$source};
+            push @results, {
+                'timeslot' => $time,
+                'source' => $source,
+                'total_cntrs' => $r_sourceStats->{'total_cntrs'},
+                'min_start' => formatTime( $r_sourceStats->{'min_start'}, $StatsTime::TIME_SQL ),
+                'max_end'   => formatTime( $r_sourceStats->{'max_end'}, $StatsTime::TIME_SQL ),
+                'workflow_type' => $r_sourceStats->{'workflow_type'}
+            };
+        }
+    }
+    if ( $DEBUG > 3 ) {
+        print Dumper("groupSession results", \@results);
+    }
+    return \@results;
+}
+
+sub calRunning($$$) {
+    my ($r_loadSessions,$start,$end) = @_;
+
+    my %numRunning = ();
+    my @running = ();
+
+    foreach my $r_loadSession ( @{$r_loadSessions} ) {
+        my $sessStart = parseTime($r_loadSession->{$start}, $StatsTime::TIME_YYYYMDHMS);
+        while ( $#running > -1 && $running[0] <= $sessStart ) {
+            my $sessEnd = shift @running;
+            $numRunning{$sessEnd} = $#running + 1;
+        }
+
+        push @running, parseTime($r_loadSession->{$end}, $StatsTime::TIME_YYYYMDHMS);
+        $numRunning{$sessStart} = $#running + 1;
+        @running = sort {$a <=> $b} @running;
+    }
+
+    foreach my $endTime ( @running ) {
+        my $sessEnd = shift @running;
+        $numRunning{$sessEnd} = $#running + 1;
+    }
+
+    my @result = ();
+    foreach my $time ( sort {$a <=> $b} keys %numRunning ) {
+        my $value = $numRunning{$time};
+        my $timeStr = formatTime( $time, $StatsTime::TIME_SQL );
+        # Discard points where the values are same (i.e. when one loader stopped and another started)
+        if ( $#result > -1 && $value == $result[$#result]->{'val'} ) {
+            $result[$#result]->{'time'} = $timeStr;
+        } else {
+            my $r_timeVal = {
+                'time' => formatTime( $time, $StatsTime::TIME_SQL ),
+                'val'  => $numRunning{$time}
+            };
+            push @result, $r_timeVal;
+        }
+    }
+    if ( $DEBUG > 3 ) {
+        print Dumper("calRunning: result", \@result);
+    }
+
+    return \@result;
+}
+
+sub storeData($$$$$$$) {
+    my ($site,$r_parserDailyTotals,$r_parseSessions,$r_loadSessions,$r_runningLoaders,
+        $r_aggSessions,$r_runningAgg) = @_;
+
+    my %sources = ();
+    my %types = ();
+    my %workflow_types = ();
+    foreach my $r_parserDailyTotal ( @{$r_parserDailyTotals} ) {
+        foreach my $r_record ( @{$r_parserDailyTotal->{'totals'}} ) {
+            $sources{$r_record->{'source'}}++;
+            $types{$r_record->{'type_name'}}++;
+            $workflow_types{$r_record->{'workflow_type'}}++;
+        }
+    }
+    foreach my $r_sessions ( $r_loadSessions, $r_aggSessions ) {
+        foreach my $r_record ( @{$r_sessions} ) {
+            $types{$r_record->{'type_name'}}++;
+        }
+    }
+
+    if ( $DEBUG > 0 ) {
+        setStatsDB_Debug($DEBUG);
+    }
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ( $siteId > -1 ) or die "ERROR: Cannot find siteid for $site";
+    my @sourceList = keys %sources;
+    my $r_sourceMap = getIdMap($dbh,"eniq_stats_source", "id", "name", \@sourceList );
+    my @typeList = keys %types;
+    my $r_typeMap = getIdMap($dbh,"eniq_stats_types", "id", "name", \@typeList );
+    my @r_workflowTypeList = keys %workflow_types;
+    chomp(@r_workflowTypeList);
+    my $r_workflowMap = getIdMap($dbh,"eniq_stats_workflow_types", "workflow_type_id", "workflow_type", \@r_workflowTypeList );
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    # eniq_stats_adaptor_totals
+    foreach my $r_parserDailyTotal ( @{$r_parserDailyTotals} ) {
+        my $date = $r_parserDailyTotal->{'date'};
+        my $r_parseTotals = $r_parserDailyTotal->{'totals'};
+        my $fileName = $tmpDir . "/stats_adaptor_parseTotals.$date.bcp";
+        open BCP, ">$fileName" or die "Cannot open $fileName";
+        foreach my $r_record ( @{$r_parseTotals} ) {
+             printf BCP "%d\t%s\t%d\t%d\t%s\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t%d\n",
+                $siteId, $date,
+                $r_sourceMap->{$r_record->{'source'}}, $r_typeMap->{$r_record->{'type_name'}},
+                $r_record->{'avg_rows'}, $r_record->{'max_rows'}, $r_record->{'total_rows'},
+                $r_record->{'avg_cntrs'}, $r_record->{'max_cntrs'}, $r_record->{'total_cntrs'},
+                $r_record->{'rop_start_time'},$r_workflowMap->{$r_record->{'workflow_type'}},
+                $r_record->{'trigger_count'}
+            }
+        ;
+        close BCP;
+        dbDo($dbh,"DELETE FROM eniq_stats_adaptor_totals WHERE siteid = $siteId AND day = '$date'")
+            or die "Failed to remove old session data";
+        dbDo($dbh,"LOAD DATA LOCAL INFILE '$fileName' INTO TABLE eniq_stats_adaptor_totals")
+            or die "Failed to load into totals table";
+    }
+
+    # eniq_stats_adaptor_sessions
+    if ($#{$r_parseSessions} > -1) {
+        my $fileName = $tmpDir . "/stats_adaptor_parseSessions.bcp";
+        open BCP, ">$fileName" or die "Cannot open $fileName";
+        foreach my $r_parseSession ( @{$r_parseSessions} ) {
+            printf BCP "%d\t%d\t%s\t%s\t%s\t%d\t%d\n",
+                $siteId,
+                $r_sourceMap->{$r_parseSession->{'source'}},
+                $r_parseSession->{'timeslot'}, $r_parseSession->{'min_start'}, $r_parseSession->{'max_end'},
+                $r_parseSession->{'total_cntrs'},$r_workflowMap->{$r_parseSession->{'workflow_type'}}
+
+            }
+        ;
+        close BCP;
+        dbDo($dbh,"DELETE FROM eniq_stats_adaptor_sessions WHERE siteid = $siteId AND timeslot BETWEEN '$r_parseSessions->[0]->{'timeslot'}' AND '$r_parseSessions->[$#{$r_parseSessions}]->{'timeslot'}'")
+            or die "Failed to remove old session data";
+        dbDo($dbh,"LOAD DATA LOCAL INFILE '$fileName' INTO TABLE eniq_stats_adaptor_sessions")
+            or die "Failed to load into totals table";
+    }
+    # session tables
+    my @sessTables = (
+        {
+            'data'  => $r_loadSessions,
+            'table' => 'eniq_stats_loader_sessions',
+            'fmt'   => "%d\t%d\t%s\t%s\t%d",
+            'map'   => $r_typeMap,
+            'mapkey'=> 'type_name',
+            'cols'  => [ 'min_start', 'max_end', 'total_rows' ],
+            'time'  => [ 'min_start', 'minstart' ]
+        },
+        {
+            'data'  => $r_aggSessions,
+            'table' => 'eniq_stats_aggregator_sessions',
+            'fmt'   => "%d\t%d\t%s\t%s\t%s\t%d",
+            'map'   => $r_typeMap,
+            'mapkey'=> 'type_name',
+            'cols'  => [ 'time_level', 'start', 'end', 'row_count' ],
+            'time'  => [ 'start', 'start' ]
+        }
+    );
+    foreach my $r_sessTable ( @sessTables ) {
+        if ( $DEBUG > 7 ) {
+            print Dumper("storeData: r_sessTable", $r_sessTable);
+        }
+        if( ($r_sessTable->{'table'} eq "eniq_stats_loader_sessions" && $#{$r_loadSessions} > -1) || ($r_sessTable->{'table'} eq "eniq_stats_aggregator_sessions" && $#{$r_aggSessions} > -1)) {
+            my $table = $r_sessTable->{'table'};
+            my $r_data = $r_sessTable->{'data'};
+            my $r_map = $r_sessTable->{'map'};
+            my $mapKeyName = $r_sessTable->{'mapkey'};
+            my $fileName = $tmpDir . "/" . $table . ".bcp";
+            open BCP, ">$fileName" or die "Cannot open $fileName";
+            foreach my $r_record ( @{$r_data} ) {
+                my @fields = ( $siteId, $r_map->{$r_record->{$mapKeyName}} );
+                foreach my $col ( @{$r_sessTable->{'cols'}} ) {
+                    push @fields, $r_record->{$col};
+                }
+                if ( $DEBUG > 8 ) {
+                    print "storeData: fields = " . join(",", @fields) . "\n";
+                }
+                printf BCP $r_sessTable->{'fmt'} . "\n", @fields;
+            }
+            close BCP;
+
+            my $minTime = $r_data->[0]->{$r_sessTable->{'time'}->[0]};
+            my $maxTime = $r_data->[$#{$r_data}]->{$r_sessTable->{'time'}->[0]};
+            if ( (! defined $minTime) || (! defined $maxTime) ) {
+                die "Invalid values detected for times in $table";
+            }
+            dbDo($dbh,sprintf("DELETE FROM $table WHERE siteid = $siteId AND %s BETWEEN '%s' AND '%s'",
+                              $r_sessTable->{'time'}->[1],
+                              $minTime, $maxTime))
+                or die "Failed to remove old session data from $table";
+
+            dbDo($dbh,"LOAD DATA LOCAL INFILE '$fileName' INTO TABLE $table")
+                or die "Failed to load into $table table";
+        }
+    }
+
+    # running tables
+    my @runningsTables = (
+        {
+            'table' => 'eniq_stats_loader_running',
+            'data'  => $r_runningLoaders
+        },
+        {
+            'table' => 'eniq_stats_aggregator_running',
+            'data'  => $r_runningAgg
+        },
+    );
+    foreach my $r_runningTable ( @runningsTables ) {
+        if(($r_runningTable->{'table'} eq "eniq_stats_loader_running" && $#{$r_runningLoaders} > -1) || ($r_runningTable->{'table'} eq "eniq_stats_aggregator_running" &&  $#{$r_runningAgg} > -1)) {
+            my $table = $r_runningTable->{'table'};
+            my $r_data = $r_runningTable->{'data'};
+            my $fileName = $tmpDir . "/" . $table . ".bcp";
+            open BCP, ">$fileName" or die "Cannot open $fileName";
+            foreach my $r_record ( @{$r_data} ) {
+                printf BCP "%d\t%s\t%d\n",
+                    $siteId, $r_record->{'time'}, $r_record->{'val'};
+            }
+            close BCP;
+
+            my $minTime = $r_data->[0]->{'time'};
+            my $maxTime = $r_data->[$#{$r_data}]->{'time'};
+            dbDo($dbh,sprintf("DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '%s' AND '%s'",
+                              $minTime, $maxTime))
+                or die "Failed to remove old  data from $table";
+
+            dbDo($dbh,"LOAD DATA LOCAL INFILE '$fileName' INTO TABLE $table")
+                or die "Failed to load into $table table";
+        }
+    }
+    $dbh->disconnect();
+}
+
+sub parseTotals($) {
+    my ($logFile) = @_;
+    my @dailyTotals = ();
+
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "parseTotals: line=$line";
+        }
+        my @fields = split(/;/,$line);
+        if ( $#fields == 3 ) {
+            my $r_parserDailyTotal = {
+                'date' => $fields[2],
+                'totals' => []
+            };
+            push @dailyTotals, $r_parserDailyTotal;
+        } elsif ( $#fields >= 9  ) {
+            my $workflowType = $fields[11];
+            if ( $fields[11] =~ /^\s*$/ ) {
+                $workflowType = undef;
+            }
+
+            my $trigger_count;
+            if ($fields[10] >= 0 && $fields[10] <= 96) {
+                $trigger_count = 1
+            } elsif ( $fields[10] >= 97 && $fields[10] <= 288  ) {
+                  $trigger_count = 3
+            } elsif ( $fields[10] >= 289 && $fields[10] <= 1440  ) {
+                  $trigger_count = 15
+            }
+            my $r_record = {
+                'source'         => $fields[1],
+                'type_name'      => $fields[2],
+                'count'          => $fields[3],
+                'avg_rows'       => $fields[4],
+                'max_rows'       => $fields[5],
+                'total_rows'     => $fields[6],
+                'avg_cntrs'      => $fields[7],
+                'max_cntrs'      => $fields[8],
+                'total_cntrs'    => $fields[9],
+                'rop_start_time' => $fields[10],
+                'workflow_type'  => $workflowType,
+                'trigger_count'  => $trigger_count
+            };
+            if ( $DEBUG > 8 ) {
+                print Dumper("parseTotals: r_record", $r_record );
+            }
+            push @{$dailyTotals[$#dailyTotals]->{'totals'}}, $r_record;
+        } else {
+            if ( $DEBUG > 0 ) {
+                print "WARN: parseTotals didn't match #fields=$#fields line $line";
+            }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 7 ) {
+        print Dumper("parseTotals: dailyTotals", \@dailyTotals );
+    }
+    return \@dailyTotals;
+}
+
+sub parseSessions($) {
+    my ($logFile) = @_;
+    my @records = ();
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "parseSessions: line=$line";
+        }
+        chop $line;
+        my @fields = split(/;/, $line);
+        if ( $#fields >= 5  ) {
+            my $workflowType = $fields[6];
+            if ( $fields[6] =~ /^\s*$/ ) {
+                $workflowType = undef;
+            }
+            my $r_record = {
+                'source'    => $fields[2],
+                'min_start' => $fields[3],
+                'max_end'   => $fields[4],
+                'total_cntrs' => $fields[5],
+                'workflow_type' => $workflowType
+            };
+            if ( $DEBUG > 8 ) {
+                print Dumper("parseSessions: r_record", $r_record );
+            }
+            push @records, $r_record;
+        } else {
+            if ( $DEBUG > 0 ) {
+                print "WARN: parseSessions didn't match #fields=$#fields line $line";
+            }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 7 ) {
+        print Dumper("parseSessions: records", \@records );
+    }
+    return \@records;
+}
+
+sub loadSessions($) {
+    my ($logFile) = @_;
+
+    my @records = ();
+
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "loadSessions: line=$line";
+        }
+        chop $line;
+        my @fields = split(/;/,$line);
+        #;1045405;1250016;2013-01-30:08:18:41;2013-01-30:08:19:22;DC_E_ERBS_EUTRANCELLRELATION;
+        if ( $#fields >= 5  ) {
+            my $r_record = {
+                'total_rows'=> $fields[2],
+                'min_start' => $fields[3],
+                'max_end'   => $fields[4],
+                'type_name' => $fields[5]
+            };
+            if ( $DEBUG > 8 ) {
+                print Dumper("loadSessions: r_record", $r_record );
+            }
+            push @records, $r_record;
+        } else {
+            if ( $DEBUG > 0 ) {
+                print "WARN: loadSessions didn't match #fields=$#fields line $line\n";
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 7 ) {
+        print Dumper("loadSessions: records", \@records );
+    }
+    return \@records;
+}
+
+sub aggSessions($) {
+    my ($logFile) = @_;
+
+    my @records = ();
+
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "loadSessions: line=$line";
+        }
+        chop $line;
+        my @fields = split(/;/,$line);
+        #;2013-01-31:02:02:18;2013-01-31:02:02:46;DC_E_CPP_GIGABITETHERNET_COUNT;COUNT;416188;OK;1;
+        if ( $#fields >= 7  ) {
+            my $r_record = {
+                'start'      => $fields[1],
+                'end'        => $fields[2],
+                'type_name'  => $fields[3],
+                'time_level' => $fields[4],
+                'row_count'  => $fields[5],
+                'status'     => $fields[6],
+                'flag'       => $fields[7]
+            };
+            $r_record->{'type_name'} =~ s/_$r_record->{'time_level'}//;
+
+            if ( $DEBUG > 8 ) {
+                print Dumper("aggSessions: r_record", $r_record );
+            }
+            push @records, $r_record;
+        } else {
+            if ( $DEBUG > 0 ) {
+                print "WARN: aggSessions didn't match #fields=$#fields line $line\n";
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 7 ) {
+        print Dumper("aggSessions: records", \@records );
+    }
+    return \@records;
+}
+
+main;

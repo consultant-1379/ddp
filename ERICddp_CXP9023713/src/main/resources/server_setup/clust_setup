@@ -1,0 +1,445 @@
+#!/bin/bash
+
+SERVER_SETUP_DIR=`dirname $0`
+SERVER_SETUP_DIR=`cd ${SERVER_SETUP_DIR} ; pwd`
+. ${SERVER_SETUP_DIR}/setup_common.sh
+
+# echo "<svc:/application/ddpd:ddpd>,</var/svc/manifest/application/ddpd.xml>" > /tmp/ddpd_svcs
+
+# /usr/cluster/bin/clresourcetype register SUNW.Proxy_SMF_failover
+
+# /usr/cluster/bin/clresource create -g processing -t Proxy_SMF_failover \
+#     -p resource_dependencies=ddp_mysql,ddp_data \
+#     -x Proxied_service_instances=/tmp/ddpd_svcs \
+#     ddp_ddpd
+
+# /usr/cluster/bin/clresource create -g processing -t SUNW.gds \
+#     -x Network_aware=false \
+#     -p Scalable=false \
+#     -p Start_timeout=120 \
+#     -p Start_command="/ddpd_sol_start" \
+#     -p Stop_timeout=1800  \
+#     -p Stop_command="/ddpd_sol_stop" \
+#     -p Child_mon_level=0 \
+#     -p Failover_enabled=TRUE -p Stop_signal=9 ddpd_sol
+
+#     -p Port_list="2222/tcp" \
+#     -p Network_resources_used="" \
+
+
+setupRBAC()
+{
+    for USER in statsadm ddpadm ; do
+	usermod -A solaris.cluster.admin ${USER}
+    done
+}
+
+setupSSH()
+{
+    THIS_HOST=`hostname`
+    if [ "${THIS_HOST}" = "${NODE_A}" ] ; then
+	OTHER_HOST=${NODE_B}
+    else
+	OTHER_HOST=${NODE_A}
+    fi
+    echo ${OTHER_HOST} > /etc/ssh/shosts.equiv
+
+    if [ ! -d /.ssh ] ; then
+	mkdir /.ssh 
+    fi
+
+    if [ -r /etc/ssh/ssh_known_hosts ] ; then
+	rm -f /etc/ssh/ssh_known_hosts
+    fi
+
+    #
+    # Put root key onto remote host
+    #
+    KEY_FILE=/.ssh/id_rsa
+    KNOWN_HOSTS=/.ssh/known_hosts
+    if [ ! -r ${KEY_FILE}.pub ] ; then
+	ssh-keygen -q -t rsa -f ${KEY_FILE} -N ""
+    fi
+    MY_PUB_KEY=`cat ${KEY_FILE}.pub`
+    ssh root@${OTHER_HOST} "if [ ! -d /.ssh ] ; then mkdir /.ssh ; fi ; /bin/echo \"${MY_PUB_KEY}\" >> /.ssh/authorized_keys"
+    if [ $? -ne 0 ] ; then
+	echo "ERROR: Failed to setup key on ${OTHER_HOST}"
+	exit 1
+    fi
+
+    #
+    # Setup trusted host for non-root accounts
+    #
+    ssh root@${OTHER_HOST} cat /etc/ssh/ssh_host_rsa_key.pub > /tmp/key.${OTHER_HOST}
+    cat /tmp/key.${OTHER_HOST} | sed "s/^/${OTHER_HOST} /" > /etc/ssh/ssh_known_hosts
+    cat /tmp/key.${OTHER_HOST} | sed "s/^/prochost /" >> /etc/ssh/ssh_known_hosts
+    rm /tmp/key.${OTHER_HOST}
+
+    rm /.ssh/known_hosts
+
+    if [ ! -r /etc/ssh/sshd_config.org ] ; then
+	cp /etc/ssh/sshd_config /etc/ssh/sshd_config.org
+    fi
+    cat /etc/ssh/sshd_config.org | egrep -v 'IgnoreRhosts|HostbasedAuthentication' > /etc/ssh/sshd_config
+    cat >> /etc/ssh/sshd_config <<EOF
+IgnoreRhosts no
+HostbasedAuthentication yes
+EOF
+
+    if [ ! -r /etc/ssh/ssh_config.org ] ; then
+	cp /etc/ssh/ssh_config /etc/ssh/ssh_config.org
+    fi
+    cat /etc/ssh/ssh_config.org | egrep -v 'HostbasedAuthentication' > /etc/ssh/ssh_config
+    cat >> /etc/ssh/ssh_config <<EOF
+HostbasedAuthentication yes
+EOF
+
+
+    svcadm restart ssh
+}
+
+
+installClustSw() {
+    mount3pp
+
+    echo "Installing Cluster Software"
+    mkdir /tmp/sc
+    cd /tmp/sc
+    unzip -q /tmp/mnt/3pp/suncluster_3_2u2-ga-solaris-x86.zip
+    cd /tmp/sc/Solaris_x86
+    ./installer -noconsole -nodisplay -state /tmp/mnt/3pp/clust.state
+    if [ $? -ne 0 ] ; then
+	echo "ERROR: Install failed"
+	exit 1
+    fi
+}
+
+installDDPclpkg() {
+    mount3pp
+
+    echo "Installing DDP cluster Packages"    
+    createAdminFile
+    for PKG in ddpdcl ftpcl rfscl ; do
+	PKG_FILE=/tmp/mnt/3pp/ERIC${PKG}.pkg
+	pkgadd -n -a /tmp/admin -d ${PKG_FILE} all
+	if [ $? -ne 0 ] ; then
+	    echo "ERROR: Failed to install ${PKG}"
+	    exit 1
+	fi
+    done
+}
+
+
+shareFS() {
+    echo " Sharing Filesystem"
+
+    FS_LIST="data data/oss_stats data/ftproot data/ddp data/archive"
+    for FS in ${FS_LIST} ; do
+	zfs sharenfs="rw=${NODE_A}:${NODE_B},root=${NODE_A}:${NODE_B}" ${FS}
+	if [ $? -ne 0 ] ; then
+	    echo "ERROR: Failed to share ${FS} filesystem"
+	    exit 1
+	fi
+    done
+}
+
+makeClustPkg()
+{
+    rm -rf /tmp/hold
+    mkdir /tmp/hold
+    /usr/cluster/bin/scdscreate -a -g -V ERIC -T ddpdcl -d /tmp/hold
+    cat > /tmp/hold/ERICddpdcl/util/ddpd <<EOF
+#!/bin/sh
+
+while [ ! -r /data/ddp/current/server_setup/ddpd_sol ] ; do
+        sleep 1
+done
+
+exec /data/ddp/current/server_setup/ddpd_sol \$1
+EOF
+    chmod 755 /tmp/hold/ERICddpdcl/util/ddpd
+    echo "f none ERICddpdcl/util/ddpd 0555 root bin" >> /tmp/hold/ERICddpdcl/etc/prototype
+    
+    cat > /tmp/hold/ERICddpdcl/util/ddpdcl_config <<EOF
+RS_NAME=ddpd
+RG_NAME=processing
+MAXIMUM_PRIMARIES=1
+DESIRED_PRIMARIES=1
+EOF
+
+    /usr/cluster/bin/scdsconfig -s "/opt/ERICddpdcl/util/ddpd start" \
+	-t "/opt/ERICddpdcl/util/ddpd stop" -v 1800 \
+	-d /tmp/hold
+    pkgtrans /tmp/hold/ERICddpdcl/pkg /tmp/ERICddpdcl.pkg all
+    
+    #
+    # rfscl
+    #   
+    rm -rf /tmp/hold
+    mkdir /tmp/hold
+    /usr/cluster/bin/scdscreate -a -g -V ERIC -T rfscl -d /tmp/hold
+    PKG="ERICrfscl"
+    cp ${SERVER_SETUP_DIR}/remotefs /tmp/hold/${PKG}/util/remotefs
+    chmod 755 /tmp/hold/${PKG}/util/remotefs
+    echo "f none ${PKG}/util/remotefs 0555 root bin" >> /tmp/hold/${PKG}/etc/prototype
+
+    cat > /tmp/hold/${PKG}/util/rfscl_config <<EOF
+RS_NAME=remotefs
+RG_NAME=presentation
+MAXIMUM_PRIMARIES=1
+DESIRED_PRIMARIES=1
+EOF
+
+    /usr/cluster/bin/scdsconfig -s "/opt/${PKG}/util/remotefs start" \
+	-t "/opt/${PKG}/util/remotefs stop" \
+	-d /tmp/hold
+    pkgtrans /tmp/hold/${PKG}/pkg /tmp/${PKG}.pkg all
+
+    #
+    # proftpd
+    #
+    rm -rf /tmp/hold
+    mkdir /tmp/hold
+    /usr/cluster/bin/scdscreate -a -g -V ERIC -T ftpcl -d /tmp/hold
+    PKG="ERICftpcl"
+    cat > /tmp/hold/${PKG}/util/proftpd <<EOF
+#!/bin/bash
+
+if [ "\$1" = "start" ] ; then
+   /opt/proftpd/sbin/proftpd
+elif [ "\$1" = "stop" ] ; then
+   pkill proftpd
+fi
+EOF
+    chmod 755 /tmp/hold/${PKG}/util/proftpd
+    echo "f none ${PKG}/util/proftpd 0555 root bin" >> /tmp/hold/${PKG}/etc/prototype
+
+    cat > /tmp/hold/${PKG}/util/ftpcl_config <<EOF
+RS_NAME=proftpd
+RG_NAME=presentation
+MAXIMUM_PRIMARIES=1
+DESIRED_PRIMARIES=1
+EOF
+
+    /usr/cluster/bin/scdsconfig -s "/opt/${PKG}/util/proftpd start" \
+	-t "/opt/${PKG}/util/proftpd stop" \
+	-d /tmp/hold
+    pkgtrans /tmp/hold/${PKG}/pkg /tmp/${PKG}.pkg all
+
+}
+
+createPresRG()
+{
+    echo "Create resource group"
+    /usr/cluster/bin/clresourcegroup create \
+        -p RG_dependencies=processing \
+	-p RG_affinities=-processing \
+	presentation 
+    if [ $? -ne 0 ] ; then
+	echo "ERROR: Failed to create resource group presentation"
+	exit 1
+    fi
+       
+    /usr/cluster/bin/clreslogicalhostname create -g presentation -h preshost pres_lh
+
+    /opt/ERICrfscl/util/startrfscl
+
+    /opt/ERICftpcl/util/startftpcl
+    /usr/cluster/bin/clresource set -g presentation -p resource_dependencies=remotefs,pres_lh proftpd
+
+    /usr/cluster/bin/clresourcetype list | grep SUNW.apache > /dev/null
+    if [ $? -ne 0 ] ; then
+	/usr/cluster/bin/clresourcetype register SUNW.apache
+    fi
+
+    RM_DIR=0
+    if [ ! -d /mnt/data/stats ] ; then
+	mkdir -p /mnt/data/stats
+	RM_DIR=1
+    fi
+    /usr/cluster/bin/clresource create -g presentation \
+	-t SUNW.apache \
+	-p Bin_dir=/opt/webstack/apache2/2.2/bin \
+	-p Network_resources_used=pres_lh \
+	-p resource_dependencies=remotefs \
+	httpd
+    if [ ${RM_DIR} -eq 1 ] ; then
+	rmdir /mnt/data/stats
+    fi
+}
+
+createProcRG()
+{
+    #/usr/cluster/bin/cldevice populate
+    #/usr/cluster/bin/clsetup
+
+    echo "Create resource group"
+    /usr/cluster/bin/clresourcegroup create processing
+    if [ $? -ne 0 ] ; then
+	echo "ERROR: Failed to create resource group"
+	exit 1
+    fi
+    
+    echo "Add data zpool"
+    /usr/cluster/bin/clresourcetype list | grep SUNW.HAStoragePlus > /dev/null
+    if [ $? -ne 0 ] ; then
+	/usr/cluster/bin/clresourcetype register SUNW.HAStoragePlus
+    fi
+    /usr/cluster/bin/clresource create -g processing -t SUNW.HAStoragePlus -p Zpools=data data_fs
+    if [ $? -ne 0 ] ; then
+	echo "ERROR: Failed to create data_fs resource"
+	exit 1
+    fi
+
+    
+    echo "Bring resource online"
+    # Make sure to specify the node as the cluster seems to 
+    # bring the group up on the "other" node by default
+    THIS_NODE=`hostname`
+    /usr/cluster/bin/clresourcegroup online -n ${THIS_NODE} -M processing
+    if [ $? -ne 0 ] ; then
+	echo "ERROR: Failed to bring processing resource group online"
+	exit 1
+    fi
+
+    # Make sure we still have the /data file system
+    if [ ! -d /data/ddp ] ; then
+	echo "ERROR: Seem to have lost the data file system"
+	exit 1
+    fi
+
+    echo "Add logicalhost"
+    /usr/cluster/bin/clreslogicalhostname create -g processing -h prochost proc_lh
+
+    echo "Add MySQL"
+    PROC_HOST_IP=`getent hosts prochost | awk '{print $1}'`
+    cp /data/db/my.cnf /data/db/my.cnf.bak    
+    cat /data/db/my.cnf.bak | sed "s/^.*bind-address.*/bind-address=${PROC_HOST_IP}/" > /data/db/my.cnf
+
+    HOSTNAME=`hostname`
+    cat > /data/db/mysql_config <<EOF
+MYSQL_BASE=/opt/mysql/mysql
+MYSQL_USER=clustroot
+MYSQL_PASSWD=_r00t
+MYSQL_HOST=prochost
+FMUSER=fmuser
+FMPASS=_fmpass
+MYSQL_SOCK=/tmp/prochost.sock
+MYSQL_DATADIR=/data/db
+MYSQL_NIC_HOSTNAME="${HOSTNAME}"
+EOF
+
+    startMySQL
+
+    /opt/mysql/mysql/bin/mysql -S /tmp/prochost.sock <<EOF
+use mysql;
+GRANT ALL ON *.* TO 'clustroot'@'localhost' IDENTIFIED BY '_r00t' WITH GRANT OPTION;
+GRANT ALL ON *.* TO 'clustroot'@'${NODE_A}' IDENTIFIED BY '_r00t' WITH GRANT OPTION;
+GRANT ALL ON *.* TO 'clustroot'@'${NODE_B}' IDENTIFIED BY '_r00t' WITH GRANT OPTION;
+EOF
+
+    /opt/SUNWscmys/util/mysql_register -f /data/db/mysql_config
+
+    stopMySQL
+
+    cat > /data/db/ha_mysql_config <<EOF
+RS=mysql
+RG=processing
+PORT=3306
+LH=proc_lh
+HAS_RS=data_fs
+BASEDIR=/opt/mysql/mysql
+DATADIR=/data/db
+MYSQLUSER=mysql
+MYSQLHOST=prochost
+FMUSER=fmuser
+FMPASS=_fmpass
+LOGDIR=/data/db
+CHECK=NO
+EOF
+    export PATH=/usr/cluster/bin:$PATH
+    /usr/cluster/bin/clresourcetype list | grep SUNW.gds > /dev/null
+    if [ $? -ne 0 ] ; then
+	/usr/cluster/bin/clresourcetype register SUNW.gds
+    fi
+    /opt/SUNWscmys/util/ha_mysql_register -f /data/db/ha_mysql_config
+    if [ $? -ne 0 ] ; then
+	echo "Failed to add MySQL"
+	exit 1
+    fi
+
+    /usr/cluster/bin/clresource enable -g processing mysql
+
+    echo "Add ddpd"
+    /opt/ERICddpdcl/util/startddpdcl
+    /usr/cluster/bin/clresource set -g processing -p resource_dependencies=mysql,data_fs ddpd
+}
+
+createDDPenv()
+{
+    echo > /data/ddp/env.php <<EOF
+\$stats_dir = "${MNT_PNT}/data/stats";
+\$web_temp_dir = $stats_dir . "/temp";
+\$perfLog = $stats_dir . "/log/perf.log";
+\$ddp_dir = "${MNT_PNT}/data/ddp/current";
+\$ftproot_dir = "${MNT_PNT}/data/ftproot";
+\$archive_dir = "${MNT_PNT}/data/archive";
+EOF
+}
+
+while getopts  "t:d:o:e:ca:b:" flag
+do
+    case "$flag" in
+        t) TASK=${OPTARG};;
+        d) DDP_SW=${OPTARG};;
+	o) PROC_IP=${OPTARG};;
+	e) PRES_IP=${OPTARG};;
+	a) NODE_A=${OPTARG};;
+	b) NODE_B=${OPTARG};;
+    esac
+done
+
+if [ -z "${PROC_IP}" ] || [ -z "${PRES_IP}" ] || [ -z "${NODE_A}" ] || [ -z "${NODE_B}" ] ; then
+    echo "ERROR: Cluster setup tasks require the all of the -e,-o,-a,-b options"
+    exit 1
+fi
+
+MNT_PNT=/mnt
+
+if [ "${TASK}" = "inst" ] ; then
+    # inst task must be done on both sides of the cluster
+    TASK_LIST="
+cfgDNS
+cfgNTP
+setupSSH
+installClustSw
+installDDPclpkg
+install3PP
+updateHosts
+addUsers
+setupRBAC
+setupSudo 
+configFTP
+configHTTP
+configSendMail
+setupNFSmount
+setupMaintance
+"
+
+elif [ "${TASK}" = "cfg" ] ; then
+    # cfg task must be done on one side of the cluster
+    TASK_LIST="
+shareFS
+createDDPenv
+createProcRG
+createPresRG
+"
+else
+    TASK_LIST=${TASK}
+fi
+
+for ONE_TASK in ${TASK_LIST} ; do
+    echo "Performing task ${ONE_TASK}"
+    ${ONE_TASK}
+done
+

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_cli_command">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" />
+    <keycol name="netypeid" reftable="ne_types" />
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <events>
+    <!--NCM_AGENT.CLI_COMMANDS {\"nodeName\":\"CORE01R6675021\",\"messageCompliance\":\"MSG_OK\",\"sessionId\":2708,\"nodeType\":\"Router6675\",\"command\":\"show chassis\",\"duration\":31832,\"jobId\":2708,\"requestId\":1,\"compliance\":\"NODE_OK\",\"operationType\":\"exec\",\"_Thread\":\"pool-21-thread-1\",\"ncmNodeId\":21,\"status\":\"SUCCESS\",\"info\":\"exec\"}"-->
+    <event name="NCM_AGENT.CLI_COMMANDS">
+      <metric source="host" target="serverid"/>
+      <metric source="nodeName" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="nodeType" target="netypeid"/>
+      <metric source="command" target="command"/>
+      <metric source="info" target="info"/>
+      <metric source="operationType" target="operationType"/>
+      <metric source="ncmNodeId" target="ncmNodeId"/>
+      <metric source="duration" target="duration"/>
+      <metric source="status" target="status"/>
+      <metric source="jobId" target="jobId"/>
+      <metric source="sessionId" target="sessionId"/>
+      <metric source="requestId" target="requestId"/>
+      <metric source="compliance" target="compliance"/>
+      <metric source="messageCompliance" target="messageCompliance"/>
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,41 @@
+{
+    "desc": "Test version 2 format",
+    "model": "nodeexporter.xml",
+    "dump_files": [
+        "dump_nodeexporter_v2.json"
+    ],
+    "namespace": "enm4",
+    "instmap": {
+        "10.0.10.165": {}
+    },
+    "expected": {
+        "10.0.10.165:9690": {
+            "metrics": {
+                "node_exporter": {
+                    "cpu:0": {
+                        "user": {
+                            "timestamps": [
+                                "1621810215000",
+                                "1621810275000"
+                            ],
+                            "values": [
+                                "531294.18",
+                                "531301.7"
+                            ]
+                        },
+                        "system": {
+                            "timestamps": [
+                                "1621810215000",
+                                "1621810275000"
+                            ],
+                            "values": [
+                                "407641.42",
+                                "407647.42"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

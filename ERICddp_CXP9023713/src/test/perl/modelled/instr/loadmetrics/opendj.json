@@ -1,0 +1,174 @@
+{
+    "desc": "Test multi instance stats",
+    "model": "opendj.xml",
+    "dump_files": [
+        "dump_opendj.json"
+    ],
+    "namespace": "enm61",
+    "instmap": {
+        "opendj-0": {},
+        "opendj-1": {}
+    },
+    "expected": {
+        "opendj-1": {
+            "metrics": {
+                "prometheus@opendj_ldap_stats_new": {
+                    "bind:LDAPS": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "timestamps": [
+                                "1619563841096",
+                                "1619563901096",
+                                "1619563961096"
+                            ],
+                            "labels": {
+                                "ldap_handler": "LDAPS"
+                            },
+                            "values": [
+                                70,
+                                72,
+                                74
+                            ]
+                        }
+                    },
+                    "bind:Administration Connector": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "values": [
+                                50,
+                                52,
+                                54
+                            ],
+                            "labels": {
+                                "ldap_handler": "Administration Connector"
+                            },
+                            "timestamps": [
+                                "1619563841096",
+                                "1619563901096",
+                                "1619563961096"
+                            ]
+                        }
+                    },
+                    "unbind:LDAPS": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "timestamps": [
+                                "1619563841096",
+                                "1619563901096",
+                                "1619563961096"
+                            ],
+                            "labels": {
+                                "ldap_handler": "LDAPS"
+                            },
+                            "values": [
+                                80,
+                                82,
+                                84
+                            ]
+                        }
+                    },
+                    "unbind:Administration Connector": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "values": [
+                                60,
+                                62,
+                                64
+                            ],
+                            "labels": {
+                                "ldap_handler": "Administration Connector"
+                            },
+                            "timestamps": [
+                                "1619563841096",
+                                "1619563901096",
+                                "1619563961096"
+                            ]
+                        }
+                    }
+                }
+            },
+            "info": {
+                "app": "opendj",
+                "service": "opendj",
+                "instance": "192.168.153.60:8001",
+                "pod": "opendj-1"
+            }
+        },
+        "opendj-0": {
+            "metrics": {
+                "prometheus@opendj_ldap_stats_new": {
+                    "bind:LDAPS": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "values": [
+                                30,
+                                32,
+                                34
+                            ],
+                            "labels": {
+                                "ldap_handler": "LDAPS"
+                            },
+                            "timestamps": [
+                                "1619563824740",
+                                "1619563884741",
+                                "1619563944740"
+                            ]
+                        }
+                    },
+                    "bind:Administration Connector": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "timestamps": [
+                                "1619563824740",
+                                "1619563884741",
+                                "1619563944740"
+                            ],
+                            "labels": {
+                                "ldap_handler": "Administration Connector"
+                            },
+                            "values": [
+                                10,
+                                12,
+                                14
+                            ]
+                        }
+                    },
+                    "unbind:LDAPS": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "values": [
+                                40,
+                                42,
+                                44
+                            ],
+                            "labels": {
+                                "ldap_handler": "LDAPS"
+                            },
+                            "timestamps": [
+                                "1619563824740",
+                                "1619563884741",
+                                "1619563944740"
+                            ]
+                        }
+                    },
+                    "unbind:Administration Connector": {
+                        "ds_connection_handlers_ldap_requests_count": {
+                            "timestamps": [
+                                "1619563824740",
+                                "1619563884741",
+                                "1619563944740"
+                            ],
+                            "labels": {
+                                "ldap_handler": "Administration Connector"
+                            },
+                            "values": [
+                                20,
+                                22,
+                                24
+                            ]
+                        }
+                    }
+                }
+            },
+            "info": {
+                "service": "opendj",
+                "app": "opendj",
+                "instance": "192.168.194.85:8001",
+                "pod": "opendj-0"
+            }
+        }
+    }
+}

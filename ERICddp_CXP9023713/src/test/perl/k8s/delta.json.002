@@ -1,0 +1,1757 @@
+{
+    "events": [
+        {
+            "action": "Binding",
+            "eventTime": "2021-05-11T16:53:14.490296Z",
+            "reportingComponent": "default-scheduler",
+            "lastTimestamp": null,
+            "involvedObject": {
+                "resourceVersion": "4473387",
+                "namespace": "enm420",
+                "name": "neo4j-dps-job-cbxzw",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "apiVersion": "v1",
+                "kind": "Pod"
+            },
+            "message": "Successfully assigned enm420/neo4j-dps-job-cbxzw to ieatrcxb5916",
+            "metadata": {
+                "resourceVersion": "4473392",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:14Z",
+                "name": "neo4j-dps-job-cbxzw.167e115a1499ae0a",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115a1499ae0a",
+                "managedFields": [
+                    {
+                        "apiVersion": "events.k8s.io/v1",
+                        "time": "2021-05-11T16:53:14Z",
+                        "fieldsV1": {
+                            "f:note": {},
+                            "f:reportingInstance": {},
+                            "f:eventTime": {},
+                            "f:type": {},
+                            "f:reportingController": {},
+                            "f:regarding": {
+                                "f:apiVersion": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:uid": {},
+                                "f:resourceVersion": {},
+                                "f:kind": {}
+                            },
+                            "f:action": {},
+                            "f:reason": {}
+                        },
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1",
+                        "manager": "kube-scheduler"
+                    }
+                ],
+                "uid": "b3b1d692-c413-4bdd-9aac-1c4c26306c59"
+            },
+            "reportingInstance": "default-scheduler-ieatrcxb5913",
+            "type": "Normal",
+            "reason": "Scheduled",
+            "firstTimestamp": null,
+            "source": {}
+        },
+        {
+            "type": "Normal",
+            "reportingInstance": "",
+            "metadata": {
+                "name": "neo4j-dps-job-cbxzw.167e115a4fea9132",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115a4fea9132",
+                "managedFields": [
+                    {
+                        "time": "2021-05-11T16:53:15Z",
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "fieldsV1": {
+                            "f:type": {},
+                            "f:message": {},
+                            "f:count": {},
+                            "f:reason": {},
+                            "f:involvedObject": {
+                                "f:namespace": {},
+                                "f:fieldPath": {},
+                                "f:resourceVersion": {},
+                                "f:kind": {},
+                                "f:apiVersion": {},
+                                "f:name": {},
+                                "f:uid": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:lastTimestamp": {}
+                        }
+                    }
+                ],
+                "resourceVersion": "4473398",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:15Z",
+                "uid": "419ffffa-b0c3-4827-a310-797107bcf3d0"
+            },
+            "count": 1,
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5916"
+            },
+            "firstTimestamp": "2021-05-11T16:53:15Z",
+            "reason": "Pulling",
+            "reportingComponent": "",
+            "lastTimestamp": "2021-05-11T16:53:15Z",
+            "eventTime": null,
+            "message": "Pulling image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\"",
+            "involvedObject": {
+                "fieldPath": "spec.initContainers{neo4j-dps-job-wait}",
+                "kind": "Pod",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "apiVersion": "v1",
+                "name": "neo4j-dps-job-cbxzw",
+                "namespace": "enm420",
+                "resourceVersion": "4473390"
+            }
+        },
+        {
+            "message": "Successfully pulled image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\" in 766.214421ms",
+            "involvedObject": {
+                "kind": "Pod",
+                "fieldPath": "spec.initContainers{neo4j-dps-job-wait}",
+                "apiVersion": "v1",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "name": "neo4j-dps-job-cbxzw",
+                "resourceVersion": "4473390",
+                "namespace": "enm420"
+            },
+            "eventTime": null,
+            "lastTimestamp": "2021-05-11T16:53:16Z",
+            "reportingComponent": "",
+            "firstTimestamp": "2021-05-11T16:53:16Z",
+            "source": {
+                "host": "ieatrcxb5916",
+                "component": "kubelet"
+            },
+            "count": 1,
+            "reason": "Pulled",
+            "type": "Normal",
+            "metadata": {
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115a7d966785",
+                "managedFields": [
+                    {
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:message": {},
+                            "f:type": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:apiVersion": {},
+                                "f:uid": {},
+                                "f:name": {},
+                                "f:namespace": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:reason": {}
+                        },
+                        "operation": "Update",
+                        "apiVersion": "v1",
+                        "time": "2021-05-11T16:53:16Z"
+                    }
+                ],
+                "name": "neo4j-dps-job-cbxzw.167e115a7d966785",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:16Z",
+                "resourceVersion": "4473403",
+                "uid": "60360878-046f-45d2-8b22-09ba085774b2"
+            },
+            "reportingInstance": ""
+        },
+        {
+            "lastTimestamp": "2021-05-11T16:53:16Z",
+            "reportingComponent": "",
+            "eventTime": null,
+            "message": "Created container neo4j-dps-job-wait",
+            "involvedObject": {
+                "name": "neo4j-dps-job-cbxzw",
+                "resourceVersion": "4473390",
+                "namespace": "enm420",
+                "kind": "Pod",
+                "fieldPath": "spec.initContainers{neo4j-dps-job-wait}",
+                "apiVersion": "v1",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21"
+            },
+            "type": "Normal",
+            "reportingInstance": "",
+            "metadata": {
+                "uid": "40b8a782-56e7-476c-94a1-b81ccbe0ae94",
+                "name": "neo4j-dps-job-cbxzw.167e115a7f9fb4a3",
+                "managedFields": [
+                    {
+                        "operation": "Update",
+                        "fieldsV1": {
+                            "f:type": {},
+                            "f:message": {},
+                            "f:count": {},
+                            "f:reason": {},
+                            "f:involvedObject": {
+                                "f:kind": {},
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:uid": {},
+                                "f:name": {},
+                                "f:apiVersion": {},
+                                "f:namespace": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:lastTimestamp": {}
+                        },
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "time": "2021-05-11T16:53:16Z",
+                        "apiVersion": "v1"
+                    }
+                ],
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115a7f9fb4a3",
+                "resourceVersion": "4473404",
+                "creationTimestamp": "2021-05-11T16:53:16Z",
+                "namespace": "enm420"
+            },
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5916"
+            },
+            "count": 1,
+            "firstTimestamp": "2021-05-11T16:53:16Z",
+            "reason": "Created",
+            "_pod_info": {
+                "kind": "Pod",
+                "status": {
+                    "podIP": "192.168.111.68",
+                    "initContainerStatuses": [
+                        {
+                            "lastState": {},
+                            "name": "neo4j-dps-job-wait",
+                            "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                            "state": {
+                                "terminated": {
+                                    "containerID": "docker://4fc38807deabea0de61f13cfcc3151bf5decc0a58f72e75e19c183ef1f894be1",
+                                    "exitCode": 0,
+                                    "reason": "Completed",
+                                    "startedAt": "2021-05-11T16:53:16Z",
+                                    "finishedAt": "2021-05-11T16:53:26Z"
+                                }
+                            },
+                            "ready": true,
+                            "containerID": "docker://4fc38807deabea0de61f13cfcc3151bf5decc0a58f72e75e19c183ef1f894be1",
+                            "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container@sha256:00cedba4d55ad4875abdc562596c9a723cf601ad8932382b1ebb95a5b8fe1929",
+                            "restartCount": 0
+                        }
+                    ],
+                    "hostIP": "131.160.129.244",
+                    "startTime": "2021-05-11T16:53:14Z",
+                    "phase": "Succeeded",
+                    "qosClass": "Burstable",
+                    "containerStatuses": [
+                        {
+                            "name": "neo4j-dps-job",
+                            "lastState": {},
+                            "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt:1.8.0-26",
+                            "started": false,
+                            "restartCount": 0,
+                            "state": {
+                                "terminated": {
+                                    "reason": "Completed",
+                                    "startedAt": "2021-05-11T16:53:28Z",
+                                    "finishedAt": "2021-05-11T16:53:52Z",
+                                    "containerID": "docker://1e0786aba9d1892e9de4be40e516e146d9af271191dc1b16fca8016a4d2ff5ad",
+                                    "exitCode": 0
+                                }
+                            },
+                            "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt@sha256:e2efbfa1486146ce5f9a8d0d94cc05f17dfec0e04f7d6d6edfac2b64c4375c87",
+                            "ready": false,
+                            "containerID": "docker://1e0786aba9d1892e9de4be40e516e146d9af271191dc1b16fca8016a4d2ff5ad"
+                        }
+                    ],
+                    "podIPs": [
+                        {
+                            "ip": "192.168.111.68"
+                        }
+                    ],
+                    "conditions": [
+                        {
+                            "reason": "PodCompleted",
+                            "lastProbeTime": null,
+                            "status": "True",
+                            "type": "Initialized",
+                            "lastTransitionTime": "2021-05-11T16:53:27Z"
+                        },
+                        {
+                            "reason": "PodCompleted",
+                            "status": "False",
+                            "lastProbeTime": null,
+                            "type": "Ready",
+                            "lastTransitionTime": "2021-05-11T16:53:53Z"
+                        },
+                        {
+                            "lastTransitionTime": "2021-05-11T16:53:53Z",
+                            "type": "ContainersReady",
+                            "status": "False",
+                            "lastProbeTime": null,
+                            "reason": "PodCompleted"
+                        },
+                        {
+                            "type": "PodScheduled",
+                            "lastTransitionTime": "2021-05-11T16:53:14Z",
+                            "lastProbeTime": null,
+                            "status": "True"
+                        }
+                    ]
+                },
+                "apiVersion": "v1",
+                "metadata": {
+                    "resourceVersion": "4473597",
+                    "creationTimestamp": "2021-05-11T16:53:14Z",
+                    "namespace": "enm420",
+                    "labels": {
+                        "controller-uid": "0625fdc5-3a95-4f69-8019-88892d909213",
+                        "app.kubernetes.io/version": "eric-enm-dps-schemamgt-1.8.0-26",
+                        "app.kubernetes.io/instance": "eric-enm-infra-integration-enm420",
+                        "job-name": "neo4j-dps-job",
+                        "app": "neo4j-dps-job",
+                        "app.kubernetes.io/name": "neo4j-dps-job"
+                    },
+                    "ownerReferences": [
+                        {
+                            "name": "neo4j-dps-job",
+                            "controller": true,
+                            "apiVersion": "batch/v1",
+                            "uid": "0625fdc5-3a95-4f69-8019-88892d909213",
+                            "kind": "Job",
+                            "blockOwnerDeletion": true
+                        }
+                    ],
+                    "name": "neo4j-dps-job-cbxzw",
+                    "managedFields": [
+                        {
+                            "fieldsV1": {
+                                "f:metadata": {
+                                    "f:labels": {
+                                        "f:controller-uid": {},
+                                        "f:app.kubernetes.io/name": {},
+                                        "f:app": {},
+                                        "f:app.kubernetes.io/version": {},
+                                        ".": {},
+                                        "f:job-name": {},
+                                        "f:app.kubernetes.io/instance": {}
+                                    },
+                                    "f:ownerReferences": {
+                                        "k:{\"uid\":\"0625fdc5-3a95-4f69-8019-88892d909213\"}": {
+                                            "f:name": {},
+                                            "f:uid": {},
+                                            ".": {},
+                                            "f:controller": {},
+                                            "f:apiVersion": {},
+                                            "f:kind": {},
+                                            "f:blockOwnerDeletion": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "f:generateName": {}
+                                },
+                                "f:spec": {
+                                    "f:initContainers": {
+                                        "k:{\"name\":\"neo4j-dps-job-wait\"}": {
+                                            "f:resources": {},
+                                            ".": {},
+                                            "f:name": {},
+                                            "f:terminationMessagePath": {},
+                                            "f:imagePullPolicy": {},
+                                            "f:image": {},
+                                            "f:env": {
+                                                "k:{\"name\":\"ADMIN_PASSWORD\"}": {
+                                                    "f:value": {},
+                                                    "f:name": {},
+                                                    ".": {}
+                                                },
+                                                "k:{\"name\":\"ADMIN_USER\"}": {
+                                                    "f:value": {},
+                                                    ".": {},
+                                                    "f:name": {}
+                                                },
+                                                ".": {}
+                                            },
+                                            "f:command": {},
+                                            "f:terminationMessagePolicy": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "f:securityContext": {},
+                                    "f:restartPolicy": {},
+                                    "f:volumes": {
+                                        "k:{\"name\":\"gp\"}": {
+                                            "f:configMap": {
+                                                "f:name": {},
+                                                "f:defaultMode": {},
+                                                ".": {}
+                                            },
+                                            "f:name": {},
+                                            ".": {}
+                                        },
+                                        ".": {},
+                                        "k:{\"name\":\"data\"}": {
+                                            "f:name": {},
+                                            "f:persistentVolumeClaim": {
+                                                "f:claimName": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        }
+                                    },
+                                    "f:imagePullSecrets": {
+                                        "k:{\"name\":\"csar-secret\"}": {
+                                            ".": {},
+                                            "f:name": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "f:dnsPolicy": {},
+                                    "f:terminationGracePeriodSeconds": {},
+                                    "f:enableServiceLinks": {},
+                                    "f:containers": {
+                                        "k:{\"name\":\"neo4j-dps-job\"}": {
+                                            "f:terminationMessagePath": {},
+                                            "f:name": {},
+                                            "f:resources": {
+                                                "f:requests": {
+                                                    "f:memory": {},
+                                                    "f:cpu": {},
+                                                    ".": {}
+                                                },
+                                                "f:limits": {
+                                                    "f:memory": {},
+                                                    "f:cpu": {},
+                                                    ".": {}
+                                                },
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "f:volumeMounts": {
+                                                "k:{\"mountPath\":\"/gp\"}": {
+                                                    "f:name": {},
+                                                    "f:mountPath": {},
+                                                    ".": {}
+                                                },
+                                                "k:{\"mountPath\":\"/ericsson/tor/data\"}": {
+                                                    "f:name": {},
+                                                    ".": {},
+                                                    "f:mountPath": {}
+                                                },
+                                                ".": {}
+                                            },
+                                            "f:terminationMessagePolicy": {},
+                                            "f:command": {},
+                                            "f:env": {
+                                                "k:{\"name\":\"ADMIN_USER_PASSWORD\"}": {
+                                                    "f:name": {},
+                                                    ".": {},
+                                                    "f:valueFrom": {
+                                                        "f:secretKeyRef": {
+                                                            "f:key": {},
+                                                            ".": {},
+                                                            "f:name": {}
+                                                        },
+                                                        ".": {}
+                                                    }
+                                                },
+                                                "k:{\"name\":\"DATABASE_NAME\"}": {
+                                                    "f:value": {},
+                                                    "f:name": {},
+                                                    ".": {}
+                                                },
+                                                "k:{\"name\":\"NEO4J_HOST\"}": {
+                                                    "f:value": {},
+                                                    ".": {},
+                                                    "f:name": {}
+                                                },
+                                                "k:{\"name\":\"TZ\"}": {
+                                                    "f:name": {},
+                                                    ".": {},
+                                                    "f:value": {}
+                                                },
+                                                "k:{\"name\":\"NEO4J_BOLT_PORT\"}": {
+                                                    "f:value": {},
+                                                    "f:name": {},
+                                                    ".": {}
+                                                },
+                                                "k:{\"name\":\"ADMIN_USER\"}": {
+                                                    ".": {},
+                                                    "f:name": {},
+                                                    "f:value": {}
+                                                },
+                                                ".": {}
+                                            },
+                                            "f:image": {},
+                                            "f:imagePullPolicy": {}
+                                        }
+                                    },
+                                    "f:schedulerName": {}
+                                }
+                            },
+                            "operation": "Update",
+                            "fieldsType": "FieldsV1",
+                            "manager": "kube-controller-manager",
+                            "time": "2021-05-11T16:53:14Z",
+                            "apiVersion": "v1"
+                        },
+                        {
+                            "fieldsType": "FieldsV1",
+                            "manager": "kubelet",
+                            "operation": "Update",
+                            "fieldsV1": {
+                                "f:status": {
+                                    "f:conditions": {
+                                        "k:{\"type\":\"Ready\"}": {
+                                            "f:reason": {},
+                                            "f:status": {},
+                                            "f:lastTransitionTime": {},
+                                            "f:type": {},
+                                            "f:lastProbeTime": {},
+                                            ".": {}
+                                        },
+                                        "k:{\"type\":\"Initialized\"}": {
+                                            ".": {},
+                                            "f:lastProbeTime": {},
+                                            "f:type": {},
+                                            "f:lastTransitionTime": {},
+                                            "f:status": {},
+                                            "f:reason": {}
+                                        },
+                                        "k:{\"type\":\"ContainersReady\"}": {
+                                            "f:status": {},
+                                            "f:reason": {},
+                                            "f:lastTransitionTime": {},
+                                            "f:lastProbeTime": {},
+                                            "f:type": {},
+                                            ".": {}
+                                        }
+                                    },
+                                    "f:podIPs": {
+                                        ".": {},
+                                        "k:{\"ip\":\"192.168.111.68\"}": {
+                                            "f:ip": {},
+                                            ".": {}
+                                        }
+                                    },
+                                    "f:initContainerStatuses": {},
+                                    "f:containerStatuses": {},
+                                    "f:startTime": {},
+                                    "f:phase": {},
+                                    "f:hostIP": {},
+                                    "f:podIP": {}
+                                }
+                            },
+                            "apiVersion": "v1",
+                            "time": "2021-05-11T16:53:53Z"
+                        }
+                    ],
+                    "selfLink": "/api/v1/namespaces/enm420/pods/neo4j-dps-job-cbxzw",
+                    "generateName": "neo4j-dps-job-",
+                    "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21"
+                },
+                "spec": {
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "nodeName": "ieatrcxb5916",
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "tolerationSeconds": 300,
+                            "operator": "Exists"
+                        },
+                        {
+                            "operator": "Exists",
+                            "tolerationSeconds": 300,
+                            "key": "node.kubernetes.io/unreachable",
+                            "effect": "NoExecute"
+                        }
+                    ],
+                    "containers": [
+                        {
+                            "command": [
+                                "/bin/sh",
+                                "-c",
+                                "/dps/configure.sh"
+                            ],
+                            "resources": {
+                                "limits": {
+                                    "cpu": "500m",
+                                    "memory": "400Mi"
+                                },
+                                "requests": {
+                                    "memory": "100Mi",
+                                    "cpu": "150m"
+                                }
+                            },
+                            "env": [
+                                {
+                                    "name": "TZ",
+                                    "value": "Europe/Dublin"
+                                },
+                                {
+                                    "name": "NEO4J_BOLT_PORT",
+                                    "value": "7687"
+                                },
+                                {
+                                    "name": "ADMIN_USER",
+                                    "value": "neo4j"
+                                },
+                                {
+                                    "name": "NEO4J_HOST",
+                                    "value": "neo4j"
+                                },
+                                {
+                                    "value": "dps",
+                                    "name": "DATABASE_NAME"
+                                },
+                                {
+                                    "name": "ADMIN_USER_PASSWORD",
+                                    "valueFrom": {
+                                        "secretKeyRef": {
+                                            "name": "eric-enm-dps-schemamgt-secrets",
+                                            "key": "neo4j-password"
+                                        }
+                                    }
+                                }
+                            ],
+                            "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt:1.8.0-26",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/gp",
+                                    "name": "gp"
+                                },
+                                {
+                                    "name": "data",
+                                    "mountPath": "/ericsson/tor/data"
+                                },
+                                {
+                                    "name": "default-token-bfjvm",
+                                    "readOnly": true,
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"
+                                }
+                            ],
+                            "terminationMessagePolicy": "File",
+                            "name": "neo4j-dps-job",
+                            "imagePullPolicy": "Always",
+                            "terminationMessagePath": "/dev/termination-log"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "serviceAccount": "default",
+                    "restartPolicy": "Never",
+                    "initContainers": [
+                        {
+                            "command": [
+                                "/bin/sh",
+                                "-c",
+                                "bash /var/tmp/check_service.sh -s neo4j"
+                            ],
+                            "resources": {},
+                            "env": [
+                                {
+                                    "name": "ADMIN_USER",
+                                    "value": "neo4j"
+                                },
+                                {
+                                    "value": "Neo4jadmin123",
+                                    "name": "ADMIN_PASSWORD"
+                                }
+                            ],
+                            "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                            "volumeMounts": [
+                                {
+                                    "name": "default-token-bfjvm",
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "readOnly": true
+                                }
+                            ],
+                            "terminationMessagePolicy": "File",
+                            "name": "neo4j-dps-job-wait",
+                            "imagePullPolicy": "Always",
+                            "terminationMessagePath": "/dev/termination-log"
+                        }
+                    ],
+                    "priority": 0,
+                    "serviceAccountName": "default",
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "name": "gpcloud",
+                                "defaultMode": 420
+                            },
+                            "name": "gp"
+                        },
+                        {
+                            "name": "data",
+                            "persistentVolumeClaim": {
+                                "claimName": "data"
+                            }
+                        },
+                        {
+                            "name": "default-token-bfjvm",
+                            "secret": {
+                                "secretName": "default-token-bfjvm",
+                                "defaultMode": 420
+                            }
+                        }
+                    ],
+                    "enableServiceLinks": true,
+                    "imagePullSecrets": [
+                        {
+                            "name": "csar-secret"
+                        }
+                    ],
+                    "schedulerName": "default-scheduler",
+                    "preemptionPolicy": "PreemptLowerPriority"
+                }
+            }
+        },
+        {
+            "message": "Started container neo4j-dps-job-wait",
+            "involvedObject": {
+                "resourceVersion": "4473390",
+                "namespace": "enm420",
+                "name": "neo4j-dps-job-cbxzw",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "fieldPath": "spec.initContainers{neo4j-dps-job-wait}"
+            },
+            "lastTimestamp": "2021-05-11T16:53:16Z",
+            "reportingComponent": "",
+            "eventTime": null,
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5916"
+            },
+            "count": 1,
+            "firstTimestamp": "2021-05-11T16:53:16Z",
+            "reason": "Started",
+            "type": "Normal",
+            "reportingInstance": "",
+            "metadata": {
+                "uid": "abf69d56-ccf8-4f66-adfe-da5b882b1fda",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:16Z",
+                "resourceVersion": "4473405",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115a84791166",
+                "managedFields": [
+                    {
+                        "operation": "Update",
+                        "fieldsV1": {
+                            "f:message": {},
+                            "f:count": {},
+                            "f:type": {},
+                            "f:involvedObject": {
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:apiVersion": {},
+                                "f:name": {},
+                                "f:uid": {},
+                                "f:namespace": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:reason": {}
+                        },
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "apiVersion": "v1",
+                        "time": "2021-05-11T16:53:16Z"
+                    }
+                ],
+                "name": "neo4j-dps-job-cbxzw.167e115a84791166"
+            }
+        },
+        {
+            "message": "Pulling image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt:1.8.0-26\"",
+            "involvedObject": {
+                "apiVersion": "v1",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "kind": "Pod",
+                "fieldPath": "spec.containers{neo4j-dps-job}",
+                "resourceVersion": "4473390",
+                "namespace": "enm420",
+                "name": "neo4j-dps-job-cbxzw"
+            },
+            "reportingComponent": "",
+            "lastTimestamp": "2021-05-11T16:53:27Z",
+            "eventTime": null,
+            "count": 1,
+            "source": {
+                "host": "ieatrcxb5916",
+                "component": "kubelet"
+            },
+            "firstTimestamp": "2021-05-11T16:53:27Z",
+            "reason": "Pulling",
+            "type": "Normal",
+            "reportingInstance": "",
+            "metadata": {
+                "uid": "b1201812-f312-4c11-b913-1151bd3e39e2",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115d23187eab",
+                "managedFields": [
+                    {
+                        "time": "2021-05-11T16:53:27Z",
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "fieldsV1": {
+                            "f:type": {},
+                            "f:count": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:involvedObject": {
+                                "f:namespace": {},
+                                "f:apiVersion": {},
+                                "f:name": {},
+                                "f:uid": {},
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:source": {
+                                "f:host": {},
+                                "f:component": {}
+                            },
+                            "f:lastTimestamp": {}
+                        }
+                    }
+                ],
+                "name": "neo4j-dps-job-cbxzw.167e115d23187eab",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:27Z",
+                "resourceVersion": "4473459"
+            }
+        },
+        {
+            "reportingInstance": "",
+            "metadata": {
+                "resourceVersion": "4473472",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:28Z",
+                "name": "neo4j-dps-job-cbxzw.167e115d4e188053",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115d4e188053",
+                "managedFields": [
+                    {
+                        "time": "2021-05-11T16:53:28Z",
+                        "apiVersion": "v1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:message": {},
+                            "f:type": {},
+                            "f:firstTimestamp": {},
+                            "f:source": {
+                                "f:host": {},
+                                "f:component": {}
+                            },
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:name": {},
+                                "f:uid": {},
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:namespace": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:reason": {}
+                        },
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet"
+                    }
+                ],
+                "uid": "732e1ee8-a456-4f79-9449-9e40155aa2f4"
+            },
+            "type": "Normal",
+            "reason": "Pulled",
+            "source": {
+                "host": "ieatrcxb5916",
+                "component": "kubelet"
+            },
+            "count": 1,
+            "firstTimestamp": "2021-05-11T16:53:28Z",
+            "lastTimestamp": "2021-05-11T16:53:28Z",
+            "reportingComponent": "",
+            "eventTime": null,
+            "involvedObject": {
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "fieldPath": "spec.containers{neo4j-dps-job}",
+                "resourceVersion": "4473390",
+                "namespace": "enm420",
+                "name": "neo4j-dps-job-cbxzw"
+            },
+            "message": "Successfully pulled image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt:1.8.0-26\" in 721.383846ms"
+        },
+        {
+            "lastTimestamp": "2021-05-11T16:53:28Z",
+            "reportingComponent": "",
+            "eventTime": null,
+            "involvedObject": {
+                "kind": "Pod",
+                "fieldPath": "spec.containers{neo4j-dps-job}",
+                "apiVersion": "v1",
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "name": "neo4j-dps-job-cbxzw",
+                "resourceVersion": "4473390",
+                "namespace": "enm420"
+            },
+            "message": "Created container neo4j-dps-job",
+            "reportingInstance": "",
+            "metadata": {
+                "creationTimestamp": "2021-05-11T16:53:28Z",
+                "namespace": "enm420",
+                "resourceVersion": "4473473",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "time": "2021-05-11T16:53:28Z",
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "fieldsV1": {
+                            "f:source": {
+                                "f:host": {},
+                                "f:component": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:apiVersion": {},
+                                "f:uid": {},
+                                "f:name": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:reason": {},
+                            "f:message": {},
+                            "f:count": {},
+                            "f:type": {}
+                        },
+                        "operation": "Update"
+                    }
+                ],
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115d4f875b5f",
+                "name": "neo4j-dps-job-cbxzw.167e115d4f875b5f",
+                "uid": "1580e59c-9bb7-4f5f-9dfb-61a7129a0131"
+            },
+            "type": "Normal",
+            "reason": "Created",
+            "source": {
+                "host": "ieatrcxb5916",
+                "component": "kubelet"
+            },
+            "count": 1,
+            "firstTimestamp": "2021-05-11T16:53:28Z"
+        },
+        {
+            "involvedObject": {
+                "uid": "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21",
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "fieldPath": "spec.containers{neo4j-dps-job}",
+                "resourceVersion": "4473390",
+                "namespace": "enm420",
+                "name": "neo4j-dps-job-cbxzw"
+            },
+            "message": "Started container neo4j-dps-job",
+            "reportingComponent": "",
+            "lastTimestamp": "2021-05-11T16:53:28Z",
+            "eventTime": null,
+            "reason": "Started",
+            "count": 1,
+            "source": {
+                "host": "ieatrcxb5916",
+                "component": "kubelet"
+            },
+            "firstTimestamp": "2021-05-11T16:53:28Z",
+            "reportingInstance": "",
+            "metadata": {
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job-cbxzw.167e115d548aeb42",
+                "managedFields": [
+                    {
+                        "fieldsV1": {
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:apiVersion": {},
+                                "f:uid": {},
+                                "f:name": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:reason": {},
+                            "f:count": {},
+                            "f:message": {},
+                            "f:type": {}
+                        },
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1",
+                        "manager": "kubelet",
+                        "time": "2021-05-11T16:53:28Z",
+                        "apiVersion": "v1"
+                    }
+                ],
+                "name": "neo4j-dps-job-cbxzw.167e115d548aeb42",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:28Z",
+                "resourceVersion": "4473475",
+                "uid": "2d791031-d3ae-4d2a-9c4e-b2d443020b08"
+            },
+            "type": "Normal"
+        },
+        {
+            "involvedObject": {
+                "resourceVersion": "4473386",
+                "namespace": "enm420",
+                "name": "neo4j-dps-job",
+                "apiVersion": "batch/v1",
+                "uid": "0625fdc5-3a95-4f69-8019-88892d909213",
+                "kind": "Job"
+            },
+            "message": "Created pod: neo4j-dps-job-cbxzw",
+            "lastTimestamp": "2021-05-11T16:53:14Z",
+            "reportingComponent": "",
+            "eventTime": null,
+            "reason": "SuccessfulCreate",
+            "source": {
+                "component": "job-controller"
+            },
+            "count": 1,
+            "firstTimestamp": "2021-05-11T16:53:14Z",
+            "reportingInstance": "",
+            "metadata": {
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:14Z",
+                "resourceVersion": "4473388",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job.167e115a13a52583",
+                "managedFields": [
+                    {
+                        "fieldsType": "FieldsV1",
+                        "manager": "kube-controller-manager",
+                        "operation": "Update",
+                        "fieldsV1": {
+                            "f:type": {},
+                            "f:count": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:firstTimestamp": {},
+                            "f:source": {
+                                "f:component": {}
+                            },
+                            "f:involvedObject": {
+                                "f:namespace": {},
+                                "f:name": {},
+                                "f:uid": {},
+                                "f:apiVersion": {},
+                                "f:kind": {},
+                                "f:resourceVersion": {}
+                            },
+                            "f:lastTimestamp": {}
+                        },
+                        "apiVersion": "v1",
+                        "time": "2021-05-11T16:53:14Z"
+                    }
+                ],
+                "name": "neo4j-dps-job.167e115a13a52583",
+                "uid": "5b83482b-39e2-478d-a043-8c5bd936ccaa"
+            },
+            "type": "Normal"
+        },
+        {
+            "reason": "Completed",
+            "firstTimestamp": "2021-05-11T16:53:53Z",
+            "source": {
+                "component": "job-controller"
+            },
+            "count": 1,
+            "metadata": {
+                "uid": "11c98b23-a30d-4042-b89e-fc29091a8d5a",
+                "name": "neo4j-dps-job.167e116318b47487",
+                "selfLink": "/api/v1/namespaces/enm420/events/neo4j-dps-job.167e116318b47487",
+                "managedFields": [
+                    {
+                        "time": "2021-05-11T16:53:53Z",
+                        "apiVersion": "v1",
+                        "operation": "Update",
+                        "fieldsV1": {
+                            "f:message": {},
+                            "f:count": {},
+                            "f:type": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:resourceVersion": {},
+                                "f:kind": {},
+                                "f:apiVersion": {},
+                                "f:namespace": {},
+                                "f:uid": {},
+                                "f:name": {}
+                            },
+                            "f:source": {
+                                "f:component": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:reason": {}
+                        },
+                        "fieldsType": "FieldsV1",
+                        "manager": "kube-controller-manager"
+                    }
+                ],
+                "resourceVersion": "4473598",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:53:53Z"
+            },
+            "reportingInstance": "",
+            "type": "Normal",
+            "involvedObject": {
+                "kind": "Job",
+                "uid": "0625fdc5-3a95-4f69-8019-88892d909213",
+                "apiVersion": "batch/v1",
+                "name": "neo4j-dps-job",
+                "namespace": "enm420",
+                "resourceVersion": "4473391"
+            },
+            "message": "Job completed",
+            "eventTime": null,
+            "lastTimestamp": "2021-05-11T16:53:53Z",
+            "reportingComponent": ""
+        }
+    ],
+    "helm": [
+        {
+            "type": "helm.sh/release.v1",
+            "data": {
+                "release": {
+                    "info": {
+                        "deleted": "",
+                        "description": "Install complete",
+                        "first_deployed": "2021-05-11T17:40:46.522288529+01:00",
+                        "status": "deployed",
+                        "last_deployed": "2021-05-11T17:40:46.522288529+01:00",
+                        "notes": "This is eric-enm-infra-integration Helm Installation!\nYour chart has been successfully released.\n\nTo check it's state, run:\n\n  helm status eric-enm-infra-integration-enm420\n"
+                    },
+                    "namespace": "enm420",
+                    "hooks": [
+                        {
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-data-document-database-pg/templates/serviceaccount-hook.yaml",
+                            "name": "postgres-hook",
+                            "events": [
+                                "pre-install",
+                                "pre-delete",
+                                "pre-upgrade",
+                                "pre-rollback"
+                            ],
+                            "weight": -5,
+                            "kind": "ServiceAccount",
+                            "last_run": {
+                                "completed_at": "2021-05-11T17:40:51.39260382+01:00",
+                                "started_at": "2021-05-11T17:40:51.342684485+01:00",
+                                "phase": "Succeeded"
+                            }
+                        },
+                        {
+                            "last_run": {
+                                "started_at": "2021-05-11T17:40:51.543617792+01:00",
+                                "completed_at": "2021-05-11T17:40:51.594910508+01:00",
+                                "phase": "Succeeded"
+                            },
+                            "kind": "ConfigMap",
+                            "weight": -5,
+                            "events": [
+                                "pre-install",
+                                "pre-rollback",
+                                "pre-upgrade",
+                                "post-delete"
+                            ],
+                            "delete_policies": [
+                                "hook-succeeded",
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-data-document-database-pg/templates/logshipper-configmap-hook.yaml",
+                            "name": "postgres-logshipper-cfg-hook"
+                        },
+                        {
+                            "last_run": {
+                                "started_at": "2021-05-11T17:40:51.409127458+01:00",
+                                "completed_at": "2021-05-11T17:40:51.462147337+01:00",
+                                "phase": "Succeeded"
+                            },
+                            "kind": "Role",
+                            "weight": -5,
+                            "events": [
+                                "pre-install",
+                                "pre-delete",
+                                "pre-upgrade",
+                                "pre-rollback"
+                            ],
+                            "name": "postgres-hook",
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-data-document-database-pg/templates/serviceaccount-hook.yaml"
+                        },
+                        {
+                            "kind": "RoleBinding",
+                            "last_run": {
+                                "phase": "Succeeded",
+                                "completed_at": "2021-05-11T17:40:51.530602223+01:00",
+                                "started_at": "2021-05-11T17:40:51.474914049+01:00"
+                            },
+                            "events": [
+                                "pre-install",
+                                "pre-delete",
+                                "pre-upgrade",
+                                "pre-rollback"
+                            ],
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-data-document-database-pg/templates/serviceaccount-hook.yaml",
+                            "name": "postgres-hook",
+                            "weight": -5
+                        },
+                        {
+                            "weight": -4,
+                            "events": [
+                                "pre-install",
+                                "pre-rollback",
+                                "pre-upgrade",
+                                "post-delete"
+                            ],
+                            "delete_policies": [
+                                "hook-succeeded",
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-data-document-database-pg/templates/hook-cleanup.yaml",
+                            "name": "postgres-hook-cleanup",
+                            "last_run": {
+                                "completed_at": "2021-05-11T17:40:58.240424815+01:00",
+                                "started_at": "2021-05-11T17:40:51.607006808+01:00",
+                                "phase": "Succeeded"
+                            },
+                            "kind": "Job"
+                        },
+                        {
+                            "kind": "Job",
+                            "last_run": {
+                                "phase": "Succeeded",
+                                "completed_at": "2021-05-11T17:53:53.226242884+01:00",
+                                "started_at": "2021-05-11T17:53:14.395474004+01:00"
+                            },
+                            "events": [
+                                "post-install",
+                                "post-upgrade"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-enm-dps-schemamgt/templates/dps-schemamgt-job.yaml",
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "name": "neo4j-dps-job",
+                            "weight": -5
+                        },
+                        {
+                            "events": [
+                                "post-install",
+                                "post-upgrade"
+                            ],
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-enm-flsdb-schemamgt/templates/flsdb-schemamgt-job.yaml",
+                            "name": "flsdb-schemamgt",
+                            "weight": -5,
+                            "kind": "Job",
+                            "last_run": {
+                                "completed_at": "2021-05-11T17:53:14.373951074+01:00",
+                                "started_at": "2021-05-11T17:53:03.006110988+01:00",
+                                "phase": "Succeeded"
+                            }
+                        },
+                        {
+                            "events": [
+                                "post-install",
+                                "post-upgrade"
+                            ],
+                            "path": "eric-enm-infra-integration/charts/eric-enm-sfwkdb-schemamgt/templates/sfwkdb-schemamgt-job.yaml",
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "name": "sfwkdb-schemamgt",
+                            "weight": -5,
+                            "kind": "Job",
+                            "last_run": {
+                                "started_at": "2021-05-11T17:53:53.243722695+01:00",
+                                "completed_at": "2021-05-11T17:53:59.489133007+01:00",
+                                "phase": "Succeeded"
+                            }
+                        },
+                        {
+                            "kind": "Job",
+                            "last_run": {
+                                "phase": "Succeeded",
+                                "completed_at": "2021-05-11T17:53:02.985103416+01:00",
+                                "started_at": "2021-05-11T17:52:49.827044031+01:00"
+                            },
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ],
+                            "path": "eric-enm-infra-integration/templates/eric-enm-models-all-services-job.yaml",
+                            "name": "eric-enm-models-all-services-job",
+                            "events": [
+                                "post-install",
+                                "post-upgrade"
+                            ],
+                            "weight": -5
+                        }
+                    ],
+                    "chart": {
+                        "schema": null,
+                        "lock": {
+                            "dependencies": [
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enmsg-jmsserver",
+                                    "version": "1.9.0-27"
+                                },
+                                {
+                                    "name": "eric-enmsg-gossiprouter-cache",
+                                    "version": "1.9.0-27",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-enmsg-gossiprouter-remoting",
+                                    "version": "1.9.0-27",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-enm-modeldeployservice",
+                                    "version": "1.9.0-29",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enmsg-opendj",
+                                    "version": "1.8.0-29"
+                                },
+                                {
+                                    "version": "1.9.0-27",
+                                    "name": "eric-enm-omnidaemon",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-enmsg-sentinel",
+                                    "version": "1.9.0-27",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enm-kvstore-hc",
+                                    "version": "2.9.0-30"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "version": "1.9.0-28",
+                                    "name": "eric-enmsg-vault-service"
+                                },
+                                {
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm/",
+                                    "version": "6.1.0+66",
+                                    "name": "eric-data-search-engine"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-adp-oss-graph-database-nj-release-helm/",
+                                    "name": "eric-data-graph-database-nj",
+                                    "version": "0.0.1-165"
+                                },
+                                {
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-released-helm/",
+                                    "version": "2.2.0+20",
+                                    "name": "eric-data-search-engine-curator"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "version": "1.1.0-11",
+                                    "name": "eric-net-ingress-l4"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enmsg-solr-service",
+                                    "version": "1.9.0-26"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enmsg-auto-id-solr",
+                                    "version": "1.9.0-27"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enm-sfwkdb-schemamgt",
+                                    "version": "1.9.0-26"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "version": "1.8.0-26",
+                                    "name": "eric-enm-dps-schemamgt"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enmsg-gossiprouter-eap7",
+                                    "version": "1.9.0-26"
+                                },
+                                {
+                                    "version": "5.4.0+62",
+                                    "name": "eric-data-document-database-pg",
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm"
+                                },
+                                {
+                                    "version": "5.0.0+17",
+                                    "name": "eric-log-shipper",
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm"
+                                },
+                                {
+                                    "name": "eric-enm-flsdb-schemamgt",
+                                    "version": "1.9.0-26",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                }
+                            ],
+                            "generated": "2021-05-05T11:00:43.736864044Z",
+                            "digest": "sha256:b42d8473d5b600f38e093841c00cc9c227235dfbb6bf15aa495b05504a6eb98e"
+                        },
+                        "metadata": {
+                            "apiVersion": "v2",
+                            "dependencies": [
+                                {
+                                    "enabled": true,
+                                    "name": "eric-enmsg-jmsserver",
+                                    "version": "1.9.0-27",
+                                    "condition": "eric-enmsg-jmsserver.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-enmsg-gossiprouter-cache.enabled",
+                                    "version": "1.9.0-27",
+                                    "name": "eric-enmsg-gossiprouter-cache",
+                                    "enabled": true
+                                },
+                                {
+                                    "enabled": true,
+                                    "name": "eric-enmsg-gossiprouter-remoting",
+                                    "version": "1.9.0-27",
+                                    "condition": "eric-enmsg-gossiprouter-remoting.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-enm-modeldeployservice",
+                                    "enabled": true,
+                                    "version": "1.9.0-29",
+                                    "condition": "eric-enm-modeldeployservice.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-enmsg-opendj",
+                                    "enabled": true,
+                                    "version": "1.8.0-29",
+                                    "condition": "eric-enmsg-opendj.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "condition": "eric-enm-omnidaemon.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "name": "eric-enm-omnidaemon",
+                                    "enabled": true,
+                                    "version": "1.9.0-27"
+                                },
+                                {
+                                    "version": "1.9.0-27",
+                                    "name": "eric-enmsg-sentinel",
+                                    "enabled": true,
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-enmsg-sentinel.enabled"
+                                },
+                                {
+                                    "name": "eric-enm-kvstore-hc",
+                                    "enabled": true,
+                                    "version": "2.9.0-30",
+                                    "condition": "eric-enm-kvstore-hc.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "version": "1.9.0-28",
+                                    "name": "eric-enmsg-vault-service",
+                                    "enabled": true,
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-enmsg-vault-service.enabled"
+                                },
+                                {
+                                    "version": "6.1.0+66",
+                                    "name": "eric-data-search-engine",
+                                    "enabled": true,
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm/",
+                                    "condition": "eric-data-search-engine.enabled"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-adp-oss-graph-database-nj-release-helm/",
+                                    "condition": "eric-data-graph-database-nj.enabled",
+                                    "version": "0.0.1-165",
+                                    "enabled": true,
+                                    "name": "eric-data-graph-database-nj"
+                                },
+                                {
+                                    "condition": "eric-data-search-engine-curator.enabled",
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-released-helm/",
+                                    "name": "eric-data-search-engine-curator",
+                                    "enabled": true,
+                                    "version": "2.2.0+20"
+                                },
+                                {
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-net-ingress-l4.enabled",
+                                    "version": "1.1.0-11",
+                                    "enabled": true,
+                                    "name": "eric-net-ingress-l4"
+                                },
+                                {
+                                    "enabled": true,
+                                    "name": "eric-enmsg-solr-service",
+                                    "version": "1.9.0-26",
+                                    "condition": "eric-enmsg-solr-service.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "condition": "eric-enmsg-auto-id-solr.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "enabled": true,
+                                    "name": "eric-enmsg-auto-id-solr",
+                                    "version": "1.9.0-27"
+                                },
+                                {
+                                    "enabled": true,
+                                    "name": "eric-enm-sfwkdb-schemamgt",
+                                    "version": "1.9.0-26",
+                                    "condition": "eric-enm-sfwkdb-schemamgt.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-enm-dps-schemamgt",
+                                    "enabled": true,
+                                    "version": "1.8.0-26",
+                                    "condition": "eric-enm-dps-schemamgt.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "version": "1.9.0-26",
+                                    "enabled": true,
+                                    "name": "eric-enmsg-gossiprouter-eap7",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-enmsg-gossiprouter-eap7.enabled"
+                                },
+                                {
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm",
+                                    "condition": "eric-data-document-database-pg.enabled",
+                                    "version": "5.4.0+62",
+                                    "name": "eric-data-document-database-pg",
+                                    "enabled": true
+                                },
+                                {
+                                    "condition": "eric-enm-flsdb-schemamgt.enabled",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "enabled": true,
+                                    "name": "eric-enm-flsdb-schemamgt",
+                                    "version": "1.9.0-26"
+                                }
+                            ],
+                            "name": "eric-enm-infra-integration",
+                            "appVersion": "1.0",
+                            "version": "1.10.0-32",
+                            "description": "A Helm chart for infra-integration"
+                        },
+                        "files": [
+                            {
+                                "data": "LmdpdApPV05FUlM=",
+                                "name": ".helmignore"
+                            }
+                        ]
+                    },
+                    "name": "eric-enm-infra-integration-enm420",
+                    "version": 1
+                }
+            },
+            "metadata": {
+                "uid": "1570286e-15a9-43f0-904e-a5b871c6143a",
+                "selfLink": "/api/v1/namespaces/enm420/secrets/sh.helm.release.v1.eric-enm-infra-integration-enm420.v1",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "time": "2021-05-11T16:40:51Z",
+                        "fieldsType": "FieldsV1",
+                        "manager": "helm",
+                        "fieldsV1": {
+                            "f:data": {
+                                ".": {},
+                                "f:release": {}
+                            },
+                            "f:type": {},
+                            "f:metadata": {
+                                "f:labels": {
+                                    "f:owner": {},
+                                    "f:modifiedAt": {},
+                                    "f:status": {},
+                                    "f:version": {},
+                                    "f:name": {},
+                                    ".": {}
+                                }
+                            }
+                        },
+                        "operation": "Update"
+                    }
+                ],
+                "labels": {
+                    "status": "deployed",
+                    "modifiedAt": "1620752039",
+                    "name": "eric-enm-infra-integration-enm420",
+                    "owner": "helm",
+                    "version": "1"
+                },
+                "name": "sh.helm.release.v1.eric-enm-infra-integration-enm420.v1",
+                "namespace": "enm420",
+                "creationTimestamp": "2021-05-11T16:40:51Z",
+                "resourceVersion": "4473660"
+            }
+        }
+    ],
+    "podstatus": {
+        "0f9ba9a9-c402-45a8-96d7-bdb3d0b95e21": {
+            "status": {
+                "conditions": [
+                    {
+                        "type": "Initialized",
+                        "lastTransitionTime": "2021-05-11T16:53:27Z",
+                        "reason": "PodCompleted",
+                        "lastProbeTime": null,
+                        "status": "True"
+                    },
+                    {
+                        "lastTransitionTime": "2021-05-11T16:53:53Z",
+                        "type": "Ready",
+                        "status": "False",
+                        "lastProbeTime": null,
+                        "reason": "PodCompleted"
+                    },
+                    {
+                        "type": "ContainersReady",
+                        "lastTransitionTime": "2021-05-11T16:53:53Z",
+                        "reason": "PodCompleted",
+                        "status": "False",
+                        "lastProbeTime": null
+                    },
+                    {
+                        "lastTransitionTime": "2021-05-11T16:53:14Z",
+                        "type": "PodScheduled",
+                        "status": "True",
+                        "lastProbeTime": null
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "ready": false,
+                        "containerID": "docker://1e0786aba9d1892e9de4be40e516e146d9af271191dc1b16fca8016a4d2ff5ad",
+                        "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt@sha256:e2efbfa1486146ce5f9a8d0d94cc05f17dfec0e04f7d6d6edfac2b64c4375c87",
+                        "state": {
+                            "terminated": {
+                                "containerID": "docker://1e0786aba9d1892e9de4be40e516e146d9af271191dc1b16fca8016a4d2ff5ad",
+                                "exitCode": 0,
+                                "reason": "Completed",
+                                "startedAt": "2021-05-11T16:53:28Z",
+                                "finishedAt": "2021-05-11T16:53:52Z"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-dps-schemamgt:1.8.0-26",
+                        "lastState": {},
+                        "name": "neo4j-dps-job"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "podIPs": [
+                    {
+                        "ip": "192.168.111.68"
+                    }
+                ],
+                "startTime": "2021-05-11T16:53:14Z",
+                "phase": "Succeeded",
+                "podIP": "192.168.111.68",
+                "hostIP": "131.160.129.244",
+                "initContainerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "state": {
+                            "terminated": {
+                                "containerID": "docker://4fc38807deabea0de61f13cfcc3151bf5decc0a58f72e75e19c183ef1f894be1",
+                                "exitCode": 0,
+                                "reason": "Completed",
+                                "startedAt": "2021-05-11T16:53:16Z",
+                                "finishedAt": "2021-05-11T16:53:26Z"
+                            }
+                        },
+                        "ready": true,
+                        "containerID": "docker://4fc38807deabea0de61f13cfcc3151bf5decc0a58f72e75e19c183ef1f894be1",
+                        "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container@sha256:00cedba4d55ad4875abdc562596c9a723cf601ad8932382b1ebb95a5b8fe1929",
+                        "lastState": {},
+                        "name": "neo4j-dps-job-wait",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26"
+                    }
+                ]
+            },
+            "metadata": {
+                "name": "neo4j-dps-job-cbxzw"
+            }
+        }
+    }
+}

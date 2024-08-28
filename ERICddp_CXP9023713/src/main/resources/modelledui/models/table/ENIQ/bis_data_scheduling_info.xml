@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="bis_scheduling_info">
+    <reference table="sites" condition="bis_scheduling_info.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND bis_scheduling_info.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="DISTINCT bis_scheduling_info.reportName" label="Report Name"/>
+  <column db="bis_scheduling_info.userName" label="User Name"/>
+  <column db="bis_scheduling_info.startDate" label="Start Date"/>
+  <column db="bis_scheduling_info.endDate" label="End Date"/>
+  <column db="bis_scheduling_info.recurrence" label="Recurrence"/>
+  <column db="bis_scheduling_info.intervalTime" label="Interval"/>
+
+</modelledtable>

@@ -1,0 +1,135 @@
+#!/usr/bin/perl
+
+#=====================================================================
+## Script  : parseSolrCoresStatus
+## Author  : Rory Kelly(erorkel)
+## Purpose : The purpose of this script is to parse solr_cores_status.xml and store the data in the database
+## Usage   : ${ANALYSIS_BIN}/TOR/common/parseSolrCoresStatus --data ${HOST_DIR}/TOR/solr_cores_status.xml --site ${SITE} --date ${SQL_DATE}
+##=====================================================================
+
+use strict;
+use warnings;
+
+use XML::Simple;
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use XML::DOM;
+
+use StatsDB;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ($data,$site,$date);
+    my $result = GetOptions(
+        "data=s" => \$data,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    my $r_coresStatusArray = getCoresStatusArray($data);
+    my $r_solrCoreFailures = getInitFailures($data);
+    storeCoresStatus($r_coresStatusArray,$r_solrCoreFailures,$site,$date);
+}
+
+sub getCoresStatusArray {
+    my($xmlFile)=@_;
+    my $coresStatusTree = XMLin($xmlFile);
+
+    my @statusArray = ();
+
+    my %statusHash = %{$coresStatusTree->{lst}->{status}->{lst}};
+
+    my @cores = keys %statusHash;
+    my $dbh = connect_db();
+    my $r_coreIdMap = getIdMap($dbh, "enm_solr_core_names", "id", "name", \@cores );
+    $dbh->disconnect();
+
+    foreach my $coreName ( @cores ) {
+        my $coreId = $r_coreIdMap->{$coreName};
+        my $indexSize = $coresStatusTree->{lst}->{status}->{lst}->{$coreName}->{lst}->{long}->{sizeInBytes}->{content};
+        push @statusArray, {coreId => $coreId, indexSize => $indexSize};
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("getCoresStatusArray: statusArray", \@statusArray);
+    }
+    return \@statusArray;
+}
+
+sub storeCoresStatus {
+    my($r_coreStatusArray,$r_solrCoreFailures,$site,$date)=@_;
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $bcpFileName = "$tmpDir/solrCoresStatus.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    foreach my $coreStatus (@{$r_coreStatusArray}) {
+        my $coreId = $coreStatus->{coreId};
+        my $indexSize =  $coreStatus->{indexSize};
+        print BCP "$siteId\t$date\t$coreId\t$indexSize\n";
+    }
+
+    close BCP;
+
+
+    dbDo( $dbh, "DELETE FROM enm_solr_daily WHERE siteid = $siteId AND date = '$date'"
+            ) or die "Failed to delete from enm_solr_daily".$dbh->errstr."\n";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_solr_daily" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_solr_daily table".$dbh->errstr."\n";
+
+    unlink $bcpFileName;
+
+    if(scalar(keys %{$r_solrCoreFailures}) > 0) {
+        my $bcpFileName = "$tmpDir/solrCoreFailures.bcp";
+        open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+        foreach my $key (keys %{$r_solrCoreFailures}) {
+            print BCP "$siteId\t$date\t$r_solrCoreFailures->{$key}->{'core'}\t$r_solrCoreFailures->{$key}->{'reason'}\n";
+        }
+
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM enm_solr_core_failures WHERE siteid = $siteId AND time = '$date'"
+            ) or die "Failed to delete from enm_solr_core_failures".$dbh->errstr."\n";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_solr_core_failures" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_solr_core_failures table".$dbh->errstr."\n";
+
+    unlink $bcpFileName;
+
+    $dbh->disconnect();
+    }
+}
+sub getInitFailures {
+   my ($xmlFile) = @_;
+   my %initFailures = ();
+   my $parser = new XML::DOM::Parser;
+   my $dom = $parser->parsefile($xmlFile);
+   foreach my $lst ($dom->getElementsByTagName('lst')) {
+       my $node = $lst->getAttributeNode("name");
+       if ( $node->getNodeValue() eq 'initFailures' ) {
+          my @children = $lst->getChildNodes;
+          my $key = 1;
+          foreach my $child (@children) {
+               my $reason = $child->getFirstChild();
+               my $core = $child->getAttributeNode("name");
+               $initFailures{$key}{'core'} = $core->getNodeValue();
+               $initFailures{$key}{'reason'} = $reason->getNodeValue;
+               $key++;
+          }
+       }
+   }
+
+  return \%initFailures;
+}
+
+main();

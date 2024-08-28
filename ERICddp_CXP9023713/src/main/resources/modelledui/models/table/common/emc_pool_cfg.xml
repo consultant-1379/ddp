@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="emc_pool_cfg">
+    <reference table="emc_pool" condition="emc_pool_cfg.poolid = emc_pool.id"/>
+  </dbtables>
+
+  <param name="sysid"/>
+  <param name="date"/>
+  <where>emc_pool_cfg.sysid = %sysid% AND emc_pool_cfg.filedate = '%date%'</where>
+
+  <column db="emc_pool_cfg.poolid" label="poolid" id="poolid" visible="false"/>
+  <column db="emc_pool.name" label="Name"/>
+  <column db="sizeGB" label="Size (GB)"/>
+  <column db="usedGB" label="Used (GB)"/>
+  <column db="numdisks" label="#Disks"/>
+  <column db="raid" label="RAID Type"/>
+  <column db="subscribedGB" label="Subscribed (GB)"/>
+  <column db="snapSizeUsedGB" label="Snap Size Used(GB)"/>
+  <column db="metadataSizeUsedGB" label="Metadata Size Used(GB)"/>
+  <column db="dataReductionRatio" label="Data Reduction Ratio"/>
+
+  <ctxmenu keycol="poolid" targettype="modelledgraphset" multiselect="true">
+    <item id="used@common/emc_pool_cfg" label="Plot Used"/>
+    <item id="snap@common/emc_pool_cfg" label="Plot Snap Size Used"/>
+    <item id="meta@common/emc_pool_cfg" label="Plot Meta Data Size Used"/>
+    <item id="datareductionratio@common/emc_pool_cfg" label="Plot Data Reduction Ratio"/>
+  </ctxmenu>
+
+</modelledtable>

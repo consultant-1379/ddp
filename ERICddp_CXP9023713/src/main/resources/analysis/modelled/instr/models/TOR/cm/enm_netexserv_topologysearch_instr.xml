@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="networkexplorer"/>
+  </services>
+
+  <table name="enm_netexserv_topologysearch_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.topologySearchService.instrumentation.topologySearchService:type=InstrumentatedBean$">
+      <metric source="mergeQueryResultsTotalTime" target="mergeQueryResultsTotalTime" delta="true"/>
+      <metric source="objectsTotalResponseTime" target="objectsTotalResponseTime" delta="true"/>
+      <metric source="totalCmTime" target="totalCmTime" delta="true"/>
+      <metric source="totalSearchTime" target="totalSearchTime" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

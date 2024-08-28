@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cmd_handler_statistics">
+    <reference table="sites" condition="enm_cmd_handler_statistics.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cmd_handler_statistics.serverid=servers.id"/>
+  </dbtables>
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cmd_handler_statistics.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="commandType"/>
+  </groupby>
+
+  <column db="commandType" label="Command Type"/>
+  <column db="SUM(numOfItems)" label="Num of Items"/>
+  <column db="SUM(numOfSuccessItems)" label="Num of Success Items"/>
+  <column db="SUM(numOfErrorItems)" label="Num of Error Items"/>
+</modelledtable>

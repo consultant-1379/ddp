@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_geo_kpi_logs">
+  </table>
+
+  <services>
+    <service name="generalscripting"/>
+    <service name="general-scripting"/>
+    <service name="jmsserver"/>
+  </services>
+
+  <events>
+  <!-- GEO.ImportExport {Duration: 17000, Usecase: Export, App: CM, TotalMOs: 1570} -->
+  <event name="GEO.ImportExport">
+    <metric source="Duration" target="duration"/>
+    <metric source="Usecase" target="usecase"/>
+    <metric source="App" target="application"/>
+    <metric source="TotalMOs" target="count"/>
+    <metric source="TotalEntities" target="count"/>
+    <metric source="TotalUsers" target="count"/>
+    <metric source="TotalData" target="totaldata"/>
+    <metric source="TotalNEs" target="count"/>
+    <metric source="TotalKpis" target="count"/>
+    </event>
+
+  </events>
+</modelledevents>
+

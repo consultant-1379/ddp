@@ -1,0 +1,421 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsCommon;
+use StatsTime;
+
+our $DEBUG = 0;
+
+our $FIND_BLOCK_START = 1;
+our $FIND_BLOCK_END = 2;
+our $PROCESSING_BLOCK = 3;
+
+our @BLOCK_DEF = (
+    {
+        'key' => [ 'CPU', '%usr' ],
+        'inst' => '^all$',
+        'columns' => [ '%usr', '%sys', '%iowait', '%guest', '%steal', '%soft', '%irq' ],
+        'category' => 'sys',
+        'dropinst' => 1,
+    },
+    {
+        'key' => [ 'kbmemfree', 'kbavail' ],
+        'columns' => [ 'kbmemfree', 'kbmemused', 'kbbuffers', 'kbcached' ],
+        'category' => 'sys'
+    },
+    {
+        'key' => [ 'kbmemfree', 'kbmemused' ],
+        'columns' => [ 'kbmemfree', 'kbmemused', 'kbbuffers', 'kbcached' ],
+        'category' => 'sys'
+    },
+    {
+        'key' => [ 'kbswpfree', 'kbswpused' ],
+        'columns' => [ 'kbswpfree' ],
+        'category' => 'sys'
+    },
+    {
+        'key' => [ 'proc/s', 'cswch/s' ],
+        'columns' => [ 'proc/s' ],
+        'category' => 'sys'
+    },
+    {
+        'key' => [ 'pgpgin/s', 'pgpgout/s' ],
+        'columns' => [ 'pgscand/s' ],
+        'category' => 'sys'
+    },
+    {
+        'key' => [ 'runq-sz', 'plist-sz' ],
+        'columns' => [ 'runq-sz', 'plist-sz' ],
+        'category' => 'sys'
+    },
+
+    {
+        'key' => [ 'DEV', 'tps' ],
+        'inst' => '.',
+        'columns' => [ 'tps', 'rd_sec/s', 'wr_sec/s', 'avgqu-sz', 'await', 'svctm', '%util', 'rkB/s', 'wkB/s', 'aqu-sz' ],
+        'category' => 'disk'
+    },
+
+    {
+        'key' => [ 'IFACE', 'rxpck/s' ],
+        'inst' => '.',
+        'columns' => [ 'rxpck/s', 'txpck/s', 'rxkB/s', 'txkB/s' ],
+        'category' => 'net'
+    },
+    {
+        'key' => [ 'IFACE', 'rxerr/s' ],
+        'inst' => '.',
+        'columns' => [ 'rxerr/s', 'txerr/s', 'coll/s', 'rxdrop/s', 'txdrop/s', 'txcarr/s', 'rxfram/s', 'rxfifo/s', 'txfifo/s' ],
+        'category' => 'net'
+    },
+    {
+        'key' => [ 'scall/s', 'badcall/s' ],
+        'columns' => [ 'scall/s', 'badcall/s', 'packet/s', 'sread/s', 'swrite/s', 'saccess/s', 'sgetatt/s' ],
+        'category' => 'sys'
+    }
+);
+
+our %OUTPUT_CONFIG = (
+    'sys' => {
+        'inst' => 'no',
+        'cols' => [
+            [ '%usr',      'CPU all User' ],
+            [ '%sys',      'CPU all System' ],
+            [ '%iowait',   'CPU all Wait I/O' ],
+            [ '%guest',    'CPU all %guest' ],
+            [ '%steal',    'CPU all Steal' ],
+            [ '%soft', 'CPU all %soft' ],
+            [ '%irq', 'CPU all %irq' ],
+            [ 'kbmemfree', 'Memory free' ],
+            [ 'kbswpfree', 'Swap free' ],
+            [ 'plist-sz',  'Process size' ],
+            [ 'runq-sz', 'Run queue size' ],
+            [ 'proc/s',    'Processes/s' ],
+            [ 'pgscand/s', 'pgscand/s' ],
+            [ 'kbbuffers', 'Memory buffers' ],
+            [ 'kbcached',  'Memory cached' ],
+            [ 'kbmemused', 'Memory used' ]
+        ]
+    },
+    'net' => {
+        'inst' => 'yes',
+        'cols' => [
+            [ 'rxkB/s',   'IF %s rxbyt/s' ],
+            [ 'txkB/s',   'IF %s txbyt/s' ],
+            [ 'rxpck/s',  'IF %s rxpck/s' ],
+            [ 'txpck/s',  'IF %s txpck/s' ],
+            [ 'rxerr/s',  'IF %s rxerr/s' ],
+            [ 'txerr/s',  'IF %s txerr/s' ],
+            [ 'coll/s',   'IF %s coll/s' ],
+            [ 'rxdrop/s', 'IF %s rxdrop/s' ],
+            [ 'txdrop/s', 'IF %s txdrop/s' ],
+            [ 'txcarr/s', 'IF %s txcarr/s' ],
+            [ 'rxfram/s', 'IF %s rxfram/s' ],
+            [ 'rxfifo/s', 'IF %s rxfifo/s' ],
+            [ 'txfifo/s', 'IF %s txfifo/s' ]
+        ]
+    },
+    'disk' => {
+        'inst' => 'yes',
+        'cols' => [
+            [ 'rd_sec/s', 'Disk %s Read/s' ],
+            [ 'wr_sec/s', 'Disk %s Write/s' ],
+            [ 'avgqu-sz', 'Disk %s avgqu-sz' ],
+            [ 'await' =>  'Disk %s await' ],
+            [ 'svctm' =>  'Disk %s svctm' ],
+            [ '%util' =>  'Disk %s util%%' ],
+            [ 'tps' =>    'Disk %s Transfer/s' ]
+        ]
+    }
+);
+
+our %OUTPUT_SCALE = (
+    'kbmemfree' => 1024,
+    'kbswpfree' => 1024,
+    'kbbuffers' => 1024,
+    'kbcached' => 1024,
+    'kbmemused' => 1024
+);
+
+sub parse($$) {
+    my ($file,$r_samplesByType) = @_;
+
+    open INPUT, $file or die "Cannot open $file";
+
+    my $header = <INPUT>;
+    if ( $DEBUG > 1 ) {
+        print "parse: file=$file header=$header";
+    }
+
+    my $date = undef;
+    if ( $header =~ /^Linux\s+.*\s+(\d+)\/(\d+)\/(\d+)/ ) {
+        my ($month,$day,$year) = ($1,$2,$3);
+        $date = "20". $year . "-". $month . "-" . $day;
+    } else {
+        die "Could not extract date from $header";
+    }
+
+    my %blockKeys = ();
+    foreach my $r_blockDef ( @BLOCK_DEF ) {
+        $blockKeys{$r_blockDef->{'key'}->[0] . $r_blockDef->{'key'}->[1]} =
+            $r_blockDef;
+    }
+
+    my $state = $FIND_BLOCK_START;
+    my $r_activeBlock = undef;
+    my $r_columnIndex = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parse: state=$state line=$line"; }
+        if ( $state == $FIND_BLOCK_START ) {
+            if ( $line =~ /^\d+/ ) {
+                chop $line;
+                my @columns = split(/\s+/, $line);
+                my $key = $columns[1] . $columns[2];
+                if ( exists $blockKeys{$key} ) {
+                    $r_activeBlock = $blockKeys{$key};
+                    $state = $PROCESSING_BLOCK;
+
+                    my %blockColumns = map { $_ => 1 } @{$r_activeBlock->{'columns'}};
+                    $r_columnIndex = {};
+                    for ( my $index = 1; $index <= $#columns; $index++ ) {
+                        if ( exists $blockColumns{$columns[$index]} ) {
+                            $r_columnIndex->{$columns[$index]} = $index;
+                        }
+                    }
+                } else {
+                    $state = $FIND_BLOCK_END;
+                    $r_activeBlock = undef;
+                    $r_columnIndex = undef;
+                }
+            }
+        } elsif ( $state == $PROCESSING_BLOCK ) {
+            if ( $line =~ /^\d/ ) {
+                chop $line;
+                my @fields = split(/\s+/,$line);
+                if ( exists $r_activeBlock->{'inst'} ) {
+                    if ( $fields[1] !~ /$r_activeBlock->{'inst'}/ ) {
+                        next;
+                    }
+                }
+                my $time = $date . " " . $fields[0];
+                my $timeStamp = parseTime($time, $StatsTime::TIME_SQL);
+                my $r_instances = $r_samplesByType->{$r_activeBlock->{'category'}}->{$timeStamp};
+                if ( ! defined $r_instances ) {
+                    $r_instances = {};
+                    $r_samplesByType->{$r_activeBlock->{'category'}}->{$timeStamp} = $r_instances;
+                }
+
+                my $instanceId = '';
+                if ( exists $r_activeBlock->{'inst'} && ! exists $r_activeBlock->{'dropinst'} ) {
+                    $instanceId = $fields[1];
+                }
+                my $r_instanceStats = $r_instances->{$instanceId};
+                if ( ! defined $r_instanceStats ) {
+                    $r_instanceStats = {};
+                    $r_instances->{$instanceId} = $r_instanceStats;
+                }
+
+                while ( my ($name,$index) = each %{$r_columnIndex} ) {
+                    $r_instanceStats->{$name} = $fields[$index];
+                }
+            } else {
+                $state = $FIND_BLOCK_START;
+                $r_activeBlock = undef;
+                $r_columnIndex = undef;
+            }
+        } elsif ( $state == $FIND_BLOCK_END ) {
+            if ( $line =~ /^$/ ) {
+                $state = $FIND_BLOCK_START;
+            }
+        }
+    }
+    close INPUT;
+}
+
+# Disk IO stats from RHEL 8 are different and need to be mapped to the
+# expected columns
+sub mapDiskStats($) {
+    my ($r_samplesByTime) = @_;
+
+    my $firstSample = 1;
+    foreach my $r_samplesByDisk ( values %{$r_samplesByTime} ) {
+        foreach my $r_sample ( values %{$r_samplesByDisk} ) {
+            if ( $firstSample && ! exists $r_sample->{'rkB/s'} ) {
+                return;
+            }
+            $firstSample = 0;
+            $r_sample->{'rd_sec/s'} = $r_sample->{'rkB/s'} * 2;
+            $r_sample->{'wr_sec/s'} = $r_sample->{'wkB/s'} * 2;
+            $r_sample->{'avgqu-sz'} = $r_sample->{'aqu-sz'};
+        }
+    }
+}
+
+sub writeSarCsv($$) {
+    my ($outDir,$r_samplesByType) = @_;
+
+    while ( my ($category,$r_outputConfig) = each %OUTPUT_CONFIG ) {
+        my $r_sampleByTime = $r_samplesByType->{$category};
+        my $r_colDefs = $r_outputConfig->{'cols'};
+
+        # RHEL 8 has different columns for disk stats
+        if ( $category eq 'disk' ) {
+            mapDiskStats($r_sampleByTime)
+        }
+
+        my @instanceList = ();
+        if ( $r_outputConfig->{'inst'} eq 'yes' ) {
+            my %instanceHash = ();
+            while ( my ($time,$r_sample) = each %{$r_sampleByTime} ) {
+                foreach my $instance ( keys %{$r_sample} ) {
+                    $instanceHash{$instance} = 1;
+                }
+            }
+            @instanceList = sort keys %instanceHash;
+        }
+
+        my $outFile = $outDir . "/sar_" . $category . ".csv";
+        open OUTPUT, ">$outFile" or die "Cannot open $outFile";
+        my @header = ( 'Date' );
+        if ( $r_outputConfig->{'inst'} eq 'no' ) {
+            foreach my $r_colDef ( @{$r_colDefs} ) {
+                push @header, $r_colDef->[1];
+            }
+        } else {
+            foreach my $instance ( @instanceList ) {
+                foreach my $r_colDef ( @{$r_colDefs} ) {
+                    push @header, sprintf($r_colDef->[1], $instance);
+                }
+            }
+        }
+        print OUTPUT join(";", @header), "\n";
+
+        # The scripts that parse the CSV files were designed to parse output from kSar
+        # kSar writes a header line and then writes a dummy line, .e.g
+        #
+        # Date;% Swap used;%Memory used;%vmeff;....
+        # Wed Mar 04 00:00:01 GMT 2020;;;;;;;;;;;;;;;;.....
+        #
+        # So to be compatible, we need to write a dummy line as well
+        print OUTPUT ";;;;;;\n";
+
+        foreach my $sampleTime ( sort { $a <=> $b } keys %{$r_sampleByTime} ) {
+            my $r_sample = $r_sampleByTime->{$sampleTime};
+            if ( $DEBUG > 8 ) { print Dumper("writeSarCsv: r_sample", $r_sample); }
+            my $timestamp = formatTime($sampleTime, $StatsTime::TIME_SQL);
+            my @row = ( $timestamp );
+            if ( $r_outputConfig->{'inst'} eq 'no' ) {
+                my $r_instanceData = $r_sample->{''};
+                foreach my $r_colDef ( @{$r_colDefs} ) {
+                    my $value = $r_instanceData->{$r_colDef->[0]};
+                    if ( defined $value ) {
+                        if ( exists $OUTPUT_SCALE{$r_colDef->[0]} ) {
+                            $value *= $OUTPUT_SCALE{$r_colDef->[0]}
+                        }
+                    } else {
+                        print "WARNING: No value found for $r_colDef->[0]\n";
+                        $value = 0;
+                    }
+                    push @row, $value;
+                }
+            } else {
+                foreach my $instance ( @instanceList ) {
+                    my $r_instanceData = $r_sample->{$instance};
+                    if ( defined $r_instanceData ) {
+                        foreach my $r_colDef ( @{$r_colDefs} ) {
+                            my $value = $r_instanceData->{$r_colDef->[0]};
+                            if ( exists $OUTPUT_SCALE{$r_colDef->[0]} ) {
+                                $value *= $OUTPUT_SCALE{$r_colDef->[0]}
+                            }
+                            push @row, $value;
+                        }
+                    } else {
+                        print "WARNING: No data found for $instance @ $timestamp\n";
+                        foreach my $r_colDef ( @{$r_colDefs} ) {
+                            push @row, 0;
+                        }
+                    }
+                }
+            }
+            if ( $DEBUG > 8 ) { print Dumper("writeSarCsv: row", \@row); }
+            print OUTPUT join(";",@row), "\n";
+        }
+        close OUTPUT;
+    }
+
+}
+
+
+sub main() {
+    my ($inDir,$outDir,$incrFile);
+    my $nfsd = 0;
+    my $result = GetOptions("indir=s"  => \$inDir,
+                            "outdir=s"  => \$outDir,
+                            "incr=s" => \$incrFile,
+                            "nfsd" => \$nfsd,
+                            "debug=s" => \$DEBUG
+                        );
+    ($result == 1) or die "Invalid args";
+
+
+    if ( $nfsd ) {
+        my $r_cols = $OUTPUT_CONFIG{'sys'}->{'cols'};
+        foreach my $col ( 'scall/s', 'badcall/s', 'packet/s', 'sread/s', 'swrite/s', 'saccess/s', 'sgetatt/s' ) {
+            push @{$r_cols}, [ $col, $col ];
+        }
+    }
+
+    my %incrData = ();
+    if ( defined $incrFile && -r $incrFile ) {
+        my $dumperOutput;
+        do {
+            local $/ = undef;
+            open my $fh, "<", $incrFile or die "could not open $incrFile: $!";
+            $dumperOutput = <$fh>;
+            close $fh;
+        };
+        my $VAR1;
+        eval($dumperOutput);
+        %incrData = %{$VAR1};
+        if ( $DEBUG > 3 ) { print Dumper("main: incrData", \%incrData); }
+    }
+
+    my $fileIndex = 1;
+    if ( exists $incrData{'fileIndex'} ) {
+        $fileIndex = $incrData{'fileIndex'};
+    }
+
+    my @sarFiles = ();
+    while ( -r "$inDir/sar.$fileIndex" ) {
+        push @sarFiles, "$inDir/sar.$fileIndex";
+        $fileIndex++;
+    }
+    if ( $DEBUG > 3 ) { print "main: sarFiles ", Dumper(\@sarFiles); }
+
+    my %samplesByType = (
+        'net' => {},
+        'disk' => {},
+        'sys' => {}
+    );
+    foreach my $file ( @sarFiles ) {
+        parse($file,\%samplesByType);
+    }
+    if ( $DEBUG > 3 ) { print Dumper("main: samplesByType",\%samplesByType); }
+
+    writeSarCsv($outDir,\%samplesByType);
+
+    if ( defined $incrFile ) {
+        $incrData{'fileIndex'} = $fileIndex;
+        my $incrDataStr = Dumper(\%incrData);
+        open INC, ">$incrFile";
+        print INC $incrDataStr;
+        close INC;
+    }
+}
+
+main();

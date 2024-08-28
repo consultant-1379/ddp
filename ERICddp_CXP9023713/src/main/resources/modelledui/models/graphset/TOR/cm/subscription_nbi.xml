@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_cm_subscriptions_nbi">
+      <reference table="sites" condition="enm_cm_subscriptions_nbi.siteid = sites.id"/>
+      <reference table="servers" condition="enm_cm_subscriptions_nbi.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="successfulPostSubscriptions" type="sb">
+      <title value="Successful Subscription requests"/>
+      <column db="successfulPostSubscriptions" label="Successful Subscription requests"/>
+    </graph>
+    <graph name="failedPostSubscriptions" type="sb">
+      <title value="Failed Subscription requests"/>
+      <column db="failedPostSubscriptions" label="Failed Subscription requests"/>
+    </graph>
+    <graph name="successfulSubscriptionViews" type="sb">
+      <title value="Successful Subscription Views"/>
+      <column db="successfulSubscriptionViews" label="Successful Subscription Views"/>
+    </graph>
+    <graph name="failedSubscriptionViews" type="sb">
+      <title value="Failed Subscription Views"/>
+      <column db="failedSubscriptionViews" label="Failed Subscription Views"/>
+    </graph>
+    <graph name="successfulSubscriptionDeletion" type="sb">
+      <title value="Successful Subscription Deletions"/>
+      <column db="successfulSubscriptionDeletion" label="Successful Subscription Deletions"/>
+    </graph>
+    <graph name="failedSubscriptionDeletion" type="sb">
+      <title value="Failed Subscription Deletions"/>
+      <column db="failedSubscriptionDeletion" label="Failed Subscription Deletions"/>
+    </graph>
+    <graph name="successfulViewAllSubscriptions" type="sb">
+      <title value="Successful View All Subscriptions"/>
+      <column db="successfulViewAllSubscriptions" label="Successful View All Subscriptions"/>
+    </graph>
+    <graph name="failedViewAllSubscriptions" type="sb">
+      <title value="Failed View All Subscriptions"/>
+      <column db="failedViewAllSubscriptions" label="Failed View All Subscriptions"/>
+    </graph>
+    <graph name="createEventsReceived" type="sb">
+      <title value="Number of Create Events received"/>
+      <column db="createEventsReceived" label="Number of Create Events received"/>
+    </graph>
+    <graph name="vesEventsToBePushedNotifyMoiCreation" type="sb">
+      <title value="Number of VES Events to be pushed for type notifyMOICreation"/>
+      <column db="vesEventsToBePushedNotifyMoiCreation" label="Number of VES Events to be pushed for type notifyMOICreation"/>
+    </graph>
+    <graph name="vesEventsToBePushedNotifyMoiChangesCreate" type="sb">
+      <title value="Number of VES Events to be pushed of type notifyMOIChanges - operation CREATE"/>
+      <column db="vesEventsToBePushedNotifyMoiChangesCreate" label="Number of VES Events to be pushed of type notifyMOIChanges - operation CREATE"/>
+    </graph>
+    <graph name="updateEventsReceived" type="sb">
+      <title value="Number of AVC Events received"/>
+      <column db="updateEventsReceived" label="Number of AVC Events received"/>
+    </graph>
+    <graph name="vesEventsToBePushedNotifyMoiAvc" type="sb">
+      <title value="Number of VES Events to be pushed of type notifyMOIAttributeValueChanges"/>
+      <column db="vesEventsToBePushedNotifyMoiAvc" label="Number of VES Events to be pushed of type notifyMOIAttributeValueChanges"/>
+    </graph>
+    <graph name="vesEventsToBePushedNotifyMoiChangesReplace" type="sb">
+      <title value="Number of VES Events to be pushed of type notifyMOIChanges - operation REPLACE"/>
+      <column db="vesEventsToBePushedNotifyMoiChangesReplace" label="Number of VES Events to be pushed of type notifyMOIChanges - operation REPLACE"/>
+    </graph>
+    <graph name="deleteEventsReceived" type="sb">
+      <title value="Number of Delete Events received"/>
+      <column db="deleteEventsReceived" label="Number of Delete Events received"/>
+    </graph>
+    <graph name="vesEventsToBePushedNotifyMoiDeletion" type="sb">
+      <title value="Number of VES Events to be pushed of type notifyMOIDeletion"/>
+      <column db="vesEventsToBePushedNotifyMoiDeletion" label="Number of VES Events to be pushed of type notifyMOIDeletion"/>
+    </graph>
+    <graph name="vesEventsToBePushedNotifyMoiChangesDelete" type="sb">
+      <title value="Number of VES Events to be pushed of type notifyMOIChanges - operation DELETE"/>
+      <column db="vesEventsToBePushedNotifyMoiChangesDelete" label="Number of VES Events to be pushed of type notifyMOIChanges - operation DELETE"/>
+    </graph>
+    <graph name="totalEventsReceived" type="sb">
+      <title value="Total Number of Events Received"/>
+      <column db="totalEventsReceived" label="Total Number of Events ReceivedTotal"/>
+    </graph>
+    <graph name="totalVesEventsToBePushed" type="sb">
+      <title value="Total Number of VES Events to be pushed"/>
+      <column db="totalVesEventsToBePushed" label="Total Number of VES Events to be pushed"/>
+    </graph>
+    <graph name="totalVesEventsPushedSuccessfully" type="sb">
+      <title value="Total Number of VES Events pushed Successfully"/>
+      <column db="totalVesEventsPushedSuccessfully" label="Total Number of VES Events pushed Successfuly"/>
+    </graph>
+    <graph name="totalVesEventsPushedError" type="sb">
+      <title value="Total Number of VES Events pushed Failed"/>
+      <column db="totalVesEventsPushedError" label="Total Number of VES Events pushed Failed"/>
+    </graph>
+    <graph name="totalVesEventsPushedCancelled" type="sb">
+      <title value="Total Number of VES Events pushed Cancelled"/>
+      <column db="totalVesEventsPushedCancelled" label="Total Number of VES Events pushed Cancelled"/>
+    </graph>
+    <graph name="totalSuccessfulHeartbeatRequests" type="sb">
+      <title value="Number of Successful Heartbeat requests"/>
+      <column db="totalSuccessfulHeartbeatRequests" label="Number of Successful Heartbeat requests"/>
+    </graph>
+    <graph name="totalFailedHeartbeatRequests" type="sb">
+      <title value="Number of Failed Heartbeat requests"/>
+      <column db="totalFailedHeartbeatRequests" label="Number of Failed Heartbeat requests"/>
+    </graph>
+    <graph name="successfulContinuousHeartbeatRequests" type="sb">
+      <title value="Successful Continuous Heartbeat Requests"/>
+      <column db="successfulContinuousHeartbeatRequests" label="Successful Continuous Heartbeat Requests"/>
+    </graph>
+    <graph name="failedContinuousHeartbeatRequests" type="sb">
+      <title value="Failed Continuous Heartbeat Requests"/>
+      <column db="failedContinuousHeartbeatRequests" label="Failed Continuous Heartbeat Requests"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="Subscription">
+      <member>successfulPostSubscriptions</member>
+      <member>failedPostSubscriptions</member>
+      <member>successfulSubscriptionViews</member>
+      <member>failedSubscriptionViews</member>
+      <member>successfulSubscriptionDeletion</member>
+      <member>failedSubscriptionDeletion</member>
+      <member>successfulViewAllSubscriptions</member>
+      <member>failedViewAllSubscriptions</member>
+    </group>
+    <group name="EventHandling">
+      <member>createEventsReceived</member>
+      <member>vesEventsToBePushedNotifyMoiCreation</member>
+      <member>vesEventsToBePushedNotifyMoiChangesCreate</member>
+      <member>updateEventsReceived</member>
+      <member>vesEventsToBePushedNotifyMoiAvc</member>
+      <member>vesEventsToBePushedNotifyMoiChangesReplace</member>
+      <member>deleteEventsReceived</member>
+      <member>vesEventsToBePushedNotifyMoiDeletion</member>
+      <member>vesEventsToBePushedNotifyMoiChangesDelete</member>
+      <member>totalEventsReceived</member>
+      <member>totalVesEventsToBePushed</member>
+      <member>totalVesEventsPushedSuccessfully</member>
+      <member>totalVesEventsPushedError</member>
+      <member>totalVesEventsPushedCancelled</member>
+    </group>
+    <group name="Heartbeat">
+      <member>totalSuccessfulHeartbeatRequests</member>
+      <member>totalFailedHeartbeatRequests</member>
+      <member>successfulContinuousHeartbeatRequests</member>
+      <member>failedContinuousHeartbeatRequests</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

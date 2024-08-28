@@ -1,0 +1,94 @@
+#!/bin/bash
+
+DIR=$(dirname $0)
+. ${DIR}/k8slib.sh
+
+INSTANCE=$1
+SITE_ID=$2
+MAKESTATS_CMD="$3"
+MAKESTATS_LOG="$4"
+
+TS=$(date +%d%H%M)
+
+DASH_DATE=$(echo "${MAKESTATS_CMD}" | awk '{print $2}')
+SITE_NAME=$(echo "${MAKESTATS_CMD}" | awk '{print $3}')
+SITE_TYPE=$(echo "${MAKESTATS_CMD}" | awk '{print $5}')
+FILE_TYPE=$(echo "${MAKESTATS_CMD}" | awk '{print $6}')
+PRIVATE_IP=$(echo "${MAKESTATS_CMD}" | awk '{print $8}')
+DDP_FQDN=$(echo "${MAKESTATS_CMD}" | awk '{print $9}')
+
+DBHOST_IP=$(getent hosts dbhost | awk '{print $1}')
+if [ ${DBHOST_IP} = "127.0.0.1" ] ; then
+    DBHOST_IP=${PRIVATE_IP}
+fi
+
+DATE=$(echo ${DASH_DATE} | sed 's/-//g')
+
+DDP_VERSION=$(realpath /data/ddp/current | sed 's/.*DDP-//')
+JOB_NAME="makestats.${INSTANCE}.${SITE_ID}.${DATE}.${TS}"
+MAKESTATS_SELECTOR="production"
+if [ -r /data/tmp/${SITE_NAME}.makestats_selector ] ; then
+    MAKESTATS_SELECTOR=$(cat /data/tmp/${SITE_NAME}.makestats_selector)
+fi
+
+WORKER_IMAGE="ddpinfra-priv:5000/ddp_worker:production"
+if [ -r /data/tmp/${SITE_NAME}.worker_image ] ; then
+    WORKER_IMAGE=$(cat /data/tmp/${SITE_NAME}.worker_image)
+elif [ -r /data/tmp/worker_image ] ; then
+    WORKER_IMAGE=$(cat /data/tmp/worker_image)
+fi
+
+CMD="\"/data/run\", \"${DASH_DATE}\", \"${SITE_NAME}\", \"${SITE_TYPE}\", \"${DDP_VERSION}\", \"${DBHOST_IP}\", \"${MAKESTATS_LOG}\", \"${PRIVATE_IP}\", \"${FILE_TYPE}\", \"${DDP_FQDN}\""
+writeJobYaml ${JOB_NAME} ${MAKESTATS_SELECTOR} ${INSTANCE} ${WORKER_IMAGE} ${PRIVATE_IP} "${CMD}"
+
+kubectl apply -f /data/tmp/${JOB_NAME}.yml > /data/tmp/${JOB_NAME}-apply.log 2>&1
+if [ $? -ne 0 ] ; then
+    cat /data/tmp/${JOB_NAME}.yml /data/tmp/${JOB_NAME}-apply.log
+    /bin/rm /data/tmp/${JOB_NAME}.yml /data/tmp/${JOB_NAME}-apply.log
+    echo "ERROR: failed to submit kubernetes job"
+    exit 1
+fi
+
+JOB_RUNNING=1
+LOOP_COUNT=0
+MAX_ITERATIONS=240 # 240 loops @ 30s / loop means we'll wait for up to two hours
+while [ ${JOB_RUNNING} -eq 1 ] && [ ${LOOP_COUNT} -lt ${MAX_ITERATIONS} ] ; do
+    kubectl get jobs ${JOB_NAME} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' > /data/tmp/${JOB_NAME}-status.log 2>&1
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to get job status for ${JOB_NAME}"
+        cat /data/tmp/${JOB_NAME}.yml /data/tmp/${JOB_NAME}-apply.log /data/tmp/${JOB_NAME}-status.log
+        /bin/rm /data/tmp/${JOB_NAME}.yml /data/tmp/${JOB_NAME}-apply.log /data/tmp/${JOB_NAME}-status.log
+        exit 1
+    fi
+
+    grep True /data/tmp/${JOB_NAME}-status.log > /dev/null
+    if [ $? -eq 0 ] ; then
+        JOB_RUNNING=0
+    else
+        LOOP_COUNT=$(expr ${LOOP_COUNT} + 1)
+        sleep 30
+    fi
+done
+
+echo "Job Description" >> ${MAKESTATS_LOG}
+kubectl describe job/${JOB_NAME} >> ${MAKESTATS_LOG}
+
+POD_NAME=$(kubectl get pods --selector job-name=${JOB_NAME} -o jsonpath='{.items[*].metadata.name}')
+if [ -z "${POD_NAME}" ] ; then
+    echo "INFO: Pod has been deleted" >> ${MAKESTATS_LOG}
+else
+    echo "Pod Description" >> ${MAKESTATS_LOG}
+    kubectl describe pod/${POD_NAME} >> ${MAKESTATS_LOG}
+    echo "Pod Logs" >> ${MAKESTATS_LOG}
+    kubectl logs ${POD_NAME} >> ${MAKESTATS_LOG}
+fi
+
+kubectl delete -f /data/tmp/${JOB_NAME}.yml
+/bin/rm /data/tmp/${JOB_NAME}.yml /data/tmp/${JOB_NAME}-apply.log /data/tmp/${JOB_NAME}-status.log
+
+if [ ${JOB_RUNNING} -eq 1 ] ; then
+    echo "ERROR: Job timed out ${JOB_NAME}"
+    exit 1
+else
+    exit 0
+fi

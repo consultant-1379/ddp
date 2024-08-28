@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="esnmediationdef"/>
+    <service name="eventparserdef"/>
+    <service name="ebaeventparser"/>
+  </services>
+
+  <table name="enm_str_apeps">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="jvmid" reftable="enm_str_jvm_names" refnamecol="jvm_name"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=apeps.flowsDeployed$">
+      <metric source="Count" target="flowsDeployed"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=AvroOutputPartitionerAdapter@eventsReceived$">
+      <metric source="Count" target="eventsOut" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=epsExt_PmRecordStreamParser_connectionsReceived$">
+      <metric source="Count" target="connectionsReceived" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=epsExt_PmRecordStreamParser_disconnectsReceived$">
+      <metric source="Count" target="disconnectsReceived" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=epsExt_PmRecordStreamParser_eventsProcessed$">
+      <metric source="Count" target="eventsProcessed" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=epsExt_PmRecordStreamParser_missedConnectionProcessed$">
+      <metric source="Count" target="missedConnectionProcessed" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=RpmoAvroOutputAdapter@eventsReceived$">
+      <metric source="Count" target="rpmAvroEventsIn" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=RttAvroOutputAdapter@eventsReceived$">
+      <metric source="Count" target="rttAvroEventsIn" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^(%1%)-com.ericsson.component.aia.services.eps.core.statistics.%1%:name=GenericEventListener@eventsReceived$">
+      <metric source="Count" target="eventsIn" delta="true"/>
+      <property name="jvmid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

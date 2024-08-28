@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Consumed Messages"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="kafka_consumer">
+        <reference table="sites" condition="kafka_consumer.siteid = sites.id"/>
+        <reference table="servers" condition="kafka_consumer.serverid = servers.id"/>
+        <reference table="kafka_topic_names" condition="kafka_consumer.topicid  = kafka_topic_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="topicid"/>
+      <where>sites.name = '%s' AND kafka_consumer.topicid = '%s' </where>
+      <column db="kafka_consumer.records_consumed" label="Consumed Messages"/>
+    </query>
+  </queries>
+  <size width="480" height="240"/>
+</modelledgraph>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_shm_import_software_package_log">
+   <keycol name="siteid" reftable="sites"/>
+   <keycol name="netypeid" reftable="ne_types"/>
+   <keycol name="packageid" reftable="ne_up_ver"/>
+  </table>
+
+  <services>
+      <service name="shmservice"/>
+  </services>
+
+  <events>
+      <!-- SHM.IMPORT_SOFTWARE_PACKAGE {\"result\":\"Success\",\"fileSize\":-1.0,\"totalTime\":20523,\"name\":\"CXP9024418_6_R54A3011111104300701050707010514070105210701052807010604070106110701061807010625070107020701070907010716070107230700\",\"nodeType\":\"RadioNode\",\"_Thread\":\"EJB async - 32\",\"importingFrom\":\"Local\"}","timestamp" -->
+      <event name="SHM.IMPORT_SOFTWARE_PACKAGE">
+        <metric source="nodeType" target="netypeid" />
+        <metric source="name" target="packageid" />
+        <metric source="fileSize" target="fileSize"/>
+        <metric source="totalTime" target="totalTime"/>
+        <metric source="result" target="result"/>
+        <metric source="importingFrom" target="importingFrom"/>
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="importexportservice"/>
+    <service name="cmutilities"/>
+  </services>
+
+  <table name="enm_impexpserv_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+     <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ExportStartInstrument$">
+      <metric source="count" target="ExportStartInstrumentCount"/>
+      <metric source="restDuration" target="ExportStartInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ExportStartInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ExportStartInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ExportStartInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ExportStatusInstrument$">
+      <metric source="count" target="ExportStatusInstrumentCount"/>
+      <metric source="restDuration" target="ExportStatusInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ExportStatusInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ExportStatusInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ExportStatusInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ExportStatusListInstrument$">
+      <metric source="count" target="ExportStatusListInstrumentCount"/>
+      <metric source="restDuration" target="ExportStatusListInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ExportStatusListInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ExportStatusListInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ExportStatusListInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ExportReportInstrument$">
+      <metric source="count" target="ExportReportInstrumentCount"/>
+      <metric source="restDuration" target="ExportReportInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ExportReportInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ExportReportInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ExportReportInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ExportFiltersInstrument$">
+      <metric source="count" target="ExportFiltersInstrumentCount"/>
+      <metric source="restDuration" target="ExportFiltersInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ExportFiltersInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ExportFiltersInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ExportFiltersInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ExportDownloadInstrument$">
+      <metric source="count" target="ExportDownloadInstrumentCount"/>
+      <metric source="restDuration" target="ExportDownloadInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ExportDownloadInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ExportDownloadInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ExportDownloadInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ImportDoUploadInstrument$">
+      <metric source="count" target="ImportDoUploadInstrumentCount"/>
+      <metric source="restDuration" target="ImportDoUploadInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ImportDoUploadInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ImportDoUploadInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ImportDoUploadInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ImportJobDetailsInstrument$">
+      <metric source="count" target="ImportJobDetailsInstrumentCount"/>
+      <metric source="restDuration" target="ImportJobDetailsInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ImportJobDetailsInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ImportJobDetailsInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ImportJobDetailsInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ImportAllJobDetailsInstrument$">
+      <metric source="count" target="ImportAllJobDetailsInstrumentCount"/>
+      <metric source="restDuration" target="ImportAllJobDetailsInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ImportAllJobDetailsInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ImportAllJobDetailsInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ImportAllJobDetailsInstrumentRestDelayPercentage"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cm.bulk.instrument.bulk-rest-api:type=ImportAllOperationInstrument$">
+      <metric source="count" target="ImportAllOperationInstrumentCount"/>
+      <metric source="restDuration" target="ImportAllOperationInstrumentRestDuration"/>
+      <metric source="serviceDuration" target="ImportAllOperationInstrumentServiceDuration"/>
+      <metric source="restDelay" target="ImportAllOperationInstrumentRestDelay"/>
+      <metric source="restDelayPercentage" target="ImportAllOperationInstrumentRestDelayPercentage"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

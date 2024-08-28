@@ -1,0 +1,408 @@
+#!/bin/env perl
+
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use Net::SMTP;
+use File::Basename;
+use DBI;
+use StatsDB;
+
+use lib dirname($0);
+use Report;
+
+our $DEBUG=0;
+
+sub formatFailures($) {
+    my ( $r_executedRules ) = @_;
+
+    return encode_json($r_executedRules);
+}
+
+sub testValue($$$) {
+    my ($testType,$testValue,$refValue) = @_;
+
+    my $result = 0;
+    if ( $testType eq 'less' ) {
+        if ( $testValue < $refValue ) {
+            $result = 1;
+        }
+    } elsif ( $testType eq 'more' || $testType eq 'greater' ) {
+        if ( $testValue > $refValue ) {
+            $result = 1;
+        }
+    } elsif ( $testType eq 'equals' ) {
+        if ( $testValue == $refValue ) {
+            $result = 1;
+        }
+    } elsif ( $testType eq 'notequals' ) {
+        if ( $testValue != $refValue ) {
+            $result = 1;
+        }
+    } elsif ( $testType eq 'like' ) {
+        if ( $testValue =~ /$refValue/ ) {
+            $result = 1;
+        }
+    } elsif ( $testType eq 'notlike' ) {
+        if ( $testValue !~ /$refValue/ ) {
+            $result = 1;
+        }
+    }
+
+    return $result;
+}
+
+sub evaluateAndOr($$) {
+    my ($andOr,$r_values) = @_;
+
+    if ( $andOr eq 'and' ) {
+        foreach my $value ( @{$r_values} ) {
+            if ( $value == 0 ) {
+                return 0;
+            }
+        }
+        return 1;
+    } else {
+        foreach my $value ( @{$r_values} ) {
+            if ( $value == 1 ) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+}
+sub filterRow($$) {
+    my ($r_ThisRuleInst,$r_resultRow) = @_;
+
+    if ( ! exists $r_ThisRuleInst->{'filter'} ) {
+        return 1;
+    }
+
+    my @passFilter = ();
+    foreach my $r_condition ( @{$r_ThisRuleInst->{'filter'}->{'condition'}} ) {
+        my $rowValue = $r_resultRow->{$r_condition->{'name'}};
+        my $passCondition = testValue($r_condition->{'type'}, $rowValue, $r_condition->{'value'} );
+        if ( $DEBUG > 5 ) { print "filterRow: passFilter=$passCondition name=" . $r_condition->{'name'} . ", rowValue=$rowValue\n"; }
+        push @passFilter, $passCondition;
+    }
+
+    return evaluateAndOr($r_ThisRuleInst->{'filter'}->{'operation'}, \@passFilter);
+}
+
+sub applyThresholds($$$) {
+    my ($r_ThisRuleInst,$r_thresholdType,$r_resultRow) = @_;
+
+    my @failedThresholds = ();
+    foreach my $r_threshold ( @{$r_ThisRuleInst->{'threshold'}} ) {
+        my $failedCheck = 0;
+        my $compareType = $r_thresholdType->{$r_threshold->{'name'}};
+        ( exists $r_resultRow->{$r_threshold->{'name'}} ) or die "Result row does not contain $r_threshold->{'name'}";
+        my $resultValue = $r_resultRow->{$r_threshold->{'name'}};
+
+        # Queries that are using aggregated value will return NULL for the value
+        # if there are no rows matching the where
+        # -1 means that this threshold is disabled
+        if ( defined $resultValue && $r_threshold->{'value'} != -1 ) {
+            my $severity = 'critical';
+            if ( ! testValue($compareType, $resultValue, $r_threshold->{'value'}) ) {
+                $failedCheck = 1;
+            }
+
+            if ( $DEBUG > 5 ) {
+                print "applyThresholds: checking that $resultValue is $compareType than $r_threshold->{'value'} for $r_threshold->{'name'} in failed=$failedCheck\n";
+            }
+
+            if ( $failedCheck == 0 && exists $r_threshold->{'warn'} ) {
+                $severity = 'warning';
+                if ( ! testValue($compareType, $resultValue, $r_threshold->{'warn'}) ) {
+                    $failedCheck = 1;
+                }
+            }
+
+            if ( $failedCheck == 1 ) {
+                push @failedThresholds, { 'name' => $r_threshold->{'name'}, 'severity' => $severity };
+            }
+        }
+    }
+
+    return \@failedThresholds;
+}
+
+sub executeSetValue($$$$) {
+    my ($r_ThisRuleDef, $r_ThisRuleInst, $r_resultRows, $r_failedRules) = @_;
+
+    my $incomingNumFailedRules = ($#{$r_failedRules}+1);
+
+    my $ruleName = $r_ThisRuleInst->{'rulename'};
+    if ( $DEBUG > 2 ) { print "executeSetValue: rulename=$ruleName\n"; }
+    if ( $DEBUG > 9 ) { print Dumper("executeSetValue: r_resultRows", $r_resultRows); }
+
+    my %thresholdType = ();
+    my $hasThresholds = 0;
+    foreach my $r_threshold ( @{$r_ThisRuleDef->{'threshold'}} ) {
+        $hasThresholds = 1;
+
+        my $compareType = 'less';
+        if ( exists ( $r_threshold->{'type'} ) ) {
+            $compareType = $r_threshold->{'type'};
+        }
+        $thresholdType{$r_threshold->{'name'}} = $compareType;
+    }
+
+    foreach my $r_resultRow ( @{$r_resultRows} ) {
+        if ( $DEBUG > 6 ) { print Dumper("executeSetValue: resultRow", $r_resultRow); }
+
+        if ( ! filterRow($r_ThisRuleInst,$r_resultRow) ) {
+            next;
+        }
+
+        if ( $hasThresholds  ) {
+            my $r_failedThresholds = applyThresholds($r_ThisRuleInst,\%thresholdType,$r_resultRow);
+            if ( $#{$r_failedThresholds} > -1 ) {
+                my $r_failure = {
+                    'threshold' => $r_failedThresholds,
+                    'resultdata' => []
+                };
+                foreach my $resultName ( keys %{$r_resultRow} ) {
+                    push @{$r_failure->{'resultdata'}}, { 'name' => $resultName, 'value' => $r_resultRow->{$resultName} };
+                }
+                push @{$r_failedRules}, $r_failure;
+            }
+        } else {
+            my $r_failure = {
+                'resultdata' => []
+            };
+
+            foreach my $resultName ( keys %{$r_resultRow} ) {
+                push @{$r_failure->{'resultdata'}}, { 'name' => $resultName, 'value' => $r_resultRow->{$resultName} };
+            }
+            push @{$r_failedRules}, $r_failure;
+        }
+    }
+
+    my $outgoingNumFailedRules = ($#{$r_failedRules}+1);
+
+    if ( $DEBUG > 2 ) { print "executeSetValue: num failures=", ($outgoingNumFailedRules - $incomingNumFailedRules), "\n"; }
+}
+
+sub getRuleResults($$$$) {
+    my ( $dbh, $r_ThisRuleDef, $r_ThisRuleInst, $r_ruleResults ) = @_;
+
+    my $ruleName = $r_ThisRuleDef->{'name'};
+    my @ruleKeys = ( $ruleName );
+    foreach my $r_param ( @{$r_ThisRuleInst->{'parameter'}} ) {
+        push @ruleKeys, $r_param->{'value'};
+    }
+    my $ruleKey = join(":", @ruleKeys );
+
+    my $r_resultRows = $r_ruleResults->{$ruleKey};
+    if ( ! defined $r_resultRows ) {
+        foreach my $r_param ( @{$r_ThisRuleInst->{'parameter'}} ) {
+            if ( $DEBUG > 8 ) { print Dumper("getRuleResults: r_param", $r_param); }
+            my $sql = 'SET @' . $r_param->{'name'} . "=";
+            if ( $r_param->{'value'} =~ /^(\d+)$/ ) {
+                $sql .= $r_param->{'value'};
+            } else {
+                $sql .= "'" . $r_param->{'value'} . "'";
+            }
+            dbDo($dbh, $sql) or die "Failed to set parameter $r_param->{'name'} to $r_param->{'value'}";
+        }
+
+        $r_resultRows = dbSelectAllHash($dbh, $r_ThisRuleDef->{'query'}) or die "Failed to execute rule $ruleName";
+        if ( $DEBUG > 2 ) { print "getRuleResults: num resultRows=", ($#{$r_resultRows}+1), "\n"; }
+        if ( $DEBUG > 7 ) { print Dumper("getRuleResults: results for $ruleName", $r_resultRows); }
+
+        $r_ruleResults->{$ruleKey} = $r_resultRows;
+    }
+
+    return $r_resultRows;
+}
+
+sub areConditionsMet($$$$) {
+    my ($r_report, $r_conditional, $r_ruleResults, $dbh ) = @_;
+
+    if ( $DEBUG > 6 ) { print Dumper("areConditionsMet: r_conditional", $r_conditional); }
+
+    my @conditionResults = ();
+    foreach my $r_condition ( @{$r_conditional->{'condition'}} ) {
+        my $defName = $r_condition->{'def'};
+        my $value = $r_ruleResults->{'conditional'}->{$defName};
+        if ( $DEBUG > 5 ) { print "areConditionsMet: defName=$defName value=" . (defined $value ? $value : "undef") . "\n"; }
+        if ( ! defined $value ) {
+            my $r_conditionDef = $r_report->getConditionDef($r_condition);
+            (defined $r_conditionDef) || die "Could not get conditiondef for $defName";
+            if ( $DEBUG > 6 ) { print Dumper("areConditionsMet: r_conditionDef", $r_conditionDef); }
+            my $r_rows = dbSelectAllArr($dbh, $r_conditionDef->{'query'});
+            ($#{$r_rows} == 0) || die "Invalid row count from condition";
+            $value = $r_rows->[0]->[0];
+            $r_ruleResults->{'conditional'}->{$defName} = $value;
+        }
+
+        my $conditionResult = testValue($r_condition->{'type'},$value, $r_condition->{'value'});
+        push @conditionResults, $conditionResult;
+    }
+
+    return evaluateAndOr($r_conditional->{'operation'},\@conditionResults);
+}
+
+
+sub runRules($$$) {
+    my ( $dbh, $r_report, $r_ruleResults ) = @_;
+
+    my @executedRules = ();
+    foreach my $r_ThisRuleInst ( @{$r_report->getRuleInsts()} ) {
+        if ( $DEBUG > 8 ) { print Dumper("runRules: r_ThisRuleInst", $r_ThisRuleInst); }
+
+        my $ruleName = $r_ThisRuleInst->{'rulename'};
+        if ( exists $r_ThisRuleInst->{'conditional'} ) {
+            if ( ! areConditionsMet( $r_report, $r_ThisRuleInst->{'conditional'}, $r_ruleResults, $dbh ) ) {
+                next;
+            }
+        }
+
+        my $r_ThisRuleDef = $r_report->getRuleDef($r_ThisRuleInst);
+        if ( $DEBUG > 8 ) { print Dumper("runRules: r_ThisRuleDef", $r_ThisRuleDef); }
+
+        if ( exists $r_ThisRuleDef->{'conditional'} ) {
+            if ( ! areConditionsMet( $r_report, $r_ThisRuleDef->{'conditional'}, $r_ruleResults, $dbh ) ) {
+                next;
+            }
+        }
+
+        my %executedRule = ( 'rulename' => $ruleName, 'ruledefname' => $r_ThisRuleDef->{'name'}, 'parameters' => [], 'thresholds' => [] );
+        push @executedRules, \%executedRule;
+        foreach my $r_param ( @{$r_ThisRuleInst->{'parameter'}} ) {
+            push @{$executedRule{'parameters'}}, { 'name' => $r_param->{'name'}, 'value' => $r_param->{'value'} };
+        }
+
+        if ( exists $r_ThisRuleDef->{'threshold'} ) {
+            my %thresholdsDefByName = ();
+            foreach my $r_threshold ( @{$r_ThisRuleDef->{'threshold'}} ) {
+                $thresholdsDefByName{$r_threshold->{'name'}} = $r_threshold;
+            }
+            if ( $DEBUG > 8 ) { print Dumper("runRules: thresholdsDefByName", \%thresholdsDefByName); }
+
+            foreach my $r_thresInst ( @{$r_ThisRuleInst->{'threshold'}} ) {
+                if ( $DEBUG > 8 ) { print Dumper("runRules: r_thresInst", $r_thresInst); }
+                my $r_thresholdDef = $thresholdsDefByName{$r_thresInst->{'name'}};
+                if ( ! defined $r_thresholdDef ) {
+                    die "No threshold defination found for $r_thresInst->{'name'} for rule " . $r_ThisRuleInst->{'rulename'};
+                }
+
+                my %thresholdsEntry = ( 'name' => $r_thresInst->{'name'}, 'type' => $r_thresholdDef->{'type'}, 'value' => $r_thresInst->{'value'} );
+                if ( exists $r_thresInst->{'warn'} ) {
+                    $thresholdsEntry{'warn'} = $r_thresInst->{'warn'};
+                }
+                push @{$executedRule{'thresholds'}}, \%thresholdsEntry;
+            }
+        }
+
+        my $r_resultRows = getRuleResults($dbh, $r_ThisRuleDef, $r_ThisRuleInst, $r_ruleResults);
+        my @failedRules = ();
+        executeSetValue($r_ThisRuleDef, $r_ThisRuleInst, $r_resultRows, \@failedRules );
+
+        if ( $DEBUG > 2 ) { print "runRules: rulename=$ruleName num failures=", ($#failedRules+1), "\n"; }
+        if ( $#failedRules > -1 ) {
+            $executedRule{'failures'} = \@failedRules;
+        }
+    }
+
+    return \@executedRules;
+}
+
+sub store($$$) {
+    my ($dbh,$reportId,$formattedFailures) = @_;
+
+    dbDo($dbh,"use ddpadmin") or die "Failed to switch to ddpadmin";
+    dbDo($dbh,
+         sprintf('DELETE FROM healthcheck_results WHERE siteid = @siteid AND date = @date AND reportid = %d',
+                 $reportId)
+     ) or die "Failed to remove old data";
+
+    my $sth = $dbh->prepare('INSERT INTO healthcheck_results (siteid,date,reportid,data,generatedAt) VALUES (@siteid, @date, ?, ?, NOW())');
+
+    my @values = ($reportId,$formattedFailures);
+    $sth->execute(@values);
+
+    dbDo($dbh,"use statsdb") or die "Failed to switch to statsdb";
+}
+
+sub getCustomReports($$$$) {
+    my ($dbh,$siteId,$site_type,$r_reports) = @_;
+
+    # Use the JOIN on ddpadmin.ddp_custom_reports to filter out
+    # any invalid subscriptions (where the report doesn't exist)
+    my $sql = <<EOS;
+SELECT
+ DISTINCT ddpadmin.ddp_alert_subscriptions.reportid AS reportid
+FROM
+ ddpadmin.ddp_alert_subscriptions, ddpadmin.ddp_custom_reports
+WHERE
+ ddpadmin.ddp_alert_subscriptions.siteid = $siteId AND
+ ddpadmin.ddp_alert_subscriptions.reportid > 0 AND
+ ddpadmin.ddp_alert_subscriptions.reportid = ddpadmin.ddp_custom_reports.id
+EOS
+    my $r_resultRows = dbSelectAllArr($dbh, $sql)
+        or die "Failed to get custom alertsubscriptions";
+    foreach my $r_resultRow ( @{$r_resultRows} ) {
+        my $report = new Report($site_type,$r_resultRow->[0],$dbh);
+        if ( defined $report ) {
+            push @{$r_reports}, { 'reportid' => $r_resultRow->[0], 'report' =>  $report };
+        }
+    }
+}
+
+sub main() {
+    my ($site,$site_type,$date,$ddcTime);
+    my $result = GetOptions("site=s"  => \$site,
+                            "date=s" => \$date,
+                            "oss=s" => \$site_type,
+                            "ddctime=s" => \$ddcTime,
+                            "debug=s" => \$DEBUG
+                        );
+    ($result == 1) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    dbDo($dbh, 'SET collation_connection = "latin1_general_cs"') or die "Failed to set char set";
+
+    dbDo($dbh, 'SET @siteid=' . $siteId) or die "Failed to set siteid";
+    dbDo($dbh, 'SET @site="' . $site . '"') or die "Failed to set site";
+    dbDo($dbh, 'SET @date="' . $date . '"') or die "Failed to set date";
+
+    if ( defined $ddcTime ) {
+        dbDo($dbh, 'SET @ddctime="' . $ddcTime . '"') or die "Failed to set ddcTime";
+    }
+
+    my @hcReports = ();
+
+    my $defaultReport = new Report($site_type,0,$dbh);
+
+    if ( defined $defaultReport ) {
+        @hcReports = ( { 'reportid' => 0, 'report' => $defaultReport } );
+    } else {
+        die( "Default report is undefined" );
+    }
+    getCustomReports($dbh, $siteId, $site_type, \@hcReports);
+
+    my %ruleResults = ();
+    foreach my $r_hc ( @hcReports ) {
+        my $r_failedRules = runRules($dbh,$r_hc->{'report'},\%ruleResults);
+        my $formattedFailures = formatFailures($r_failedRules);
+
+        store($dbh,$r_hc->{'reportid'},$formattedFailures);
+    }
+
+    $dbh->disconnect();
+
+    print "executeRules has finished successfully\n";
+}
+
+main();

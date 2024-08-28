@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ombs_activity_monitor">
+  <reference table="sites" condition="ombs_activity_monitor.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ombs_activity_monitor.endTime BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="ombs_activity_monitor.jobReturnCode"/>
+ </groupby>
+
+ <order columnid="tjobs" direction="DESC"/>
+ <column db="ombs_activity_monitor.jobReturnCode" label="Return Code"/>
+ <column db="COUNT(ombs_activity_monitor.jobReturnCode)" label="Total Jobs" id="tjobs"/>
+
+</modelledtable>

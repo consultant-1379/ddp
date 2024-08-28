@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+
+########################################################################################################################
+# Description ---------   nameTableMgr  -------------------------------------
+# This script is used for cleanup and reorganize the lookup table and its reference table
+# Remove Unsed from lookup table ::
+# usage :: nameTableMgr --action unused --id id --name name --ref <table_1.reference_column> --ref <table_2.reference_column>
+# --table <lookup_table> --test 2
+# # Remove Duplicate from lookup table::
+# usage :: nameTableMgr --action rmdup --id id --name name --ref <table_1.reference_column> --ref <table_2.reference_column>
+# --table <lookup_table>
+# Reorganize lookup table and reference table ::
+# usage :: nameTableMgr --action compact --id id --name name --ref <table_1.reference_column> --ref <table_2.reference_column>
+# --table <lookup_table> --exit 1
+########################################################################################################################
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use DBI;
+use Time::Local;
+
+use StatsDB;
+use NameTable;
+
+our $DEBUG=0;
+
+main();
+
+our $EXIT_FILE;
+our $EXIT_FILE_FOUND = 0;
+
+sub main() {
+    my ($action,$table,$idCol,$nameCol,$test);
+    my @references = ();
+    my $result = GetOptions('action=s' => \$action,
+                            "table=s"  => \$table,
+                            "id=s"   => \$idCol,
+                            "name=s" => \$nameCol,
+                            "ref=s" => \@references,
+                            "exit=s"      => \$EXIT_FILE,
+                            "test", => \$test,
+                            "debug=s"  => \$DEBUG
+                            );
+    ($result == 1) or die "Invalid args";
+
+    if ( (! defined $table) || (! defined $idCol) || (! defined $nameCol) ) {
+        print "ERROR: Invalid usage: missing table,id or name\n";
+        exit 1;
+    }
+
+    if ( $#references < 0 ) {
+        print "ERROR: Invalid usage: missing ref\n";
+        exit 1;
+    }
+
+    my @refTables = ();
+    foreach my $tableCol ( @references ) {
+        my ( $table, $col ) = $tableCol =~ /^([^\.]+)\.([^\.]+)/;
+        if ( ! defined $col ) {
+            print "ERROR: invalid ref $tableCol\n";
+            exit 1;
+        }
+        push @refTables, { 'table' => $table, 'column' => $col };
+    }
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    if ( $action eq "unused" ) {
+        NameTable::removeUnused($dbh, $table, $idCol, $nameCol, \@refTables, ($test != 1));
+    } elsif ( $action eq "compact" ) {
+        NameTable::compact($dbh, $table, $idCol, $nameCol, \@refTables, $EXIT_FILE);
+    } elsif ( $action eq "rmdup" ) {
+        NameTable::removeDuplicates($dbh, $table, $idCol, $nameCol, \@refTables, ($test != 1));
+    } else {
+        print "ERROR: Unknown action $action\n";
+        exit 1;
+    }
+
+    $dbh->disconnect();
+}
+

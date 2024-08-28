@@ -1,0 +1,148 @@
+#!/usr/bin/perl
+#####################################################################################################
+#  Description --------- parseFaultyHardwareDetails-----------
+#  This script parses the faulty hardware log file(faultyHardware_yyyy-mm-dd.txt)
+#  generated on ENIQ STATS server and stores data to DB
+#  @author - Sunil Yadav (xsunyad)
+#  usage parseFaultyHardwareDetails --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER}
+######################################################################################################
+
+use Data::Dumper;
+use DBI;
+use Getopt::Long;
+use StatsDB;
+use StatsTime;
+use strict;
+use warnings;
+
+our $DEBUG = 0;
+our $dbh;
+our $siteId;
+our $serverId;
+our $date;
+our $faultyHardwareTable="eniq_stats_faulty_hardware_details";
+
+sub main {
+    my ($faultyHardwareLogFile, $site, $server);
+    my $result = GetOptions(
+        "logfile=s" => \$faultyHardwareLogFile,
+        "site=s"    => \$site,
+        "server=s"  => \$server,
+        "debug=s"   => \$DEBUG
+        );
+
+    ( -r $faultyHardwareLogFile ) or die "Cannot read log file $faultyHardwareLogFile";
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG >= 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $r_parsedFaultyHardwareDetails = parseFaultyHardwareDetailsLog($faultyHardwareLogFile);
+    my $bcpFile = createBcpFile($r_parsedFaultyHardwareDetails);
+    removeOldData();
+    loadDb($bcpFile);
+    unlink($bcpFile);
+    if($DEBUG >= 1) {
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$startTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseFaultyHardwareDetailsLog {
+    my $logFile = shift;
+    my($faultOccurrenceTime, $eventId, $msgId, $severity, $problemClass, $affect);
+    my @r_arrayOfHash = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    $date=(split /[_.]/, $logFile)[-2];
+    while (my $line = <FILE>) {
+        if ($DEBUG >= 2) { print "Logfile:$logFile\nLine being parsed:$line"; }
+        chomp($line);
+        if($line =~ /^(\w+\s\d{2}\s\d{2}:\d{2}:\d{2}|\w+\s\d{2}\s\d{4})\s+(.*)$/) {
+            $faultOccurrenceTime = $1;
+            my @line_data = (split /\s+/, $2);
+            $eventId = $line_data[0];
+            $msgId = $line_data[1];
+            $severity = $line_data[2];
+        }
+        elsif($line =~ /.*(Fault|Problem) class\s+:\s+(.*)/) {
+            $problemClass = $2;
+        }
+        elsif($line =~ /.*Affects\s+:\s+(.*)/) {
+            $affect = $1;
+            while ($line = <FILE>) {
+                last if $line =~ /(FRU|Status)/;
+                $line =~ s/^\s+|\s+$//g;
+                $affect = $affect." ".$line;
+            }
+        }
+        if($line =~ /FRU/) {
+            my %r_hashOfElements = (
+                occurrenceTime => "$faultOccurrenceTime",
+                eventId        => "$eventId",
+                msgId          => "$msgId",
+                severity       => "$severity",
+                problemClass   => "$problemClass",
+                affect         => "$affect"
+            );
+            push (@r_arrayOfHash, \%r_hashOfElements);
+        }
+    }
+    close FILE;
+    if ($DEBUG >= 3) { print Dumper ("Parsed Data", \@r_arrayOfHash); }
+    return (\@r_arrayOfHash);
+}
+
+sub createBcpFile {
+    my $parsedFaultyHardwaredata = shift;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $faultyHardwareDetailsBcpFile = "${tmpDir}/faulty_hardware_details.bcp";
+    open BCP, ">$faultyHardwareDetailsBcpFile" or die "Cannot open BCPFile";
+    foreach my $hashOfElements (@$parsedFaultyHardwaredata) {
+        printf BCP "%s|%d|%d|%s|%s|%s|%s|%s|%s\n",
+            $date,
+            $siteId,
+            $serverId,
+            $hashOfElements->{'eventId'},
+            $hashOfElements->{'msgId'},
+            $hashOfElements->{'occurrenceTime'},
+            $hashOfElements->{'severity'},
+            $hashOfElements->{'problemClass'},
+            $hashOfElements->{'affect'};
+    }
+    close BCP;
+    if ($DEBUG >= 4) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $faultyHardwareDetailsBcpFile");
+    }
+    return $faultyHardwareDetailsBcpFile;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $faultyHardwareTable WHERE siteId = $siteId AND serverId= $serverId AND date = '$date' ";
+    if ($DEBUG >= 5) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $faultyHardwareTable FIELDS TERMINATED BY \'|\'";
+    if ($DEBUG >= 6) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

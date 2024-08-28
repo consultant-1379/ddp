@@ -1,0 +1,717 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use ServerCfg;
+
+use DBI;
+
+our $DEBUG = 0;
+
+sub getCpuModel($) {
+    my ($cpuName) = @_;
+
+    if ( $cpuName =~ /^Intel\(R\) Xeon\(R\) CPU\s+(\S+)/i ) {
+        $cpuName = "Intel Xeon $1";
+    } elsif ( $cpuName =~ /AMD Opteron\(tm\) Processor (\d+)/i ) {
+        $cpuName = "AMD Opteron $1";
+    }
+
+    if ( $DEBUG > 7 ) { print "parseCpuName: returning $cpuName\n"; }
+    return $cpuName;
+}
+
+sub readBlock() {
+    my @block = ();
+    my $endBlock = 0;
+    my $line;
+    while ( ( $endBlock == 0 ) && ($line = <INPUT>) ) {
+        if ( $line =~ /^$/ ) {
+            $endBlock = 1;
+        } else {
+            chop $line;
+            push @block, $line;
+        }
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("readBlock: block", \@block); }
+    return \@block;
+}
+
+
+sub parseDmiCacheInfo($$$) {
+    my ($r_block,$r_cacheSize,$handle) = @_;
+
+    foreach my $line ( @{$r_block} ) {
+        if ( $line =~ /Installed Size:\s+(\d+)/ ){
+            my $cacheSize = $1;
+            if ( $DEBUG > 7 ) { print "parseDmiCacheInfo: cacheSize=$cacheSize\n"; }
+            $r_cacheSize->{$handle} = $1;
+        }
+    }
+}
+
+sub parseDmiMemoryDev($$) {
+    my ($r_block,$r_config) = @_;
+    foreach my $line ( @{$r_block} ) {
+        if ( $line =~ /Size:\s+(.*)/ ){
+            my $sizeString = $1;
+            if ( $sizeString =~ /(\d+) MB/ ) {
+                my $size = $1;
+                if ( $DEBUG > 7 ) { print "parseDmiMemoryDev: size=$size\n"; }
+                $r_config->{'memory'} += $1;
+                return;
+            } elsif ( $sizeString =~ /(\d+) GB/ ) {
+                my $sizeGB = $1;
+                if ( $DEBUG > 7 ) { print "parseDmiMemoryDev: sizeGB=$sizeGB\n"; }
+                $r_config->{'memory'} += ($1 * 1024);
+                return;
+            }
+        }
+    }
+
+}
+
+sub parseDmiCpu($$) {
+    my ($r_block,$r_config) = @_;
+
+    my %cpu = ();
+    my $cpuStatus = undef;
+
+    foreach my $line ( @{$r_block} ) {
+        if ( $line =~ /Version:\s+(.*)/ ){
+            my $name = $1;
+            my $freq;
+            if ( $name =~ /(.*) @ (\S+)/ ) {
+                ($name,$freq) = ($1,$2);
+            }
+            $name =~ s/\(R\)//g;
+            $name =~ s/Xeon CPU/Xeon/g;
+            $name =~ s/ 0$//;
+            $cpu{'name'} = $name;
+
+            if ( defined $freq ) {
+                if ( $freq =~ /([\d\.]+)GHz/ ) {
+                    $freq = $1 * 1000;
+                    $cpu{'freq'} = $freq;
+                }
+            }
+        } elsif ( $line =~ /^\s+Core Count: (\d+)/ ) {
+            $cpu{'cores'} = $1;
+        } elsif ( $line =~ /^\s+Thread Count: (\d+)/ ) {
+            my $threadCount = $1;
+            if ( defined $cpu{'cores'} ) {
+                $cpu{'thr_per_core'} = $threadCount / $cpu{'cores'};
+            }
+        } elsif ( $line =~ /^\s+L3 Cache Handle: (\S+)/ ) {
+            my $l3CacheRef = $1;
+            if ( $l3CacheRef ne 'Not' ) {
+                $cpu{'h_L3cache'} = $1;
+            }
+        } elsif ( $line =~ /^\s+Status: (.*)/ ) {
+            $cpuStatus = $1;
+        }
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("parseDmiCpu: cpu", \%cpu); }
+    if ( defined $cpuStatus &&
+         ($cpuStatus eq 'Unpopulated' || $cpuStatus eq 'Populated, Disabled By BIOS') ) {
+        if ( $DEBUG > 4 ) { print "parseDmiCpu: unpopulated/disabled CPU\n"; }
+    } else {
+        push @{$r_config->{'cpus'}}, \%cpu;
+    }
+}
+
+sub parseDmiSysInfo($$) {
+    my ($r_block,$r_config) = @_;
+
+    my ($vendor,$model);
+    foreach my $line ( @{$r_block} ) {
+        if ( $line =~ /Manufacturer: (.*)/ ) {
+            $vendor = $1;
+        } elsif ( $line =~ /Product Name: (.*)/ ) {
+            $model = $1;
+        }
+    }
+    if ( $DEBUG > 7 ) { print "parseDmiSysInfo: vendor=$vendor model=$model\n"; }
+    $r_config->{'systemtype'} = $vendor . " " . $model;
+}
+
+sub parseDmiBios($$) {
+    my ($r_block,$r_config) = @_;
+
+    my $releaseDate;
+    foreach my $line ( @{$r_block} ) {
+        if ( $line =~ /^\s+Release Date: (.*)/ ) {
+            $releaseDate = $1;
+            if ( $DEBUG > 7 ) { print "parseDmiBios: releaseDate=$releaseDate\n"; }
+            $r_config->{'biosver'} = $releaseDate;
+            return;
+        }
+    }
+}
+
+sub parseDmidecode($) {
+    my ($file) = @_;
+
+    my %cacheSizes = ();
+    my %config = ( 'cpus' => [] );
+    open INPUT, $file or die "Cannot open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^Handle (\S+),/ ) {
+            my $handle = $1;
+            my $r_block = readBlock();
+            my $blockHeader = shift @{$r_block};
+            if ( $blockHeader =~ /^System Information/ ) {
+                parseDmiSysInfo($r_block,\%config);
+            } elsif ( $blockHeader =~ /^Processor Information/ ) {
+                parseDmiCpu($r_block,\%config);
+            } elsif ( $blockHeader =~ /^Memory Device$/ ) {
+                parseDmiMemoryDev($r_block,\%config);
+            } elsif ( $blockHeader =~ /^Cache Information/ ) {
+                parseDmiCacheInfo($r_block,\%cacheSizes,$handle);
+            } elsif ( $blockHeader =~ /^BIOS Information/ ) {
+                parseDmiBios($r_block,\%config);
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 6 ) { print Dumper("parseDmidecode: cacheSizes", \%cacheSizes); }
+    foreach my $r_cpu ( @{$config{'cpus'}} ) {
+        my $r_l3CacheHandle = $r_cpu->{'h_L3cache'};
+        if ( defined $r_l3CacheHandle && exists $cacheSizes{$r_l3CacheHandle} ) {
+            $r_cpu->{'cache'} = $cacheSizes{$r_l3CacheHandle};
+        }
+    }
+
+    if ( $DEBUG > 6 ) { print Dumper("parseDmidecode: config", \%config); }
+    return \%config;
+}
+
+sub parseSmbios($$) {
+    my ($file,$r_data) = @_;
+
+    my %partsById = ();
+    my $r_currPart;
+
+    open INPUT, $file or die "Cannot open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseSmbios: line=$line"; }
+        if ( $line =~ /^ID\s+/ ) {
+            $line = <INPUT>;
+            my ($id,$type) = $line =~ /^(\d+)\s+\d+\s+(\S+)/;
+            if ( $DEBUG > 7 ) { print "parseSmbios: id=$id type=$type\n"; }
+            $r_currPart = { 'type' => $type, 'lines' => [] };
+            $partsById{$id} = $r_currPart;
+        } elsif ( defined $r_currPart ) {
+            chop $line;
+            push @{$r_currPart->{'lines'}}, $line;
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 8 ) { print Dumper("parseSmbios: partsById", \%partsById); }
+
+    my %cacheByProcessor = ();
+    foreach my $id ( keys %partsById ) {
+        my $r_part = $partsById{$id};
+        if ( $DEBUG > 5 ) { print "parseSmbios: id=$id type=$r_part->{'type'}\n"; }
+        if ( $r_part->{'type'} eq 'SMB_TYPE_PROCESSOR' ) {
+            my $cpuName;
+            foreach my $line ( @{$r_part->{'lines'}} ) {
+                if ( $DEBUG > 8 ) { print "parseSmbios: cpu line=$line\n"; }
+                if ( $line =~ /^\s+Version:\s+(.*)/ ) {
+                    $cpuName = getCpuModel($1);
+                    if ( $DEBUG > 6 ) { print "parseSmbios: cpuName=$cpuName\n"; }
+                } elsif ( $line =~ /^\s+L3 Cache:\s+(\d+)/ ) {
+                    my $r_cachePart = $partsById{$1};
+                    foreach my $cacheLine ( @{$r_cachePart->{'lines'}} ) {
+                        if ( $DEBUG > 8 ) { print "parseSmbios: cacheLine=$cacheLine\n"; }
+                        if ( $cacheLine =~ /^\s+Installed Size:\s+(\d+)/ ) {
+                            my $cacheKb = $1 / 1024;
+                            if ( $DEBUG > 6 ) { print "parseSmbios: cacheKb=$cacheKb\n"; }
+                            $cacheByProcessor{$cpuName} = $cacheKb;
+                        }
+                    }
+                }
+            }
+        } elsif ( $r_part->{'type'} eq 'SMB_TYPE_BIOS' ) {
+            foreach my $line ( @{$r_part->{'lines'}} ) {
+                if ( $DEBUG > 8 ) { print "parseSmbios: bios line=$line\n"; }
+                if ( $line =~ /^\s+Release Date: (\S+)/ ) {
+                    my $releaseDate = $1;
+                if ( $DEBUG > 8 ) { print "parseSmbios: bios releaseDate=$releaseDate\n"; }
+                    $r_data->{'biosver'} = $releaseDate;
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 6 ) { print Dumper("parseSmbios: cacheByProcessor", \%cacheByProcessor); }
+
+    foreach my $r_cpu ( @{$r_data->{'cpus'}} ) {
+        my $cache = $cacheByProcessor{$r_cpu->{'name'}};
+        if ( defined $cache ) {
+            $r_cpu->{'cache'} = $cache;
+        }
+    }
+}
+
+
+
+sub groupCpu
+{
+    my ($r_data) = @_;
+
+    my %groups = ();
+    foreach my $r_cpu ( @{$r_data->{'cpus'}} ) {
+        my $key = $r_cpu->{'name'};
+
+        if ( exists $r_cpu->{'freq'} ) {
+            $key .= ":f" . $r_cpu->{'freq'};
+        }
+
+        if ( exists $r_cpu->{'cache'} ) {
+            $key .= ":c" . $r_cpu->{'cache'};
+        }
+        if ( exists $r_cpu->{'thr_per_core'} ) {
+            $key .= ":t" . $r_cpu->{'thr_per_core'};
+        }
+        if ( ! exists $groups{$key} ) {
+            $groups{$key} = {
+                'count' => 0,
+                'info'  => $r_cpu
+            };
+        }
+        $groups{$key}->{'count'}++;
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("groupCpu: groups", \%groups); }
+    $r_data->{'cpugrp'} = \%groups;
+}
+
+sub readPrtConf
+{
+    my ($inputFile,$r_data) = @_;
+
+    open DATA, $inputFile or die "Cannot open $inputFile";
+    while ( my $line = <DATA> ) {
+        if ( ! exists $r_data->{'memory'} && $line =~ /^Memory size: (\d+) / ) {
+            $r_data->{'memory'} = $1;
+            if ( $DEBUG > 5 ) { print "readPrtConf: read memory $r_data->{'memory'}\n"; }
+        }
+    }
+    close DATA;
+}
+
+sub readPrtDiag
+{
+    my ($inputFile) = @_;
+
+    open DATA, $inputFile or die "Cannot open $inputFile";
+    my $r_data = {};
+    my $inCpus = 0;
+    while ( my $line = <DATA> ) {
+        if ( $DEBUG > 9 ) { print "readPrtDiag: inCpus=$inCpus line=$line"; }
+
+        if ( $inCpus == 0 ) {
+            if ( $line =~ /^System Configuration: (.*)/ ) {
+                my $systemType = $1;
+                $systemType =~ s/^Sun Microsystems\s+//;
+                $systemType =~ s/^Oracle Corporation\s+//;
+                $systemType =~ s/^.*sun4[a-z] //;
+                if ( $DEBUG > 5 ) { print "readPrtDiag: systemType=$systemType\n"; }
+                $r_data->{'systemtype'} = $systemType;
+            } elsif ( $line =~ /^Memory size: (.*)/ ) {
+                my $memory = $1;
+                if ( $memory =~ /(\d+)GB/ ) {
+                $memory = $1 * 1024;
+                } elsif ( $memory =~ /(\d+)MB/ ) {
+                    $memory = $1;
+                } elsif ( $memory =~ /(\d+)\s*Megabytes/ ) {
+                    $memory = $1;
+                }
+                $r_data->{'memory'} = $memory;
+            } elsif ( $line =~ /^=+\s+CPU/ || $line =~ /^=+ Processor/ ) {
+                $inCpus = 1;
+            }
+        } else {
+            if ( $line =~ /^=/ ) {
+                $inCpus = 0;
+            } else {
+                # 6x00/4x00
+                #/N0/SB2/P0    8,520  1800  32.0  US-IV+   2.2
+                # /data/archive/oss/Newbury/data/030505/server/prtdiag.txt
+                if ( $line =~ /^\/N\d+\/SB\d+\/P\d+\s+\S+\s+(\d+)\s+(\S+)\s+(\S+)/ ) {
+                    my $r_cpu = {
+                        'name'  => $3 . " " . $1,
+                        'freq'  => $1,
+                        'cache' => $2 * 1024
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                # 2900/240 Solaris 9
+                # /data/archive/oss/Entel_Santiago/data/010707/server/prtdiag.txt
+                #   0,512  1350 MHz  16MB        SUNW,UltraSPARC-IV    3.1     78C   39C  online      SB0/P0
+                elsif ( $line =~ /[MS]B\d+\/P\d+$/ ) {
+                    chop $line;
+                    my @parts = split( / +/, $line );
+                    if ( $DEBUG > 7 ) { print Dumper("readData: 2900 Solaris 9, parts", \@parts ); }
+                    $parts[5] =~ s/SUNW,UltraSPARC/US/;
+                    $parts[4] =~ s/MB//;
+                    my $r_cpu = {
+                        'name'  => $parts[5] . " " . $parts[2],
+                        'freq'  => $parts[2],
+                        'cache' => $parts[4] * 1024
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                # 880/890
+                # A    0    900  8.0 US-III+ 2.3
+                # /data/archive/oss/3Australia_Perth/data/150106/server/prtdiag.txt
+                elsif ( $line =~ /(\d+)\s+([\d\.]+)\s+US-([A-Z\+]+)\s+[\d\.]+$/ ) {
+                    my $r_cpu = {
+                        'name'  => "US-" . $3 . " " . $1,
+                        'freq'  => $1,
+                        'cache' => $2 * 1024
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                # 240 Solaris 8
+                #0    1503 MHz  1MB         SUNW,UltraSPARC-IIIi     3.4     -     -    online      MB/P0
+                #/data/archive/oss/Telefonica_Prague_Core/data/030909/server/prtdiag.txt
+                elsif ( $line =~ /[MS]B\/P[0-9]+$/ ) {
+                    chop $line;
+                    my @parts = split( / +/, $line );
+                    if ( $DEBUG > 7 ) { print Dumper("readData: 240 Solaris 8, parts", \@parts ); }
+                    $parts[4] =~ s/SUNW,UltraSPARC/US/;
+                    $parts[3] =~ s/MB//;
+                    my $r_cpu = {
+                        'name'  => $parts[4] . " " . $parts[1],
+                        'freq'  => $parts[1],
+                        'cache' => $parts[3] * 1024
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                # 440 Solaris 9
+                #0    1593 MHz  1MB         SUNW,UltraSPARC-IIIi     3.4     -     -    online       -
+                #/data/archive/oss/MTEL_Sofia_WRAN/data/201107/server/prtdiag.txt
+                elsif ( $r_data->{'systemtype'} eq 'Sun Fire V440' && $line =~ /^\d+/ ) {
+                    chop $line;
+                    my @parts = split( / +/, $line );
+                    $parts[4] =~ s/SUNW,UltraSPARC/US/;
+                    $parts[3] =~ s/MB//;
+                    if ( $DEBUG > 7 ) { print Dumper("readData: V440, parts", \@parts ); }
+                    my $r_cpu = {
+                        'name'  => $parts[4] . " " . $parts[1],
+                        'freq'  => $parts[1],
+                        'cache' => $parts[3] * 1024
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                # T5220
+                # Only add line of cpu id is different
+                # /data/archive/oss/LMI_atrcus649/data/300108/server/prtdiag.txt
+                elsif ( $line =~ /^MB\/CMP(\d+)\/P\d+\s+\d+\s+(\d+)\s+\S+\s+SUNW,UltraSPARC-T2/ ) {
+                    my ($cpuid,$freq) = ($1, $2);
+                    if ( $DEBUG > 6 ) { print "readData: in T2, cpuid=$cpuid, freq=$freq\n"; }
+                    if ( $#{$r_data->{'cpus'}} == -1 || ($r_data->{'cpus'}->[$#{$r_data->{'cpus'}}]->{'cpuid'} != $cpuid ) ) {
+                        my $r_cpu = {
+                            'name'  => "US-T2 " . $freq,
+                            'freq'  => $freq,
+                            'cpuid' => $cpuid
+                        };
+                        push @{$r_data->{'cpus'}}, $r_cpu;
+                    }
+                }
+                # Quad-Core AMD Opteron(tm) Processor 2356 CPU 1
+                # /data/archive/oss/LMI_ddpi/data/200709/server/prtdiag.txt
+                elsif ( $line =~ /^\S+-Core AMD Opteron\S+ Processor (\d+)/ ) {
+                    my $r_cpu = {
+                        'name'  => "AMD Opteron " . $1,
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                #M5000 Quad-Core
+                #00     0      0,   1,   2,   3,   4,   5,   6,   7   2400   5.0        7  144
+                #/data/archive/oss/LMI_atrcus727/data/131009/server/prtdiag.txt
+                #M5000 Dual-Core
+                # 00      0          0,   1,   2,   3   2150      5.0          6      146
+                #/data/archive/oss/LMI_atm5000/data/190308/server/prtdiag.txt
+                #M4000 Dual-Core
+                #00      0          0,   1,   2,   3   2150      5.0          6      147
+                #/data/archive/oss/LMI_atrcus735/data/270908/server/prtdiag.txt
+                elsif ( $r_data->{'systemtype'} =~ /SPARC Enterprise M/ && $line =~ /^\s+\d+/ ) {
+                    chop $line;
+                    my @parts = split( / +/, $line );
+                    my $processorCount = 1;
+                    foreach ( @parts ) {
+                        if ( /\d+,/) {
+                            $processorCount++;
+                        }
+                    }
+                    my $threadCount = 1;
+                    my $coreCount = $processorCount;
+                    # For SPARC64 VI, VII and VII+ processors consider the "thread count per core"
+                    # as '2' since they all come with one or the other form of multithreading
+                    if ( $parts[$#parts-1] >= 6 ) {
+                        $threadCount = 2;
+                        $coreCount /= $threadCount;
+                    }
+                    my $r_cpu = {
+                        'name'         => "SPARC-" . $parts[$#parts-1],
+                        'freq'         => $parts[$#parts-3],
+                        'cache'        => $parts[$#parts-2] * 1024,
+                        'cores'        => $coreCount,
+                        'thr_per_core' => $threadCount
+                    };
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+                #
+                # Intel
+                #
+                elsif ( $line =~ /^\s*Intel\(R\) Xeon\(R\) CPU\s+(\S+)\s.*\s([\d.]+)GHz/ ) {
+                    my $r_cpu = {
+                        'name' => "Intel Xeon $1",
+                        'freq' => $2 * 1000
+                    };
+                    if ( $DEBUG > 5 ) { print Dumper("Matched Intel Xeon", $r_cpu); }
+                    push @{$r_data->{'cpus'}}, $r_cpu;
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("readData: r_data", $r_data); }
+    return $r_data;
+}
+
+sub parseCpuInfo($$) {
+    my ($cpuInfo,$r_data) = @_;
+
+    open INPUT, $cpuInfo or die "Cannot open $cpuInfo";
+    my ($brand, $chipid);
+    my %cpus = ();
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseCpuInfo: line=$line"; }
+        if ( $line =~ /^cpu_info:\S+:brand\s+(.*)/ ) {
+            $brand = $1;
+        } elsif ( $line =~ /^cpu_info:\S+:chip_id\s+(\d+)/ ) {
+            $chipid = $1;
+            $cpus{$chipid}->{'brand'} = $brand;
+        } elsif ( $line =~ /^cpu_info:\S+:ncore_per_chip\s+(\d+)/ ) {
+            $cpus{$chipid}->{'cores'} = $1;
+        } elsif ( $line =~ /^cpu_info:\S+:ncpu_per_chip\s+(\d+)/ ) {
+            my $ncpu_per_chip = $1;
+            if ( exists $cpus{$chipid}->{'cores'} ) {
+                $cpus{$chipid}->{'thr_per_core'} = $ncpu_per_chip / $cpus{$chipid}->{'cores'};
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseCpuInfo: cpus", \%cpus); }
+    my %cpuParams = ();
+    foreach my $cpuId ( keys %cpus ) {
+        my $r_cpuInfo = $cpus{$cpuId};
+        my $cpuName = getCpuModel($r_cpuInfo->{'brand'});
+        if ( $cpuName =~ /^Intel Xeon/ || $cpuName =~ /^AMD Opteron/ ) {
+            $cpuParams{$cpuName} = {
+                'cores' => $r_cpuInfo->{'cores'},
+                    'thr_per_core' => $r_cpuInfo->{'thr_per_core'}
+            };
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseCpuInfo: cpuParams", \%cpuParams); }
+
+    foreach my $r_cpu ( @{$r_data->{'cpus'}} ) {
+        my $r_cpuParam = $cpuParams{$r_cpu->{'name'}};
+        if ( defined $r_cpuParam ) {
+            $r_cpu->{'cores'} = $r_cpuParam->{'cores'};
+            $r_cpu->{'thr_per_core'} = $r_cpuParam->{'thr_per_core'};
+        }
+    }
+}
+
+sub storeData
+{
+    my ($r_data,$site,$server,$date) = @_;
+
+    if ( $DEBUG > 6 ) { print Dumper("storeData: r_data", $r_data); }
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+
+    ServerCfg::store($dbh, $siteId, $serverId, $date, $r_data);
+
+    $dbh->disconnect;
+}
+
+sub fixDuplicates() {
+    my $dbh = connect_db();
+
+    my $r_AllCpus = dbSelectAllHash($dbh,"SELECT id, name, mhz, kbCache, cores, threadsPerCore FROM cputypes ORDER BY id, name, mhz");
+    my %cpuIds = ();
+    foreach my $r_Cpu ( @{$r_AllCpus} ) {
+        if ( $DEBUG > 7 ) { print Dumper("compareCpu checking r_Cpu", $r_Cpu); }
+        my $key = $r_Cpu->{'name'};
+        if ( defined $r_Cpu->{'freq'} ) {
+            $key .= ":f" . $r_Cpu->{'freq'};
+        }
+        if ( defined $r_Cpu->{'cache'} ) {
+           $key .= ":c" . $r_Cpu->{'cache'};
+        }
+        if ( defined $r_Cpu->{'thr_per_core'} ) {
+           $key .= ":t" . $r_Cpu->{'thr_per_core'};
+        }
+
+        my $r_Ids = $cpuIds{$key};
+        if ( ! exists $cpuIds{$key} ) {
+            $r_Ids = [];
+            $cpuIds{$key} = $r_Ids;
+        }
+        push @{$r_Ids}, $r_Cpu->{'id'};
+    }
+    foreach my $key ( keys %cpuIds ) {
+        my $r_Ids = $cpuIds{$key};
+        if ( $#{$r_Ids} > 0 ) {
+            my $keepId = shift @{$r_Ids};
+            my $removeIds = join(",", @{$r_Ids});
+            print "Removing Ids $removeIds, keeping $keepId\n";
+            dbDo($dbh, sprintf("UPDATE servercpu SET typeid = %d WHERE typeid IN ( %s )",$keepId, $removeIds) ) or die "Failed to update servercpu";
+            dbDo($dbh, sprintf("DELETE FROM cputypes WHERE id IN ( %s )", $removeIds) )
+                or die "Failed to delete from cputypes";
+        }
+    }
+
+    my $r_allCfgs = dbSelectAllHash($dbh, "SELECT id,system,mbram FROM servercfgtypes");
+    my %cfgIds = ();
+    foreach my $r_Cfg ( @{$r_allCfgs} ) {
+        my $key = $r_Cfg->{'system'} . ":" . $r_Cfg->{'mbram'};
+        my $r_Ids = $cfgIds{$key};
+        if ( ! defined $r_Ids ) {
+            $r_Ids = [];
+            $cfgIds{$key} = $r_Ids;
+        }
+        push @{$r_Ids}, $r_Cfg->{'id'};
+    }
+    my %servCpu = ();
+    foreach my $key ( keys %cfgIds ) {
+        my $r_Ids = $cfgIds{$key};
+        if ( $#{$r_Ids} > 0 ) {
+            my $idList = join(",", @{$r_Ids});
+            my $r_allServCpu = dbSelectAllHash($dbh, "SELECT cfgid,typeid,num FROM servercpu WHERE cfgid IN ( $idList ) ORDER BY cfgid,typeid,num");
+            my %servKeysById = ();
+            foreach my $r_servCpu ( @{$r_allServCpu} ) {
+                my $key = $r_servCpu->{'typeid'} . ":" . $r_servCpu->{'num'};
+                my $existingKey = $servKeysById{$r_servCpu->{'cfgid'}};
+                if ( defined $existingKey ) {
+                    $servKeysById{$r_servCpu->{'cfgid'}} = $existingKey . ":" . $key;
+                } else {
+                    $servKeysById{$r_servCpu->{'cfgid'}} = $key;
+                }
+            }
+            my %cfgIdsByKey = ();
+            foreach my $cfgId ( keys %servKeysById ) {
+                my $key = $servKeysById{$cfgId};
+                my $r_Ids = $cfgIdsByKey{$key};
+                if ( ! defined $r_Ids ) {
+                    $r_Ids = [];
+                    $cfgIdsByKey{$key} = $r_Ids;
+                }
+                push @{$r_Ids}, $cfgId;
+            }
+            foreach my $key ( keys %cfgIdsByKey ) {
+                my @ids = sort { $a <=> $b} @{$cfgIdsByKey{$key}};
+                if ( $#ids > 0 ) {
+                    my $keepId = shift @ids;
+                    my $removeIds = join(",", @ids);
+                    print "Keeping $keepId, Removing Ids $removeIds\n";
+                    dbDo($dbh,sprintf("UPDATE servercfg SET cfgid = %d WHERE cfgid IN ( %s )", $keepId, $removeIds))
+                        or die "Failed to update servercfg";
+                    dbDo($dbh,sprintf("DELETE FROM servercpu WHERE cfgid IN ( %s )", $removeIds))
+                        or die "Failed to remove from servercpu";
+                    dbDo($dbh,sprintf("DELETE FROM servercfgtypes WHERE id IN ( %s )", $removeIds))
+                        or die "Failed to remove from servercfgtypes";
+                }
+            }
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+sub main
+{
+    my ($serverDir,$site,$server,$date,$fix);
+    my $result = GetOptions(
+        "fix" => \$fix,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "dir=s" => \$serverDir,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+
+    if ( defined $fix ) {
+        fixDuplicates();
+        return;
+    }
+
+    #
+    # r_data structure
+    #
+    # systemtype => String with system "name"
+    # memory => RAM in MB
+    # cpus => array of cpu
+    #           name => 'name'
+    #           freq => 'freq'
+    #           cache=> 'cache'
+    my $r_data;
+    my $prtdiag = $serverDir . "/prtdiag.txt";
+    my $dmidecode = $serverDir . "/dmidecode.txt";
+    if ( -r $prtdiag ) {
+        $r_data = readPrtDiag($prtdiag);
+        my $prtconf = $serverDir . "/prtconf.txt";
+        if ( -f $prtconf ) {
+            readPrtConf($prtconf,$r_data);
+        }
+    } elsif ( -r $dmidecode ) {
+        $r_data = parseDmidecode($dmidecode);
+    }
+
+    my $cpuinfo = $serverDir . "/kstat_cpu_info.txt";
+    if ( -r $cpuinfo ) {
+        parseCpuInfo($cpuinfo,$r_data);
+    }
+
+    my $smbios = $serverDir . "/smbios.txt";
+    if ( -r $smbios ) {
+        parseSmbios($smbios,$r_data);
+    }
+
+    if ( ! defined $r_data ) {
+        # If we get here, we have no hardware info so exit
+        print "WARN: No hardware information available\n";
+        exit 0;
+    }
+
+    groupCpu($r_data);
+
+    if ( defined $site ) {
+        storeData($r_data,$site,$server,$date);
+    }
+}
+
+main();

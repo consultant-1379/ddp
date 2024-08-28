@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@generic_jmx_stats:promLC">
+
+  <table name="generic_jmx_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <hooks module="common::JvmName">
+    <hook>prestore</hook>
+  </hooks>
+
+  <metricgroups>
+    <multi>nameid</multi>
+    <metricgroup name="misc:(\S*)">
+      <metric source="java_lang_memory_heapmemoryusage_committed" target="hp_committed" scale="1048576"/>
+      <metric source="java_lang_memory_heapmemoryusage_init" target="hp_init" scale="1048576"/>
+      <metric source="java_lang_memory_heapmemoryusage_max" target="hp_max" scale="1048576"/>
+      <metric source="java_lang_memory_heapmemoryusage_used" target="hp_used" scale="1048576"/>
+      <metric source="java_lang_memory_nonheapmemoryusage_committed" target="nh_committed" scale="1048576"/>
+      <metric source="java_lang_memory_nonheapmemoryusage_init" target="nh_init" scale="1048576"/>
+      <metric source="java_lang_memory_nonheapmemoryusage_max" target="nh_max" scale="1048576"/>
+      <metric source="java_lang_memory_nonheapmemoryusage_used" target="nh_used" scale="1048576"/>
+      <metric source="java_lang_threading_peakthreadcount" target="peakthreadcount"/>
+      <metric source="java_lang_threading_threadcount" target="threadcount"/>
+      <metric source="java_lang_operatingsystem_processcputime" target="cputime" scale="1000000000" delta="true"/>
+      <metric source="java_lang_operatingsystem_openfiledescriptorcount" target="fd"/>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+
+    <metricgroup name="nio-direct:(\S*)">
+      <metric source="java_nio_bufferpool_memoryused" target="nio_mem_direct" scale="1048576">
+        <labelfilter name="name" value="^direct$"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+
+    <metricgroup name="nio-mapped:(\S*)">
+      <metric source="java_nio_bufferpool_memoryused" target="nio_mem_mapped" scale="1048576">
+        <labelfilter name="name" value="^mapped$"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+
+    <metricgroup name="gc-young-g1:(\S*)">
+      <metric source="java_lang_garbagecollector_collectioncount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="G1 Young Generation"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectiontime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="G1 Young Generation"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectioncount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="G1 Young Generation"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+    <metricgroup name="gc-old-g1:(\S*)">
+     <metric source="java_lang_garbagecollector_collectioncount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="G1 Old Generation"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectiontime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="G1 Old Generation"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+
+
+    <metricgroup name="gc-young-para:(\S*)">
+      <metric source="java_lang_garbagecollector_collectioncount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="PS Scavenge"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectiontime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="PS Scavenge"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+    <metricgroup name="gc-old-para:(\S*)">
+     <metric source="java_lang_garbagecollector_collectioncount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="PS MarkSweep"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectiontime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="PS MarkSweep"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+
+    <metricgroup name="gc-young-copy:(\S*)">
+      <metric source="java_lang_garbagecollector_collectioncount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="Copy"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectiontime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="Copy"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+    <metricgroup name="gc-old-msc:(\S*)">
+     <metric source="java_lang_garbagecollector_collectioncount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="MarkSweepCompact"/>
+      </metric>
+      <metric source="java_lang_garbagecollector_collectiontime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="MarkSweepCompact"/>
+      </metric>
+      <property name="nameid"  xsi:type="multilabelproperty" label="jvm_name" index="1" optional="true"/>
+    </metricgroup>
+
+
+  </metricgroups>
+
+</modelledinstr>

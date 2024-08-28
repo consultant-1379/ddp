@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="postgres_locks">
+  <reference table="sites" condition="postgres_locks.siteid = sites.id"/>
+  <reference table="servers" condition="postgres_locks.serverid  = servers.id"/>
+  <reference table="enm_postgres_names" condition="postgres_locks.dbid  = enm_postgres_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <param name="serverid"/>
+ <where>sites.name = '%site%' AND postgres_locks.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND postgres_locks.serverid IN (%serverid%)</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+    <column db="postgres_locks.mode"/>
+    <column db="enm_postgres_names.name"/>
+ </groupby>
+
+ <column db="enm_postgres_names.name" label="Database Name"/>
+ <column db="postgres_locks.mode" label="Modes"/>
+ <column db="SUM(postgres_locks.locks)" label="Locks"/>
+
+</modelledtable>

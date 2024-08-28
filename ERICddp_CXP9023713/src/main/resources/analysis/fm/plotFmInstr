@@ -1,0 +1,141 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+DATADIR=$1
+OUTPUTDIR=$2
+DASH_DATE=$3
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+cat > ${TMP_DIR}/delta.pl <<EOF
+@oldValues = ();
+while ( \$line = <STDIN> )
+{
+    @values = split / /, \$line;
+    if ( \$#oldValues > -1 )
+    {
+       for ( \$i = 0; \$i <= \$#values; \$i++ )
+       {
+          if ( \$i == 0 )
+          {
+             print \$values[\$i];
+          }
+          else
+          {
+             if ( \$values[\$i] < \$oldValues[\$i])
+             {
+                print " ", \$values[\$i];
+             }
+             else
+             {
+                print " ", (\$values[\$i] - \$oldValues[\$i]);
+             }
+          }
+       }
+    }
+    print "\n";
+    @oldValues = @values;
+}
+EOF
+
+${ANALYSIS_BIN}/fm/parseFmInstr --input ${DATADIR}/fm/instr.txt --output ${TMP_DIR}/fmdata.txt
+CIRPMEN=`cat ${DATADIR}/fm/instr.cfg | awk -F, '{print $1}' | sort -u`
+
+
+cp ${ANALYSIS_BIN}/fm/fm.html ${OUTPUTDIR}/instr.html
+chmod 755 ${OUTPUTDIR}/instr.html
+
+if [ -r ${OUTPUTDIR}/cirpman_list.html ] ; then
+    rm ${OUTPUTDIR}/cirpman_list.html
+fi
+
+for CIRPMAN in ${CIRPMEN} ; do
+    if [ ! -d ${OUTPUTDIR}/${CIRPMAN} ] ; then
+	mkdir ${OUTPUTDIR}/${CIRPMAN}
+    fi
+
+    ${ANALYSIS_BIN}/server/plotHeap  ${TMP_DIR}/fmdata.txt ${CIRPMAN} ${DASH_DATE} ${OUTPUTDIR}/${CIRPMAN}/heap.jpg 1,0.5
+
+    if [ ! -d ${TMP_DIR}/${CIRPMAN} ] ; then
+	mkdir ${TMP_DIR}/${CIRPMAN}
+    fi
+    cat ${TMP_DIR}/fmdata.txt | grep ${CIRPMAN} | sed 's/\([^ ]*\) \([0-9:]*\)\.[0-9]* [^ ]*/\1:\2/g' > ${TMP_DIR}/${CIRPMAN}/data.txt
+    cat ${TMP_DIR}/${CIRPMAN}/data.txt | awk '{print $1,$4,$5,$6,$12,$13}' | perl -F ${TMP_DIR}/delta.pl > ${TMP_DIR}/${CIRPMAN}/delta.txt
+    cat > ${TMP_DIR}/${CIRPMAN}/cmd.txt <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set format x "%H:%M"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set terminal jpeg
+
+set output "${OUTPUTDIR}/${CIRPMAN}/flow.jpg"
+set title "Alarm Flow (last ten sec)"
+plot "${TMP_DIR}/${CIRPMAN}/data.txt" using 1:7 title 'Out' with lines, "${TMP_DIR}/${CIRPMAN}/data.txt" using 1:8 title 'In' with lines
+
+set output "${OUTPUTDIR}/${CIRPMAN}/notif.jpg"
+set title "Notifications"
+plot "${TMP_DIR}/${CIRPMAN}/delta.txt" using 1:2 title 'Pushed' with lines, "${TMP_DIR}/${CIRPMAN}/delta.txt" using 1:3 title 'Recevied' with lines, "${TMP_DIR}/${CIRPMAN}/delta.txt" using 1:4 title 'Discarded' with lines
+
+set output "${OUTPUTDIR}/${CIRPMAN}/task.jpg"
+set title "Task processed from Q"
+plot "${TMP_DIR}/${CIRPMAN}/delta.txt" using 1:5 title 'Supi' with lines, "${TMP_DIR}/${CIRPMAN}/delta.txt" using 1:6 title 'Notification' with lines
+
+set output "${OUTPUTDIR}/${CIRPMAN}/q.jpg"
+set title "Queue Size"
+plot "${TMP_DIR}/${CIRPMAN}/data.txt" using 1:9 title 'NotificationIn' with lines, "${TMP_DIR}/${CIRPMAN}/data.txt" using 1:10 title 'SupiOp' with lines, "${TMP_DIR}/${CIRPMAN}/data.txt" using 1:11 title 'EventOut' with lines
+
+EOF
+    gnuplot ${TMP_DIR}/${CIRPMAN}/cmd.txt
+    if [ $? -ne 0 ] ; then
+	echo "plot failed"
+    fi
+    #ls rm -rf ${TMP_DIR}/${CIRPMAN}
+
+    cp ${ANALYSIS_BIN}/fm/cirpman.html ${OUTPUTDIR}/${CIRPMAN}/index.html
+    echo " <li><a href=\"./${CIRPMAN}/index.html\">${CIRPMAN}</a></li> " >> ${OUTPUTDIR}/cirpman_list.html
+done
+
+
+MC_LIST=`${ANALYSIS_BIN}/fm/getFmTotal --input ${TMP_DIR}/fmdata.txt --total ${OUTPUTDIR}/totals.html --data ${TMP_DIR}/fmd.txt | egrep "^MC "`
+if [ ! -z "${MC_LIST}" ] ; then
+    INDEX=`echo ${MC_LIST} | awk '{print NF}'`
+
+    PLOT_CMD=""
+    while [ ${INDEX} -gt 1 ] ; do
+	if [ ! -z "${PLOT_CMD}" ] ; then
+	    PLOT_CMD="${PLOT_CMD},"
+	fi
+	MC=`echo ${MC_LIST} | awk -v varind="${INDEX}" '{print $varind}'`
+	PLOT_CMD="${PLOT_CMD} \"${TMP_DIR}/fmd.txt\" using 1:${INDEX} title \"${MC}\" with boxes"
+	INDEX=`expr ${INDEX} - 1`
+    done
+
+    cat > ${TMP_DIR}/cmd.txt <<EOF
+set xdata time
+set timefmt "%H:%M
+set format x "%H:%M"
+set xrange [ "00:00":"23:59" ]
+set terminal jpeg
+set style fill solid
+
+set output "${OUTPUTDIR}/totals.jpg"
+set title "Notifications Received"
+plot ${PLOT_CMD}
+EOF
+    gnuplot ${TMP_DIR}/cmd.txt
+    if [ $? -eq 0 ] ; then
+	echo rm ${TMP_DIR}/cmd.txt ${TMP_DIR}/fmd.txt ${TMP_DIR}/fmdata.txt       
+    fi
+fi
+
+#cd ${OUTPUTDIR}
+#FULL_SIZE_IMAGES=`ls *.jpg | grep -v tn_`
+#for FULL_SIZE_IMAGE in ${FULL_SIZE_IMAGES} ; do
+#    convert -size 256x184 ${FULL_SIZE_IMAGE} -resize 256x184 tn_${FULL_SIZE_IMAGE}
+#done
+

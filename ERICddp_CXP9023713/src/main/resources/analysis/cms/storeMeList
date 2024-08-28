@@ -1,0 +1,339 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+# Values taken from <enum name="SupportedNeType"> in
+# /opt/ericsson/nms_umts_wranmom/dat/ECIM_Top_v1_2_1_21.xml
+# Updated to add types from ECIM_Top_v2_1_1_2_15.xml
+my %neTypeMap = (
+    1 => "RNC",
+    2 => "RBS",
+    3 => "RANAG",
+    4 => "ERBS",
+    5 => "TDRNC",
+    6 => "TDRBS",
+    7 => "MGW",
+    8 => "MSC",
+    9 => "MSC_BC",
+    10 => "GGSN",
+    11 => "CPG",
+    12 => "SGSN",
+    13 => "DNS",
+    14 => "IPWORKS",
+    15 => "STN",
+    16 => "IPROUTER",
+    17 => "EPG",
+    18 => "MTAS",
+    19 => "CSCF",
+    20 => "H2S",
+    21 => "DSC",
+    22 => "E_CSCF",
+    23 => "I_CSCF",
+    24 => "P_CSCF",
+    25 => "S_CSCF",
+    26 => "PRBS",
+    27 => "SGSN_MME",
+    28 => "SCP",
+    29 => "RBSG2",
+    30 => "WCG",
+    31 => "SAPC",
+    32 => "MSRBS_V1",
+    33 => "STN_V2",
+    34 => "BSP",
+    35 => "SASN",
+    36 => "TCU",
+    37 => "DUA_S",
+    38 => "PGM",
+    39 => "BBSC",
+    40 => "SDNC_P",
+    41 => "CBA_REF",
+    42 => "MSRBS_V2",
+    43 => "UPG",
+    44 => "SBG",
+    45 => "RADIONODE",
+    46 => "RADIOTNODE",
+    47 => "HSS_FE",
+    49 => "ROUTER_6672",
+    52 => "MRFV"
+    );
+
+main();
+
+sub main
+{
+    my ($melistFile,$swlistFile,
+        $date,$site);
+    my $result = GetOptions(
+        "melist=s" => \$melistFile,
+        "swlist=s" => \$swlistFile,
+        "date=s"  => \$date,
+        "site=s"  => \$site,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+    my %ne_types = ();
+    my %rnsMap = ();
+    my %mimMap = ();
+    my @meList = ();
+    readMeList($melistFile,\%rnsMap,\%mimMap,\@meList,\%ne_types);
+
+    my %upMap = ();
+    if ( $swlistFile ) {
+        readSwVer($swlistFile,\%upMap,\%ne_types);
+    }
+
+    storeResults(\%rnsMap,\%mimMap, \%upMap, \@meList, $site,$date);
+}
+
+
+sub storeResults
+{
+    my ( $r_rnsMap, $r_mimMap, $r_upMap, $r_meList, $site,$date ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+
+
+    my @rnsList = keys %{$r_rnsMap};
+    my $r_rnsIdMap = getIdMap($dbh, "rns", "id", "name", \@rnsList );
+
+    $dbh->do("DELETE FROM rns_list WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    foreach my $rns ( @rnsList ) {
+        my $sql = sprintf("INSERT INTO rns_list (date,siteid,rnsid,numne) VALUES (\'%s\',%d,%d,%d)",
+                          $date,$siteId,$r_rnsIdMap->{$rns},
+                          $r_rnsMap->{$rns}
+            );
+        if ( $DEBUG > 2 ) { print "storeResults: $sql\n"; }
+        $dbh->do($sql) or die "Failed to insert $rns " . $dbh->errstr;
+    }
+
+    #
+    # Get all the node types
+    #
+    my %nodeTypes = ();
+    foreach my $r_ne ( @{$r_meList} ) {
+    $nodeTypes{$r_ne->{'type'}} = 1;
+    }
+    my @nodeTypeList = keys %nodeTypes;
+    my $r_nodeTypeMap = getIdMap($dbh,"ne_types", "id", "name", \@nodeTypeList );
+
+    #
+    # NE MIM versions
+    #
+    my @mimList = keys %{$r_mimMap};
+    my $r_mimIdMap = getIdMap($dbh, "ne_mim_ver", "id", "name", \@mimList );
+    if ( $DEBUG > 6 ) { print Dumper("storeResults: r_mimMap: ", $r_mimMap); }
+    $dbh->do("DELETE FROM ne_mim WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    foreach my $mimVer ( @mimList )
+    {
+        foreach my $nodeType ( keys %{$r_mimMap->{$mimVer}} )
+        {
+            #NEVER_CONNECTED = 1
+            #CONNECTED = 2
+            #DISCONNECTED = 3
+            my $sql = sprintf("INSERT INTO ne_mim (date,siteid,netypeid,mimid,never,conn,dis) VALUES (\'%s\',%d,'%s',%d,%d,%d,%d)",
+                              $date,$siteId,
+                              $r_nodeTypeMap->{$nodeType},
+                              $r_mimIdMap->{$mimVer},
+                              $r_mimMap->{$mimVer}->{$nodeType}->{1},
+                              $r_mimMap->{$mimVer}->{$nodeType}->{2},
+                              $r_mimMap->{$mimVer}->{$nodeType}->{3}
+                );
+            if ( $DEBUG > 2 ) { print "storeResults: $sql\n"; }
+            $dbh->do($sql) or die "Failed to insert $mimVer " . $dbh->errstr;
+        }
+    }
+
+
+    #
+    # NE UP versions
+    #
+    my @upList = keys %{$r_upMap};
+    my $r_upIdMap = getIdMap($dbh, "ne_up_ver", "id", "name", \@upList );
+    $dbh->do("DELETE FROM ne_up WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    foreach my $upVer ( @upList )
+    {
+        foreach my $nodeType ( keys %{$r_upMap->{$upVer}} )
+        {
+            my $sql = sprintf("INSERT INTO ne_up (date,siteid,netypeid,upid,numne) VALUES (\'%s\',%d,'%s',%d,%d)",
+                              $date,$siteId,
+                  $r_nodeTypeMap->{$nodeType},
+                              $r_upIdMap->{$upVer},
+                              $r_upMap->{$upVer}->{$nodeType}
+                );
+            if ( $DEBUG > 2 ) { print "storeResults: $sql\n"; }
+            $dbh->do($sql) or die "Failed to insert $upVer " . $dbh->errstr;
+        }
+    }
+
+    #
+    # ne table
+    #
+    dbDo($dbh,"LOCK TABLES ne WRITE, rns READ") or die "Failed to lock ne table";
+    my $r_AllRows = dbSelectAllArr( $dbh,
+                                    sprintf("SELECT ne.id, rns.name, ne.name, ne.netypeid FROM ne,rns WHERE siteid = %d AND ne.rnsid = rns.id", $siteId));
+    my %dbNe = ();
+    foreach my $r_dbRow ( @{$r_AllRows} ) {
+        $dbNe{$r_dbRow->[1] . ":" . $r_dbRow->[2]} = $r_dbRow;
+    }
+    foreach my $r_ne ( @{$r_meList} ) {
+        if ( $DEBUG > 7 ) { print Dumper("storeResults: processing ne", $r_ne); }
+
+    my $neType = $r_ne->{'type'};
+    my $neTypeId = $r_nodeTypeMap->{$neType};
+
+        my $dbRow = undef;
+        if ( exists $dbNe{$r_ne->{'rns'} . ":" . $r_ne->{'name'}} ) {
+            $dbRow = $dbNe{$r_ne->{'rns'} . ":" . $r_ne->{'name'}};
+        } elsif ( exists $dbNe{'RANAG' . ":" . $r_ne->{'name'}} ) {
+            $dbRow = $dbNe{'RANAG' . ":" . $r_ne->{'name'}};
+            dbDo( $dbh, "UPDATE ne SET rnsid = " . $r_rnsIdMap->{$neType} . " WHERE id = " . $dbRow->[0])
+                or die "Failed to update rnsid";
+        }
+
+        if ( $dbRow ) {
+            if ( $DEBUG > 7 ) { print Dumper("storeResults: matched db row", $dbRow ); }
+
+            if ( $DEBUG > 3 ) { print "storeResults: dbRow = \"$dbRow->[3]\" ; neTypeId = $neTypeId"; }
+            if ( $dbRow->[3] != $neTypeId ) {
+                dbDo( $dbh, "UPDATE ne SET netypeid = '$neTypeId' WHERE id = " . $dbRow->[0]) or
+                    die "Failed to update netype";
+            }
+        } else {
+            dbDo($dbh, sprintf("INSERT INTO ne (siteid,rnsid,netypeid,name) VALUES (%d,%d,%d,%s)",
+                               $siteId,
+                               $r_rnsIdMap->{$r_ne->{'rns'}},
+                               $neTypeId,
+                               $dbh->quote($r_ne->{'name'}) ) )
+                or die "Failed to insert node ";
+        }
+    }
+    dbDo($dbh, "UNLOCK TABLES");
+
+    $dbh->disconnect;
+}
+
+sub readMeList
+{
+    my ($meListFile,$r_rnsMap,$r_mimMap,$r_MeList,$r_neTypes) = @_;
+
+    open INPUT, $meListFile or die "Cannot open $meListFile";
+    while ( my $line = <INPUT> )
+    {
+        if ( $DEBUG > 9 ) { print "readMeList: line=$line"; }
+
+        my @fields = split /@/, $line;
+
+        if ( $fields[0] !~ /^SubNetwork=.*/ ) {
+            if ( $DEBUG > 0 ) { print "readMeList: Skipping line $line"; }
+            next;
+        }
+
+        my $nodeType = undef;
+        my $connectionStatus = undef;
+        my ($nodeName) = undef;
+        my $rnsName = undef;
+        my @rdns = undef;
+        my $mimVer = undef;
+
+        if( $#fields > 9 ){
+        # to handle the case where the fdn has one or more @'s like
+        # SubNetwork=STM_R,SubNetwork=Rnc11,MeContext=5443_Income@Raffles_HR where MeContext is actually "5443_Income@Raffles_HR"
+            $connectionStatus = $fields[$#fields-4];
+            $nodeType = $neTypeMap{$fields[$#fields-6]};
+            $mimVer = $fields[$#fields-7];
+            $fields[0] = join("@",@fields[0..$#fields-9]);
+            ($nodeName) = $fields[0] =~ /=([^=,]+)$/;
+            @rdns = split(/,/, $fields[0]);
+            if ( $DEBUG > 8 ) { print "Last index of field in FDN: $#fields connectionStatus: $connectionStatus mim ver: $mimVer nodeTypeNum: $fields[$#fields-6]\n"; }
+            if ( $DEBUG > 5 ) { print "fdn: $fields[0]\n"; }
+        } else {
+            $connectionStatus = $fields[5];
+            $nodeType = $neTypeMap{$fields[3]};
+            ($nodeName) = $fields[0] =~ /=([^=,]+)$/;
+            @rdns = split(/,/, $fields[0]);
+            $mimVer = $fields[2];
+            if ( $DEBUG > 8 ) { print "Last index of field in FDN: $#fields connection status: $connectionStatus mim ver: $mimVer nodeTypeNum: $fields[3]\n"; }
+        }
+
+        if ( ! defined $nodeType ) {
+            $nodeType = "UNKNOWN";
+        }
+        if ( $DEBUG > 8 ) { print "nodeType: $nodeType\n"; }
+
+        if ( $#rdns == 1 ) {
+            $rnsName = $nodeType;
+            $r_rnsMap->{$nodeType}++;
+        } else {
+            ($rnsName) = $rdns[1] =~ /^SubNetwork=(.*)/;
+            if ( $DEBUG > 6 ) { print "readMeList: rdns1=$rdns[1] rnsName=$rnsName\n"; }
+                $r_rnsMap->{$rnsName}++;
+        }
+
+        if ( $mimVer ) {
+            $r_mimMap->{$mimVer}->{$nodeType}->{$connectionStatus}++;
+        }
+
+        my $r_ne = {
+            'rns'  => $rnsName,
+            'name' => $nodeName,
+            'type' => $nodeType
+        };
+        if ( $DEBUG > 7 ) { print Dumper ("readMeList: r_ne", $r_ne); }
+
+        push @{$r_MeList}, $r_ne;
+
+        $r_neTypes->{$nodeName} = $nodeType;
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("readMeList: rnsMap", $r_rnsMap); }
+    if ( $DEBUG > 5 ) { print Dumper("readMeList: mimMap", $r_mimMap); }
+    if ( $DEBUG > 5 ) { print Dumper("readMeList: meList", $r_MeList); }
+
+}
+
+sub readSwVer
+{
+    my ($swVerFile,$r_upMap,$r_neTypes) = @_;
+    open INPUT, $swVerFile or die "Cannot open $swVerFile";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^SubNetwork=.*,MeContext=(.*),ManagedElement/ ) {
+            my $nodeName = $1;
+            $line = <INPUT>;
+            if ( $line =~ /\"([^\"]*)\"$/ ) {
+                my $swVer = $1;
+                my $nodeType = 'UNKNOWN';
+                if ( exists $r_neTypes->{$nodeName} ) {
+                    $nodeType = $r_neTypes->{$nodeName};
+                }
+
+                if ( defined $swVer && $swVer ne "") {
+            $r_upMap->{$swVer}->{$nodeType}++;
+        }
+        }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("readSwVer: upMap", $r_upMap); }
+
+}
+

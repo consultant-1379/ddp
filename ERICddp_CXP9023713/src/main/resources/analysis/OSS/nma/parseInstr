@@ -1,0 +1,281 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use Instr qw(parseData setInstr_Debug);
+use StatsTime;
+
+our $DEBUG = 0;
+our $dataSplitThrld = 10;
+
+sub groupData($) {
+    my ($r_data) = @_;
+
+    my %mcToMG = ();
+    foreach my $metricGrp ( keys %{$r_data} ) {
+        my ($mc,$type) = $metricGrp =~ /^([^-]+)-(.*)/;
+        my $r_mcGrps = $mcToMG{$mc}; 
+        if ( ! defined $r_mcGrps ) {
+            $r_mcGrps = [];
+            $mcToMG{$mc} = $r_mcGrps;
+        }
+        push @{$r_mcGrps}, $metricGrp;
+    }
+    if ( $DEBUG > 3 ) { print Dumper("groupData: mcToMG", \%mcToMG); }
+    
+    my %results = ();
+    foreach my $mc ( keys %mcToMG ) {
+        my $r_mcGrps = $mcToMG{$mc}; 
+        
+        my @samples = ();
+        $results{$mc} = \@samples;
+        my $keepGoing = 1;
+        if ( $DEBUG > 3 ) { print "groupData: mc=$mc r_mcGrps" . join(",",@{$r_mcGrps}) . "\n"; }
+        while ( $keepGoing == 1 ) {
+            my $r_aggregatedSample;
+            foreach my $providerName  ( @{$r_mcGrps} ) {
+                my $r_provSample = shift @{$r_data->{$providerName}};
+                if ( ! defined $r_provSample ) { 
+                    print "WARN: out of samples for $providerName\n";
+                    next;
+                }
+
+                if ( ! exists $r_provSample->{'timestamp'} ) {
+                    print Dumper("WARN: corrupt provider sample for $providerName", $r_provSample);
+                    next;
+                }
+
+                my $provTimeStr = $r_provSample->{'timestamp'};
+                $provTimeStr =~ s/ /:/;
+                $provTimeStr =~ s/\.(\d{3,3})$//;
+
+                if ( $DEBUG > 7 ) { 
+                    print Dumper("groupData providerName=$providerName provider Time=$provTimeStr r_aggregatedSample", $r_aggregatedSample); 
+                }
+
+                my $provTime = parseTime($provTimeStr, $StatsTime::TIME_DDMMYY_HMS);
+
+                if ( ! $r_aggregatedSample ) {
+                    $r_aggregatedSample = {
+                        'timestamp' => $r_provSample->{'timestamp'},
+                        'time' => $provTime
+                    };
+                    push @samples, $r_aggregatedSample;
+                    $keepGoing = ( $#{$r_data->{$providerName}} > -1 );
+                } else {
+                    if ( abs($provTime - $r_aggregatedSample->{'time'}) > 60 ) {
+                        print "ERROR: Time out of sync currSample = " . $r_aggregatedSample->{'timestamp'} .
+                            ", providerName=$providerName, provider time=" . $r_provSample->{'timestamp'} . "\n";
+
+                        # Skip until we find a sample that's later then the aggregatedSample time
+                        while ( ($provTime < $r_aggregatedSample->{'time'}) &&
+                                ($#{$r_data->{$providerName}} > -1) ) {
+                            $r_provSample = shift @{$r_data->{$providerName}};
+                            $provTimeStr = $r_provSample->{'timestamp'};
+                            $provTimeStr =~ s/ /:/;
+                            $provTimeStr =~ s/\.(\d{3,3})$//;
+                            $provTime = parseTime($provTimeStr, $StatsTime::TIME_DDMMYY_HMS);
+                            if ( $DEBUG > 0 ) { print "groupData: Skipped provider samples: provider time now=" . $r_provSample->{'timestamp'} . "($provTime)\n"; }
+                        }
+
+                        #
+                        # If the provTime time is more then 60secs ahead of the aggregatedSample time
+                        # then it belongs in the next aggregatedSample so put it back into the provider sample array
+                        #
+                        if ( ($provTime -  $r_aggregatedSample->{'time'}) > 60 ) {
+                            if ( $DEBUG > 0 ) { print "groupData: Provider sample too far ahead\n"; }
+                            unshift @{$r_data->{$providerName}}, $r_provSample;
+                            $r_provSample = undef;
+                        } 
+                    }
+                }               
+
+                # If the provSample time is close enough to the the aggregatedSample time
+                # put the data from provSample into aggregatedSample
+                if ( defined $r_provSample ) {
+                    foreach my $valueName ( keys %{$r_provSample} ) {
+                        $r_aggregatedSample->{$valueName} = $r_provSample->{$valueName};
+                    } 
+                }
+            }
+
+            if ( $DEBUG > 6 ) { print Dumper("groupData completed r_aggregatedSample", $r_aggregatedSample); }
+        }
+    }
+
+    return \%results;
+}
+    
+sub deltaData($) {
+    my ($r_grpdData) = @_;
+
+    my @deltaNamesNMA = ( 'TotalSuccessfulPings', 'TotalPingTime', 'TotalNotificationsReceived', 'TotalTimeTakenToProcessNotifications', 'TotalFailedPings', 'NoOfPartiallySynchedNodes' );
+    my @deltaNamesNM = ( 'ReqRPCConstructionTime', 'ActionCount', 'BytesTx', 'RequestCount', 'BytesRx', 'ResTRPCProcessTime', 
+                         'ResRPCExtractionTime', 'NotificationCount', 'ReqCRUDProcessTime', 'ReqTRPCProcessTime', 'ResponseCount',
+                         'ResCRUDProcessTime' );
+    
+    foreach my $mc ( keys %{$r_grpdData} ) { 
+        if ( $DEBUG > 3 ) { print "deltaData: processing mc=$mc\n"; }
+
+        my $r_samples = $r_grpdData->{$mc};
+        my %deltaValues = ();
+
+        my $r_deltaNames;
+        if ( $mc =~ /^NMA/ ) {
+            $r_deltaNames = \@deltaNamesNMA;
+        } else {
+            $r_deltaNames = \@deltaNamesNM;
+        }
+
+        foreach my $r_sample ( @{$r_samples} ) {
+            if ( $DEBUG > 8 ) { print "groupData: timestamp=" . $r_sample->{'timestamp'} . "\n"; }
+            foreach my $deltaName ( @{$r_deltaNames} ) {
+                if ( defined $r_sample->{$deltaName} ) { 
+                    my $currVal = $r_sample->{$deltaName};
+                    if ( exists $deltaValues{$deltaName} ) {
+                        if ( $DEBUG > 8 ) { print "groupData: deltaName=$deltaName currVal=$currVal prevVal=$deltaValues{$deltaName}\n"; }
+                        # If current > previous then save delta, otherwise assume restart 
+                        if ( $r_sample->{$deltaName} >= $deltaValues{$deltaName} ) {
+                            $r_sample->{$deltaName} = $r_sample->{$deltaName} - $deltaValues{$deltaName};
+                        }
+                    } else {
+                        delete $r_sample->{$deltaName};
+                    }
+
+                    $deltaValues{$deltaName} = $currVal;
+                }
+            }
+        }       
+    }
+}
+
+sub storeData($$) {
+    my($r_grpdData,$site) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my @names = keys %{$r_grpdData};
+    my $r_idMap = getIdMap($dbh, "jmx_names", "id", "name", \@names );
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my %dbMap = (
+        'NMA' => {
+            'table' => 'nma_instr',
+            'columns' => [ 'NESup_Execution', 'NESup_Waiting', 'NoOfNotificationInBuffer', 'NoOfPartiallySynchedNodes', 
+                           'NoOfUnSynchedNodes', 'NumberOfTotalAliveNodes', 'NumberOfTotalNodesSynched', 
+                           'TotalFailedPings', 'TotalNotificationsReceived', 'TotalNumberOfNodes', 'TotalPingTime', 
+                           'TotalSuccessfulPings', 'TotalTimeTakenToProcessNotifications' ] 
+            },
+        'NM' => {
+            'table' => 'netconf_instr',
+            'columns' => [ 'ActionCount', 'ActiveSessions', 'BytesRx', 'BytesTx', 'NotificationCount', 'ReqCRUDProcessTime', 
+                           'ReqRPCConstructionTime', 'ReqTRPCProcessTime', 'RequestCount', 'ResCRUDProcessTime', 
+                           'ResRPCExtractionTime', 'ResTRPCProcessTime', 'ResponseCount', 'SimultaneousSessions' ]
+        }
+        );    
+
+    # Now add in all the NoOfSynchOngoingFor columns for NMA
+    my $r_syncOngoingCols = dbSelectAllArr($dbh,"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'nma_instr' AND TABLE_SCHEMA = DATABASE() AND COLUMN_NAME LIKE 'NoOfSynchOngoingFor%'");
+    foreach my $r_row ( @{$r_syncOngoingCols} ) {
+        push $dbMap{'NMA'}->{'columns'}, $r_row->[0];
+    }
+
+    foreach my $mcPrefix ( 'NMA', 'NM' ) {
+        my $r_loadColumns = $dbMap{$mcPrefix}->{'columns'};
+
+        my $bcpFile = $tmpDir . "/" . $mcPrefix . "_stats.bcp";
+        open BULK_INSERT, ">>$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+        my %timeSpan = ();
+
+        foreach my $name ( @names ) {
+            if ( $name !~ /^$mcPrefix\d*$/ ) {
+                next; 
+            }
+
+            my $r_samples = $r_grpdData->{$name};
+            if ( $#{$r_samples} == -1 ) {
+                print "WARN: No data found for $name\n";
+                next;
+            }
+
+            foreach my $r_sample ( @{$r_samples} ) {
+                my @row = ( formatTime($r_sample->{'time'}, $StatsTime::TIME_SQL),
+                            $siteId, 
+                            $r_idMap->{$name} );
+                foreach my $valueName ( @{$r_loadColumns} ) { 
+                    if ( defined $r_sample->{$valueName} ) {
+                        push @row, sprintf("%d", $r_sample->{$valueName});
+                    } else {
+                        push @row, '\N';
+                    }
+                }
+                print BULK_INSERT join("\t", @row), "\n";
+            }
+            if ( (! exists $timeSpan{'min'}) || ($timeSpan{'min'} > $r_samples->[0]->{'time'}) ) {
+                $timeSpan{'min'} = $r_samples->[0]->{'time'};
+            } 
+            if ( (! exists $timeSpan{'max'}) || ($timeSpan{'max'} < $r_samples->[$#{$r_samples}]->{'time'}) ) {
+                $timeSpan{'max'} = $r_samples->[$#{$r_samples}]->{'time'};
+            } 
+
+        }
+        close BULK_INSERT;
+
+        dbDo($dbh, sprintf("DELETE FROM %s WHERE siteid = %d AND time BETWEEN '%s' AND '%s'",
+                           $dbMap{$mcPrefix}->{'table'}, $siteId,
+                           formatTime($timeSpan{'min'}, $StatsTime::TIME_SQL),
+                           formatTime($timeSpan{'max'}, $StatsTime::TIME_SQL) ) )
+            or die ("Cannot remove data from $dbMap{$mcPrefix}->{'table'}");
+        dbDo($dbh, sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE %s (time,siteid,nameid,%s)",
+                           $bcpFile, $dbMap{$mcPrefix}->{'table'}, join(",", @{$r_loadColumns})))
+            or die ("Cannot load data into $dbMap{$mcPrefix}->{'table'}");
+    }
+}
+
+sub main() {
+    my ($dataDir,$site,$dashDate,$incrFile);
+    my $result = GetOptions(
+        "datadir=s" => \$dataDir,
+        "site=s" => \$site,
+        "dataSplitThrld=s" => \$dataSplitThrld,
+        "incr=s" => \$incrFile,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    setInstr_Debug($DEBUG);
+
+    my @cfgFiles = ();
+    opendir(my $dh, $dataDir . "/instr") || die "can't opendir instr dir: $!";
+    while ( my $file = readdir($dh) ) {
+        if ( $file =~ /nm_inst\d*.xml/ || $file =~ /nma_inst\d*.xml/ ) {
+            push @cfgFiles, $dataDir . "/instr/" . $file;
+        }
+    }
+    closedir $dh;
+    if ( $DEBUG > 3 ) { print Dumper("main: cfgFiles", \@cfgFiles); }
+
+    my $r_data = parseData( join(",",@cfgFiles), $dataDir . "/instr.txt");
+    if ($DEBUG > 3) { print "main: r_data has data for " . join(",",keys %{$r_data}) . "\n"; }
+    if ( $DEBUG > 8 ) { print Dumper("main: r_data", $r_data); }
+
+    my $r_grpdData = groupData($r_data);   
+    deltaData($r_grpdData);
+    if ( $DEBUG > 9 ) { print Dumper("main: r_grpdData after delta", $r_grpdData); }
+
+    if ( defined $site ) {
+        storeData($r_grpdData,$site);
+    }
+}
+
+main();

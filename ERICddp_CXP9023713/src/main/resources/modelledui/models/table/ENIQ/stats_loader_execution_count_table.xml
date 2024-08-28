@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_stats_adaptor_totals">
+    <reference table="sites" condition="eniq_stats_adaptor_totals.siteid = sites.id"/>
+    <reference table="eniq_stats_source" condition="eniq_stats_adaptor_totals.sourceid = eniq_stats_source.id"/>
+    <reference table="eniq_stats_types" condition="eniq_stats_adaptor_totals.typeid = eniq_stats_types.id"/>
+    <reference table="eniq_stats_workflow_types" condition="eniq_stats_adaptor_totals.workflow_type = eniq_stats_workflow_types.workflow_type_id OR
+    eniq_stats_adaptor_totals.workflow_type = 0"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_stats_source.name NOT LIKE '%BULK_CM%' AND eniq_stats_workflow_types.workflow_type NOT LIKE '%FRH%' AND eniq_stats_adaptor_totals.day = '%date%' </where>
+
+  <groupby rollup="true">
+    <column db="eniq_stats_source.name"/>
+  </groupby>
+
+  <column db="eniq_stats_source.name" label="Source"/>
+  <column db="SUM(eniq_stats_adaptor_totals.trigger_count)" label="Average Execution Count"/>
+
+</modelledtable>

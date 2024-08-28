@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mscm"/>
+  </services>
+
+  <table name="enm_cppsync_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.softwaresync.instrumentation.software-sync-handler-code:type=CommonSoftwareSyncInstrumentation$">
+      <metric source="softwareSyncInvocations" target="softwareSyncInvocations" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncWithError" target="numberOfSoftwareSyncWithError" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncWithModelIdCalculation" target="numberOfSoftwareSyncWithModelIdCalculation" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncWithoutModelIdCalculation" target="numberOfSoftwareSyncWithoutModelIdCalculation" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,229 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+use Instr;
+
+# Parameter defaults
+our $DEBUG = 0;
+my $version;
+my $port;
+
+sub readOpenDJLDAPMonInfoLog($$) {
+    my ($OpenDJLDAPMonInfoLog, $LDAPDate) = @_;
+
+    my %samplesByPort = ();
+    my $currentTime = undef;
+    my $r_portStats = undef;
+
+    my %map = (
+        'modify' => 'mod',
+        'search-one' => 'search',
+        'modify-dn' => 'moddn',
+        'search-base' => 'search_base',
+        'search-sub' => 'search_sub',
+        'written' => 'byteswritten',
+        'read' => 'bytesread'
+    );
+
+    open READOLDAP, "$OpenDJLDAPMonInfoLog" or die "Could not open System Log File";
+    while ( my $line = <READOLDAP> ) {
+        if ( $DEBUG > 5 ) { print "readOpenDJLDAPMonInfoLog: line=$line"; }
+        chomp $line;
+        if ( $line =~ m/^$LDAPDate/ ) {
+            $currentTime = parseTime($line,$StatsTime::TIME_DDMMYY_HM);
+        } elsif (( $line =~ /vendorVersion: OpenDJ (\d.*)\+OPENDJ/) || ( $line =~ /ds-mon-compact-version: OpenDJ-(\d.*)/) || ( $line =~ /ds-mon-compact-version: ForgeRock Directory Services-(\d.*)/)) {
+            $version = $1;
+        } elsif ( ( $line =~ /^dn: cn=.* 0.0.0.0 port (\d+) Statistics,cn=monitor/ )  || ($line =~ /^ds-mon-listen-address: 0.0.0.0:(\d+)/) ) {
+            # Start Port metrics
+            $port = $1;
+            if ( $DEBUG > 7 ) { print "readOpenDJLDAPMonInfoLog start of stats for port $port\n"; }
+            if (
+                ($version =~ /3.0.0/) ||
+                (($version =~ /6.5.0/ || $version =~ /6.5.5/ || $version =~ /7.3.3/) && ($port == "1636" || $port == "4444")) ||
+                ($version =~ /6.5.2/ && (
+                        $port == "2389" ||
+                        $port == "50389" ||
+                        $port == "3389" ||
+                        $port == "7444" ||
+                        $port == "6444" ||
+                        $port == "3444"
+                    )
+                )
+            ) {
+                if ( ! exists $samplesByPort{$port} ) {
+                    $samplesByPort{$port} = [];
+                }
+                $r_portStats = { 'time' => $currentTime };
+                push @{$samplesByPort{$port}}, $r_portStats;
+            }
+        } elsif ( defined $r_portStats ) {
+            # Trap the operation counts, times, operations completed and bytes written and read
+            if ( $line =~ /ds-mon-(bind|unbind|search|compare|mod|moddn|add|delete)-operations-total-count:\s*([0-9]*)/ ) {
+                my ($op, $cnt) = ($1, $2);
+                $r_portStats->{$op . "_cnt"} = $cnt;
+            } elsif ( $line =~ /ds-mon-resident-time-(bind|unbind|search|compare|mod|moddn|add|delete)-operations-total-time:\s*([0-9]*)/ ) {
+                my ($op, $time) = ($1, $2);
+                $r_portStats->{$op . "_time"} = $time;
+            } elsif ( $line =~ /(bytesWritten|operationsCompleted|bytesRead):\s*([0-9]*)/ ) {
+                my ($metric, $num) = (lc($1), $2);
+                $r_portStats->{$metric} = $num;
+            } elsif ( $line =~ /^$/ ) {
+                if ( $DEBUG > 7 ) { print Dumper("readOpenDJLDAPMonInfoLog completed r_portStats", $r_portStats); }
+                $r_portStats = undef;
+            } elsif ($line =~ /ds-mon-requests-(bind|unbind|abandon|compare|add|delete|modify|modify-dn|search-base|search-one|search-sub): \{"count":(\d+),"total":(.*),"mean_rate":(.*)\}/){
+                my ($op, $cnt, $total) = ($1, $2, $3);
+                $op =~ s/$op/$map{$op}/ if exists $map{$op};
+                $r_portStats->{$op . "_cnt"} = $cnt;
+                $r_portStats->{$op . "_time"} = $total;
+            } elsif ($line =~ /ds-mon-bytes-(read|written):\s\{"count":(\d+),"total":(.*),"mean_rate":(.*)\}/) {
+                my ($metric, $num) = (lc($1), $3);
+                $metric =~ s/$metric/$map{$metric}/ if (exists$map{$metric});
+                $r_portStats->{$metric} = $num;
+            }
+        }
+    } # end of FILEPARSE
+    close(READOLDAP);
+
+    if ( $DEBUG > 3 ) { print Dumper("readOpenDJLDAPMonInfoLog: result", \%samplesByPort); }
+    return \%samplesByPort;
+}
+
+sub printUsageAndExit($) {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseOpenLDAPMonitorInfo --monfile OpenDJLDAPMonitor.log --site sitename --date dd-mm-yy\n";
+
+    exit 1;
+}
+
+
+sub main() {
+    my ($OpenDJLDAPMonInfoLog,$OpenDJLDAPAccessLog,$site,$dashDate,$server);
+
+    my $result = GetOptions(
+        "monfile=s"  => \$OpenDJLDAPMonInfoLog,
+        "accfile=s"  => \$OpenDJLDAPAccessLog,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+        );
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    setStatsDB_Debug($DEBUG);
+    setInstr_Debug($DEBUG);
+
+    # Validate the parameters passed
+    if ( ! $OpenDJLDAPMonInfoLog ) {
+        printUsageAndExit("No OpenLDAP Monitor Log specified");
+    }
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        printUsageAndExit("Invalid date format provided");
+    }
+
+    my ($siteId,$serverId);
+    if ( defined $site ) {
+        my $dbh = connect_db();
+        my $siteid = getSiteId($dbh,$site);
+        if ( $siteid == -1 ) {
+            die ("ERROR: site " . $site . " does not exist in DDP. The site needs to be added to DDP before its data can be uploaded - exiting now...\n");
+        }
+        if ( defined $server ) {
+            $serverId = getServerId($dbh,$siteid,$server);
+        }
+    }
+
+    my %portNameMap = (
+        '2389' => 'LdapUserStore',
+        '3389' => 'LdapCtsStore',
+        '50389' => 'LdapConfigStore',
+        '6444' => 'DsReplicationUserStore',
+        '7444' => 'DsReplicationConfigStore',
+        '3444' => 'DsReplicationCtsStore',
+        '8447' => 'HTTP Connection Handler',
+        '1636' => 'LDAPS',
+        '4444' => 'Administration Connector'
+    );
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+    my $LDAPDate = $dd . $mm . $yy;
+
+    my $r_samplesByPort = readOpenDJLDAPMonInfoLog($OpenDJLDAPMonInfoLog, $LDAPDate);
+
+    my @operations = ( 'bind', 'add', 'mod', 'moddn', 'delete', 'search', 'compare', 'unbind');
+    my @metrics = ( 'operationscompleted', 'bytesread', 'byteswritten' );
+    push @operations, 'abandon', 'search_base', 'search_sub' if ( $version =~ /6.5/ );
+
+    my %columnMap = ();
+    my @allCounters = ();
+    foreach my $metric ( @metrics ) {
+        push @allCounters, $metric;
+    }
+    foreach my $operation ( @operations ) {
+        push @allCounters, $operation . '_cnt';
+        $columnMap{$operation . '_cnt'} = $operation . '_cnt';
+            push @allCounters, $operation . '_time';
+            $columnMap{$operation . '_time'} = $operation . '_time';
+    }
+    $columnMap{'avg_byteswritten_per_op'} = 'avg_byteswritten_per_op';
+    $columnMap{'avg_bytesread_per_op'} = 'avg_bytesread_per_op';
+    foreach my $port ( sort keys %{$r_samplesByPort} ) {
+        my $r_samples = $r_samplesByPort->{$port};
+        deltaSamples($r_samples,\@allCounters);
+        # Drop the first sample as all the delta values are missing
+        shift @{$r_samples};
+        my $totalOperationscompleted = 0;
+        foreach my $r_sample ( @{$r_samples} ) {
+            if ( $version =~ /6.5/ ) {
+                if ( exists($r_sample->{'bytesread'}) and ($r_sample->{'bytesread'} > 0 )) {
+                $r_sample->{'avg_bytesread_per_op'} =  int ($r_sample->{'bytesread'});
+                $r_sample->{'avg_byteswritten_per_op'} = int($r_sample->{'byteswritten'});
+               }
+            } elsif ( $version =~ /3.0.0/ ) {
+                foreach my $operation ( @operations ) {
+                    if ( $r_sample->{$operation . "_time"} == 0 ) {
+                        $r_sample->{$operation . "_query_rate"} = 0;
+                    } else {
+                        $r_sample->{$operation . "_query_rate"} =
+                        int($r_sample->{$operation . "_cnt"} / $r_sample->{$operation . "_time"} * 1000);
+                    }
+                }
+
+                if ( $r_sample->{'operationscompleted'} == 0 ) {
+                    $r_sample->{'avg_byteswritten_per_op'} = 0;
+                    $r_sample->{'avg_bytesread_per_op'} = 0;
+                } else {
+                    $totalOperationscompleted += $r_sample->{'operationscompleted'};
+                    $r_sample->{'avg_byteswritten_per_op'} =
+                    int( ($r_sample->{'byteswritten'} / $r_sample->{'operationscompleted'}) + 0.5);
+                    $r_sample->{'avg_bytesread_per_op'} =
+                    int( ($r_sample->{'bytesread'} / $r_sample->{'operationscompleted'}) + 0.5);
+                }
+            }
+        }
+        if ( $DEBUG > 3 ) { print "main: port=$port totalOperationscompleted=$totalOperationscompleted\n"; }
+
+        if ( (defined $site) && (defined $port) ) {
+            my $portName = $portNameMap{$port};
+            my %extraCols = ( 'port' => $portName );
+            if ( defined $serverId ) {
+                $extraCols{'serverid'} = $serverId;
+            }
+            instrStoreData("opendj_ldap_stats", $site, \%extraCols, $r_samples, \%columnMap);
+        }
+    }
+}
+
+main();

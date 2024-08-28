@@ -1,0 +1,447 @@
+#!/bin/bash
+
+getReplSlaves() {
+    SLAVE_LIST=`${MYSQL} --skip-column-names --batch ddpadmin -e "SELECT host,port,dir,smf,cert FROM db_replicas" | awk '{printf "%s;%s;%s;%s;%s\n", $1, $2, $3, $4, $5}'`
+}
+
+getReplStatus()
+{
+    HOST=$1
+    PORT=$2
+
+    ${MYSQL} ${REPL_CREDS} <<EOF > /tmp/repl.txt 2>&1
+SHOW SLAVE STATUS\G
+EOF
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to connect to ${HOST}:${PORT} to get replication status"
+        exit 1
+    fi
+
+    egrep 'Empty set' /tmp/repl.txt > /dev/null
+    if [ $? -eq 0 ] ; then
+        # Replication hasn't been configured yet
+        REPL_STATUS="Not configured"
+    else
+        REPL_STATUS=""
+
+        # Check for errors
+        ERROR_TYPES="Last_Error Last_IO_Error Last_SQL_Error"
+        for ERROR_TYPE in ${ERROR_TYPES} ; do
+            ERROR_STR=`egrep "${ERROR_TYPE}: " /tmp/repl.txt | sed "s/.*${ERROR_TYPE}: //"`
+            if [ ! -z "${ERROR_STR}" ] ; then
+                REPL_STATUS="${ERROR_STR}"
+            fi
+        done
+
+        # Check repl threads
+        if [ -z "${REPL_STATUS}" ] ; then
+            THREAD_TYPES="Slave_IO Slave_SQL"
+            for THREAD_TYPE in ${THREAD_TYPES} ; do
+                THREAD_RUNNING=`egrep "${THREAD_TYPE}_Running: " /tmp/repl.txt | sed "s/.*${THREAD_TYPE}_Running: //"`
+                if [ "${THREAD_RUNNING}" != "Yes" ] ; then
+                    REPL_STATUS="${THREAD_TYPE}_Running: ${THREAD_RUNNING}"
+                fi
+            done
+        fi
+
+        # Check how far behind we are
+        if [ -z "${REPL_STATUS}" ] ; then
+            DELAY=$(grep Seconds_Behind_Master /tmp/repl.txt | awk '{print $2}')
+            if [ ! -z "${DELAY}" ] && [ "${DELAY}" != "NULL" ] ; then
+                if [ "${ACTION}" = "MONITOR" ] || [ ${DELAY} -gt 3600 ] ; then
+                        REPL_STATUS="Seconds_Behind_Master: ${DELAY}"
+                fi
+            fi
+        fi
+
+        if [ -z "${REPL_STATUS}" ] ; then
+            REPL_STATUS="synced"
+        fi
+    fi
+}
+
+getSecondsBehind() {
+    HOST=$1
+    PORT=$2
+
+    ${MYSQL} ${REPL_CREDS} <<EOF > /tmp/repl.txt 2>&1
+SHOW SLAVE STATUS\G
+EOF
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to connect to ${HOST}:${PORT} to get replication status"
+        exit 1
+    fi
+
+    SECONDS_BEHIND=$(grep Seconds_Behind_Master /tmp/repl.txt | awk '{print $2}')
+    if [ -z "${SECONDS_BEHIND}" ] || [ "${SECONDS_BEHIND}" = "NULL" ] ; then
+        SECONDS_BEHIND=9999
+    fi
+}
+
+getReplDir() {
+    HOST=$1
+    PORT=$2
+
+    ${MYSQL} ${REPL_CREDS} --batch <<EOF > /tmp/repl_datadir.txt 2>&1
+SHOW VARIABLES LIKE 'datadir';
+EOF
+    egrep '^datadir' /tmp/repl_datadir.txt | awk '{print $2}'
+}
+
+log()
+{
+    MSG=$1
+    DATE=`date +%Y-%m-%d:%H:%M:%S`
+    echo "${DATE} ${MSG}"
+}
+
+snapDB() {
+    if [ ${DB_SNAPPED} -ne 1 ] ; then
+        log "INFO: Taking snapshot"
+        ${DBHOST_SSH} ${THIS_DIR}/snapdbfs -a create -s replcopy > /tmp/snap.log 2>&1
+        if [ $? -ne 0 ] ; then
+            echo "ERROR: snap failed"
+            cat /tmp/snap.log
+            exit 1
+        fi
+        DB_SNAPPED=1
+    fi
+}
+
+destroySnap() {
+    if [ ${DB_SNAPPED} -eq 1 ] ; then
+        log "INFO: Deleting snapshot"
+        ${DBHOST_SSH} ${THIS_DIR}/snapdbfs -a delete -s replcopy
+        if [ $? -ne 0 ] ; then
+            echo "ERROR: delete snap failed"
+            exit 1
+        fi
+    fi
+}
+
+rsyncDB() {
+    SNAP_DIR=$1
+    MY_HOST=$2
+    MY_MODULE=$3
+    INNODB_COUNT=$4
+
+    local SRC_DIR=${SNAP_DIR}
+    # If we're using MyISAM we only need to sync the statsdb dir
+    if [ ${INNODB_COUNT} -gt 0 ] ; then
+        # Add a trailing slash so that data is not put in subdir
+        SRC_DIR=$SRC_DIR/
+    else
+        SRC_DIR=$SRC_DIR/statsdb
+    fi
+
+    ${DBHOST_SSH} rsync --recursive --archive --verbose --delete ${SRC_DIR} ${MY_HOST}::${MY_MODULE}
+    if [ $? -ne 0 ] ; then
+        log "ERROR: rsync of ${SRC_DIR} to ${MY_HOST}::${MY_MODULE} failed"
+        exit 1
+    fi
+}
+
+replServ()
+{
+    OP=$1
+    HOST=$2
+    REPL_SVC=$3
+
+    if [ "${OP}" = 'start' ] ; then
+        ACTION="start"
+        TARGET_STATE="active"
+    else
+        ACTION="stop"
+        TARGET_STATE="inactive"
+    fi
+
+    CURRENT_STATE=$(${SSH_CMD} root@${HOST} /usr/bin/systemctl show -p ActiveState ${REPL_SVC}.service | awk -F= '{print $2}')
+    if [ "${CURRENT_STATE}" != "${TARGET_STATE}" ] ; then
+        $SSH_CMD root@${HOST} "/usr/bin/systemctl ${ACTION} ${REPL_SVC}.service"
+        if [ $? -ne 0 ] ; then
+            echo "Failed to ${OP} ${REPL_SVC} on ${HOST}"
+            exit 1
+        fi
+    fi
+
+    while [ "${CURRENT_STATE}" != "${TARGET_STATE}" ] ; do
+        sleep 5
+        CURRENT_STATE=$(${SSH_CMD} root@${HOST} /usr/bin/systemctl show -p ActiveState ${REPL_SVC}.service | awk -F= '{print $2}')
+    done
+}
+
+stopRepl()
+{
+    HOST=$1
+    PORT=$2
+
+    log "INFO: Stopping replication"
+${MYSQL} ${REPL_CREDS} -vvv --batch <<EOF
+STOP SLAVE;
+RESET SLAVE;
+EOF
+    if [ $? -ne 0 ] ; then
+        log "ERROR: Failed to stop replication"
+        exit 1
+    fi
+}
+
+startRepl()
+{
+    HOST=$1
+    PORT=$2
+
+    MYSQL_LOG_FILE=`egrep mysql-bin /tmp/snap.log | awk -F\| '{print $2}' | awk '{print $1}'`
+    MYSQL_LOG_POS=`egrep mysql-bin /tmp/snap.log | awk -F\| '{print $3}' | awk '{print $1}'`
+
+    # Get what IP address we connect the replication server from
+    DBHOST_IP=$(getent hosts dbhost | awk '{print $1}')
+    if [ "${DBHOST_IP}" = "127.0.0.1" ] ; then
+        # DB is running locally
+        MASTER_HOST=$(${SSH_CMD} root@${HOST} 'echo $SSH_CLIENT' | awk '{print $1}')
+    else
+        MASTER_HOST=${DBHOST_IP}
+    fi
+
+    log "INFO: Starting replication"
+    local SERVICE_NAME=$(hostname)
+${MYSQL} ${REPL_CREDS} -vvv --batch <<EOF
+CHANGE MASTER TO
+ MASTER_HOST='${MASTER_HOST}',
+ MASTER_USER='repl',
+ MASTER_PASSWORD='_repl',
+ MASTER_LOG_FILE='${MYSQL_LOG_FILE}',
+ MASTER_LOG_POS=${MYSQL_LOG_POS},
+ MASTER_HEARTBEAT_PERIOD=60,
+ MASTER_SSL=1,
+ MASTER_SSL_CERT='/etc/certs/repl-${SERVICE_NAME}/db-client-repl.cer',
+ MASTER_SSL_KEY='/etc/certs/ddprepl.key',
+ MASTER_SSL_CA='/etc/certs/repl-${SERVICE_NAME}/db-srv-ca.cer',
+ MASTER_SSL_VERIFY_SERVER_CERT=1;
+
+START SLAVE;
+EOF
+    if [ $? -ne 0 ] ; then
+        log "ERROR: Failed to start replication"
+        exit 1
+    fi
+}
+
+initReplCreds() {
+    HOST=$1
+    PORT=$2
+    CERT=$3
+
+    if [ -r ${MYSQL}_config_editor ] ; then
+        ${MYSQL}_config_editor print --login-path=repl 2>&1 | grep ${HOST} > /dev/null
+        if [ $? -ne 0 ] ; then
+            ${EXPECT} <<EOF
+spawn ${MYSQL}_config_editor set --login-path=repl --user=repladm --host=${HOST} --port=${PORT} --password
+expect "password: "
+send "_repladm\r"
+expect eof
+EOF
+            if [ $? -ne 0 ] ; then
+                echo "ERROR: Failed to set password for repladm"
+                exit 1
+            fi
+        fi
+        REPL_CREDS="--no-defaults --login-path=repl"
+    else
+        REPL_CREDS="--no-defaults --user=repladm ${PASSWORD_OPT} --host=${HOST} --port=${PORT} --protocol=TCP --password=_repladm"
+    fi
+
+    if [ "${CERT}" = "NULL" ] ; then
+        if [ -r /etc/certs/repl-client-repladm.cer ] ; then
+            REPL_CREDS="${REPL_CREDS} --ssl-cert=/etc/certs/repl-client-repladm.cer --ssl-key=/etc/certs/db-client.key --ssl-ca=/etc/certs/repl-ca.cer"
+        fi
+    else
+        REPL_CREDS="${REPL_CREDS} --ssl-cert=/etc/certs/${CERT}.cer --ssl-key=/etc/certs/db-client.key --ssl-ca=/etc/certs/${CERT}-ca.cer"
+    fi
+}
+
+reconfigInnoDB() {
+    local HOST=$1
+    local REPL_SVC=$2
+    # With InnoDB, we're copying the whole datadir so we copy over
+    # tmp, ddpadmin mysql
+    # So we need to
+    # Drop the dbs other then statsdb
+    # Add back the  userids
+    # Also as this being done after we copied the database, we can't access it remotely
+    # cause mysql db got copied and it has the creds from the primary
+
+    SERVICE_NAME=$(hostname)
+    cat > /tmp/setup_repl.sql <<EOF
+CREATE USER repladm@'%' IDENTIFIED BY '_repladm'
+ REQUIRE ISSUER '/C=SE/ST=Stockholm/L=Stockholm/O=Ericsson/OU=IT/CN=${SERVICE_NAME}-repl-repladm-ca';
+GRANT SELECT, CREATE USER, REPLICATION CLIENT, SUPER, RELOAD ON *.* TO repladm@'%' WITH GRANT OPTION;
+DROP DATABASE ddpadmin;
+EOF
+
+    mysql ddpadmin --batch --silent <<EOF > /tmp/replusers.txt
+SELECT signum, mysql_passwd FROM ddpusers WHERE use_sql=1 AND mysql_passwd IS NOT NULL;
+EOF
+    cat /tmp/replusers.txt | awk '{if ( NF == 2 ) {  printf("GRANT SELECT ON statsdb.* TO \"%s\"@\"%%\" IDENTIFIED BY PASSWORD \"%s\";\n", $1, $2); } }' >> /tmp/setup_repl.sql
+
+    ${SCP_CMD} /tmp/setup_repl.sql root@${HOST}:/tmp/${REPL_SVC}_setup_repl.sql
+    ${SSH_CMD} root@${HOST} "mysql --defaults-file=/etc/my_${REPL_SVC}.cnf < /tmp/${REPL_SVC}_setup_repl.sql"
+    if [ $? -ne 0 ] ; then
+    	echo "ERROR: reconfigInnoDB mysql session failed"
+	    exit 1
+    fi
+
+    ${SSH_CMD} root@${HOST} "/bin/rm -f /tmp/${REPL_SVC}_setup_repl.sql"
+}
+
+resyncReplica() {
+    HOST=$1
+    PORT=$2
+    DB_DIR=$3
+    SMF_NAME=$4
+
+    echo "${DB_DIR}" | egrep '^rsync:' > /dev/null
+    if [ $? -eq 0 ] ; then
+        RSYNC_MODULE=$(echo "${DB_DIR}" | awk -F: '{print $2}')
+    else
+        RSYNC_MODULE=""
+    fi
+
+    if [ -z "${RSYNC_MODULE}" ] ; then
+        if [ ! -d ${DB_DIR} ] ; then
+            echo "ERROR: Cannot read directory ${DB_DIR}"
+            exit 1
+        fi
+    fi
+
+    REPL_SVC="${SMF_NAME}"
+
+    snapDB
+
+    # We have to get the REMOTE_DATADIR before we stop
+    # the database
+    REMOTE_DATADIR=$(getReplDir ${HOST} ${PORT})
+    if [ "${REMOTE_DATADIR}" != "/repl/${REPL_SVC}/data/" ] ; then
+        echo "ERROR: Unexpected value for ${REMOTE_DATADIR}"
+        exit 1
+    fi
+
+    stopRepl ${HOST} ${PORT}
+    replServ "stop" ${HOST} ${REPL_SVC}
+
+    ${DBHOST_SSH} ${THIS_DIR}/snapdbfs -a mount -s replcopy > /tmp/mnt.log 2>&1
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to mount db snap"
+        cat /tmp/mnt.log
+        exit 1
+    fi
+    SNAP_DIR=$(egrep '^DIR=' /tmp/mnt.log | awk -F= '{print $2}')
+    if [ -z "${SNAP_DIR}" ] ; then
+        echo "ERROR: Failed to extract snap dir from mnt log"
+        cat /tmp/mnt.log
+        exit 1
+    fi
+
+    # Newer ddp installations have statsdb in data subdir
+    DATADIR=$(echo 'SHOW VARIABLES WHERE Variable_Name = "datadir"' | /data/ddp/current/analysis/sql/runSql | awk '{print $2}')
+    echo "${DATADIR}" | egrep --silent db/data
+    if [ $? -eq 0 ] ; then
+        SNAP_DIR=${SNAP_DIR}/data
+    fi
+
+    INNODB_COUNT=$(echo "SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = 'statsdb' AND ENGINE = 'InnoDB'" | /data/ddp/current/analysis/sql/runSql | awk '{print $1}')
+    if [ ${INNODB_COUNT} -gt 0 ] ; then
+        # For InnoDB, force copy the whole data dir by deleting it first on the remove server
+        ${SSH_CMD} root@${HOST} "/bin/rm -rf ${REMOTE_DATADIR}/*"
+    fi
+
+    rsyncDB ${SNAP_DIR} ${HOST} ${RSYNC_MODULE} ${INNODB_COUNT}
+
+    replServ "start" ${HOST} ${REPL_SVC}
+
+    if [ "${INNODB_COUNT}" -gt 0 ] ; then
+        reconfigInnoDB ${HOST} ${REPL_SVC}
+    fi
+
+    startRepl ${HOST} ${PORT}
+
+    # Wait here until the replica catches up, this is to
+    # prevent the next run of updateRepl failing because
+    # we're still catching up
+    SECONDS_BEHIND=9999
+    while [ ${SECONDS_BEHIND} -gt 300 ] ; do
+        sleep 60
+        getSecondsBehind
+        log "INFO: Seconds Behind = ${SECONDS_BEHIND}"
+    done
+}
+
+
+THIS_DIR=`dirname $0`
+THIS_DIR=`cd ${THIS_DIR} ; pwd`
+
+DB_LIST="statsdb"
+SSH_CMD="/usr/bin/ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes"
+SCP_CMD="/usr/bin/scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes"
+
+MYSQL=/usr/bin/mysql
+EXPECT=/usr/bin/expect
+
+ACTION="CHECK_AND_FIX"
+while getopts cm opt ; do
+    case ${opt} in
+        c) ACTION="CHECK_ONLY";;
+        m) ACTION="MONITOR"
+    esac
+done
+
+log "INFO: Starting"
+
+LOCK_FILE=/tmp/updateRepl.lock
+exec 3>${LOCK_FILE}
+flock --exclusive --nonblock 3
+if [ $? -eq 1 ] ; then
+    log  "WARNING: Already running"
+    exit 0
+fi
+
+DB_SNAPPED=0
+
+# Figure out if the database is local or remote
+DBHOST_IP=$(getent hosts dbhost | awk '{print $1}')
+if [ "${DBHOST_IP}" = "127.0.0.1" ] ; then
+    # DB list local so we don't need ssh
+    DBHOST_SSH=""
+else
+    # DB is remote so we do need ssh
+    DBHOST_SSH="ssh -qn dbhost"
+fi
+
+getReplSlaves
+for SLAVE in ${SLAVE_LIST} ; do
+    HOST=`echo ${SLAVE} | awk -F\; '{print $1}'`
+    PORT=`echo ${SLAVE} | awk -F\; '{print $2}'`
+    DB_DIR=`echo ${SLAVE} | awk -F\; '{print $3}'`
+    SMF_NAME=`echo ${SLAVE} | awk -F\; '{print $4}'`
+    CERT=$(echo ${SLAVE} | awk -F\; '{print $5}')
+
+    initReplCreds ${HOST} ${PORT} ${CERT}
+
+    getReplStatus ${HOST} ${PORT}
+
+    # The replication handling exposed to the users under DDP admin page depends
+    # on the format of the below log line. So please make sure that any changes
+    # to this logline won't break the aforementioned functionality
+    log "INFO: Replication Status for ${HOST}:${PORT} ${REPL_STATUS}";
+    if [ "${ACTION}" = "CHECK_AND_FIX" ] ; then
+        if [ "${REPL_STATUS}" != "synced" ] ; then
+            resyncReplica ${HOST} ${PORT} ${DB_DIR} ${SMF_NAME}
+        fi
+    fi
+done
+
+destroySnap
+
+rm -f ${LOCK_FILE}
+
+log "INFO: Done"

@@ -1,0 +1,340 @@
+#!/usr/bin/env perl
+# parser for XML files which conform to the 3GPP Ts 32.401 V6.2.0
+# DTD based XML file format. This format is the one used by the
+# EBA instrumentation, as described in 155 19-ANF 901 76 Rev. A
+#
+# See note in Appendix A of the spec for a caveat about the
+# future validity of the DTD-based file format.
+
+use strict;
+use warnings;
+use XML::DOM;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use File::Basename;
+use StatsTime;
+
+our $DEBUG = 0;
+our ($site, $siteId);
+our $date;
+our $dbh;
+
+our $appName;
+our $utcOffSetSec;
+
+our %xmlData = ();
+
+our ($neun, $nedn, $granularity, $beginTime,$endTime);
+our %data = ();
+our %measureTypes = ();
+our %measureValues = ();
+
+our %tableCols = ();
+
+sub main() {
+    my ($dir, $file);
+    my $result = GetOptions(
+        "xmldir=s" => \$dir,
+        "xml=s" => \$file,
+        "debug=s" => \$DEBUG,
+        "site=s" => \$site,
+        "date=s" => \$date,
+    );
+    ($result == 1) or die "Invalid arguments";
+    $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+    $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 2 ) { print "main: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my ($y,$m,$d) = split('-',$date);
+    my $datey=$y.$m.$d;
+
+    if (defined($dir)) {
+        # find files
+        opendir(XMLDIR, $dir) or die "Invalid directory: " . $dir . "\n";
+        my @files = grep { $_ ne '.' and $_ ne '..' } readdir XMLDIR;
+        foreach $file (@files) {
+            if ($DEBUG > 2) { print "Processing " . $file . "\n"; }
+
+            #Checking for todays date in the filename
+            if ( $file =~ /$datey/) {
+
+                if (parseFileName($dir . "/" . $file) == 0) {
+                    parseXml($dir . "/" . $file);
+                }
+            }
+        }
+    } elsif (defined($file)) {
+        if (parseFileName($file) == 0) {
+            parseXml($file);
+        }
+    } else {
+        print "You must supply either an XML file, or a directory containing XML files\n";
+    }
+}
+
+sub parseFileName {
+    my $file = shift;
+    $file = basename($file);
+    # Ignore the date / time in the file name - take this
+    # from the file itself. Too much effort to process here.
+    # A20101130.2345-0500-20101201.0000-0500_ebsw.xml
+    my ($type,$utcPlusMinus,$utcOffset,$app) = $file =~ /^([A-D])\d{8,8}\.\d{4,4}([-\+])(\d{4,4})-.*_(\S+).xml$/;
+    unless (defined($type) && defined($app)) { print "Invalid filename format: " . $file . "\n"; return 1; }
+    if ($type ne "A")
+        { print "Only support XML format A - single NE and single recording period.\n"; return 1; }
+    if ($DEBUG > 5) { print "File type: " . $type . " ; App: " . $app . "\n"; }
+    # convert to lower case if required
+    $app =~ tr/A-Z/a-z/;
+    $appName = $app;
+
+    my ($offsetHour,$offsetMin) = $utcOffset =~ /(\d{2,2})(\d{2,2})/;
+    $utcOffSetSec = ($offsetHour * 3600) + ($offsetMin * 60);
+    if ( $utcPlusMinus eq "-" ) {
+    $utcOffSetSec = 0 - $utcOffSetSec;
+    }
+
+    return 0;
+}
+
+sub parseXml {
+    my $file = shift;
+    if ($DEBUG > 5) { print "Processing " . $file . "\n"; }
+    my $parser = XML::DOM::Parser->new();
+    my $doc = $parser->parsefile($file);
+    # Specification defines <mdc> as the top-level tag, with three components:
+    # mfh: the header element
+    # md: the measurement data
+    # mff: the footer
+    my $list = $doc->getElementsByTagName('mdc');
+    if ($list->getLength() != 1) {
+        print "Found " . $list->getLength() . " MDC elements\n";
+        return 1;
+    }
+    my $mdc = $list->item(0);
+    if ( ! defined($mdc)) {
+        print "No Measurement Data Collection node to parse\n";
+        return 1;
+    }
+    foreach my $el ('mfh', 'md', 'mff') {
+        $list = $mdc->getElementsByTagName($el);
+        if ($list->getLength() != 1) {
+            print "Found " . $list->getLength() . " instances of " . $el . "\n";
+            return 1;
+        }
+        $xmlData{$el} = $list->item(0);
+    }
+    # Process header
+    if (processHeader() != 0) { return 1; }
+    if (processData() != 0) { return 1; }
+    storeData();
+}
+
+sub processHeader {
+    my ($ffv, $sn, $st, $vn, $cbt);
+    foreach my $child ($xmlData{'mfh'}->getChildNodes()) {
+        if ($child->getNodeType() == 1) { # ELEMENT_NODE
+            my $text = getTextFromElement($child);
+            for ($child->getNodeName()) {
+                /^ffv$/     and do { $ffv = $text; last; };
+                /^sn$/      and do { $sn = $text; last; };
+                /^st$/      and do { $st = $text; last; };
+                /^vn$/      and do { $vn = $text; last; };
+                /^cbt$/     and do { $cbt = $text; last; };
+                print "Unknown header element " . $_ . "\n";
+            }
+        }
+    }
+    unless (defined($ffv) && defined($sn) && defined($st) && defined($vn) && defined($cbt)) {
+        print "Missing header information\n";
+        return 1;
+    }
+
+    if ($DEBUG > 7) {
+        print "HEADER:\nFFV: " . $ffv . "\nSN: " . $sn . "\nST: " . $st .
+            "\nVN: " . $vn . "\nCBT: " . $cbt . "\n\n";
+    }
+    $beginTime = parseSqlDate($cbt);
+    return 0;
+}
+
+sub processData {
+    # Identify ne information
+    my $neid = $xmlData{'md'}->getElementsByTagName('neid')->item(0);
+    unless (defined($neid)) {
+        print "No neid data\n";
+        return 1;
+    }
+    $neun = findElementText($neid, 'neun');
+    $nedn = findElementText($neid, 'nedn');
+    my $mi = $xmlData{'md'}->getElementsByTagName('mi')->item(0);
+    unless (defined($mi)) {
+        print "No mi data\n";
+        return 1;
+    }
+    $endTime = parseSqlDate(findElementText($mi, 'mts'));
+    $granularity = findElementText($mi, 'gp');
+    # Process measurement types
+    foreach my $mt ($mi->getElementsByTagName('mt')) {
+        my $p = $mt->getAttributeNode('p')->getValue;
+        my $name = getTextFromElement($mt);
+        $measureTypes{$p} = $name;
+    }
+    if ($DEBUG > 7) {
+        print "MEASURETYPES:\n";
+        foreach my $key (sort keys %measureTypes) {
+            print $key . " : " . $measureTypes{$key} . "\n";
+        }
+    }
+    foreach my $mv ($mi->getElementsByTagName('mv')) {
+        my $values = {};
+        $measureValues{findElementText($mv, 'moid')} = $values;
+        foreach my $r ($mv->getElementsByTagName('r')) {
+            my $col = $measureTypes{$r->getAttributeNode('p')->getValue()};
+            $values->{$col} = getTextFromElement($r);
+        }
+    }
+    if ($DEBUG > 7) {
+        print "MEASUREVALUES:\n";
+        #foreach my $key (sort keys %measureValues) {
+        while ( (my $key, my $values) = each %measureValues) {
+            print $key . " :\n";
+            while ( (my $id, my $val) = each %$values) {
+                print "\t" . $id . " : " . $val . "\n";
+            }
+        }
+    }
+    return 0;
+}
+
+sub storeData() {
+    # What tables are we looking at?
+    my $appTable = "";
+    my $nodeTable = "";
+    for ($appName) {
+        /^rpmo$/    and do {
+            $appTable = "eba_rpmo";
+            $nodeTable = "eba_rpmo_bsc";
+            last;
+        };
+        /^ebss$/    and do {
+            $appTable = "eba_ebss";
+            $nodeTable = "eba_ebss_sgsn";
+            last;
+        };
+        /^ebsw$/    and do {
+            $appTable = "eba_ebsw";
+            $nodeTable = "eba_ebsw_rnc";
+            last;
+        };
+        die "Unknown app type: " . $_;
+    }
+    if ($DEBUG > 2) {
+        print "Storing to " . $appTable . " and " . $nodeTable . "\n";
+    }
+
+    # delete old data
+    foreach my $table (($nodeTable, $appTable)) {
+        my $sql = "DELETE FROM " . $table . " USING " . $table . ",eba_mdc" .
+            " WHERE " . $table . ".mdc_id = eba_mdc.id " .
+            " AND eba_mdc.siteid = " . $siteId .
+            " AND eba_mdc.neun = '" . $appName . "'" .
+            " AND eba_mdc.begin_time = '" . $beginTime . "'" .
+            " AND eba_mdc.end_time = '" . $endTime . "'";
+        if ( $DEBUG > 2 ) { print "storeData: $sql\n"; }
+        $dbh->do($sql);
+    }
+    # Delete existing mdc for this app, site and start / end time
+    my $sql = "DELETE FROM eba_mdc WHERE siteid = " . $siteId .
+        " AND neun = '" . $appName . "'" .
+        " AND begin_time = '" . $beginTime . "'" .
+        " AND end_time = '" . $endTime . "'";
+    if ( $DEBUG > 2 ) { print "storeData: $sql\n"; }
+    $dbh->do($sql);
+
+    # Create the mdc
+    $sql = "INSERT INTO eba_mdc (siteid,begin_time,end_time,granularity,neun,nedn) " .
+        "VALUES (" . $siteId . ",'" . $beginTime . "','" . $endTime . "'," .
+        $granularity . ",'" . $neun . "','" . $nedn . "')";
+    if ( $DEBUG > 2 ) { print "storeData: $sql\n"; }
+    $dbh->do($sql);
+    # XXX: possible fault here if multiple processes simulatneously
+    my $mdc_id = $dbh->last_insert_id(undef,undef,undef,undef);
+    #print "Insert ID: " . $mdc_id . "\n";
+
+    # Store the moid_ids
+    my @moidList = keys %measureValues;
+    my $r_moidMap = getIdMap($dbh,"eba_moid","id","name",\@moidList);
+    # get our data hash
+    while ( (my $key, my $values) = each %measureValues) {
+        my ($table, $insert, $insertVals);
+        if ($key eq "") {
+            # Application-level counters
+            $table = $appTable;
+            $insert = "INSERT INTO " . $table . "(mdc_id";
+            $insertVals = "(" . $mdc_id;
+        } else {
+            # Node-specific counters, store the moid_id
+            $table = $nodeTable;
+            my $moidId = $r_moidMap->{$key};
+            $insert = "INSERT INTO " . $table . "(mdc_id,moid_id";
+            $insertVals = "(" . $mdc_id . "," . $moidId;
+        }
+        if (! defined ($tableCols{$table})) {
+        my $colSql = sprintf("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '%s' AND TABLE_SCHEMA = DATABASE()", $table);
+            if ( $DEBUG > 2 ) { print "storeData: $colSql\n"; }
+            $tableCols{$table} = $dbh->selectall_hashref($colSql, "COLUMN_NAME")
+                or die $dbh->errstr;
+        if ( $DEBUG > 2 ) { print Dumper("storeData: columns for $table", $tableCols{$table}); }
+        }
+        while ( (my $id, my $val) = each %$values) {
+            if (! exists($tableCols{$table}->{$id})) {
+                print "No such column - " . $id . "\n";
+                $dbh->do("ALTER TABLE " . $table . " ADD " . $id . " INT COMMENT 'DDP_AUTO_GEN'")
+                    or die "Unable to add column " . $id .
+                        " to " . $table . " - " . $dbh->errstr;
+                $tableCols{$table}->{$id} = { 'COLUMN_NAME' => $id };
+            }
+            $insert .= "," . $id;
+            $insertVals .= "," . $val;
+        }
+        $insert .= ") VALUES" . $insertVals . ")";
+        if ( $DEBUG > 2 ) { print "storeData: $insert\n"; }
+        $dbh->do($insert)
+            or die "Unable to insert row for " . $table . " - " . $mdc_id . " - " . $dbh->errstr . "\nSQL: " . $insert;
+    }
+}
+
+# Find element called $elName below
+# $base (max one instance) and return text
+sub findElementText {
+    my ($base, $elName) = @_;
+    my $list = $base->getElementsByTagName($elName);
+    ($list->getLength() == 1)
+        or die "Found " . $list->getLength() . " instances of " . $elName;
+    return getTextFromElement($list->item(0));
+}
+
+# return the text from the given element or die in the process
+sub getTextFromElement {
+    my $el = shift;
+    my $text = $el->getFirstChild();
+    if (defined($text) && $text->getNodeType() == 3) { # TEXT_NODE
+        return $text->getData();
+    }
+    if ($DEBUG > 2) { print "Child node is not a text node: " . $el->getNodeName() . "\n"; }
+    return "";
+}
+
+sub parseSqlDate {
+    my $date = shift;
+
+    my $time = parseTime( $date, $StatsTime::TIME_YYYYMMDDHHMMSS );
+    $time += $utcOffSetSec;
+    return formatTime( $time, $StatsTime::TIME_SQL );
+}
+
+main();

@@ -1,0 +1,104 @@
+{
+    "desc": "Two datasets with different property order",
+    "dataSets": [
+        {
+            "property_options": null,
+            "samples": [
+                {
+                    "time": 1619563884,
+                    "unbind:-ds_connection_handlers_ldap_requests_count": 0,
+                    "timestamp": "2021-04-27 23:51:24",
+                    "search:-ds_connection_handlers_ldap_requests_count": 0,
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2
+                },
+                {
+                    "time": 1619563944,
+                    "search:-ds_connection_handlers_ldap_requests_count": 0,
+                    "timestamp": "2021-04-27 23:52:24",
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2,
+                    "unbind:-ds_connection_handlers_ldap_requests_count": 0
+                }
+            ],
+            "properties": {
+                "port": "LDAPS",
+                "siteid": 6,
+                "serverid": 1248
+            }
+        },
+        {
+            "property_options": null,
+            "samples": [
+                {
+                    "time": 1619563884,
+                    "search:-ds_connection_handlers_ldap_requests_count": 4,
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2,
+                    "timestamp": "2021-04-27 23:51:24",
+                    "unbind:-ds_connection_handlers_ldap_requests_count": 0
+                },
+                {
+                    "unbind:-ds_connection_handlers_ldap_requests_count": 0,
+                    "bind:-ds_connection_handlers_ldap_requests_count": 2,
+                    "search:-ds_connection_handlers_ldap_requests_count": 4,
+                    "timestamp": "2021-04-27 23:52:24",
+                    "time": 1619563944
+                }
+            ],
+            "properties": {
+                "serverid": 1248,
+                "siteid": 6,
+                "port": "Administration Connector"
+            }
+        }
+    ],
+    "metricColumns": [
+        {
+            "column": "unbind_cnt",
+            "schema": {
+                "DATA_TYPE": "mediumint",
+                "IS_NULLABLE": "NO",
+                "NUMBER": 1,
+                "COLUMN_NAME": "unbind_cnt",
+                "COLUMN_TYPE": "mediumint(8) unsigned"
+            },
+            "src": [
+                "unbind:-ds_connection_handlers_ldap_requests_count"
+            ]
+        },
+        {
+            "column": "bind_cnt",
+            "src": [
+                "bind:-ds_connection_handlers_ldap_requests_count"
+            ],
+            "schema": {
+                "DATA_TYPE": "mediumint",
+                "COLUMN_TYPE": "mediumint(8) unsigned",
+                "NUMBER": 1,
+                "COLUMN_NAME": "bind_cnt",
+                "IS_NULLABLE": "NO"
+            }
+        },
+        {
+            "column": "search_cnt",
+            "schema": {
+                "DATA_TYPE": "mediumint",
+                "COLUMN_TYPE": "mediumint(8) unsigned",
+                "NUMBER": 1,
+                "IS_NULLABLE": "NO",
+                "COLUMN_NAME": "search_cnt"
+            },
+            "src": [
+                "search:-ds_connection_handlers_ldap_requests_count"
+            ]
+        }
+    ],
+    "dbColumnNames": [
+        "time",
+        "port",
+        "siteid",
+        "serverid",
+        "unbind_cnt",
+        "bind_cnt",
+        "search_cnt"
+    ],
+    "expectedBCP": "property_order.bcp"
+}

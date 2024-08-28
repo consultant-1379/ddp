@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_kpi_service">
+
+  <table name="ecson_kpi_service">
+  </table>
+
+  <services>
+    <service name="eric-prometheus-pushgateway"/>
+  </services>
+
+  <metricgroups>
+    <metricgroup name="eric-prometheus-pushgateway">
+      <metric source="kpi_calculation_time_sum" target="calculation_time" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

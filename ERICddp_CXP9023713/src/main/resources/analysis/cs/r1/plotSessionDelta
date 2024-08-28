@@ -1,0 +1,59 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/../.."
+ 
+set -- `getopt "c:f:t:s:" "$@"` || {
+    echo "Usage: `basename $0` -c countfile  -s graphfile [ -f filter ] [ -r HH:MM,HH:MM ]" 1>&2
+    exit 1
+}
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+SAVE_FILE=""
+PARSE_ARGS="--data=${TMP_DIR}/data.txt"
+while :
+do
+    case "$1" in
+    -c) shift; PARSE_ARGS="${PARSE_ARGS} --count ${1}" ;;
+    -f) shift; PARSE_ARGS="${PARSE_ARGS} --filter ${1}" ;;
+    -t) shift; PARSE_ARGS="${PARSE_ARGS} --range ${1}" ;; 
+    -s) shift; SAVE_FILE=${1} ;; 
+    --) break ;;
+    esac
+    shift
+done
+
+shift    # REMOVE THE TRAILING --
+
+
+CMD_FILE=/tmp/data.txt
+PLOT_CMD=`${ANALYSIS_BIN}/cs/r1/parseSessionCountDelta ${PARSE_ARGS}`
+
+cat > ${TMP_DIR}/cmd.txt <<EOF
+set xdata time
+set timefmt "%H:%M"
+set yrange [ 0: ]
+set format x "%H:%M"
+set style fill solid
+EOF
+
+
+if [ ! -z "${SAVE_FILE}" ]; then
+    cat >> ${TMP_DIR}/cmd.txt <<EOF
+set terminal jpeg
+set output "${SAVE_FILE}"
+${PLOT_CMD}
+EOF
+    gnuplot ${TMP_DIR}/cmd.txt
+else
+    cat >> ${TMP_DIR}/cmd.txt <<EOF
+${PLOT_CMD}
+EOF
+    gnuplot -persist ${TMP_DIR}/cmd.txt
+fi
+
+#rm ${TMP_DIR}/data.txt ${TMP_DIR}/cmd.txt

@@ -1,0 +1,294 @@
+#!/usr/bin/perl
+#####################################################################################################
+#  Description --------- parseGenericCoreDump-----------
+#  This script parses the core dump log file generated on ENIQ Events/Stats server
+#  and stores data to DB
+#  @author - Anam Pargal (xanampa)
+#  usage parseGenericCoreDump --logfile ${LOG_FILE} --site ${SITE} --date ${SQL_DATE}
+######################################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+use List::Util qw(maxstr);
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $date;
+our $site_id;
+our $platform_type = "";
+our $coredump_path_table = "eniq_coredump_path";
+our $coredump_details_table = "eniq_coredump";
+our $DEBUG = 0;
+our $tmp_dir = "/data/tmp";
+our %mon2num = qw(
+                    jan 01  feb 02  mar 03  apr 04  may 05  jun 06
+                    jul 07  aug 08  sep 09  oct 10 nov 11 dec 12
+                );
+
+sub main {
+    my @logfile;
+    my $site;
+    my $result = GetOptions(
+        "logfile=s" => \@logfile,
+        "site=s"    => \$site,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+    );
+    my $start_time = 0;
+    my $end_time = 0;
+    if( $DEBUG >= 1 ) {
+        $start_time = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmp_dir = $ENV{"TMP_DIR"};
+    }
+    my $coredump_path_logfile = "${tmp_dir}/coredump_path.txt";
+    my $coredump_details_logfile = "${tmp_dir}/coredump_details.txt";
+    foreach my $file (@logfile) {
+        if ( $file =~ /.*\/coredump_path_*/ ) {
+            `cat $file >> $coredump_path_logfile`;
+        } else {
+            `tac $file | sort -k5,6 -k7,8 -k9 -u >> $coredump_details_logfile`;
+        }
+    }
+    $dbh = connect_db();
+    $site_id = getSiteId($dbh, $site);
+    my $parsed_coredump_details_data = parseCoredumpDetails($coredump_details_logfile);
+    my $coredump_details_bcpFile = createBcpFile($parsed_coredump_details_data);
+    my $path_record = parseCoredumpPathData($coredump_details_logfile, $coredump_path_logfile);
+    my $coredump_path_bcpFile = createPathBcpFile($path_record);
+    removeOldData();
+    loadDb($coredump_details_bcpFile, $coredump_path_bcpFile);
+    $dbh->disconnect;
+    if( $DEBUG >= 1 ) {
+        $end_time = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${start_time}\n";
+        print "End Time (EPOCH milliseconds): ${end_time}\n";
+        print "Execution Time in milliseconds:".($end_time-$start_time)."\n";
+    }
+}
+
+sub parseCoredumpDetails {
+    my $coredump_details_logfile = shift;
+    my @coredump_record = ();
+    open FILE, "<$coredump_details_logfile" or die "Can't open file to read $coredump_details_logfile";
+    while (my $line = <FILE>) {
+        if ($line =~ /([\w-]+) .* (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ([a-zA-Z]{3} \d{1,2} \d{4} \d{2}:\d{2}) (.*) (.*)/ ) {
+            my $creation_time = convertDate($3);
+            my $server_id = getServerId($dbh, $site_id, $1);
+            my %record_line = (
+                server         => "$server_id",
+                timestamp      => "$2",
+                creation_time  => "$creation_time",
+                coredump_name  => "$4",
+                coredump_size  => "$5"
+            );
+            push (@coredump_record, \%record_line);
+        }
+        elsif ($line =~ /([\w-]+) .* (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (.*) (.*)/) {
+            $platform_type = "Linux";
+            my $creation_time = "$3:00";
+            my $server_id = getServerId($dbh, $site_id, $1);
+            my %record_line = (
+                server         => "$server_id",
+                timestamp      => "$2",
+                creation_time  => "$creation_time",
+                coredump_name  => "$4",
+                coredump_size  => "$5"
+            );
+            push (@coredump_record, \%record_line);
+        }
+    }
+    close FILE;
+    if ( $DEBUG >= 2 ) {
+        print Dumper ("Parsed Coredump Details Data", \@coredump_record);
+    }
+    return (\@coredump_record);
+}
+
+sub parseCoredumpPathData {
+    my ($coredump_details_logfile, $coredump_path_logfile) = @_;
+    my @path_array = ();
+    my %path_record;
+    my $max_timestamp;
+    my @server_array = ();
+    my $filtered_details_file = "${tmp_dir}/filtered_details.txt";
+    my $similar_shared_path_file = "${tmp_dir}/similar_shared_path.txt";
+    my $unique_entry_file = "${tmp_dir}/unique_entry.txt";
+    open FILE, "<$coredump_path_logfile" or die "Can't open file to read $coredump_path_logfile";
+    while (my $line = <FILE>) {
+        if ( $line =~ /.* (\/.*) .* shared/ ) {
+            my $path = $1;
+            if ( grep {$_ eq $path} @path_array ) {
+                next;
+            } else {
+                push @path_array, $path;
+                `grep -w $path $coredump_path_logfile > $similar_shared_path_file`;
+                open LOG, "<$similar_shared_path_file" or die "Can't open file to read $similar_shared_path_file";
+                while ( my $line_data = <LOG> ) {
+                    my @trigger_timestamp;
+                    if ( $line_data =~ /^([\w-]+) .* (\/.*) (\d+\w) (\w+)/ ) {
+                        my $last_trigger_timestamp = `grep $1 $coredump_details_logfile | head -1 | cut -d' ' -f3,4`;
+                        chomp($last_trigger_timestamp);
+                        push @trigger_timestamp, $last_trigger_timestamp;
+                        my $record = {
+                            'path'            => $2,
+                            'allocated_size'  => $3,
+                            'fs_type'         => $4,
+                            'last_timestamp'  => $last_trigger_timestamp
+                        };
+                        $path_record{$1} = $record;
+                    }
+                    $max_timestamp = maxstr(@trigger_timestamp);
+                }
+                close LOG;
+                unlink($similar_shared_path_file);
+                my $time_diff;
+                foreach my $server (sort keys %path_record) {
+                    if (exists $path_record{$server}{processed}) {
+                        next;
+                    } else {
+                        $time_diff = (parseTime( $max_timestamp, $StatsTime::TIME_SQL ) - parseTime( $path_record{$server}{last_timestamp}, $StatsTime::TIME_SQL ))/60;
+                        $path_record{$server}{last_timestamp} =~ /(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/;
+                        my $search_timestamp = $1;
+                        if ( $time_diff < 15 ) {
+                            `grep '$server.*$search_timestamp' $coredump_details_logfile >> $filtered_details_file`;
+                        }
+                    }
+                    $path_record{$server}{processed} = "true";
+                }
+                `sort -k9 -u $filtered_details_file > $unique_entry_file`;
+                unlink ($filtered_details_file);
+                my $coredump_count = `wc -l < $unique_entry_file`;
+                chomp($coredump_count);
+                my $used_space;
+                if ($platform_type eq "Linux") {
+                    $used_space =  `cut -d' ' -f8 $unique_entry_file | xargs  | sed -e 's/ /+/g' | bc`;
+                }
+                else {
+                    $used_space =  `cut -d' ' -f10 $unique_entry_file | xargs  | sed -e 's/ /+/g' | bc`;
+                }
+                chomp($used_space);
+                foreach my $server (sort keys %path_record) {
+                    if (exists $path_record{$server}{coredump_count}) {
+                        next;
+                    } else {
+                        $path_record{$server}{coredump_count} = $coredump_count;
+                        $path_record{$server}{used_space} = $used_space;
+                    }
+                }
+            }
+        } elsif ( $line =~ /^([\w-]+) .* (\/.*) (\d+\w) (local)/ ) {
+            my $latest_timestamp = `grep -w $1 $coredump_details_logfile | cut -d':' -f1,2 | cut -d' ' -f4 | head -1`;
+            chomp($latest_timestamp);
+            `grep -Ew $1 $coredump_details_logfile | grep -E $latest_timestamp > $filtered_details_file`;
+            my $used_space;
+            if ($platform_type eq "Linux") {
+                $used_space =  `cut -d' ' -f8 $filtered_details_file | xargs  | sed -e 's/ /+/g' | bc`;
+            }
+            else {
+                $used_space =  `cut -d' ' -f10 $filtered_details_file | xargs  | sed -e 's/ /+/g' | bc`;
+            }
+            chomp($used_space);
+            my $coredump_count = `grep -w $1 $filtered_details_file | wc -l`;
+            chomp($coredump_count);
+            my $record = {
+                'path'            => $2,
+                'allocated_size'  => $3,
+                'fs_type'         => $4,
+                'used_space'      => $used_space,
+                'coredump_count'  => $coredump_count
+            };
+            $path_record{$1} = $record;
+            unlink($filtered_details_file);
+        }
+    }
+    close FILE;
+    if ( $DEBUG >= 3 ) {
+        print Dumper ("Parsed Coredump Path Data", \%path_record);
+    }
+    unlink ($coredump_path_logfile, $coredump_details_logfile, $unique_entry_file);
+    return \%path_record;
+}
+
+sub convertDate {
+    my $timestamp = shift;
+    my ($month, $day, $year, $time) = $timestamp =~ /([a-zA-Z]{3}) (\d{1,2}) (\d{4}) (\d{2}:\d{2})/;
+    my $mon = $mon2num{lc $month};
+    if($day < 10){
+        $day = "0$day";
+    }
+    $timestamp = "$year-$mon-$day $time:00";
+    return $timestamp;
+}
+
+sub createBcpFile {
+    my $parsed_coredump_details_data = shift;
+    my $coredump_details_bcpfile = "${tmp_dir}/coredump_details.bcp";
+    open BCP, ">$coredump_details_bcpfile" or die "Cannot open $coredump_details_bcpfile";
+    foreach my $data_element ( @$parsed_coredump_details_data ) {
+        printf BCP "%s|%s|%s|%s|%s|%s\n",
+        $data_element->{timestamp},
+        $site_id,
+        $data_element->{server},
+        $data_element->{creation_time},
+        $data_element->{coredump_name},
+        $data_element->{coredump_size};
+    }
+    close BCP;
+    return $coredump_details_bcpfile;
+}
+
+sub createPathBcpFile {
+    my $path_record = shift;
+    my $coredump_path_bcpfile = "${tmp_dir}/coredump_path.bcp";
+    open BCP, ">>$coredump_path_bcpfile" or die "Cannot open $coredump_path_bcpfile";
+    foreach my $server (sort keys %$path_record) {
+        my $server_id = getServerId($dbh, $site_id, $server);
+        printf BCP "%s|%s|%s|%s|%s|%s|%s|%s\n",
+        $date,
+        $site_id,
+        $server_id,
+        $path_record->{$server}{path},
+        $path_record->{$server}{fs_type},
+        $path_record->{$server}{allocated_size},
+        $path_record->{$server}{used_space},
+        $path_record->{$server}{coredump_count};
+    }
+    close BCP;
+    return $coredump_path_bcpfile;
+}
+
+sub loadDb {
+    my ($coredump_details_bcpFile, $coredump_path_bcpFile) = @_;
+    my $loadSql1 = "LOAD DATA LOCAL INFILE \'$coredump_details_bcpFile\' INTO TABLE $coredump_details_table FIELDS TERMINATED BY \'|\'";
+    my $loadSql2 = "LOAD DATA LOCAL INFILE \'$coredump_path_bcpFile\' INTO TABLE $coredump_path_table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG >= 5 ) {
+        print "Sql statement for loading data.\n";
+        print "$loadSql1\n";
+        print "$loadSql2\n";
+    }
+    dbDo($dbh, $loadSql1) or die "Failed to load Data".$dbh->errstr."\n";
+    dbDo($dbh, $loadSql2) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($coredump_details_bcpFile, $coredump_path_bcpFile);
+}
+
+sub removeOldData {
+    my $deleteSql1 = "DELETE FROM $coredump_path_table WHERE siteId = $site_id AND date = '$date'";
+    my $deleteSql2 = "DELETE FROM $coredump_details_table WHERE siteId = $site_id AND collectionTime BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG >= 4 ) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql1\n";
+        print "$deleteSql2\n";
+    }
+    dbDo($dbh,$deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh,$deleteSql2) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main();

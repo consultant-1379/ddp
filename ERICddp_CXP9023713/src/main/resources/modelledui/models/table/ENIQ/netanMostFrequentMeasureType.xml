@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pme_details">
+    <reference table="sites" condition="eniq_netan_pme_details.siteid = sites.id"/>
+    <reference table="eniq_netan_pme_query_category_id_mapping_details" condition="eniq_netan_pme_query_category_id_mapping_details.id = eniq_netan_pme_details.queryCategoryId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND queryCategory IN ('FetchInformation', 'ShowReport') AND measureType IS NOT NULL AND measureType != ' ' AND measureType IN (SELECT DISTINCT measureType FROM eniq_netan_pme_details WHERE sites.name = '%site%' AND time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' GROUP BY fetchId, measureId) AND time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+  <groupby>
+    <column db="eniq_netan_pme_details.measureType"/>
+  </groupby>
+  <order columnid="numberOfTimes" direction="DESC"/>
+
+  <column db="eniq_netan_pme_details.measureType" label="Measure Type"/>
+  <column db="COUNT(*)" label="Number of Times Accessed" id="numberOfTimes"/>
+
+</modelledtable>

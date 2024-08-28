@@ -1,0 +1,23 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_shm_nbi_rest_backup">
+    <reference table="sites" condition="enm_shm_nbi_rest_backup.siteid = sites.id"/>
+    <reference table="servers" condition="enm_shm_nbi_rest_backup.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_shm_nbi_rest_backup.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="useCaseName"/>
+  </groupby>
+
+  <column db="useCaseName" label="UsecaseName"/>
+  <column db="COUNT(useCaseName)" label="Count"/>
+  <column db="ROUND(AVG(numOfNodes), 0)" label="NumOfNodes"/>
+  <column db="ROUND(AVG(numOfCPPNodes), 0)" label="NumOfCPPNodes"/>
+  <column db="ROUND(AVG(numOfECIMNodes), 0)" label="NumOfECIMNodes"/>
+  <column db="ROUND(AVG(numOfMiniLinkNodes), 0)" label="NumOfMiniLinkNodes"/>
+  <column db="ROUND(AVG(numOfAXENodes), 0)" label="NumOfAXENodes"/>
+</modelledtable>
+

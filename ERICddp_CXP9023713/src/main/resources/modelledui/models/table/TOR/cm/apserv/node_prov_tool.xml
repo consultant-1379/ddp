@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ap_node_prov">
+    <reference table="sites" condition="enm_ap_node_prov.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ap_node_prov.date = '%date%'</where>
+
+  <column db="CONCAT(UPPER(SUBSTRING(activityType,1,1)),SUBSTRING(activityType,2))" label="Activity Type"/>
+  <column db="ect" label="ECT"/>
+  <column db="pci" label="PCI"/>
+  <column db="other" label="Other"/>
+  <column db="unknown" label="Unknown"/>
+
+</modelledtable>

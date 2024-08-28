@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="elasticsearch_indices">
+      <reference table="sites" condition="elasticsearch_indices.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="servicetype"/>
+    <where>sites.name = '%s' AND elasticsearch_indices.servicetype = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="QueryCount" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Query Count"/>
+      <column db="searchQueryCount" label = "Count"/>
+    </graph>
+    <graph name="QueryAverageTime" type="tsc" ylabel="msec" forcelegend="true">
+      <title value="Query Average Time"/>
+      <column db="IF(searchQueryCount>0, searchQueryTime/searchQueryCount, 0)" label = "Average Time"/>
+    </graph>
+    <graph name="FetchCount" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Fetch Count"/>
+      <column db="searchFetchCount" label = "Count"/>
+    </graph>
+    <graph name="FetchAverageTime" type="tsc" ylabel="msec" forcelegend="true">
+      <title value="Fetch Average Time"/>
+      <column db="IF(searchFetchCount > 0, searchFetchTime/searchFetchCount, 0)" label = "Average Time"/>
+    </graph>
+    <graph name="IndexCount" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Index Count"/>
+      <column db="indexCount" label = "Count"/>
+    </graph>
+    <graph name="IndexAverageTime" type="tsc" ylabel="msec" forcelegend="true">
+      <title value="Index Average Time"/>
+      <column db="IF(indexCount > 0, indexTime/indexCount, 0)" label = "Average Time"/>
+    </graph>
+    <graph name="StoreSizeInMB" type="sb" ylabel="MB" forcelegend="true">
+      <title value="Store Size in MB"/>
+      <column db="storeSizeMB" label = "StoreSizeMB"/>
+    </graph>
+    <graph name="DocsDeleted" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Docs Deleted"/>
+      <column db="docsDeleted" label = "Docs Deleted"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="indices">
+      <member>QueryCount</member>
+      <member>QueryAverageTime</member>
+      <member>FetchCount</member>
+      <member>FetchAverageTime</member>
+      <member>IndexCount</member>
+      <member>IndexAverageTime</member>
+      <member>StoreSizeInMB</member>
+      <member>DocsDeleted</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

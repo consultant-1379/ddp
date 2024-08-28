@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+ ylabel="MOs/Sec"
+>
+  <title value="MOs/Sec"/>
+  <queries>
+    <query timecol="job_end">
+      <dbtables main="cm_import">
+        <reference table="sites" condition="cm_import.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND TIME_TO_SEC( TIMEDIFF( job_end, job_start ) ) > 0 AND file_format = 'THREE_GPP' AND configuration = 'Live'</where>
+      <column db="ROUND( (mos_created + mos_updated + mos_deleted)/( ( IFNULL(validate_schema_time, 0) + IFNULL(parsing_time, 0) + IFNULL(model_validation_time, 0) + IFNULL(import_time, 0) )/1000 ), 2 )" label="THREE_GPP Live"/>
+    </query>
+    <query timecol="job_end">
+      <dbtables main="cm_import">
+        <reference table="sites" condition="cm_import.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND TIME_TO_SEC( TIMEDIFF( job_end, job_start ) ) > 0 AND file_format = 'THREE_GPP' AND configuration != 'Live'</where>
+      <column db="ROUND( (mos_created + mos_updated + mos_deleted)/( ( IFNULL(validate_schema_time, 0) + IFNULL(parsing_time, 0) + IFNULL(model_validation_time, 0) + IFNULL(import_time, 0) )/1000 ), 2 )" label="THREE_GPP Non-Live"/>
+    </query>
+    <query timecol="job_end">
+      <dbtables main="cm_import">
+        <reference table="sites" condition="cm_import.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND TIME_TO_SEC( TIMEDIFF( job_end, job_start ) ) > 0 AND file_format IN('Dynamic', 'EDFF') AND configuration = 'Live'</where>
+      <column db="ROUND( (mos_created + mos_updated + mos_deleted)/( ( IFNULL(validate_schema_time, 0) + IFNULL(parsing_time, 0) + IFNULL(model_validation_time, 0) + IFNULL(import_time, 0) )/1000 ), 2 )" label="Dynamic Live"/>
+    </query>
+    <query timecol="job_end">
+      <dbtables main="cm_import">
+        <reference table="sites" condition="cm_import.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND TIME_TO_SEC( TIMEDIFF( job_end, job_start ) ) > 0 AND file_format IN('Dynamic', 'EDFF') AND configuration != 'Live'</where>
+      <column db="ROUND( (mos_created + mos_updated + mos_deleted)/( ( IFNULL(validate_schema_time, 0) + IFNULL(parsing_time, 0) + IFNULL(model_validation_time, 0) + IFNULL(import_time, 0) )/1000 ), 2 )" label="Dynamic Non-Live"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

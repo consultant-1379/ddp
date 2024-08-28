@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <xs:element name="modelledtable">
+    <xs:complexType>
+      <xs:sequence>
+
+        <xs:element name="dbtables" minOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="reference" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="table" type="xs:string" use="required"/>
+                  <xs:attribute name="condition" type="xs:string" use="required"/>
+                  <xs:attribute name="join" type="xs:string" default="JOIN"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="main" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="param" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="where" minOccurs="1" type="xs:string"/>
+
+        <xs:element name="groupby" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="column" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="db" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="rollup" type="xs:boolean" use="optional" default="false"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="order" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="columnid" type="xs:string" use="required"/>
+            <xs:attribute name="direction" use="required">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="ASC" />
+                  <xs:enumeration value="DESC" />
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="column" minOccurs="1" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="db" type="xs:string" use="required"/>
+            <xs:attribute name="label" type="xs:string" use="required"/>
+            <xs:attribute name="id" type="xs:string" use="optional"/>
+            <xs:attribute name="formatter" type="xs:string" use="optional"/>
+            <xs:attribute name="visible" type="xs:boolean" use="optional" default="true"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="ctxmenu" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="item" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="id" type="xs:string" use="required"/>
+                  <xs:attribute name="label" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="urltarget" minOccurs="0">
+                <xs:complexType>
+                  <xs:attribute name="arg" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="keycol" type="xs:string" use="required"/>
+            <xs:attribute name="targettype" use="required">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="url" />
+                  <xs:enumeration value="modelledgraph" />
+                  <xs:enumeration value="modelledgraphset" />
+                  <xs:enumeration value="modelledtable" />
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="multiselect" type="xs:boolean" use="optional" default="false"/>
+          </xs:complexType>
+        </xs:element>
+
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use DataStore;
+
+our $DEBUG = 0;
+
+sub parse($) {
+    my ($inputFile) = @_;
+
+    open IN, $inputFile or die "Failed to open $inputFile";
+    my @samples = ();
+    while ( my $line = <IN> ) {
+        if ( $line =~ /^([\d:]+) (\d+)$/ ) {
+            my ($timestamp,$count) = ($1,$2);
+            push @samples, [ parseTime($timestamp,$StatsTime::TIME_DDMMYY_HM), $count ];
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 6 ) { print Dumper("parse: samples", \@samples); };
+
+    return \@samples;
+}
+
+sub store($$) {
+    my ($site,$r_rawSamples) = @_;
+
+
+    my %propertyValues = (
+        'site' => $site
+    );
+    my %tableModel = (
+        'name' => 'enm_openalarms',
+        'keycol' => []
+    );
+    my %columnMap = (
+        'num' => 'num'
+    );
+
+    my @samples = ();
+    foreach my $r_rawSample ( @{$r_rawSamples} ) {
+        push @samples, {
+            'time' => $r_rawSample->[0],
+            'timestamp' => formatTime($r_rawSample->[0], $StatsTime::TIME_SQL),
+            'num' => $r_rawSample->[1]
+        };
+    }
+
+    DataStore::storePeriodicData($DataStore::FIFTEEN_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 "fmalarmprocessing",
+                                 \%propertyValues,
+                                 \%columnMap,
+                                 [ { 'samples' => \@samples, 'properties' => {} } ] );
+}
+
+sub main() {
+    my ($inputFile,$site);
+    my $result = GetOptions (
+        "input=s" => \$inputFile,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_samples = parse($inputFile);
+    if ( defined $site ) {
+        store($site,$r_samples);
+    }
+}
+
+
+main();

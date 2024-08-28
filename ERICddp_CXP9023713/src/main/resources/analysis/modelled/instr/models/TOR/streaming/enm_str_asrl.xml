@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^\S+-driver-Instrumentation@e2e_\S+-driver$"
+>
+  <table name="enm_str_asrl"/>
+
+  <metricgroups>
+    <multi>driverType</multi>
+    <metricgroup name="^\S+-driver-com.ericsson.oss.mediation.(asr[nl]).correlation:name=inputEventCount$">
+      <metric source="Count" target="inputEventCount" delta="true"/>
+      <property name="driverType" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^\S+-driver-com.ericsson.oss.mediation.(asr[nl]).correlation:name=filteredEvents$">
+      <metric source="Count" target="filteredEvents" delta="true"/>
+      <property name="driverType" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^\S+-driver-com.ericsson.oss.mediation.(asr[nl]).correlation:name=completeRecords$">
+      <metric source="Count" target="completeRecords" delta="true"/>
+      <property name="driverType" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^\S+-driver-com.ericsson.oss.mediation.(asr[nl]).correlation:name=suspectRecords$">
+      <metric source="Count" target="suspectRecords" delta="true"/>
+      <property name="driverType" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^\S+-driver-com.ericsson.oss.mediation.(asr[nl]).correlation:name=numberOfBearers$">
+      <metric source="Count" target="numberOfBearers" delta="true"/>
+      <property name="driverType" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

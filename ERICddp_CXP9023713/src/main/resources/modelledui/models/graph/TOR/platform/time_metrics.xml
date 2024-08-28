@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Time in millisecond (ms)"
+>
+  <title value="Time Metrics"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="t_total" label="Total Time"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="t_phase1" label="Phase 1 Time"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="t_phase2" label="Phase 2 Time"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="t_phase3" label="Phase 3 Time"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="t_rootdir_io" label="Model Root Dir I/O"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>
+

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  namespace="^\S+-lr-jmx@genjmx_(\S+)$"
+  sampleinterval="900">
+
+  <table name="jvm_lr">
+    <keycol name="serverid" reftable="servers" />
+    <keycol name="nameid" reftable="jmx_names" />
+  </table>
+
+  <hooks module="common::JvmMetrics">
+    <hook>prestore</hook>
+  </hooks>
+
+  <metricgroups>
+    <metricgroup name="^\S+-jvm-mem-codecache$">
+      <metric source="Usage-committed" target="cc_committed" scale="1048576" />
+      <metric source="Usage-used" target="cc_used" scale="1048576" />
+    </metricgroup>
+
+    <metricgroup name="^\S+-jvm-mem-ccs$">
+      <metric source="Usage-committed" target="ccs_committed" scale="1048576" />
+      <metric source="Usage-used" target="ccs_used" scale="1048576" />
+    </metricgroup>
+
+    <metricgroup name="^\S+-jvm-mem-meta$">
+      <metric source="Usage-committed" target="meta_committed" scale="1048576" />
+      <metric source="Usage-used" target="meta_used" scale="1048576" />
+    </metricgroup>
+
+    <metricgroup name="^\S+-jvm-compilation$">
+      <metric source="TotalCompilationTime" target="t_compilation" delta="true" />
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

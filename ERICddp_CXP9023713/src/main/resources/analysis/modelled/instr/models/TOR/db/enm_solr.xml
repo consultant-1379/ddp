@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^solrcore@solrcore$">
+  <table name="enm_solr">
+    <keycol name="coreid" reftable="enm_solr_core_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>coreid</multi>
+
+    <metricgroup name="^solrcore-(\S+)-documentCache$">
+      <metric source="cumulative_inserts" target="cacheInserts" delta="true"/>
+      <metric source="cumulative_lookups" target="cacheLookups" delta="true"/>
+      <metric source="cumulative_hits" target="cacheHits" delta="true"/>
+      <metric source="cumulative_evictions" target="cacheEvictions" delta="true"/>
+      <metric source="size" target="cacheSize"/>
+      <property name="coreid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^solrcore-(\S+)-select$">
+      <metric source="requests" target="selectRequests" delta="true"/>
+      <metric source="totalTime" target="selectTime" delta="true"/>
+      <metric source="errors" target="selectErrors" delta="true"/>
+      <metric source="timeouts" target="selectTimeouts" delta="true"/>
+      <property name="coreid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^solrcore-(\S+)-searcher$">
+      <metric source="numDocs" target="searcherNumDocs"/>
+      <property name="coreid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^solrcore-(\S+)-update$">
+      <metric source="requests" target="updateRequests" delta="true"/>
+      <metric source="totalTime" target="updateTime" delta="true"/>
+      <metric source="errors" target="updateErrors" delta="true"/>
+      <metric source="timeouts" target="updateTimeouts" delta="true"/>
+      <property name="coreid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^solrcore-(\S+)-updatejson$">
+      <metric source="requests" target="updateJsonRequests" delta="true"/>
+      <metric source="totalTime" target="updateJsonTime" delta="true"/>
+      <metric source="errors" target="updateJsonErrors" delta="true"/>
+      <metric source="timeouts" target="updateJsonTimeouts" delta="true"/>
+      <property name="coreid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

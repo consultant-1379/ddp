@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_infrastructure_monitor">
+      <reference table="sites" condition="enm_infrastructure_monitor.siteid = sites.id"/>
+      <reference table="servers" condition="enm_infrastructure_monitor.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="mspmPullFilesSessionCreationTime" type="sb" ylabel="Time(Sec)">
+      <title value="SFTP/FTPES Connection Time"/>
+      <column db="mspmPullFilesSessionCreationTime" label="SFTP/FTPES Connection Time"/>
+    </graph>
+    <graph name="mspmPullFilesTransferTime" type="sb" ylabel="Time(Sec)">
+      <title value="MSPM File Transfer Time"/>
+      <column db="mspmPullFilesTransferTime" label="MSPM File Transfer Time"/>
+    </graph>
+    <graph name="mspmPullFilesBytesStoredFS" type="sb" ylabel="Bytes(GB)">
+      <title value="File Bytes Store"/>
+      <column db="mspmPullFilesBytesStoredFS / 1024" label="File Bytes Store"/>
+    </graph>
+    <graph name="fileWriteBandwidth" type="sb" ylabel="MB/Sec">
+      <title value="MSPM File Write Bandwidth"/>
+      <column db="mspmPullFilesBytesStoredFS / mspmPullFilesWriteTimeFS" label="MSPM File Write Bandwidth"/>
+    </graph>
+    <graph name="mspmPullFilesWriteTimeFS" type="sb" ylabel="Time(Sec)">
+      <title value="MSPM File Write Time"/>
+      <column db="mspmPullFilesWriteTimeFS" label="MSPM File Write Time"/>
+    </graph>
+    <graph name="sftpBandwidth" type="sb" ylabel="MB/Sec">
+      <title value="MSPM SFTP Bandwidth"/>
+      <column db="mspmPullFilesBytesTransfered / mspmPullFilesTransferTime" label="MSPM SFTP Bandwidth"/>
+    </graph>
+    <graph name="mspmPullFilesStoredFS" type="sb" ylabel="Count">
+      <title value="Files Store"/>
+      <column db="mspmPullFilesStoredFS" label="Files Store"/>
+    </graph>
+    <graph name="mspmPullFilesBytesTransfered" type="sb" ylabel="Bytes(GB)">
+      <title value="MSPM File Bytes Transfer"/>
+      <column db="mspmPullFilesBytesTransfered / 1024" label="MSPM File Bytes Transfer"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="networkingress">
+      <member>mspmPullFilesSessionCreationTime</member>
+      <member>mspmPullFilesStoredFS</member>
+      <member>mspmPullFilesTransferTime</member>
+      <member>mspmPullFilesWriteTimeFS</member>
+      <member>mspmPullFilesBytesTransfered</member>
+      <member>mspmPullFilesBytesStoredFS</member>
+      <member>sftpBandwidth</member>
+      <member>fileWriteBandwidth</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

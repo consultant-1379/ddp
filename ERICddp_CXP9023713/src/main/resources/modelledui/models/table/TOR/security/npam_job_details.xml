@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_npam_job_details">
+    <reference table="sites" condition="enm_npam_job_details.siteid = sites.id"/>
+    <reference table="servers" condition="enm_npam_job_details.serverid=servers.id"/>
+  </dbtables>
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_npam_job_details.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="IFNULL(TIMEDIFF(time(time), SEC_TO_TIME(ROUND(durationOfJob/1000))), 'NA')" label="Start Time"/>
+  <column db="time" label="End Time" formatter="ddpFormatTime"/>
+  <column db="jobType" label="Job Type"/>
+  <column db="numberOfNetworkElements" label="Num of NetworkElements"/>
+  <column db="neJobRate" label="NE Job Rate"/>
+  <column db="status" label="Status"/>
+  <column db="result" label="Result"/>
+  <column db="numberOfNeJobFailed" label="Num of NE Job Failed"/>
+</modelledtable>

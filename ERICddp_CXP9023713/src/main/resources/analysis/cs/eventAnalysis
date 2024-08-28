@@ -1,0 +1,356 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+# Add directory containing this script to include path so
+# we can include the son module
+use File::Basename;
+use lib dirname($0);
+use son;
+
+our $DEBUG = 0;
+
+our $ATTRIBUTE_VALUE_CHANGE = 1;
+our $OBJECT_CREATION = 2;
+our $OBJECT_DELETION = 3;
+our $ASSOCIATION_CREATION = 4;
+our $ASSOCIATION_DELETION = 5;
+
+
+our %TYPE_MAP = (
+    'ATTRIBUTE_VALUE_CHANGE' => $ATTRIBUTE_VALUE_CHANGE,
+    'OBJECT_CREATION' => $OBJECT_CREATION,
+    'OBJECT_DELETION' => $OBJECT_DELETION,
+    'ASSOCIATION_CREATION' => $ASSOCIATION_CREATION,
+    'ASSOCIATION_DELETION' => $ASSOCIATION_DELETION
+    );
+
+sub storeCounts($$$$) {
+    my ($r_counts,$r_sonStats,$date,$site) = @_;
+
+    my %css = ();
+    my %apps = ();
+    my %mims = ();
+    my %mocs = ();
+    my %attribs = ();
+    foreach my $cs ( keys %{$r_counts} ) {
+        $css{$cs} = 1;
+        foreach my $type ( keys %{$r_counts->{$cs}} ) {
+            foreach my $app ( keys %{$r_counts->{$cs}->{$type}} ) {
+                $apps{$app} = 1;
+                foreach my $mim ( keys %{$r_counts->{$cs}->{$type}->{$app}} ) {
+                    $mims{$mim} = 1;
+                    foreach my $moc (  keys %{$r_counts->{$cs}->{$type}->{$app}->{$mim}} ) {
+                        $mocs{$moc} = 1;
+                        foreach my $attrib ( keys %{$r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc}} ) {
+                            $attribs{$attrib} = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_csMap = getMap($dbh,\%css,"cs_names");
+    my $r_appMap = getMap($dbh,\%apps,"cs_application_names");
+    my $r_mimMap = getMap($dbh,\%mims,"model_names");
+    my $r_mocMap = getMap($dbh,\%mocs,"mo_names");
+    my $r_attribMap = getMap($dbh,\%attribs, "nead_attrib_names");
+    my %dbTypeMap = ( $OBJECT_CREATION => 'CREATE',
+                    $OBJECT_DELETION => 'DELETE',
+                    $ATTRIBUTE_VALUE_CHANGE => 'AVC',
+                    $ASSOCIATION_CREATION => 'ASSOC_CREATE',
+                    $ASSOCIATION_DELETION => 'ASSOC_DELETE');
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my $bcpFile = $tmpDir . "/cs_notifications.bcp";
+    open BCP , ">$bcpFile" or die "Cannot open $bcpFile";
+    foreach my $cs ( keys %{$r_counts} ) {
+        foreach my $type ( keys %{$r_counts->{$cs}} ) {
+            foreach my $app ( keys %{$r_counts->{$cs}->{$type}} ) {
+                foreach my $mim ( keys %{$r_counts->{$cs}->{$type}->{$app}} ) {
+                    foreach my $moc (  keys %{$r_counts->{$cs}->{$type}->{$app}->{$mim}} ) {
+                        foreach my $attrib ( keys %{$r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc}} ) {
+                            printf BCP "%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                            $date,$siteId,$dbTypeMap{$type},
+                            $r_csMap->{$cs},$r_appMap->{$app},$r_mimMap->{$mim},
+                            $r_mocMap->{$moc},$r_attribMap->{$attrib},
+                            $r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc}->{$attrib}->{'count'},
+                            $r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc}->{$attrib}->{'size'},
+                            $r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc}->{$attrib}->{'maxsize'};
+                        }
+                    }
+                }
+            }
+        }
+    }
+    close BCP;
+
+    dbDo($dbh, "DELETE FROM cs_notifications WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to delete data from cs_notifications";
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE cs_notifications")
+        or die "Failed to load data into cs_notifications";
+
+    $dbh->disconnect();
+
+}
+
+sub getMap($$$) {
+    my ($dbh,$r_hash,$table_name) = @_;
+    my @keys = keys %{$r_hash};
+    my $r_map = getIdMap($dbh,$table_name, "id", "name", \@keys );
+    return $r_map;
+}
+
+sub updateCount($$$) {
+    my ($r_moStat,$attrib,$eventSize) = @_;
+    $r_moStat->{$attrib}->{'count'}++;
+    $r_moStat->{$attrib}->{'size'} += $eventSize;
+    if ( exists $r_moStat->{$attrib}->{'maxsize'} ) {
+        if ( $eventSize > $r_moStat->{$attrib}->{'maxsize'} ) {
+            $r_moStat->{$attrib}->{'maxsize'} = $eventSize;
+        }
+    } else {
+        $r_moStat->{$attrib}->{'maxsize'} = $eventSize;
+    }
+}
+
+sub getValue($$) {
+    my ($line,$name) = @_;
+
+    if ( $DEBUG > 9 ) { print "getValue: name=$name line=$line\n"; }
+    my ($value) = $line =~ /^\t$name=\"?([^\"]+)\"?/;
+    if ( $DEBUG > 9 && defined $value ) { printf "getValue: value=%s\n", $value; }
+    return $value;
+}
+
+sub readEvent
+{
+    my @eventLines = ();
+    my $line;
+    my $foundEnd = 0;
+    while ( $foundEnd == 0 && defined($line = <IN>) ) {
+        if ( $DEBUG > 9 ) { print "readEvent: line=$line"; }
+        if ( $line !~ /^$/) {
+            chop $line;
+            push @eventLines, $line;
+        } else {
+            $foundEnd = 1;
+        }
+    }
+
+    my $result;
+    if ( $#eventLines > -1 ) {
+        $result = \@eventLines;
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("readEvent: result", $result); }
+
+    return $result;
+}
+
+sub readEvents($$$$) {
+    my ($eventsFile,$fileSize,$r_counts,$r_sonStats) = @_;
+
+    open IN, $eventsFile or die "Failed to open $eventsFile";
+    seek IN, $fileSize, 0;
+
+    while ( my $r_event = readEvent() ) {
+        my $eventSize = 0;
+        foreach my $eventLine ( @{$r_event} ) {
+            $eventSize += length($eventLine);
+        }
+
+        my $eventHeader = shift @{$r_event};
+        my ($day, $month, $year, $hour, $min,$sec, $typeStr,$validPlan) = $eventHeader =~
+            /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+)\.\d+ OSS 0c1A (\S+) (\S+)$/;
+        if ( ! defined $validPlan ) {
+            next;
+        }
+
+        my $type = $TYPE_MAP{$typeStr};
+        if ( ! defined $type ) {
+            $type = 0;
+        }
+
+        my ($moc,$moi,$mim,$cs,$app);
+        my %attribs = ();
+
+        if ( $validPlan eq 'VALID' && $type > 0 ) {
+            if ( $type == $ATTRIBUTE_VALUE_CHANGE ||
+                 $type == $OBJECT_CREATION ||
+                 $type == $OBJECT_DELETION ) {
+                shift @{$r_event}; # time
+                $moc = getValue(shift @{$r_event},"moc");
+                $moi = getValue(shift @{$r_event},"moi");
+                if ( $type != $ATTRIBUTE_VALUE_CHANGE ) { shift @{$r_event}; } # root
+                $mim = getValue(shift @{$r_event},"mim_name");
+                shift @{$r_event}; # mim_ver
+                $cs = getValue(shift @{$r_event},"cs_name");
+                shift @{$r_event}; # host_name
+                if ( ($#{$r_event} > -1) && ($r_event->[0] =~ /^\s+cs_client_app/) ) {
+                    $app = getValue(shift @{$r_event},"cs_client_app");
+                } else {
+                    $app = "UNKNOWN";
+                }
+
+                foreach my $attribLine ( @{$r_event} ) {
+                    if ( $attribLine =~ /^\t\t(\S+): (.*)/ ) {
+                        my ($name,$value) = ($1,$2);
+                        $attribs{$name} = $value;
+                    }
+                }
+            } elsif ( $type == $ASSOCIATION_CREATION || $type == $ASSOCIATION_DELETION ) {
+                shift @{$r_event}; # time
+                shift @{$r_event}; #
+                $moc = getValue(shift @{$r_event},"from_moc");
+                $moi = getValue(shift @{$r_event},"from_moi");
+                # Hack here, we're using the MO Type of the other end of the
+                # assoc as the event "attrib"
+                $attribs{getValue(shift @{$r_event},"to_moc")} = 1;
+                shift @{$r_event}; # to_moi
+                $mim = getValue(shift @{$r_event},"from_mim_name");
+                shift @{$r_event}; # from_mim_version
+                shift @{$r_event}; # to_mim_name
+                shift @{$r_event}; # to_mim_version
+                $cs =  getValue(shift @{$r_event},"cs_name");
+                shift @{$r_event}; # host_name
+
+                if ($#{$r_event} > -1 ) {
+                    $app = getValue(shift @{$r_event},"cs_client_app");
+                } else {
+                    $app = "UNKNOWN";
+                }
+            }
+
+            if ( (!defined $moc) || (!defined $mim) || (!defined $cs) || (!defined $app) ) {
+                print "WARN: Failed to extract fields $eventHeader\n";
+                next;
+            }
+
+            if ( $DEBUG > 7 ) { print "readEvents: $hour:$min:$sec $type $validPlan $moc $mim $cs $app\n"; }
+
+            my $r_moStat = $r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc};
+            if ( ! defined $r_moStat ) {
+                $r_moStat = {};
+                $r_counts->{$cs}->{$type}->{$app}->{$mim}->{$moc} = $r_moStat;
+            }
+            if ( $type == $ATTRIBUTE_VALUE_CHANGE || $type == $ASSOCIATION_CREATION ||
+                $type == $ASSOCIATION_DELETION ) {
+                foreach my $attrib ( keys %attribs ) {
+                    updateCount($r_moStat,$attrib,$eventSize);
+                }
+            } else {
+                updateCount($r_moStat,'NA',$eventSize);
+            }
+
+            if ( $app eq 'CMS_NEAD' || $app =~ /^NMAMcServernma(\d+)$/ ) {
+                sonProcessEvent($type,$moi,\%attribs,$hour . $min);
+            }
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 3 ) { print Dumper("readEvents: counts", $r_counts); }
+    if ( $DEBUG > 3 ) { print Dumper("readEvents: sonStats", $r_sonStats); }
+
+}
+
+sub loadIncr($) {
+    my ($incrFile) = @_;
+
+    my %incrData = (
+        'counts' => {},
+        'sonStats' => {},
+        'filesize' => 0
+        );
+    if ( defined $incrFile && -r $incrFile ) {
+
+        my $dumperOutput;
+        do {
+            local $/ = undef;
+            open my $fh, "<", $incrFile
+                or die "could not open $incrFile: $!";
+            $dumperOutput = <$fh>;
+            close $fh;
+        };
+
+        if ( $DEBUG > 8 ) { print "readIncr: dumperOutput=$dumperOutput\n"; }
+
+        my $VAR1;
+        eval($dumperOutput);
+        if ( $DEBUG > 7 ) { print Dumper("readIncr: VAR", $VAR1); }
+        $incrData{'counts'} = $VAR1->{'counts'};
+        $incrData{'sonStats'} = $VAR1->{'sonStats'};
+        $incrData{'filesize'} = $VAR1->{'filesize'};
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("loadIncr: incrData", \%incrData); }
+    return \%incrData;
+}
+
+sub storeIncr($$$$) {
+    my ($r_counts,$r_sonStats,$fileSize,$incrFile) = @_;
+
+    my %incrData = ( 'counts' => $r_counts,
+                     'sonStats' => $r_sonStats,
+                     'filesize' => $fileSize );
+    my $defaultIndent = $Data::Dumper::Indent;
+    $Data::Dumper::Indent = 0;
+    my $incrDataStr = Dumper(\%incrData);
+    $Data::Dumper::Indent = $defaultIndent;
+
+    open INC, ">$incrFile";
+    print INC $incrDataStr;
+    close INC;
+}
+
+
+sub main {
+    my ($eventsFile,$incrFile,$site,$date);
+    my $result = GetOptions (
+        "events=s" => \$eventsFile,
+        "incr=s" => \$incrFile,
+        "date=s" => \$date,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_incrData = loadIncr($incrFile);
+    my $r_counts = $r_incrData->{'counts'};
+    my $r_sonStats = $r_incrData->{'sonStats'};
+    my $fileOffset = $r_incrData->{'filesize'};
+
+    sonInit($r_sonStats);
+
+    readEvents($eventsFile,$fileOffset,$r_counts,$r_sonStats);
+    storeCounts($r_counts,$r_sonStats,$date,$site);
+
+    $r_sonStats = sonDone($site,$date);
+
+    if ( defined $incrFile ) {
+        my @fileStats = stat $eventsFile;
+        my $fileSize = $fileStats[7];
+        storeIncr($r_counts,$r_sonStats,$fileSize,$incrFile);
+    }
+}
+
+main();

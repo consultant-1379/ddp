@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <xs:element name="modelledgraphset">
+    <xs:complexType>
+      <xs:sequence>
+
+        <xs:element name="query" minOccurs="1" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="dbtables">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="reference" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="table" type="xs:string" use="required" />
+                        <xs:attribute name="condition" type="xs:string" use="required" />
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="main" type="xs:string" use="required" />
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="param" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required" />
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="where" type="xs:string" />
+            </xs:sequence>
+            <xs:attribute name="timecol" type="xs:string" use="required" />
+            <xs:attribute name="multiseries" type="xs:string" use="optional" />
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="graphs">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="graph" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="title" minOccurs="0">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="param" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="value" type="xs:string" use="required" />
+                      </xs:complexType>
+                    </xs:element>
+
+                    <xs:element name="column" minOccurs="1" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="db" type="xs:string" use="required" />
+                        <xs:attribute name="label" type="xs:string" use="required" />
+                      </xs:complexType>
+                    </xs:element>
+
+                  </xs:sequence>
+
+                  <xs:attribute name="id" type="xs:string" use="required"/>
+                  <xs:attribute name="type" use="required">
+                    <xs:simpleType>
+                      <xs:restriction base="xs:string">
+                        <xs:enumeration value="tsc" />
+                        <xs:enumeration value="sb" />
+                        <xs:enumeration value="sa" />
+                        <xs:enumeration value="xy" />
+                      </xs:restriction>
+                    </xs:simpleType>
+                  </xs:attribute>
+                  <xs:attribute name="ylabel" type="xs:string" use="optional" />
+                  <xs:attribute name="useragg" type="xs:boolean" use="optional" default="true" />
+                  <xs:attribute name="forcelegend" type="xs:boolean" use="optional" default="false" />
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="groups">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="group" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="member" minOccurs="1" maxOccurs="unbounded" type="xs:string"/>
+                  </xs:sequence>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+      </xs:sequence>
+
+      <xs:attribute name="timespan" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="day" />
+            <xs:enumeration value="month" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

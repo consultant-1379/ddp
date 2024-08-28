@@ -1,0 +1,266 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# script  : parseProfileLogs
+# Author  : Piyush Chandravanshi (xchapiy)
+# Purpose : The purpose of this script is to parse the profile log files
+#           and store them under database.
+# Usage   : ${ANALYSIS_BIN}/TOR/parseProfileLogs --logdir
+#           ${LOGDIR} --site ${SITE} --date ${DATE}
+#Test
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use StatsDB;
+use StatsCommon;
+use DBI;
+use Data::Dumper;
+
+our $DEBUG = 0;
+our $MAX_COUNT = 50000;
+
+our $SINGLE_LOG = 1;
+our $MULTIPLE_LOG = 2;
+
+sub parseLogs($$$$) {
+    my ($logType, $r_logFiles, $date, $r_incrData) = @_;
+
+    my $count = $r_incrData->{'count'};
+    if ( ! defined $count ) {
+        $count = 0;
+    }
+
+    if ( $logType == $MULTIPLE_LOG ) {
+        if ( exists $r_incrData->{'files_processed'} ) {
+            for ( my $index = 0; $index < $r_incrData->{'files_processed'}; $index++ ) {
+                shift @{$r_logFiles};
+            }
+        } else {
+            $r_incrData->{'files_processed'} = 0;
+        }
+    }
+
+    my @logData = ();
+    my $discardCount = 0;
+    foreach my $r_logFileEntry ( @{$r_logFiles} ) {
+        my $logFile = $r_logFileEntry->{'file'};
+        if ( $DEBUG > 1 ) { print "parseLogs: processing $logFile\n"} ;
+        open (LOG, $logFile) or die "Failed to open the file $logFile";
+        if ( $logType == $SINGLE_LOG ) {
+            if ( exists $r_incrData->{'offset'} ) {
+                seek LOG, $r_incrData->{'offset'}, 0;
+            }
+        } else {
+            $r_incrData->{'files_processed'}++;
+        }
+
+        while ( ($count < $MAX_COUNT) && (my $logLine = <LOG>) ) {
+            if ($DEBUG > 9) { print "parseLogs: count=$count Logline=$logLine"; }
+            if ($logLine =~ /(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}),\d+\s-\s(\w+)\s-\s(\w+)\s-\s(.*)/) {
+                my %line = (
+                    'timestamp' => $1,
+                    'category' => $2,
+                    'profile' => $3,
+                    'msg' => $4
+                    );
+                if ( $line{'timestamp'} =~ /^$date/ ) {
+                    push @logData, \%line;
+                    $count++;
+                } else {
+                    $discardCount++;
+                }
+            }
+        }
+        close LOG;
+    }
+
+    if ( $discardCount > 0 ) {
+        print "WARN: Discarded $discardCount lines\n";
+    }
+
+    if ( $count >= $MAX_COUNT ) {
+        print "WARN: MAX_COUNT exceeded\n";
+    };
+
+    if ( $logType == $SINGLE_LOG ) {
+        my @fileStats = stat $r_logFiles->[0]->{'file'};
+        $r_incrData->{'offset'} = $fileStats[7];
+    }
+    $r_incrData->{'count'} = $count;
+
+    return \@logData;
+}
+
+sub makeStateEvent($$$$) {
+    my ($r_rawEvent,$state,$pc,$pnum) = @_;
+
+    $state =~ s/\.$//;
+
+    return {
+        'timestamp' => $r_rawEvent->{'timestamp'},
+        'pc'        => $pc,
+        'pnum'      => $pnum,
+        'state'     => uc($state)
+    };
+}
+
+sub processEvents($$) {
+    my ($r_rawEvents, $r_incrData) = @_;
+
+    my $r_errorCounts = $r_incrData->{'errorcounts'};
+    if ( ! defined $r_errorCounts ) {
+        $r_errorCounts = {};
+        $r_incrData->{'errorcounts'} = $r_errorCounts;
+    }
+
+    my @processedEvents = ();
+    foreach my $r_rawEvent ( @{$r_rawEvents} ) {
+        my ($pc,$pnum) = $r_rawEvent->{'profile'} =~ /^(.*)_(\d+|SETUP)$/;
+        if ( ! defined $pc ) {
+            $pc = 'UNKNOWN';
+            $pnum = 9999;
+        }
+        if ( $pnum eq 'SETUP' ) {
+            $pnum = 0;
+        }
+
+        if ( $r_rawEvent->{'category'} eq 'INFO' ) {
+            if ( $r_rawEvent->{'msg'} =~ /^Profile/ ) {
+                if ( $r_rawEvent->{'msg'} =~ /^Profile state (\S+)/ ) {
+                    push @processedEvents, makeStateEvent($r_rawEvent, $1, $pc, $pnum);
+                } elsif ( $r_rawEvent->{'msg'} =~ /^Profile is\s+(\S+)/ ||
+                              $r_rawEvent->{'msg'} =~ /^Profile has\s+(\S+)/ ) {
+                    push @processedEvents, makeStateEvent($r_rawEvent, $1, $pc, $pnum);
+                } else {
+                    print "WARN: Could not extract state from $r_rawEvent->{'msg'}\n";
+                }
+            }
+        } elsif ( $r_rawEvent->{'category'} eq 'ERROR' ) {
+            $r_errorCounts->{$pc}->{$pnum}++;
+            if ( $r_rawEvent->{'msg'} =~ /Dead/i ) {
+                push @processedEvents, makeStateEvent($r_rawEvent, 'DEAD', $pc, $pnum);
+            }
+        } else {
+            print "WARN: Unknown category \"$r_rawEvent->{'category'}\"\n";
+        }
+    }
+
+    return \@processedEvents;
+}
+
+sub store($$$$$) {
+    my ($site, $date, $r_events, $r_errorCounts, $rpmInfo) = @_;
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    my %profileCategoryNames = ();
+    foreach my $r_event ( @{$r_events} ) {
+        $profileCategoryNames{$r_event->{'pc'}} = 1;
+    }
+    foreach my $profileName ( keys %{$r_errorCounts} ) {
+        $profileCategoryNames{$profileName} = 1;
+    }
+    my @profileCategoryNameList = keys %profileCategoryNames;
+    my $r_profileCategoryNameMap = getIdMap($dbh, "enm_workload_profile_category", "id", "name", \@profileCategoryNameList);
+
+    # Store profile states
+    my $bcpFileName = getBcpFileName("enm_profilelog");
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+    foreach my $r_event ( @{$r_events} ) {
+        if ( $DEBUG > 8 ) { print Dumper("store r_event", $r_event); }
+        my $pcName = $r_event->{'pc'};
+        my @row = ( $siteId, $r_event->{'timestamp'}, $r_profileCategoryNameMap->{$pcName}, $r_event->{'pnum'}, $r_event->{'state'});
+        print BCP join("\t", @row), "\n";
+    }
+    close BCP;
+    dbDo( $dbh, sprintf("DELETE FROM enm_profilelog WHERE siteid = %d AND date BETWEEN '%s' AND '%s'",
+                        $siteId,$r_events->[0]->{'timestamp'},$r_events->[$#{$r_events}]->{'timestamp'})
+        ) or die "Failed to delete from enm_profilelog".$dbh->errstr."\n";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_profilelog" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_profilelog table".$dbh->errstr."\n";
+
+    # Store profile error counts
+    $bcpFileName = getBcpFileName("enm_workload_profile_errors");
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+    while ( my ($category, $r_errorCountByProfileNum) = each %{$r_errorCounts} ) {
+        my $categoryId = $r_profileCategoryNameMap->{$category};
+        while ( my ($profileNum, $errorCount) = each %{$r_errorCountByProfileNum} ) {
+            my @row = ( $siteId, $date, $categoryId, $profileNum, $errorCount );
+            print BCP join("\t", @row), "\n";
+        }
+    }
+    close BCP;
+    dbDo( $dbh, "DELETE FROM enm_workload_profile_errors WHERE siteid = $siteId AND date = '$date'")
+              or die "Failed to delete from enm_workload_profile_errors";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_workload_profile_errors" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_workload_profile_errors table\n";
+
+    my $torutilitiesVersion;
+    # as per TORF-228862, we are collecting torutilities internal version only
+    if (defined $rpmInfo) {
+       $torutilitiesVersion = $rpmInfo;
+       dbDo( $dbh, "DELETE FROM enm_profilelog_utilversion WHERE siteid = $siteId AND date = '$date'"
+           ) or die "Failed to delete from enm_profilelog_utilversion".$dbh->errstr."\n";
+
+       dbDo( $dbh, "INSERT INTO enm_profilelog_utilversion (siteid,date,torutilitiesVersion) values ($siteId,'$date','$torutilitiesVersion');");
+    }
+
+    $dbh->disconnect();
+}
+
+sub getLogFiles($) {
+    my ($logDir) = @_;
+
+    my $logFile = $logDir ."/profiles.log";
+    if ( -r $logFile ) {
+        return ( $SINGLE_LOG, [ { 'file' => $logFile, 'index' => 0} ] );
+    } else {
+        my @logFiles = ();
+        opendir(my $dh, $logDir) || die "can't opendir logdir dir: $!";
+        while ( my $file = readdir($dh) ) {
+            if ( $DEBUG > 4 ) { print "getLogFiles: checking file $file\n"; }
+            if ( $file =~ /^profiles.log.(\d+)$/ ) {
+                push @logFiles, { 'index' => $1, 'file' => $logDir . "/" . $file };
+            }
+        }
+        closedir $dh;
+
+        @logFiles = sort { $a->{'index'} <=> $b->{'index'} } @logFiles;
+        if ( $DEBUG > 3 ) { print Dumper("getLogFiles: logFiles", \@logFiles); }
+        return ( $MULTIPLE_LOG, \@logFiles );
+    }
+}
+
+sub main() {
+
+    my ( $logDir, $site, $date,$rpmInfo,$incrFile);
+    my $result = GetOptions(
+        "logdir=s" => \$logDir,
+        "date=s"   => \$date,
+        "site=s"   => \$site,
+        "rpminfo=s" => \$rpmInfo,
+        "incr=s" => \$incrFile,
+        "debug=s"  => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    ( $result == 1 ) or die "Invalid args";
+
+    my $r_incrData = incrRead($incrFile);
+
+    my ($logType, $r_logList) = getLogFiles($logDir);
+    my $r_events = parseLogs($logType, $r_logList, $date, $r_incrData);
+    if ( $#{$r_events} > -1 ) {
+        my $r_processedEvents  = processEvents($r_events, $r_incrData);
+        my $r_errorCounts = $r_incrData->{'errorcounts'};
+        store($site, $date, $r_processedEvents, $r_errorCounts, $rpmInfo);
+    }
+
+    incrWrite($incrFile, $r_incrData);
+}
+
+main();

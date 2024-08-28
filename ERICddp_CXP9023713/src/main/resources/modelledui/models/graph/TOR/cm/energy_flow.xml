@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="Count"
+ timespan="day"
+>
+  <title value="Energy Element MO  Count Per Request (%s)">
+    <param name="hostname"/>
+  </title>
+
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_cm_site_energy_visualization_instr">
+        <reference table="sites" condition="enm_cm_site_energy_visualization_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_site_energy_visualization_instr.serverid = servers.id"/>
+      </dbtables>
+
+      <param name="site"/>
+      <param name="serverid"/>
+
+      <where>sites.name = '%s' AND servers.id = '%s'</where>
+      <column db="numberOfEnergyElementAcMeterReadPerRequest" label="AC_METER"/>
+      <column db="numberOfEnergyElementAcPhaseReadPerRequest" label="AC_PHASE"/>
+      <column db="numberOfEnergyElementBatteryReadPerRequest" label="BATTERY"/>
+      <column db="numberOfEnergyElementBatteryStringReadPerRequest" label="BATTERY_STRING"/>
+      <column db="numberOfEnergyElementBatteryUnitReadPerRequest" label="BATTERY_UNIT"/>
+      <column db="numberOfEnergyElementDcMeterReadPerRequest" label="DC_METER"/>
+      <column db="numberOfEnergyElementDieselGeneratorReadPerRequest" label="DIESEL_GENERATOR"/>
+      <column db="numberOfEnergyElementTankReadPerRequest" label="TANK"/>
+      <column db="numberOfEnergyElementServiceIntervalReadPerRequest" label="SERVICE_INTERVAL"/>
+      <column db="numberOfEnergyElementGridReadPerRequest" label="GRID"/>
+      <column db="numberOfEnergyElementHVACReadPerRequest" label="HVAC"/>
+      <column db="numberOfEnergyElementPowerInputGridReadPerRequest" label="POWER_INPUT_GRID"/>
+      <column db="numberOfEnergyElementPowerInputWindReadPerRequest" label="POWER_INPUT_WIND"/>
+      <column db="numberOfEnergyElementPowerInputDieselGeneratorReadPerRequest" label="POWER_INPUT_DIESEL_GENERATOR"/>
+      <column db="numberOfEnergyElementPowerManagerReadPerRequest" label="POWER_MANAGER"/>
+      <column db="numberOfEnergyElementPowerSystemReadPerRequest" label="POWER_SYSTEM"/>
+      <column db="numberOfEnergyElementRectifierReadPerRequest" label="RECTIFIER"/>
+      <column db="numberOfEnergyElementRectifiersReadPerRequest" label="RECTIFIERS"/>
+      <column db="numberOfEnergyElementSolarReadPerRequest" label="SOLAR"/>
+      <column db="numberOfEnergyElementSolarConverterReadPerRequest" label="SOLAR_CONVERTER"/>
+      <column db="numberOfEnergyElementWindReadPerRequest" label="WIND"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

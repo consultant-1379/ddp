@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^versant_client@versant_client">
+
+  <table name="versant_client">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^versant_client-netio$">
+      <metric source="BytesReceived" target="kbReceived" delta="true" filteridle="true" scale="1024"/>
+      <metric source="BytesSent" target="kbSent" delta="true" filteridle="true" scale="1024"/>
+      <metric source="ObjectsReceived" target="objectsReceived" delta="true" filteridle="true"/>
+      <metric source="ObjectsSent" target="objectsSent" delta="true" filteridle="true"/>
+      <metric source="RPCCount" target="rpcCount" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

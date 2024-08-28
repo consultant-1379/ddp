@@ -1,0 +1,208 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use DBI;
+
+use StatsDB;
+use StatsCommon;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($logFile,$logFileType,$site);
+    my $incremental = 0;
+    my $result = GetOptions(
+	"logfile=s"  => \$logFile,
+	"logfiletype=s"  => \$logFileType,
+	"site=s" => \$site,
+	"incremental=s" => \$incremental,
+	"debug=s" => \$DEBUG,
+	);       
+    ($result == 1) or die "Invalid args"; 
+    setStatsDB_Debug($DEBUG);
+    setStatsCommon_Debug($DEBUG);
+
+    # Validate the site
+    if ( !$site ) {
+        die "ERROR: No site specified.";
+    }
+    # Validate the log file
+    if ( !$logFile ){
+        die "ERROR: No log file specified.";
+    }
+    # Validate the log file type
+    if ( !$logFileType || ($logFileType ne "lvlog" && $logFileType ne "systemlog")) {
+        die "ERROR: No valid log file type specified - should be 'lvlog' or 'systemlog'.";
+    }
+
+    ###
+    # We hit the LV log and parse it, if available, otherwise the system log.
+    #                                              [BG 2012-07-17]
+    ###
+    my $r_measurements = parseLog($logFile, $logFileType);
+
+    # Store the data
+    storeResults( $site, $r_measurements, $incremental );
+}
+
+sub parseLog
+{
+    my ($logFile, $logFileType) = @_;
+
+    my @measurements = ();
+    open READ_LOG, $logFile or die "Cannot open event log $logFile";
+    while ( my $line = <READ_LOG> ) {
+	if ( $DEBUG > 9 ) { print "parseLog: line=$line"; }
+
+        my ( $mc, $date, $measurement );
+
+        if ($logFileType eq "lvlog") {
+	    # "time_stamp", "log_type", "application_name", "resource", "user_id", "command_name", "activity_id", "type", "severity", "old_state", "new_state", "additional_info" });
+	    # Workaround for HO89631
+	    my ( $appName, $resource );
+	    ( $appName, $resource, $date, $measurement ) = $line =~ /^\S+ \S+ SYSTEM \"([^\"]*)\" ([^\"]*) "\" \"\" \"\" \"DDP_GENERIC_MEASUREMENT\" COARSE \"\" \"\" \"DATE=(\d{14,14}) ([^\"]+)\"$/;
+	    if ( $DEBUG > 6 ) { print "parseLog: appName=$appName resource=$resource\n"; }
+
+	    if ( $appName =~ /\S+/ ) {
+		$mc = $appName;
+	    } elsif ( $resource =~ /\S+/ ) {
+		$mc = $resource;
+	    }
+        } elsif ($logFileType eq "systemlog") {
+             ( $mc, $date, $measurement ) = $line =~ /^\S+ \S+ (\S+) \"DDP_GENERIC_MEASUREMENT\" \"COARSE\" \"DATE=(\d{14,14}) ([^\"]+)\"$/;
+        }
+
+	if ( $DEBUG > 5 ) { print "parseLog: mc=$mc date=$date measurement=$measurement\n"; }
+	if ( defined $date && defined $mc ) {
+	    my ($year,$month,$day,$hour,$min,$sec) = $date =~ /^(\d{4,4})(\d{2,2})(\d{2,2})(\d{2,2})(\d{2,2})(\d{2,2})$/;
+	    my $r_measurement = {
+		'time'   => sprintf("%04d-%02d-%02d %02d:%02d:%02d", $year,$month,$day,$hour,$min,$sec),
+		'group'  => $mc,
+		'values' => {}
+	    };
+
+	    my @nameValues = split(/ /, $measurement);
+	    foreach my $nameValue ( @nameValues ) {
+		my ($name,$value) = $nameValue =~ /^([^ =]+)=(\d+)/;
+		$r_measurement->{'values'}->{$name} = $value;
+	    }
+	    
+	    push @measurements, $r_measurement;
+	}
+    }
+    close READ_LOG;
+
+    if ( $DEBUG > 4 ) { print Dumper("parseLog: measurements", \@measurements ); }
+
+    return \@measurements;
+}
+
+
+sub getMeasIdMap
+{
+    my ($dbh,$r_measurementNames) = @_;
+
+    if ( $DEBUG > 5 ) { print "getMeasIdMap\n"; }
+
+    my $sql = sprintf("SELECT id, grp, name FROM gen_meas_names");
+
+    $dbh->{AutoCommit} = 0;  # enable transactions, if possible
+    $dbh->{RaiseError} = 1;
+
+    my $r_IdMap = {};
+
+    eval {
+	my $sth = $dbh->prepare($sql)
+	    or die "Couldn't prepare statement: " . $dbh->errstr;
+	$sth->execute()             # Execute the query
+	    or die "Couldn't execute statement: " . $sth->errstr;
+
+	while ( my $r_row = $sth->fetchrow_arrayref() ) {
+	    $r_IdMap->{$r_row->[1]}->{$r_row->[2]} = $r_row->[0];	    
+	}
+	$sth->finish;
+
+	if ( $DEBUG > 4 ) { print Dumper("getMeasIdMap read idMap", $r_IdMap); };
+
+	foreach my $group ( keys %{$r_measurementNames} ) {
+	    foreach my $name ( keys %{$r_measurementNames->{$group}} ) {
+		if ( ! exists $r_IdMap->{$group}->{$name} ) {
+		    dbDo( $dbh, sprintf("INSERT INTO gen_meas_names (grp,name) VALUES (%s,%s)", 
+					$dbh->quote($group), 
+					$dbh->quote($name)) )  or
+					    die "Failed to insert into gen_meas_name";	    
+		    my $id = $dbh->last_insert_id(undef,undef,"ne","id");
+		    if ( $DEBUG > 2 ) { print "getMeasIdMap: id=$id\n"; }	    
+		    $r_IdMap->{$group}->{$name} = $id;
+		}
+	    }
+	}
+	
+	$dbh->commit;   # commit the changes if we get this far
+    };
+    if ($@) {
+	warn "Transaction aborted because $@";
+	# now rollback to undo the incomplete changes
+	# but do it in an eval{} as it may also fail
+	eval { $dbh->rollback };
+	# add other application on-error-clean-up code here
+	die "Update of ne failed";
+    }
+    
+    
+    $dbh->{AutoCommit} = 1;  
+    $dbh->{RaiseError} = 0;
+
+    
+    if ( $DEBUG > 4 ) { print Dumper("getMeasIdMap", $r_IdMap); };
+
+    return $r_IdMap;
+}
+
+
+sub storeResults
+{
+    my ( $site, $r_measurements, $incremental ) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 1 ) { print "storeStats: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my %measurementNames = ();
+    foreach my $r_measurement ( @{$r_measurements} ) {
+	foreach my $name ( keys %{$r_measurement->{'values'}} ) {
+	    $measurementNames{$r_measurement->{'group'}}->{$name}++;
+	}
+    }
+    my $r_idMap = getMeasIdMap($dbh, \%measurementNames );
+
+    if ( $incremental == 0 ) {
+	dbDo($dbh,
+	     sprintf("DELETE FROM gen_measurements WHERE siteid = %d AND serverid IS NULL AND time BETWEEN %s AND %s", 
+		     $siteId,
+		     $dbh->quote($r_measurements->[0]->{'time'}),
+		     $dbh->quote($r_measurements->[$#{$r_measurements}]->{'time'})))
+	    or die "Failed to delete rows";
+    }
+
+    foreach my $r_measurement ( @{$r_measurements} ) {
+	foreach my $name ( keys %{$r_measurement->{'values'}} ) {	   
+	    dbDo($dbh,
+		 sprintf("INSERT INTO gen_measurements (time,siteid,mid,value) VALUES (%s,%d,%d,%d)",
+			 $dbh->quote($r_measurement->{'time'}),
+			 $siteId,
+			 $r_idMap->{$r_measurement->{'group'}}->{$name},
+			 $r_measurement->{'values'}->{$name})) or
+			     die "Failed to insert row";
+	}
+    }
+    
+    $dbh->disconnect;    
+}

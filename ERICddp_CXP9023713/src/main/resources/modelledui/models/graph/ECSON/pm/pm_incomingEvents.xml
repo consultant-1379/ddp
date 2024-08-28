@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Incoming Events"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="ecson_pm_events_processor">
+    <reference table="sites" condition="ecson_pm_events_processor.siteid = sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_pm_events_processor.incomingEvents" label="Incoming Events"/>
+  </query>
+ </queries>
+ <size width="650" height="400"/>
+</modelledgraph>

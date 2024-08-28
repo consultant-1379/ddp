@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="emc_filesystem.name">
+    <dbtables main="emc_filesystem_stats">
+      <reference table="emc_filesystem" condition="emc_filesystem_stats.fsid = emc_filesystem.id"/>
+    </dbtables>
+    <param name="sysid"/>
+    <param name="fsidlist"/>
+    <where>emc_filesystem_stats.sysid = %d AND emc_filesystem_stats.fsid IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="clientreadkb" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Client Read KB/s"/>
+      <column db="clientreadkb" label = "Client Read KB/s"/>
+    </graph>
+    <graph name="clientwritekb" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Client Written KB/s"/>
+      <column db="clientwritekb" label = "Client Written KB/s"/>
+    </graph>
+    <graph name="clientreads" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Client Reads/s"/>
+      <column db="clientreads" label = "Client Reads/s"/>
+    </graph>
+    <graph name="clientwrites" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Client Writes/s"/>
+      <column db="clientwrites" label = "Client Writes/s"/>
+    </graph>
+    <graph name="clientread_srvt" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Client Read Sevice Time (usec)"/>
+      <column db="clientread_srvt" label = "Client Read Service Time(usec)"/>
+    </graph>
+    <graph name="clientwrite_srvt" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Client Write Sevice Time (usec)"/>
+      <column db="clientwrite_srvt" label = "Client Write Service Time(usec)"/>
+    </graph>
+    <graph name="readkb" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Read Bandwidth (KB/s)"/>
+      <column db="readkb" label = "Read Bandwidth (KB/s)"/>
+    </graph>
+    <graph name="writekb" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Write Bandwidth (KB/s)"/>
+      <column db="writekb" label = "Write Bandwidth (KB/s)"/>
+    </graph>
+    <graph name="readiops" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Reads IO/s"/>
+      <column db="readiops" label = "Reads IO/s"/>
+    </graph>
+    <graph name="writeiops" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Writes IO/s"/>
+      <column db="writeiops" label = "Writes IO/s"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>clientreadkb</member>
+      <member>clientwritekb</member>
+      <member>clientreads</member>
+      <member>clientwrites</member>
+      <member>clientread_srvt</member>
+      <member>clientwrite_srvt</member>
+      <member>readkb</member>
+      <member>writekb</member>
+      <member>readiops</member>
+      <member>writeiops</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

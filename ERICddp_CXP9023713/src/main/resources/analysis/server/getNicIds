@@ -1,0 +1,37 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use DBI;
+use StatsDB;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($site,$server);
+    my @nics = ();
+
+    my $result = GetOptions(
+	"site=s" => \$site,
+	"server=s" => \$server,
+	"nics=s{,}"  => \@nics,
+	"debug=s" => \$DEBUG
+	);	   
+    ( $result == 1 ) or die "Invalid Args";
+
+    setStatsDB_Debug($DEBUG); 
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId($dbh,$siteId,$server);
+    my $r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name", \@nics, $serverId, "serverid" );
+    
+    foreach my $nic ( @nics ) {
+	printf "NIC_ID %d %s\n", $r_nicMap->{$nic}, $nic;
+    }
+
+    $dbh->disconnect;
+}

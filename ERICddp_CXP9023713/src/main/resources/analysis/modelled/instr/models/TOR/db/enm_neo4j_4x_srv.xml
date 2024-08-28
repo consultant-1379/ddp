@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^neo4j@neo4j$">
+  <table name="enm_neo4j_srv">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^neo4j-BytesRead$">
+      <metric source="Count" target="cacheKbRead" delta="true" scale="1024"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-BytesWritten$">
+      <metric source="Count" target="cacheKbWritten" delta="true" scale="1024"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-EvictionExceptions$">
+      <metric source="Count" target="cacheEvictionExceptions" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-Evictions$">
+      <metric source="Count" target="cacheEvictions" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-Faults$">
+      <metric source="Count" target="cacheFaults" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-Flushes$">
+      <metric source="Count" target="cacheFlushes" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-Pins$">
+      <metric source="Count" target="cachePins" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-LastCommittedTxId$">
+      <metric source="Count" target="transLastCommitted"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-NumberOfCommittedTransactions$">
+      <metric source="Count" target="transCommitted" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-NumberOfOpenTransactions$">
+      <metric source="Value" target="transOpen"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-NumberOfOpenedTransactions$">
+      <metric source="Count" target="transOpened" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-NumberOfRolledBackTransactions$">
+      <metric source="Count" target="transRolledBack" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^neo4j-bolt_processing_time$">
+      <metric source="Count" target="boltProcTime" delta="true" scale="1000"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_queue_time$">
+      <metric source="Count" target="boltQTime" delta="true" scale="1000"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_connections_opened$">
+      <metric source="Count" target="boltConnOpened" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_connections_closed$">
+      <metric source="Count" target="boltConnClosed" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_connections_running$">
+      <metric source="Value" target="boltConnRunning"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_connections_idle$">
+      <metric source="Value" target="boltConnIdle"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_messages_received$">
+      <metric source="Count" target="boltMsgRecv" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_messages_started$">
+      <metric source="Count" target="boltMsgStarted" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_messages_done$">
+      <metric source="Count" target="boltMsgDone" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-bolt_messages_failed$">
+      <metric source="Count" target="boltMsgFailed" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^neo4j-clustering_append_index$">
+      <metric source="Value" target="clustAppendIndex"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-clustering_applied_index$">
+      <metric source="Value" target="clustAppliedIndex"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-clustering_commit_index$">
+      <metric source="Value" target="clustCommitIndex"/>
+    </metricgroup>
+    <metricgroup name="^neo4j-clustering_processing_delay$">
+      <metric source="Value" target="clustMsgProcDelay"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

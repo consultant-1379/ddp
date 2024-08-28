@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mssnmpcm"/>
+  </services>
+
+  <table name="enm_cmwriter_minilink_indoor">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilink.indoor.cm.utils.instrumentation.mini-link-unified-nrm-transformation-engine:type=MiniLinkIndoorUnrmOperationsInstrMBean$">
+      <metric source="numberOfSuccessCreateOperations" target="numberOfSuccessCreateOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessModifyOperations" target="numberOfSuccessModifyOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessDeleteOperations" target="numberOfSuccessDeleteOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessActionOperations" target="numberOfSuccessActionOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessReadOperations" target="numberOfSuccessReadOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedCreateOperations" target="numberOfFailedCreateOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedModifyOperations" target="numberOfFailedModifyOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedDeleteOperations" target="numberOfFailedDeleteOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedActionOperations" target="numberOfFailedActionOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedReadOperations" target="numberOfFailedReadOperations" delta="true" filteridle="true"/>
+      <metric source="successfullCreateOperationsDuration" target="successfullCreateOperationsDuration"/>
+      <metric source="successfullModifyOperationsDuration" target="successfullModifyOperationsDuration"/>
+      <metric source="successfullDeleteOperationsDuration" target="successfullDeleteOperationsDuration"/>
+      <metric source="successfullActionOperationsDuration" target="successfullActionOperationsDuration"/>
+      <metric source="successfullReadOperationsDuration" target="successfullReadOperationsDuration" />
+      <metric source="failedCreateOperationsDuration" target="failedCreateOperationsDuration" />
+      <metric source="failedModifyOperationsDuration" target="failedModifyOperationsDuration" />
+      <metric source="failedDeleteOperationsDuration" target="failedDeleteOperationsDuration" />
+      <metric source="failedActionOperationsDuration" target="failedActionOperationsDuration" />
+      <metric source="failedReadOperationsDuration" target="failedReadOperationsDuration" />
+      <metric source="numberOfSnmpOperationRequests" target="numberOfSnmpOperationRequests" delta="true" filteridle="true"/>
+      <metric source="snmpOperationConstructionTime" target="snmpOperationConstructionTime" />
+      <metric source="snmpOperationSuccessResponseTime" target="snmpOperationSuccessResponseTime" />
+      <metric source="snmpOperationFailureResponseTime" target="snmpOperationFailureResponseTime" />
+      <metric source="numberOfFailedSnmpOperations" target="numberOfFailedSnmpOperations" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <!--This new mbean changes are done as part of the US TORF-540034-->
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.minilink.indoor.cm.utils.instrumentation.mini-link-indoor-cm-flows:type=MiniLinkIndoorUnrmOperationsInstrMBean$">
+      <metric source="numberOfSuccessCreateOperations" target="numberOfSuccessCreateOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessModifyOperations" target="numberOfSuccessModifyOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessDeleteOperations" target="numberOfSuccessDeleteOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessActionOperations" target="numberOfSuccessActionOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessReadOperations" target="numberOfSuccessReadOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedCreateOperations" target="numberOfFailedCreateOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedModifyOperations" target="numberOfFailedModifyOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedDeleteOperations" target="numberOfFailedDeleteOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedActionOperations" target="numberOfFailedActionOperations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedReadOperations" target="numberOfFailedReadOperations" delta="true" filteridle="true"/>
+      <metric source="successfullCreateOperationsDuration" target="successfullCreateOperationsDuration"/>
+      <metric source="successfullModifyOperationsDuration" target="successfullModifyOperationsDuration"/>
+      <metric source="successfullDeleteOperationsDuration" target="successfullDeleteOperationsDuration"/>
+      <metric source="successfullActionOperationsDuration" target="successfullActionOperationsDuration"/>
+      <metric source="successfullReadOperationsDuration" target="successfullReadOperationsDuration"/>
+      <metric source="failedCreateOperationsDuration" target="failedCreateOperationsDuration"/>
+      <metric source="failedModifyOperationsDuration" target="failedModifyOperationsDuration"/>
+      <metric source="failedDeleteOperationsDuration" target="failedDeleteOperationsDuration"/>
+      <metric source="failedActionOperationsDuration" target="failedActionOperationsDuration"/>
+      <metric source="failedReadOperationsDuration" target="failedReadOperationsDuration"/>
+      <metric source="numberOfSnmpOperationRequests" target="numberOfSnmpOperationRequests" delta="true" filteridle="true"/>
+      <metric source="snmpOperationConstructionTime" target="snmpOperationConstructionTime"/>
+      <metric source="snmpOperationSuccessResponseTime" target="snmpOperationSuccessResponseTime"/>
+      <metric source="snmpOperationFailureResponseTime" target="snmpOperationFailureResponseTime"/>
+      <metric source="numberOfFailedSnmpOperations" target="numberOfFailedSnmpOperations" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

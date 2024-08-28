@@ -1,0 +1,63 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+
+
+SOC_LOG=$1
+OUTPUT_DIR=$2
+
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+${ANALYSIS_BIN}/server/parseSocket --soclog ${SOC_LOG} --data ${TMP_DIR}/data.txt > ${TMP_DIR}/lines.txt
+NUM_LINES=`wc -l ${TMP_DIR}/lines.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -ne 4 ] ; then
+    echo "WARN: No valid data in socket log"
+    exit 1
+fi
+
+cat > ${TMP_DIR}/cmd.txt <<EOF
+set xdata time
+set timefmt "%d%m%y:%H:%M"
+set format x "%H:%M"
+set yrange [ 0: ]
+set terminal jpeg medium
+set style fill solid
+set key under
+EOF
+
+INDEX=0
+for TYPE in internal extin extout states; do
+    COLS=`grep $TYPE ${TMP_DIR}/lines.txt | sed "s/^$TYPE//g"`
+    COLINDEX=2
+    PLOTCMD=""
+    for COL in ${COLS} ; do
+	if [ $COLINDEX -gt 2 ] ; then
+	    PLOTCMD=",${PLOTCMD}"
+	fi
+	PLOTCMD="\"${TMP_DIR}/data.txt\" index ${INDEX} using 1:${COLINDEX} title \"${COL}\" with boxes ${PLOTCMD}"
+	COLINDEX=`expr ${COLINDEX} + 1`
+    done
+    
+    cat >> ${TMP_DIR}/cmd.txt <<EOF 
+set output "${OUTPUT_DIR}/${TYPE}.jpg"
+plot ${PLOTCMD}
+EOF
+    
+    INDEX=`expr ${INDEX} + 1`
+done
+
+cat >> ${TMP_DIR}/cmd.txt <<EOF 
+set output "${OUTPUT_DIR}/totalanon.jpg"
+plot "${TMP_DIR}/data.txt" index 4 using 1:2 notitle with boxes
+EOF
+
+gnuplot ${TMP_DIR}/cmd.txt
+#if [ $? -eq 0 ]; then 
+    #/bin/rm -f ${TMP_DIR}/data.txt ${TMP_DIR}/cmd.txt ${TMP_DIR}/lines.txt
+#fi

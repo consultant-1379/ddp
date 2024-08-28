@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_dps_neo4jtx">
+      <reference table="sites" condition="enm_dps_neo4jtx.siteid = sites.id"/>
+      <reference table="servers" condition="enm_dps_neo4jtx.serverId = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="acquiredTxPermitsCount" type="sb">
+      <title value="Acquired Tx Permits Count"/>
+      <column db="acquiredTxPermitsCount" label="Acquired Tx Permits Count"/>
+    </graph>
+    <graph name="failedToAcquireTxPermitsCount" type="sb">
+      <title value="Failed Tx Permits Count"/>
+      <column db="failedToAcquireTxPermitsCount" label="Failed Tx Permits Count"/>
+    </graph>
+    <graph name="failureOrTimeoutCount" type="sb">
+      <title value="Failure Timeout Count"/>
+      <column db="failureOrTimeoutCount" label="Failure Timeout Count"/>
+    </graph>
+    <graph name="totalDuration" type="sb">
+      <title value="Total Duration"/>
+      <column db="totalDuration" label="Total Duration"/>
+    </graph>
+    <graph name="txPermitsProcedureCount" type="sb">
+      <title value="Permits Procedure Count"/>
+      <column db="txPermitsProcedureCount" label="Permits Procedure Count"/>
+    </graph>
+    <graph name="readTxCount" type="sb">
+      <title value="Read Tx count"/>
+      <column db="readTxCount" label="Read Tx count"/>
+    </graph>
+    <graph name="writeTxCount" type="sb">
+      <title value="Write Tx count"/>
+      <column db="writeTxCount" label="Write Tx count"/>
+    </graph>
+    <graph name="writeTxWithoutChangesCount" type="sb">
+      <title value="Write Tx Without Changes Count"/>
+      <column db="writeTxWithoutChangesCount" label="Write Tx Without Changes Count"/>
+    </graph>
+    <graph name="totalWriteOperationsPerformed" type="sb">
+      <title value="Total Write Operations Performed"/>
+      <column db="totalWriteOperationsPerformed" label="Total Write Operations Performed"/>
+    </graph>
+    <graph name="readTx5MillisecondsCount" type="sb">
+      <title value="Read 5ms"/>
+      <column db="readTx5MillisecondsCount" label="Read 5ms"/>
+    </graph>
+    <graph name="writeTx5MillisecondsCount" type="sb">
+      <title value="Write 5ms"/>
+      <column db="writeTx5MillisecondsCount" label="Write 5ms"/>
+    </graph>
+    <graph name="readTx10MillisecondsCount" type="sb">
+      <title value="Read 10ms"/>
+      <column db="readTx10MillisecondsCount" label="Read 10ms"/>
+    </graph>
+    <graph name="writeTx10MillisecondsCount" type="sb">
+      <title value="Write 10ms"/>
+      <column db="writeTx10MillisecondsCount" label="Write 10ms"/>
+    </graph>
+    <graph name="readTx50MillisecondsCount" type="sb">
+      <title value="Read 50ms"/>
+      <column db="readTx50MillisecondsCount" label="Read 50ms"/>
+    </graph>
+    <graph name="writeTx50MillisecondsCount" type="sb">
+      <title value="Write 50ms"/>
+      <column db="writeTx50MillisecondsCount" label="Write 50ms"/>
+    </graph>
+    <graph name="readTx100MillisecondsCount" type="sb">
+      <title value="Read 100ms"/>
+      <column db="readTx100MillisecondsCount" label="Read 100ms"/>
+    </graph>
+    <graph name="writeTx100MillisecondsCount" type="sb">
+      <title value="Write 100ms"/>
+      <column db="writeTx100MillisecondsCount" label="Write 100ms"/>
+    </graph>
+    <graph name="readTx500MillisecondsCount" type="sb">
+      <title value="Read 500ms"/>
+      <column db="readTx500MillisecondsCount" label="Read 500ms"/>
+    </graph>
+    <graph name="writeTx500MillisecondsCount" type="sb">
+      <title value="Write 500ms"/>
+      <column db="writeTx500MillisecondsCount" label="Write 500ms"/>
+    </graph>
+    <graph name="readTx1SecondCount" type="sb">
+      <title value="Read 1sec"/>
+      <column db="readTx1SecondCount" label="Read 1sec"/>
+    </graph>
+    <graph name="writeTx1SecondCount" type="sb">
+      <title value="Write 1sec"/>
+      <column db="writeTx1SecondCount" label="Write 1sec"/>
+    </graph>
+    <graph name="readTx10SecondsCount" type="sb">
+      <title value="Read 10sec"/>
+      <column db="readTx10SecondsCount" label="Read 10sec"/>
+    </graph>
+    <graph name="writeTx10SecondsCount" type="sb">
+      <title value="Write 10sec"/>
+      <column db="writeTx10SecondsCount" label="Write 10sec"/>
+    </graph>
+    <graph name="readTx1MinuteCount" type="sb">
+      <title value="Read 1min"/>
+      <column db="readTx1MinuteCount" label="Read 1min"/>
+    </graph>
+    <graph name="writeTx1MinuteCount" type="sb">
+      <title value="Write 1min"/>
+      <column db="writeTx1MinuteCount" label="Write 1min"/>
+    </graph>
+    <graph name="readTx2MinutesCount" type="sb">
+      <title value="Read 2min"/>
+      <column db="readTx2MinutesCount" label="Read 2min"/>
+    </graph>
+    <graph name="writeTx2MinutesCount" type="sb">
+      <title value="Write 2min"/>
+      <column db="writeTx2MinutesCount" label="Write 2min"/>
+    </graph>
+    <graph name="readTx3MinutesCount" type="sb">
+      <title value="Read 3min"/>
+      <column db="readTx3MinutesCount" label="Read 3min"/>
+    </graph>
+    <graph name="writeTx3MinutesCount" type="sb">
+      <title value="Write 3min"/>
+      <column db="writeTx3MinutesCount" label="Write 3min"/>
+    </graph>
+    <graph name="readTx4MinutesCount" type="sb">
+      <title value="Read 4min"/>
+      <column db="readTx4MinutesCount" label="Read 4min"/>
+    </graph>
+    <graph name="writeTx4MinutesCount" type="sb">
+      <title value="Write 4min"/>
+      <column db="writeTx4MinutesCount" label="Write 4min"/>
+    </graph>
+    <graph name="readTx5MinutesCount" type="sb">
+      <title value="Read 5min"/>
+      <column db="readTx5MinutesCount" label="Read 5min"/>
+    </graph>
+    <graph name="writeTx5MinutesCount" type="sb">
+      <title value="Write 5min"/>
+      <column db="writeTx5MinutesCount" label="Write 5min"/>
+    </graph>
+    <graph name="readTxOver5MinutesCount" type="sb">
+      <title value="Read over 5min"/>
+      <column db="readTxOver5MinutesCount" label="Read over 5min"/>
+    </graph>
+    <graph name="writeTxOver5MinutesCount" type="sb">
+      <title value="Write over 5min"/>
+      <column db="writeTxOver5MinutesCount" label="Write over 5min"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="analysis">
+      <member>readTxCount</member>
+      <member>writeTxCount</member>
+      <member>writeTxWithoutChangesCount</member>
+      <member>totalWriteOperationsPerformed</member>
+      <member>readTx5MillisecondsCount</member>
+      <member>writeTx5MillisecondsCount</member>
+      <member>readTx10MillisecondsCount</member>
+      <member>writeTx10MillisecondsCount</member>
+      <member>readTx50MillisecondsCount</member>
+      <member>writeTx50MillisecondsCount</member>
+      <member>readTx100MillisecondsCount</member>
+      <member>writeTx100MillisecondsCount</member>
+      <member>readTx500MillisecondsCount</member>
+      <member>writeTx500MillisecondsCount</member>
+      <member>readTx1SecondCount</member>
+      <member>writeTx1SecondCount</member>
+      <member>readTx10SecondsCount</member>
+      <member>writeTx10SecondsCount</member>
+      <member>readTx1MinuteCount</member>
+      <member>writeTx1MinuteCount</member>
+      <member>readTx2MinutesCount</member>
+      <member>writeTx2MinutesCount</member>
+      <member>readTx3MinutesCount</member>
+      <member>writeTx3MinutesCount</member>
+      <member>readTx4MinutesCount</member>
+      <member>writeTx4MinutesCount</member>
+      <member>readTx5MinutesCount</member>
+      <member>writeTx5MinutesCount</member>
+      <member>readTxOver5MinutesCount</member>
+      <member>writeTxOver5MinutesCount</member>
+    </group>
+    <group name="permit">
+      <member>acquiredTxPermitsCount</member>
+      <member>failedToAcquireTxPermitsCount</member>
+      <member>failureOrTimeoutCount</member>
+      <member>totalDuration</member>
+      <member>txPermitsProcedureCount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

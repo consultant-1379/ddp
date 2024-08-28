@@ -1,0 +1,1213 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+
+our $DEBUG=0;
+
+main();
+
+sub main()
+{
+    my ($log,$logFile,$outputdir,$logformat,$plotDir);
+    my $maxLineLen = 3 * 1024;
+    my $result = GetOptions("logname=s"  => \$log,
+                            "input=s"  => \$logFile,
+                            "outputdir=s" => \$outputdir,
+                            "logformat=s" => \$logformat,
+                            "plotdir=s" => \$plotDir,
+			    "maxline=n" => \$maxLineLen,
+                            "debug=s" => \$DEBUG,
+        );
+
+    ($result == 1) or die "Invalid args"; 
+    $logformat or die "No logformat specified cannot be read";
+
+    my $r_results = readLog($logFile,$logformat,$maxLineLen);
+
+    if ( $outputdir )
+    {
+        writeTables($outputdir,$log,$r_results);
+    }
+
+    if ( $plotDir )
+    {
+        writePlot($r_results->{'rateByName'}, $plotDir . "/" . $log . ".txt");
+    }
+
+    exit 0;
+}
+
+sub writePlot
+{
+    my ($r_Data,$plotFile) = @_;
+    my $r_sortedKeys = aggregateData($r_Data, 8);
+
+    open PLOT, ">$plotFile" or die "Cannot write to $plotFile";
+    print PLOT "tt;minute";
+    foreach my $mc ( @{$r_sortedKeys} )
+    {
+        print PLOT ";$mc";
+    }
+    print PLOT "\n";
+
+    foreach my $r_info ( @{$r_Data} )
+    {
+        print PLOT $r_info->{'timestamp'};
+
+        foreach my $mc ( @{$r_sortedKeys} )
+        {
+            printf PLOT " %d", $r_info->{'mc'}->{$mc};
+        }
+        print PLOT "\n";
+    }
+
+    print PLOT "\nplot;sb;Entries Per MC/Minute;Time;Log Entries\n";
+    close PLOT;
+    
+}
+
+sub aggregateData
+{
+    my ($r_Data, $maxCount) = @_;
+
+    if ( $DEBUG > 5 ) { print Dumper("aggregateData: r_Data", $r_Data); }
+
+    my %totals = ();
+    foreach my $r_info ( @{$r_Data} )
+    {
+        foreach my $mc ( keys %{$r_info->{'mc'}} )
+        {
+            $totals{$mc} += $r_info->{'mc'}->{$mc};
+        }
+    }
+
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData totals",\%totals) ; }
+
+    my @sortedKeys = ();
+    my $r_sortedKeys = \@sortedKeys;
+    getKeysSortedByValue(\%totals, $r_sortedKeys);
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData: r_sortedKeys",$r_sortedKeys); }
+
+    if ( $#{$r_sortedKeys} < $maxCount )
+    {
+        if ( $DEBUG > 2 ) { print "aggregateData less then $maxCount users\n"; }
+        return $r_sortedKeys;
+    }
+
+    my %indexMap = ();
+    for ( my $i = 0; $i < ($maxCount-1); $i++ )
+    {
+        $indexMap{$r_sortedKeys->[$i]} = $i;
+    }
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData indexMap", \%indexMap ); }
+
+    foreach my $r_info ( @{$r_Data} )
+    {
+        my $otherTotal = 0;
+        foreach my $mc ( keys %{$r_info->{'mc'}} )
+        {
+            if ( ! exists $indexMap{$mc} )
+            {
+                $otherTotal += $r_info->{'mc'}->{$mc};
+                delete $r_info->{'mc'}->{$mc};
+            }
+        }
+        $r_info->{'mc'}->{'Other'} = $otherTotal;
+    }
+
+    $#{$r_sortedKeys} = $maxCount - 1;
+    push @{$r_sortedKeys}, 'Other';
+
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData data", $r_Data ); }
+    if ( $DEBUG > 2 ) { print Dumper("aggregateData sortedKeys", $r_sortedKeys ); }
+
+    return $r_sortedKeys;
+}
+
+sub readLog()
+{
+    my ($logFile,$logformat,$maxLineLen) = @_;
+
+    open LOG, $logFile or die "Cannot open $logFile";
+    
+    my %countByName = (); # Count of entries by per MC
+    my %countByAddInfo = (); # Count of entries by Addinfo per MC
+    my %meCount = (); # Count of entries by NE
+    my %meAddInfo = (); # Count of entries by Addinfo per NE
+    my @rateByName = ();
+    my $currMin = "";
+    while ( my $line = <LOG> )
+    {
+	if ( length($line) > $maxLineLen ) {
+	    $line = substr( $line, 0, $maxLineLen ) . " [DDP_TRIMMED]\"";
+	}
+
+        if ( $line =~ /^\d/ )
+        {
+            # New format using dumpLog
+            my ($date, $time, $logType, $mcName, $mc, $error, $level, $addInfo);
+            if ( $logformat eq 'cifr3' )
+            {
+                ($date, $time, $mc, $error, $level, $addInfo) = $line =~
+                    /^(\S+) (\S+)\s+(\S+) \"([^\"]*)\" \"([^\"]*)\" (.*)/;
+                # Some messages appear to be missing the MC field
+                if ( ! $date )
+                {
+                    if ($DEBUG > 5 ) { print "readLog: Pattern match failed, assuming missing MC\n$line"; }
+                    $mc = "UNKNOWN";
+                    ($date, $time, $error, $level, $addInfo) = $line =~
+                        /^(\S+) (\S+)\s+\"([^\"]*)\" \"([^\"]*)\" (.*)/;
+                }
+
+            }
+            elsif ( $logformat eq 'cifr1e' ) 
+            {
+                ($date, $time, $mc, $error, $level, $addInfo) = $line =~
+                    /^(\S+) (\S+)\s+(\S+) \"([^\"]*)\" \"([^\"]*)\" (.*)/;
+            }
+            elsif ( $logformat eq 'cifr2' )
+            {
+                ($date, $time, $level, $mc,$error,$addInfo) = $line =~
+                    /^(\S+) (\S+) (\S+) ([^\"]+) \".*?\" \"(.*?)\" (.+)/;               
+            }
+            elsif ( $logformat eq 'lvlog' ) {
+                # XXX: not sure what mcName is supposed to represent
+                ($date, $time, $logType, $mcName, $mc, $error, $level, $addInfo) = $line =~
+                    /^(\S+) (\S+) (\S+) \"(\S+)\" (\S+) \"([^\"]*)\" \"([^\"]*)\" (.*)/;
+            }
+
+
+            if ( ! $date ) # Log entry in wrong format, report and skip to next line
+            {
+                print "Pattern match failed for $line";
+                next;
+            }
+
+            # Get the id part and the end of the Managed Component 
+            if ( $mc =~ /^\S+=\S+/ )
+            {
+                $_ = $mc;
+                ($mc) = /^\S+=(\S+)/;
+            }
+
+            if ( $mc =~ /([^\.]+)\.\d+/ )
+            {
+                $mc = $1;
+            }
+
+            $countByName{$mc}++;
+
+            if ( $DEBUG > 7 ) { print "$mc $addInfo\n" }
+
+            #2006-04-19 23:35
+            my ($min) = $time =~ /^(\d+:\d+)/;
+            if ( $DEBUG > 4 ) { print "time=$time min=$min currMin=$currMin\n" }
+            if ( $min ne $currMin )
+            {
+                my $r_info = {
+                    'timestamp' => $date . ":" . $min
+                };
+                push @rateByName, $r_info;
+                $currMin = $min;
+            }
+            $rateByName[$#rateByName]->{'mc'}->{$mc}++;
+
+	    #
+	    # Additional Info processing
+	    #
+            my $meContext = "";
+            if ( $addInfo =~ /SubNetwork=[^,]*,MeContext=[A-Za-z0-9_\-]*/ )
+            {
+                $_ = $addInfo;      
+                ($meContext) = /MeContext=([A-Za-z0-9_\-]*)/;
+            }
+            
+            my $addInfo = removeUnique($addInfo, $mc, $error);
+            if ( $DEBUG > 7 ) { print "after removeUnique $addInfo\n"; }
+
+            $countByAddInfo{$mc}->{$addInfo}++;
+            
+            if ( $DEBUG > 7 ) { print "=>$mc<=>$addInfo\n" }
+            
+            if ( $meContext ne "" )
+            {
+                $meCount{$meContext}++;
+                $meAddInfo{$meContext}->{$addInfo}++;
+            }
+        }
+    }
+
+    my $r_results = {
+        'countByName'     => \%countByName,
+        'countByAddInfo'  => \%countByAddInfo,
+        'meCount'         => \%meCount,
+        'meAddInfo'       => \%meAddInfo,
+        'rateByName'      => \@rateByName
+    };
+
+    if ( $DEBUG > 6 ) { print Dumper("readLog: r_results", $r_results); }
+    return $r_results;
+}
+
+sub writeTables()
+{
+    my ($outputdir,$log,$r_results) = @_;
+
+    #
+    # Output entry counts per MC
+    #
+    my @sortedKeys = ();
+    getKeysSortedByValue( $r_results->{'countByName'}, \@sortedKeys );
+    my $filename = $outputdir . "/" . $log . "_mcCountTable.html";
+    open TABLE, ">$filename" or die "Cannot open $filename";
+    foreach my $key ( @sortedKeys )
+    {
+        printf TABLE "<tr> <td>%d</td> <td><a href=\"#%s\">%s</a></td> </tr>\n", $r_results->{'countByName'}->{$key}, $key, $key;
+    }
+    close TABLE;
+
+    #
+    # Output counts per addInfo per MC
+    #
+    $filename = $outputdir . "/" . $log . "_mcAddInfoTable.html";
+    open TABLE, ">$filename" or "Cannot open $filename";
+    foreach my $mc ( sort keys %{$r_results->{'countByAddInfo'}} )
+    {
+        my @sortedKeys = ();
+        getKeysSortedByValue( $r_results->{'countByAddInfo'}->{$mc}, \@sortedKeys );
+        
+        print TABLE "<tr> <td> <td><td> <td></td> <tr>\n";
+        my $firstLine = 1;
+        foreach my $key ( @sortedKeys )
+        {
+            if ( $firstLine )
+            {
+                print TABLE "<tr> <td><a name=\"$mc\"></a>$mc</td>"; 
+                $firstLine = 0;
+            }
+            else
+            {
+                print TABLE "<tr> <td></td>";
+            }
+
+            my $addInfo = $key;
+            $addInfo =~ s/\t/<br>/;
+            printf TABLE "<td>%d</td> <td>%s</td> <tr>\n", $r_results->{'countByAddInfo'}->{$mc}->{$key}, $addInfo;
+        }
+    }
+    close TABLE;
+
+    #
+    # Output counts per NE
+    #
+    @sortedKeys = ();
+    getKeysSortedByValue( $r_results->{'meCount'}, \@sortedKeys );
+    $filename = $outputdir . "/" . $log . "_meCountTable.html";
+    open TABLE, ">$filename" or die "Cannot open $filename";
+    foreach my $key ( @sortedKeys )
+    {
+        printf TABLE "<tr> <td>%d</td> <td><a href=\"#%s\">%s</a></td>\n", $r_results->{'meCount'}->{$key}, $key, $key;
+    }
+    close TABLE;
+    
+
+    #
+    # Output counts per addInfo per NE
+    #    
+    $filename = $outputdir . "/" . $log . "_meAddInfoTable.html";
+    open TABLE, ">$filename" or die "Cannot open $filename";
+    foreach my $me ( sort keys %{$r_results->{'meAddInfo'}} )
+    {
+        my @sortedKeys = ();
+        getKeysSortedByValue( $r_results->{'meAddInfo'}->{$me}, \@sortedKeys );
+        
+        my $firstLine = 1;
+        foreach my $key ( @sortedKeys )
+        {
+            if ( $firstLine )
+            {
+                print TABLE "<tr> <td><a name=\"$me\"></a>$me</td>"; 
+                $firstLine = 0;
+            }
+            else
+            {
+                print TABLE "<tr> <td></td>";
+            }
+            
+            printf TABLE "<td>%d</td> <td>%s</td> <tr>\n", $r_results->{'meAddInfo'}->{$me}->{$key}, $key;
+        }
+    }
+    close TABLE;
+}
+
+#
+# Replace id in each RDN with ?
+#
+sub stripFDN
+{
+    my ($fdn) = @_;
+
+    my $stripedFdn = "";
+    my @rdns = split ",", $fdn;
+
+    foreach my $rdn ( @rdns )
+    {   
+        my ($kind,$id) = split "=", $rdn;
+        if ( $stripedFdn ne "" )
+        {
+            $stripedFdn .= "," . $kind . "=?";
+        }
+        else
+        {
+            $stripedFdn .= $kind . "=?";
+        }
+    }
+
+    return $stripedFdn;
+}
+
+#
+# Try to remove unique identifiers in the error entry so that
+# error messages of the same type may be agregated
+#          
+sub removeUnique
+{
+    my ($addInfo, $mc, $error,$r_meContext) = @_;
+
+    if ( $DEBUG > 9 ) { print "removeUnique: mc=$mc error=$error addInfo=$addInfo\n"; }
+
+    my $modified = 0;    
+    my $loopCount = 0;
+    #
+    # Keep looping until we get an iteration where
+    # no changes are made
+    #
+    do
+    {
+        $modified = 0;
+        $loopCount++;
+
+        if ( ($loopCount > 10) && ($DEBUG > 0) ) { print("removeUnique: loopCount=$loopCount addInfo=$addInfo\n"); }
+        
+        if ( $loopCount > 20 )
+        {
+            print "ERROR: looped $loopCount times processing $mc $addInfo\n";
+            return $addInfo;
+        }
+
+        if ( $error eq 'DDP_GENERIC_MEASUREMENT' && $addInfo ne "DDP" ) {
+            $addInfo = "DDP";
+            $modified = 1;
+        }
+
+        if ( $mc =~ /_CS$/ )
+        {
+            #"User sessions timed out, forced end() done on: [moscript:/opt/ericsson/nms_umts_cms_lib_com/bin/tr2atmdb.py:1068616809621,ranos:com/ericsson/nms/cif/service/Region_CS:1067806976902:101770,ReadOnlySession#95,false,2,6221,0,true,false,1068617659831,0] Thread name:CS_SessionPurger_5"
+            if ( $addInfo =~ /^\"User sessions timed out, forced end\(\) done on: \[/ )
+            {
+                $_ = $addInfo;
+                my ($pre, $sessionList, $post) = /([^\[]*)\[([^\]]*)\] (.*)/;
+                my $cleanSessionList = "";
+                while ( $sessionList ne "" )
+                {
+                    $_ = $sessionList;
+                    my ($session,$dummy,$dummy,$remainder) =  /(.*?)(true|false){1,1},(true|false){1,1},\d+,\d+,?(.*)/;
+                    $_ = $session;
+                    my ($sessionName,$cs) = /(.*?),[^:]*:com\/ericsson\/nms\/cif\/service\/(\S+)_CS:/;
+                    $cleanSessionList .= $sessionName . ":" . $cs . "_CS,";
+
+                    $sessionList = $remainder;
+                }
+
+                $addInfo = $pre . "(" . $cleanSessionList . ") " . $post;
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /VBJ_WORKER_\S+_\d+\"$/ )
+            {
+                $_ = $addInfo;
+                my ($pre) = /(.*)_\d+\"$/;
+                $addInfo = $pre . "_[NUM]\"";
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /^\"Transaction expired\. TxId=\d+/ )
+            {
+                $addInfo =~ s/TxId=\d+/TxId=\[TXID\]/;
+                $addInfo =~ s/TxOpCount=\d+/TxOpCount=\[OPCOUNT\]/;
+                $addInfo =~ s/TxActiveCount=\d+/TxActiveCount=\[ACTCOUNT\]/;
+                $addInfo =~ s/TxName=(\S+).*, TxTimeout/TXName=\1, TxTimeout/;
+
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /^\"Limit on session is reached. Limit is \d+ List of open sessions can be found in \// )
+            {
+                $addInfo = "\"Limit on session is reached. Limit is [NUM] List of open sessions can be found in [FILE]\"";
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /^\"\S+ called: / )
+            {
+                $addInfo =~ s/^\"(\S+) called: /\"$1 called /;
+                $addInfo =~ s/info=\"tx: .* : /info=\"tx \[TX_NAME\] : /;
+                $addInfo =~ s/moId: \S+/moId \[MO_ID\]/;                
+                $addInfo =~ s/\(reservedBy,alias MoRefSeq {{.*?}}\)/\(reservedBy, \[MO_REF_SEQ\]\)/;
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /^\"RootNodes\.get\(\) - No RootNode with object id\. \d+/ )
+            {
+                $addInfo =~ s/object id\. \S+/object id \[LOID\]/;
+                $addInfo =~ s/database session \S+/database session\[DB_SESS\]/;
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /^\"cms_snad_reg_corba_server_CMS_CONSISTENCY_CHECK_\d+/ )
+            {
+                $addInfo =~ s/^\"cms_snad_reg_corba_server_CMS_CONSISTENCY_CHECK_\d+/\"cms_snad_reg_corba_server_CMS_CONSISTENCY_CHECK_\[NUM\]/;
+                $modified = 1;
+            }
+        }
+        elsif ( $mc =~ "^pms_seg" )
+        {
+            if ( $DEBUG > 8 ) { print "removeUnique: in pms_seg error = \"$error\"\n"; }
+
+            if ( $error ne "" )
+            {
+                my ($errInfo) = $error =~ /\.([^\.]*)$/;
+
+                if ( $DEBUG > 7 ) { print "removeUnique: pms_seg adding $errInfo in $addInfo\n"; }
+                
+                $addInfo = $errInfo . " " . $addInfo;           
+                $modified = 1;
+                $error = "";
+            }
+
+            #"list_performance_monitorings() called on: MeContext=??[RBS11325-01.om.vodafone] raised exception: org.omg.CORBA.TIMEOUT[ ]"
+            #print "$addInfo\n";
+            if ( $addInfo =~ /^\"list_performance_monitorings\(\) called on: SubNetwork/ )
+            {
+                my ($msg) = $addInfo =~ /raised (.*)/;
+                $addInfo = "\"list_performance_monitorings() called on [NODE] " . $msg;
+                $modified = 1;
+            }
+
+            # Strip out timestamp in file name A20031111.1515-1530
+            if ( $addInfo =~ /A\d{8,8}\.\d{4,4}-\d{4,4}/ )
+            {
+                $addInfo =~ s/(.*)A\d{8,8}\.\d{4,4}-\d{4,4}(.*)/$1 [TS] $2/;
+                $modified = 1;
+            }   
+            
+            # Remove user name/passwd
+            if ( $addInfo =~ /Reason: Invalid password/ )
+            {
+                if ( ! ($addInfo =~ /USERNAME/) )
+                {
+                    if ( $DEBUG > 7 ) { print "removeUnique: pms_seg removing user id/password from $addInfo\n"; }
+                    
+                    $addInfo =~ s/user name: \S+/user name \[USERNAME\]/;
+                    $addInfo =~ s/Password is: \S+/Password is: \[PASSWORD\]/;
+                    $modified = 1;
+                }
+
+
+
+            }
+
+            if ( $addInfo =~ /ftp:\/\/[^\@]+\@[^\/]+/ )
+            {
+                if ( ! ($addInfo =~ /FTP_LOGIN_ID/) )
+                {
+                    $addInfo =~ s/(.*)ftp:\/\/[^\@]+\@[^\/]+\/(.*)/$1 ftp:\/\/FTP_LOGIN_ID\/$2/;  
+                    $modified = 1;
+                }
+            }               
+
+            if ( $addInfo =~ /file: [^\/ ]+\// )
+            {
+                if ( ! ($addInfo =~ /NE_DIR/) )
+                {
+                    $addInfo =~ s/(.*)file: [^\/ ]+\/(.*)/$1 file: \/NE_DIR\/$2/;  
+                    $modified = 1;
+                }
+            }               
+
+            if ( $addInfo =~ /interface on \S+ failed\.\"$/ )
+            {
+                $addInfo =~ s/(.*) on \S+ failed.\"$/$1 on NE_INTERFACE failed\"/;  
+                $modified = 1;
+
+            }
+
+            #Failed to connect to remote host: SgSkolegade_45540 
+            if ( $addInfo =~ /Failed to connect to remote host: (\S+)/ )
+            {           
+                if ( $DEBUG > 7 ) { print "Matched failed to connect to remote host \n"; }
+
+                $addInfo =~ s/remote host: \S+/remote host [HOST]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /Failed to establish an FTP \S+ with \S+/ )
+            {
+                $addInfo =~ s/FTP (\S+) with \S+/FTP $1 with: \[HOST\]/;
+                $modified = 1;
+            }               
+
+            if ( $addInfo =~ /Socket connection to \S+/ )
+            {
+                $addInfo =~ s/Socket connection to \S+/Socket connection \[TO HOST\]/;
+                $modified = 1;
+            }               
+
+            if ( $addInfo =~ /Total measured time including resolution: \d+/ )
+            {
+                $addInfo =~ s/Total measured time including resolution: \d+/Total measured time including resolution \[TIME\]/;
+                $modified = 1;
+            }                       
+        }
+        elsif ( $mc eq "AMServer" )
+        {
+            if ( $addInfo =~ /^\"Job ID : \d+/ ) {
+                $addInfo =~ s/^\"Job ID : \d+/^\"Job ID : [JOBID]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /Activity ID : \d+/ ) {
+                $addInfo =~ s/Activity ID : \d+/Activity ID : [ACTIVITYID]/;
+                $modified = 1;
+            }
+            if ( $addInfo =~ /PDM: file-fetcher for \'/ ) {
+                $addInfo =~ s/PDM: file-fetcher for \'[^\']+\'/PDM: file-fetcher for [NODE]/g;
+                $modified = 1;
+            }
+            
+            if ( $addInfo =~ /id = \d+/ )
+            {
+                my ($pre,$post) = $addInfo =~ /(.*)id = \d+(.*)/;
+                $addInfo = $pre . "id = [ID]" . $post;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /^\"\d+/ )
+            {
+                $_ = $addInfo;
+                my ($post) = /\"\d+(.*)/;
+                $addInfo = "\"[ACTIVITY ID]" . $post;
+                
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /-:\d+\"$/ )
+            {
+                $_ = $addInfo;
+                my ($pre) = /(.*)-:\d+\"$/;
+                $addInfo = $pre . "-:[PERCENT PROGRESS]\"";
+                
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /IOR:\S+/ )
+            {
+                $addInfo =~ s/IOR:\S+/\[IOR\]/;
+                $modified = 1;
+
+                if ( $DEBUG > 7 ) { print "AMServer stripped IOR addInfo=$addInfo\n" };
+            }
+        }
+        elsif ( $mc =~ "^cms_nead" )
+        {
+            if ( $DEBUG > 7 ) { print "cms_nead > modified=$modified addInfo=$addInfo\n" };
+
+            if ( $addInfo =~ /FULL SYNC STOPPED, SUCCESS/ )
+            {
+                ($addInfo) = $addInfo =~ /^(.*)FULL SYNC STOPPED, SUCCESS/;
+                if ( $DEBUG > 7 ) { print "SYNC STATS: addInfo = $addInfo\n"; }
+                $addInfo .= " [SYNC STATS]\"";
+                $modified = 1;
+            }   
+
+            if ( $addInfo =~ /^\"Processing for notification/ )
+            {
+                if ( $addInfo =~ /\d+ seconds\"$/ )
+                {
+                    $addInfo =~ s/\d+ seconds\"$/\[NUM\] seconds\"/;
+                    $addInfo =~ s/NOTIFICATION\(\d+/NOTIFICATION\(\[NUM\]/;
+                    $modified = 1;
+                }
+            }
+
+            if ( $addInfo =~ /moId: \S+ attr: / )
+            {
+                $addInfo =~ s/moId: \S+ attr: \[[^\]]+\]/moId \[MOID\] attr \[ATTRLIST\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /generationCounter is \d+/ )
+            {
+                $addInfo =~ s/generationCounter is \d+/generationCounter is \[GC_VALUE\]/;
+                $modified = 1;
+            }
+            
+            if ( $DEBUG > 7 ) { print "cms_nead < modified=$modified addInfo=$addInfo\n" };         
+        }
+        elsif ( $mc =~ "^cms_snad" )
+        {
+            if ( $addInfo =~ /CMS_CONSISTENCY_CHECK_\d+ Before consistency check/ )
+            {
+                $addInfo =~ s/CMS_CONSISTENCY_CHECK_\d+ Before consistency check .*/CMS_CONSISTENCY_CHECK_\[NUM\] Before consistency check \[INFO\]/;
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /^\"CMS_CONSISTENCY_CHECK_\d+ After consistency check Completed/ )
+            {
+                $addInfo =~ s/CMS_CONSISTENCY_CHECK_\d+ After consistency check Completed .*/CMS_CONSISTENCY_CHECK_\[NUM\] After consistency check Completed \[INFO\]/;
+                $modified = 1;
+            }
+            elsif ( $addInfo =~ /\"CMS_CONSISTENCY_CHECK_\d+ No. of MOs checked: \d+/ )
+            {
+                $addInfo =~ s/CMS_CONSISTENCY_CHECK_\d+ No. of MOs checked: \d+/CMS_CONSISTENCY_CHECK_\[NUM\] No. of MOs checked: \[NUM\]/;
+                $modified = 1;
+            }   
+            elsif ( $addInfo =~ /^\"CMS_CONSISTENCY_CHECK_\d+ No. of MOs to check: \d+/ )
+            {
+                $addInfo =~ s/CMS_CONSISTENCY_CHECK_\d+ No. of MOs to check: \d+/CMS_CONSISTENCY_CHECK_\[NUM\] No. of MOs to check: \[NUM\]/;
+                $modified = 1;
+            }                   
+
+            if ( $DEBUG > 7 ) { print "cms_snad > modified=$modified addInfo=$addInfo\n" };
+        }
+        elsif ( $mc eq "fm_context_d_1" )
+        {
+
+            if ( $addInfo =~ /Object type \d+/ )
+            {
+                $addInfo =~ s/Object type \d+/Object type \[OBJ_TYPE\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /MO id = \d+/ )
+            {
+                $addInfo =~ s/MO id = \d+/MO id = \[MO_ID\]/;
+                $modified = 1;
+            }   
+
+            if ( $addInfo =~ / IMH, but not known by fma_handler\./ )
+            {
+                $addInfo =~ s/ IMH, but not known by fma_handler\..*Action/ IMH, but not known by fma_handler \[HANDLER\] Action/;
+                $modified = 1;
+            }
+
+            if ( $DEBUG > 7  ) { print "Processing fm_context_d_1 $addInfo\n" }     
+        }
+        elsif ( $mc eq "DistributionServer" )
+        {
+            if ( $addInfo =~ /No client activity/ )
+            {
+                $addInfo = "NO client activity, Remove ClientHandler";
+                $modified = 1;
+            }
+        }
+        elsif ( $mc eq "SDMManager" )
+        {
+            if ( $addInfo =~ /spid=/ )
+            {
+                $addInfo =~ s/spid=\d+/\[SPID\]/;
+                $modified = 1;
+            }
+        }
+        elsif ( $mc =~ /^SMO_/ ) {
+            if ( $addInfo =~ /Activity \S+ on \S+:/ ) {
+                $addInfo =~ s/Activity (\S+) on \S+:/Activity $1 on \[NODE\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /NE=[^\[]/ ) { 
+                $addInfo =~ s/NE=(\S+)/NE=[NE]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /FILE=[^[]/ ) {
+                $addInfo =~ s/FILE=(\S+)/FILE=[FILE]/;
+                $modified = 1;
+            }
+        } elsif ( $mc eq "SGwServer" )
+        {
+            if ( $addInfo =~ /[ :]\/\S+/ )
+            {
+                $addInfo =~ s/[ :]\/\S+/ \[FILE_PATH\]/g;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /^\"\/\S+:/ )
+            {
+                $addInfo =~ s/^\"\/\S+/\"\[FILE_PATH\]/g;
+                $modified = 1;
+            }
+
+            #Filename = NWSLOASR91
+            if ( $addInfo =~ /Filename = / )
+            {
+                $addInfo =~ s/Filename = \S+/Filename=\[FILENAME\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /\S+.xml.gz/ )
+            {
+                $addInfo =~ s/\S+\.xml\.gz/\[FILENAME\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /\S+\.xml/ )
+            {
+                $addInfo =~ s/\S+\.xml/\[FILENAME\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /\/var\/opt\/ericsson\/sgw\/corrupt\// )
+            {
+                $addInfo =~ s/\/corrupt\/\S+/\[corrupt\]\/\[FILENAME\]/;
+                $modified = 1;
+            }
+
+            #(MP) = 90
+            if ( $addInfo =~ /\(MP\) = \d+/ )
+            {
+                $addInfo =~ s/\(MP\) = \d+/\(MP\)=\[MP_NUM\]/;
+                $modified = 1;
+            }     
+
+            if ( $addInfo =~ /NE: \S+/ )
+            {
+                $addInfo =~ s/NE: \S+/NE \[NE\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /ipAddr: \S+/ )
+            {
+                $addInfo =~ s/ipAddr: \S+/ipAddr \[IPADDR\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /fileNameInAPG40: \S+/ )
+            {
+                $addInfo =~ s/fileNameInAPG40: \S+/fileNameInAPG40 \[FILENAME\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /Path\s?:\S+/ )
+            {
+                $addInfo =~ s/Path\s?:\S+/Path \[PATH\]/;
+                $modified = 1;
+            }       
+
+#           if ( $addInfo =~ /Protocol Exception: \// )
+#           {
+#               $addInfo =~ s/Protocol Exception: [^:]+/Protocol Exception \[FILENAME\]/;
+#               $modified = 1;
+#           }
+            
+        }
+        elsif ($mc eq "cdm_server") {
+            if ( $addInfo =~ /^\"20[0-9][0-9]-[0-1][0-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9][0-9][0-9](.*)\"$/ ) {
+                $addInfo = "\"[DATE]" . $1 . "\"";
+                $modified = 1;
+            }
+        }
+        elsif ( $mc eq "CommsManagerImpl" ) { 
+            if ( $addInfo =~ /ID: \d+/ ) {
+                $addInfo =~ s/ID: \d+/ID: [SESSIONID]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /NE: [^\[]/ ) {
+                $addInfo =~ s/NE: \S+/ID: [NE]/;
+                $modified = 1;
+            }
+        }
+        
+
+
+        if ( $addInfo =~ /reason=\"{([^,]+),\[([^\]]+)\]}\"/ )
+        {
+            my ($err,$mo) = ($1,$2);
+
+            my $fixedMo = $mo;
+            $fixedMo =~ s/\s+//g;
+            $fixedMo =~ s/\"//g;
+            $fixedMo = stripFDN($fixedMo);
+
+            $addInfo =~ s/reason=\"{([^,]+),\[([^\]]+)\]}\"/reason=\"{ $err $fixedMo}\"/;
+            $modified = 1;
+            if ( $DEBUG > 11 ) { print "werid space $addInfo\n" };
+        }
+
+        if ( $addInfo =~ /REASON ==> \'{([^,]+),\[([^\]]+)\]}\'/ )
+        {
+            my ($err,$mo) = ($1,$2);
+
+            my $fixedMo = $mo;
+            $fixedMo =~ s/\s+//g;
+            $fixedMo =~ s/\"//g;
+            $fixedMo = stripFDN($fixedMo);
+
+            $addInfo =~ s/REASON ==> \'{([^,]+),\[([^\]]+)\]}\'/REASON ==> \'{ $err $fixedMo}\'/;
+            $modified = 1;
+            if ( $DEBUG > 11 ) { print "werid space $addInfo\n" };
+        }
+
+        
+        if ( $DEBUG > 7 ) { print "removeUnique: post mc modified=$modified\n" };
+
+
+        #
+        # Core/GRAN Stuff
+        # 
+        if ( $addInfo =~ /^\"Error info:/ )
+        {
+            my @replaceFields = ( "Pid", "Tid", "SID", "PID", "Device", "ConnId", "AssocId", "Appl socket", "ES socket", "Sub_id", "ES", "RespId", "BufNo", "User", "Host", "#Cmds" );
+            foreach my $field ( @replaceFields )
+            {
+                if ( $DEBUG > 9 ) { print "removeUnique: checking for $field\n"; }
+                if ( $addInfo =~ /$field\S\s*\S+/ )
+                {
+                    $addInfo =~ s/$field\S\s*\S+/$field \[VALUE\]/;
+                    $modified = 1;
+
+                    if ( $DEBUG > 5 ) { print "removeUnique: removed value for $field\n"; }
+                }
+            }
+            
+            if ( $addInfo =~  /Session Start Time: [^,]+\s+Elapsed Time: \d+/ )
+            {
+                $addInfo =~ s/Session Start Time: [^,]+ Elapsed Time: \d+/Session Start Time \[TIME\] Elapsed Time \[ETIME\]/;
+                $modified = 1;
+            }
+
+            my @appNameFields = ( "Application", "ApplName", "Proc" );
+            foreach my $field ( @appNameFields )
+            {
+                if ( $DEBUG > 9 ) { print "removeUnique: checking for app name $field\n"; }
+                if ( $addInfo =~ /$field[ :]*[^\d ]+\d+/ )
+                {
+                    $addInfo =~ s/$field[ :]*([^\d ]+)\d+/$field \1_\[VALUE\]/;
+                    $modified = 1;
+
+                    if ( $DEBUG > 5 ) { print "removeUnique: removed value for app name $field\n"; }
+                }
+            }
+            
+            if ( $addInfo =~ / Application: [^\d ]+\d+/ )
+            {
+                $addInfo =~ s/ Application: ([^\d ]+)\d+/ Application \1\[NUM\]/;
+                $modified = 1;
+            }
+
+            if ( $addInfo =~ /OOR: \S*\/\d+/ )
+            { 
+                $addInfo =~ s/OOR: (\S*)\/\d+/OOR \1 \[NUM\]/;
+                $modified = 1;          
+            }
+
+            
+            # SID:169843
+
+#           if ( $addInfo =~ /Pid:\s*\d+/ )
+#           {
+#               $addInfo =~ s/Pid:\s*\d+/Pid \[PID\]/;
+#               $modified = 1;
+#           }
+#           if ( $addInfo =~ / PID=\s*\d+/ )
+#           {
+#               $addInfo =~ s/PID=\s+\d+/PID=\[PID\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ /Tid: \d+/ )
+#           {
+#               $addInfo =~ s/Tid: \d+/Tid: \[TID\]/;
+#               $modified = 1;
+#           }
+
+#           if ( $addInfo =~ / SID:\d+/ )
+#           {
+#               $addInfo =~ s/SID:\d+/\[SID\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ / ES:\s*\S+/ )
+#           {
+#               $addInfo =~ s/ES:\s*\S+/ES \[NODE\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ / Device: \S+/ )
+#           {
+#               $addInfo =~ s/Device: \S+/Device \[DEVICE\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ / ConnId: \d+/ )
+#           {
+#               $addInfo =~ s/ ConnId: \d+/ ConnId \[CONNID\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ / AssocId: \d+/ )
+#           {
+#               $addInfo =~ s/ AssocId: \d+/ AssocId \[ASSOCID\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ / Appl socket: \d+/ )
+#           {
+#               $addInfo =~ s/ Appl socket: \d+/ Appl socket \[SOC\]/;
+#               $modified = 1;
+#           }
+            
+#           if ( $addInfo =~ / ES socket: \d+/ )
+#           {
+#               $addInfo =~ s/ ES socket: \d+/ ES socket \[SOC\]/;
+#               $modified = 1;
+#           }
+            
+        }
+
+        if ( $addInfo =~ /IOR:[0-9A-Za-z]+/ )
+        {
+            $addInfo =~ s/IOR:[0-9A-Za-z]+/\[IOR\]/;
+            $modified = 1;
+            
+            if ( $DEBUG > 7 ) { print "stripped IOR addInfo=$addInfo\n" };
+        }
+        
+        if ( $addInfo =~ / Stub\[.*\], / )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /(.*) Stub\[.*\], (.*)/;
+            $addInfo = $pre . " [CORBA OBJ], " . $post;
+            
+            $modified = 1;
+        }
+        
+
+        if ( $addInfo =~ /\\\'Stub\[[^\']+\'/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /(.*)\\\'Stub\[[^\']+\'(.*)/;
+            $addInfo = $pre . " CORBA OBJ " . $post;
+            
+            $modified = 1;
+        }
+
+
+        if ( $addInfo =~ /\d{13,13}:\d+/ )
+        { 
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)_CS:\d{13,13}:\d+(.*)$/;
+            $addInfo = $pre . "_CS:[SESSIONID]" . $post;
+
+            $modified = 1;
+        }
+
+
+        # TR HL43776: tighten up this regexp so it doesn't match PMS filenames
+        if ( $addInfo =~ /SubNetwork=[^\?],[A-Za-z0-9_\-,=]/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$fdn,$post) = /^(.*)SubNetwork=[^,]*,([A-Za-z0-9_\-,=]*)(.*)$/;
+
+            $_ = $fdn;
+            my $stripedFdn = stripFDN($fdn);
+
+            $addInfo = $pre . $stripedFdn . $post;
+            $modified = 1;
+        }
+        
+        if ( $addInfo =~ /[^0-9]\d+\.\d+\.\d+\.\d+/ )
+        {
+            $_ = $addInfo;
+            my ($pre, $preChar,$post) = /^(.*)([^0-9])\d+\.\d+\.\d+\.\d+(.*)$/;
+            $addInfo = $pre . $preChar ."IPADDRESS" . $post;
+
+            $modified = 1;
+        }
+        
+        if ( $addInfo =~ /NEIPADR ==> \\\'\S+\\\'/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)NEIPADR ==> \\\'\S+\\\'(.*)$/;
+            $addInfo = $pre . "NEIPADR ==> [NEIPADR]" . $post;
+
+            $modified = 1;
+        }
+
+        if ( $addInfo =~ /MIBNAME ==> \\\'\S+\\\'/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)MIBNAME ==> \\\'\S+\\\'(.*)$/;
+            $addInfo = $pre . "MIBNAME ==> [MIBNAME]" . $post;
+
+            $modified = 1;
+        }
+        
+        if ( $addInfo =~ / \S+:80/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*) \S+:80(.*)$/;
+            $addInfo = $pre . "[NEIPADDR : 80]" . $post;
+
+            $modified = 1;
+        }
+
+        if ( $addInfo =~ /MeContext=\?:[^\?]/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)MeContext=\?:[A-Za-z0-9\.]+(.*)$/;
+            $addInfo = $pre . "MeContext=\?:\?" . $post;
+
+            $modified = 1;
+        }
+
+
+        if ( $addInfo =~ /ATTRIBUTENAME ==> \'\[\d+\|<\[Lcom/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)ATTRIBUTENAME ==> \'\[\d+\|<\[Lcom[^\']*\' , MONAME ==> \'[^\']*\'(.*)$/;
+            $addInfo = $pre . "ATTRIBUTENAME ==> \'WRNab49895\' , MONAME ==> \'WRNab49895\'" . $post;
+            
+            $modified = 1;
+        }
+        
+        
+        if ( $addInfo =~ /\@[0-9a-f]*/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)\@[0-9a-f]*(.*)$/;
+            $addInfo = $pre . "_OBJREF" . $post;
+
+            $modified = 1;
+        }               
+
+        if ( $addInfo =~ /MIBNAME ==> \'\S+\'/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)MIBNAME ==> \'\S+\'(.*)$/;
+            $addInfo = $pre . "MIBNAME ==> MIB" . $post;
+
+            $modified = 1;
+        }
+
+        if ( $addInfo =~ /id: \d+, isDead:/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)id: \d+, isDead:(.*)$/;
+            $addInfo = $pre . "id: ID, isDead:" . $post;
+
+            $modified = 1;
+        }
+
+        if ( $addInfo =~ /nrOfNotifications=\d+/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)nrOfNotifications=\d+(.*)$/;
+            $addInfo = $pre . "nrOfNotifications=NR" . $post;
+
+            $modified = 1;
+        }
+
+
+
+
+        if ( $addInfo =~ /[^0-9]\d{13,13}/ )
+        { 
+            $_ = $addInfo;
+            my ($pre,$post) = /^(.*)\d{13,13}(.*)$/;
+            $addInfo = $pre . "[TIMESTAMP]" . $post;
+
+            $modified = 1;
+        }
+
+        # "20040101_012809.833:WARN:cnoss:EventReceiver:error updating subscription, 
+        if ( $addInfo =~ /^\"\d+_\d+\.\d+/ )
+        {
+            $_ = $addInfo;
+            my ($post) = /^\"\d+_\d+\.\d+(.*)/;
+            $addInfo = "\"[TIMESTAMP]" . $post;
+            $modified = 1;
+        }
+
+        #  Time = 2004-01-01 11:15
+        if ( $addInfo =~ /Time = \d+-\d+-\d+ \d+:\d+/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /(.*) Time = \d+-\d+-\d+ \d+:\d+(.*)/;
+            $addInfo = $pre . "Time = [TIMESTAMP]" . $post;
+            $modified = 1;
+        }
+        
+        #  Network Element (NE) = MSC101_MSC
+        if ( $addInfo =~ /Network Element \(NE\) = \S+/ )
+        {
+            $_ = $addInfo;
+            my ($pre,$post) = /(.*)Network Element \(NE\) = \S+(.*)/;
+            $addInfo = $pre . "Network Element\(NE\)=[NE]" . $post;
+            $modified = 1;
+        }
+
+        #SessionName = cs_25.085505,221_0032
+        if ( $addInfo =~ /SessionName = \S+/ )
+        {
+            $addInfo =~ s/SessionName = \S+/SessionName=\[SESSION_NAME\]/;
+            $modified = 1;
+        }
+
+        if ( $addInfo =~ /ThreadName = [^,]+, OriginalException/ )
+        {
+            $addInfo =~ s/ThreadName = [^,]+/ThreadName=\[THREAD_NAME\]/;
+            $modified = 1;
+        }
+
+        if ( $addInfo =~ /THREAD_\d+/ )
+        {
+            $addInfo =~ s/THREAD_\d+/THREAD_\[NUM\]/;
+            $modified = 1;
+        }
+
+        # this matches for example:
+        #  / *** ALARM CEASING 266 A2/SWITCH "CYL60H1 R12I13E"A 080719 1639 LOCATION UPDATING MAPV1-2 IN VLR SUPPORTING CAMEL END /
+        if ( $addInfo =~ /\/ \*\*\* ALARM .* END \// ) {
+            print "Matched unspecified error\n";
+            $addInfo =~ s/\/ \*\*\* ALARM .* END \// [UNSPEC] /;
+            $modified = 1;
+        }
+    }
+    while ( $modified );
+
+    # catch-all: replace all numbers with [NUM]
+    $addInfo =~ s/\d+/\[NUM\]/g;
+
+    return $addInfo;
+}
+
+sub bynumber
+{
+    return ( $b <=> $a );
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash, $r_Result ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+        my $reverseKey = sprintf "%s%04d", $r_Hash->{$key}, $counter;
+        $reverseHash{$reverseKey} = $key;
+        $counter++;
+    }
+
+    foreach my $reverseKey ( sort bynumber keys %reverseHash )
+    {
+        $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+}
+

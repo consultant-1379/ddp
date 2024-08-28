@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@postgres_locks">
+
+  <table name="postgres_locks">
+      <keycol name="serverid" reftable="servers"/>
+      <keycol name="dbid" reftable="enm_postgres_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>dbid</multi>
+    <multi>mode</multi>
+    <metricgroup name="pg_locks_count:(\S+):(\S+)$">
+      <metric source="pg_locks_count" target="locks" delta="true" filteridle="true"/>
+      <property name="dbid" xsi:type="multilabelproperty" label="datname" filtervalue="^(?!template|postgres)" index="1"/>
+      <property name="mode" xsi:type="multilabelproperty" label="mode" index="2"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

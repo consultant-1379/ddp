@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_ebsn_fdn_mos">
+      <reference table="sites" condition="enm_ebsn_fdn_mos.siteid = sites.id"/>
+      <reference table="servers" condition="enm_ebsn_fdn_mos.serverid = servers.id"/>
+    </dbtables>
+
+    <param name="site"/>
+    <param name="serverid"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="FDN Mos Created" type="sb" ylabel="Count" forcelegend="true">
+      <title value="FDN Mos Created"/>
+      <column db="numberOfNRCUCP_GNBCUCPFunction_Mos" label="Number_Of_NR_CUCP_GNBCUCPFunction_Mo"/>
+      <column db="numberOfNRCUCP_GNBCUCPFunction_Mos" label="Number_Of_NR_CUCP_NRCellCU_Mos"/>
+      <column db="numberOfNRCUCP_GNBFunction_Mos" label="Number_Of_NR_CUUP_GNBFunction_Mos"/>
+      <column db="numberOfNRCUUP_LINK_Mos" label="Number_Of_NR_CUUP_LINK_Mos"/>
+      <column db="numberOfNRDU_GNBDUFunction_Mos" label="Number_Of_NR_DU_GNBDUFunction_Mos"/>
+      <column db="numberOfNRDU_NRCellDU_Mos" label="Number_Of_NR_DU_NRCellDU_Mos"/>
+      <column db="numberOfNRDU_NRCellDU_Mos" label="Number_Of_NR_DU_NRCellDU_Mos"/>
+      <column db="numberOfNR_EUTRANCellRelation_Mos" label="Number_Of_NR_EUTRANCellRelation_Mos"/>
+      <column db="numberOfNR_NRCellRelation_Mos" label="Number_Of_NR_NRCellRelation_Mos"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="fdnMos">
+      <member>FDN Mos Created</member>
+    </group>
+  </groups>
+</modelledgraphset>

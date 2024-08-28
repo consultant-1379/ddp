@@ -1,0 +1,76 @@
+<?xml version='1.0'?>
+<report>
+
+  <ruleinst>
+    <rulename>cpuHealth</rulename>
+    <threshold name='avgcpu' value="70"/>
+    <threshold name='avgiowait' value="25"/>
+    <threshold name='maxiowait' value="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuLoad</rulename>
+    <parameter name='MAX_CPU' value="90"/>
+    <parameter name='COUNT_PER_INTERVAL' value="4"/>
+    <threshold name='intervalCount' value="16" warn="6"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nasDiskPerformance</rulename>
+    <conditional operation="and">
+      <condition def="hasNAS" type="more" value="0"/>
+    </conditional>
+    <threshold name='maxbusy' value="85" warn="70"/>
+    <threshold name='avgbusy' value="50" warn="40"/>
+    <threshold name='avgserv' value="20" warn="15"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nasDiskPerformanceSustained</rulename>
+    <conditional operation="and">
+      <condition def="hasNAS" type="more" value="0"/>
+    </conditional>
+    <parameter name='BUSY' value="70"/>
+    <parameter name='AVSERV' value="25"/>
+    <parameter name='COUNT' value="5"/>
+    <threshold name='intervalCount' value="6" warn="2"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>gcHealth</rulename>
+    <parameter name="GC_RATIO_MIN_OLD" value="60000"/>
+    <threshold name='gc_avg_msec' value="30000" warn="8000"/>
+    <threshold name='gc_max_msec' value="55000" warn="30000"/>
+    <threshold name='gc_ratio' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>fileDescriptorsVariation</rulename>
+    <threshold name='pct_increase' value='400' warn="100"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>BladeSysHealth</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>BladePowerSetting</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>DDPFlagFileStatus</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>DBCCStatus</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>countersNotUsed</rulename>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>certificateExpiry</rulename>
+  </ruleinst>
+
+</report>

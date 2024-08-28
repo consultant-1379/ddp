@@ -1,0 +1,939 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use DBI;
+
+use Time::HiRes;
+
+our $DEBUG = 0;
+our $ACTIVE_FIELD = 10;
+our $CHECK_EXIT = 200;
+
+our %monthMap = (
+     '01' => "Jan",
+     '02' => "Feb",
+     '03' => "Mar",
+     '04' => "Apr",
+     '05' => "May",
+     '06' => "Jun",
+     '07' => "Jul",
+     '08' => "Aug",
+     '09' => "Sep",
+     '10' => "Oct",
+     '11' => "Nov",
+     '12' => "Dec"
+);
+
+our %VDB_PROFILE_PARAMS = (
+    'sysvol'  => '"%s"',
+    'plogvol' => '"%s"',
+    'llogvol' => '"%s"',
+    'extent_size' => '%d',
+    'logging' => '"%s"',
+    'locking' => '"%s"',
+    'commit_flush' => '"%s"',
+    'polling_optimize' => '"%s"',
+    'async_buffer_cleaner' => '%d',
+    'async_logger' => '%d',
+    'event_registration_mode' => '"%s"',
+    'event_msg_mode' => '"%s"',
+    'event_msg_transient_queue_size' => '%d',
+    'bf_dirty_high_water_mark'       => '%d',
+    'bf_dirty_low_water_mark'        => '%d',
+    'class'      => '%d',
+    'db_timeout' => '%d',
+    'index'      => '%d',
+    'llog_buf_size' => '%d',
+    'lock_wait_timeout'=> '%d',
+    'max_page_buffs'   => '%d',
+    'multi_latch' => '"%s"',
+    'plog_buf_size' => '%d',
+    'heap_size' => '%d',
+    'heap_arena_size' => '"%s"',
+    'heap_arena_size_increment' => '"%s"',
+    'heap_arena_trim_threshold' => '"%s"',
+    'heap_max_arenas' => '"%s"',
+    'heap_arena_segment_merging' => '"%s"',
+    'transaction' => '%d',
+    'user' => '%d',
+    'volume' => '%d',
+    'stat' => '"%s"',
+    'assertion_level' => '%d',
+    'trace_entries' => '%d',
+    'trace_file' => '"%s"',
+    'versant_be_dbalogginglevel' => '%d',
+    'be_syslog_level' => '%d',
+    'blackbox_trace_comps' => '"%s"',
+    'treat_vstr_of_1b_as_string_in_query' => '"%s"' );
+
+
+main();
+
+sub main
+{
+    my ($indir,$outdir,$segment,$instrFile,$date,$site,$fix,$fixMode);
+
+    my $result = GetOptions(
+        "fix=s" => \$fix,
+        "fixmode=s" => \$fixMode,
+        "indir=s" => \$indir,
+        "outdir=s"  => \$outdir,
+        "site=s"  => \$site,
+        "date=s" => \$date,
+        "seg=s"  => \$segment,
+        "instr=s" => \$instrFile,
+        "debug=s" => \$DEBUG
+        );
+    ($result == 1) or die "Invalid args";
+
+    if ( defined $fix ) {
+        if ( $fix eq "mo" ) {
+            fixMoNames($fixMode);
+        } elsif ( $fix eq "profile_types" ) {
+            fixProfileTypes($fixMode);
+        }
+        return;
+    }
+
+    opendir(THISDIR, $indir) or die "serious dainbramage: $!";
+    my @allfiles = readdir THISDIR;
+    closedir THISDIR;
+
+    my @vdbList = ();
+    foreach my $file ( @allfiles ) {
+        if ( $file =~ /^(.*)\.objects/ ) {
+            push @vdbList, $1;
+        }
+    }
+
+
+    my $t1 = Time::HiRes::time;
+
+    my %csStats = ();
+    my %vdbStats = ();
+    foreach my $vdb ( @vdbList ) {
+        processCs( $vdb, $indir, $outdir, \%csStats, \%vdbStats, $date );
+    }
+
+    my $t2 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: processCs time=" . ($t2 - $t1) . "\n"; }
+
+    if ( $DEBUG > 3 ) { print Dumper("main: csStats", \%csStats); }
+    if ( $DEBUG > 3 ) { print Dumper("main: vdbStats", \%vdbStats); }
+
+    if ( $site ) {
+        storeStats(\%csStats,\%vdbStats,$site,$date);
+    }
+
+    my $t3 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: storeStats time=" . ($t3 - $t2) . "\n"; }
+}
+
+sub storeStats
+{
+    my ($r_CsStats,$r_VdbStats,$site,$date) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+
+    my $t1 = Time::HiRes::time;
+
+    dbDo($dbh,"DELETE FROM cs WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    dbDo($dbh,"DELETE FROM vdb WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    dbDo($dbh,"DELETE FROM mo WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    dbDo($dbh,"DELETE FROM vdb_locks WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    dbDo($dbh,"DELETE FROM vdb_logs WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    dbDo($dbh,"DELETE FROM versant_dbs WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my $t2 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: storeStats delete time=" . ($t2 - $t1) . "\n"; }
+
+    my @csList = keys %{$r_CsStats};
+    my $r_csIdMap = getIdMap($dbh, "cs_names", "id", "name", \@csList );
+
+    my @vdbList = keys %{$r_VdbStats};
+    my $r_vdbIdMap = getIdMap($dbh, "vdb_names", "id", "name", \@vdbList);
+
+    #
+    # cs table
+    #
+    foreach my $cs ( @csList ) {
+        my $sql;
+        if ( exists $r_CsStats->{$cs}->{'tx'} ) {
+            $sql = sprintf("INSERT INTO cs (date,siteid,csid,vdbid,tx) VALUES (\'%s\',%d,%d,%d,%d)",
+                           $date,$siteId,
+                           $r_csIdMap->{$cs},
+                           $r_vdbIdMap->{$r_CsStats->{$cs}->{'vdb'}},
+                           $r_CsStats->{$cs}->{'tx'}
+                           );
+        }
+        else {
+            $sql = sprintf("INSERT INTO cs (date,siteid,csid,vdbid) VALUES (\'%s\',%d,%d,%d)",
+                           $date,$siteId,
+                           $r_csIdMap->{$cs},
+                           $r_vdbIdMap->{$r_CsStats->{$cs}->{'vdb'}}
+                           );
+        }
+
+        dbDo($dbh,$sql) or die "Failed to insert $cs ";
+    }
+
+    #
+    # vdb table
+    #
+    foreach my $vdb ( @vdbList ) {
+        if (defined($r_VdbStats->{$vdb}->{'dbsize'}) && defined($r_VdbStats->{$vdb}->{'dbfree'})) {
+            my $sql = sprintf("INSERT INTO vdb (date,siteid,vdbid,size,free) VALUES (\'%s\',%d,%d,%d,%d)",
+                  $date,$siteId,
+                  $r_vdbIdMap->{$vdb},
+                  $r_VdbStats->{$vdb}->{'dbsize'},
+                  $r_VdbStats->{$vdb}->{'dbfree'}
+                  );
+            if ( $DEBUG > 2 ) { print "storeStats: $sql\n"; }
+            dbDo($dbh,$sql) or die "Failed to insert $vdb ";
+        }
+    }
+
+    #
+    # vdb_locks table - OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+    #
+    foreach my $vdb ( @vdbList ) {
+        if (defined($r_VdbStats->{$vdb}->{'locks'})) {
+            my $sql = sprintf("INSERT INTO vdb_locks (date,siteid,vdbid,total,outstanding,deadlocks,conflicts,requests,objects) VALUES (\'%s\',%d,%d,%d,%d,%d,%d,%d,%d)",
+                  $date,$siteId,
+                  $r_vdbIdMap->{$vdb},
+                  @{$r_VdbStats->{$vdb}->{'locks'}}
+                  );
+            if ( $DEBUG > 2 ) { print "storeStats: $vdb locks: $sql\n"; }
+            dbDo($dbh,$sql) or die "Failed to insert $vdb ";
+        }
+    }
+
+    my $t3 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: storeStats time up to vdb_locks=" . ($t3 - $t2) . "\n"; }
+
+    #
+    # vdb_logs table - OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+    #
+    foreach my $vdb ( @vdbList ) {
+        if (defined($r_VdbStats->{$vdb}->{'LOGFILE'})) {
+            if ( $DEBUG > 3 ) { print "vdb_log: $vdb logfile\n"; }
+
+            my $sql = sprintf("INSERT INTO vdb_logs (date,siteid,vdbid,data) " .
+                "VALUES (\'%s\',%d,%d,%s)",
+                          $date, $siteId,
+                          $r_vdbIdMap->{$vdb},
+              $dbh->quote(${$r_VdbStats->{$vdb}->{'LOGFILE'}})
+                          );
+
+            if ( $DEBUG > 3 ) { print "vdb_log: $vdb logfile: $sql\n"; }
+            dbDo($dbh,$sql) or die "Failed to insert $vdb logfile";
+        }
+    }
+
+    my $t4 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: storeStats vdb_logs=" . ($t4 - $t3) . "\n"; }
+
+    #
+    # vdb_profile_types table - OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+    #
+    foreach my $vdb ( @vdbList ) {
+        my $r_profile = $r_VdbStats->{$vdb}->{'profile'};
+        if ( $DEBUG > 4 ) { print Dumper("storeStats: r_profile", $r_profile); }
+        my $r_rows =
+            dbSelectAllHash($dbh,sprintf("SELECT * FROM vdb_profile_types WHERE sysvol = '%s' AND class = %d",
+                                         $r_profile->{'sysvol'}, $r_profile->{'class'}))
+            or die "Failed to SELECT all profile types";
+
+        # Check if profile exists
+        my $profid = -1;
+        # Check if matching profile exists - if it does get id, change flag and exit
+        foreach my $r_row (@{$r_rows}){
+            if ( $DEBUG > 4 ) { print Dumper("storeStats: checking r_row", $r_row); }
+
+            my $matched = 1;
+            foreach my $colName ( keys %VDB_PROFILE_PARAMS ) {
+                my $dbColName = $colName;
+                if ( $dbColName eq "index" ) {
+                    $dbColName = "prof_index";
+                }
+                my $dbValue = sprintf($VDB_PROFILE_PARAMS{$colName}, $r_row->{$dbColName}); ;
+
+                my $profileValue = sprintf($VDB_PROFILE_PARAMS{$colName}, $r_profile->{$colName});
+
+                if ( $dbValue ne $profileValue ) {
+                    if ( $DEBUG > 4 ) { printf( "storeStats: $colName db %s != profile %s\n", $dbValue, $profileValue ); }
+                    $matched = 0;
+                }
+            }
+
+            if ( $matched == 1 ) {
+                $profid = $r_row->{'id'};
+                last;
+            }
+        }
+
+        # If profile doesn't exist then insert profile stats into vdb_profile_types table
+        if($profid == -1){
+            my @colNames = ();
+            my @colValues = ();
+            foreach my $name ( keys %{$r_VdbStats->{$vdb}->{'profile'}} ) {
+                my $value = $r_VdbStats->{$vdb}->{'profile'}->{$name};
+                my $dbColName = $name;
+                if ( $dbColName eq "index" ) {
+                    $dbColName = "prof_index";
+                }
+                push @colNames, $dbColName;
+                if ( defined $value ) {
+                    push @colValues, sprintf($VDB_PROFILE_PARAMS{$name}, $value);
+                } else {
+                    push @colValues, "NULL";
+                }
+            }
+
+            dbDo($dbh, sprintf("INSERT INTO vdb_profile_types (%s) VALUES (%s)",
+                               join(",", @colNames ), join(",",@colValues),
+                 ))or die "Failed to insert $vdb profile type";
+            $profid = $dbh->last_insert_id(undef,undef,"vdb_profile_types","id");
+        }
+
+        # Insert profile for each date
+        my $sql = sprintf("INSERT INTO versant_dbs (date, siteid, vdbid, profileid) VALUES (\'%s\',%d,%d,%d)",
+            $date,$siteId,$r_vdbIdMap->{$vdb},$profid);
+        dbDo($dbh,$sql) or die "Failed to insert $vdb profile ID";
+    }
+
+    my $t5 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: storeStats vdb_profile_types=" . ($t5 - $t4) . "\n"; }
+
+    #
+    # mo table
+    #
+    my %modelList = ();
+    my %moList = ();
+    my %mimList = ();
+    # We can't store null for the mim version cause this causes the join in the php page to fail
+    # Sure make sure '' is in the list of mims
+    $mimList{''}++;
+    foreach my $vdb ( @vdbList ) {
+        foreach my $r_info ( @{$r_VdbStats->{$vdb}->{'mo'}} ) {
+            $mimList{$r_info->{'mim'}}++;
+            $modelList{$r_info->{'model'}}++;
+            $moList{$r_info->{'mo'}}++;
+        }
+    }
+
+    my @mimNames = keys %mimList;
+    my $r_mimIdMap = getIdMap($dbh, "mim_names", "id", "name", \@mimNames );
+    my @modelNames = keys %modelList;
+    my $r_modelIdMap = getIdMap($dbh, "model_names", "id", "name", \@modelNames );
+    my @moNames = keys %moList;
+    my $r_moIdMap = getIdMap($dbh, "mo_names", "id", "name", \@moNames );
+
+    foreach my $vdb ( @vdbList ) {
+        if ( $DEBUG > 2 ) { print "storeStats: processing $vdb\n"; }
+
+        my $r_PlannedCounts;
+        if ( exists $r_VdbStats->{$vdb}->{'planned'} ) {
+            $r_PlannedCounts = $r_VdbStats->{$vdb}->{'planned'};
+        }
+
+        foreach my $r_info ( @{$r_VdbStats->{$vdb}->{'mo'}} ) {
+            if ( $DEBUG > 4 ) { print Dumper("storeStats: processing r_info", $r_info); }
+
+            my $sql;
+            # Pre 5.2 Format
+            if ( exists $r_info->{'mim'} ) {
+                $sql = sprintf("INSERT INTO mo (date,siteid,vdbid,modelid,mimid,moid,count) VALUES (\'%s\',%d,%d,%d,%d,%d,%d)",
+                       $date,$siteId,$r_vdbIdMap->{$vdb},
+                       $r_modelIdMap->{$r_info->{'model'}},
+                       $r_mimIdMap->{$r_info->{'mim'}},
+                       $r_moIdMap->{$r_info->{'mo'}},
+                       $r_info->{'count'}
+                );
+            }
+            elsif ( defined $r_PlannedCounts ) {
+                my $numPlanned = $r_PlannedCounts->{$r_info->{'model'} . ":" . $r_info->{'mo'}};
+                if ( $DEBUG > 4 ) { print "storeStats: numPlanned=$numPlanned\n"; }
+                if ( ! defined $numPlanned ) {
+                    $numPlanned = 0;
+                }
+                $sql = sprintf("INSERT INTO mo (date,siteid,vdbid,modelid,mimid,moid,count,planned) VALUES (\'%s\',%d,%d,%d,%d,%d,%d,%d)",
+                       $date,$siteId,$r_vdbIdMap->{$vdb},
+                       $r_modelIdMap->{$r_info->{'model'}},
+                       $r_mimIdMap->{''},
+                       $r_moIdMap->{$r_info->{'mo'}},
+                       $r_info->{'count'},
+                       $numPlanned
+                );
+            } else {
+                $sql = sprintf("INSERT INTO mo (date,siteid,vdbid,modelid,mimid,moid,count) VALUES (\'%s\',%d,%d,%d,%d,%d,%d)",
+                       $date,$siteId,$r_vdbIdMap->{$vdb},
+                       $r_modelIdMap->{$r_info->{'model'}},
+                       $r_mimIdMap->{''},
+                       $r_moIdMap->{$r_info->{'mo'}},
+                               $r_info->{'count'}
+                               );
+            }
+
+            if ( $DEBUG > 2 ) { print "storeStats: $sql\n"; }
+            dbDo($dbh,$sql) or die "Failed to insert $r_info->{'mo'}";
+        }
+    }
+
+    my $t6 = Time::HiRes::time;
+    if ( $DEBUG > 0 ) { print "main: storeStats mo=" . ($t6 - $t5) . "\n"; }
+
+    $dbh->disconnect;
+}
+
+sub processCs
+{
+    my ( $vdb, $indir, $outdir, $r_CsStats, $r_VdbStats, $date ) = @_;
+
+    my $r_dbSpace = parseDbSpace($indir . "/" . $vdb . ".dbspace");
+
+    $r_VdbStats->{$vdb}->{'mo'} = parseObjects($indir . "/" . $vdb . ".objects");
+
+    if ( -r $indir . "/" . $vdb . ".countplanned" ) {
+        if ( $DEBUG > 2 ) { print "processCs: countplanned\n"; }
+        my $r_plannedCounts = parsePlanned($indir . "/" . $vdb . ".countplanned");
+        if ( defined $r_plannedCounts ) {
+            $r_VdbStats->{$vdb}->{'planned'} = parsePlanned($indir . "/" . $vdb . ".countplanned");
+        }
+    }
+
+    # OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+    if ( -r $indir . "/" . $vdb . ".locks" ) {
+            if ( $DEBUG > 6 ) { print "processCs: locks\n"; }
+        $r_VdbStats->{$vdb}->{'locks'} = parseLocks($indir . "/" . $vdb . ".locks");
+    }
+
+    # OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+    if ( -r $indir . "/" . $vdb . ".profile" ) {
+            if ( $DEBUG > 6 ) { print "processCs: profile\n"; }
+        $r_VdbStats->{$vdb}->{'profile'} = parseProfile($indir . "/" . $vdb . ".profile");
+    }
+
+    # OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+    if ( -r $indir . "/" . $vdb . ".LOGFILE" ) {
+            if ( $DEBUG > 6 ) { print "processCs: LOGFILE\n"; }
+        $r_VdbStats->{$vdb}->{'LOGFILE'} = parseLogfile($indir . "/" . $vdb . ".LOGFILE", $date);
+    }
+
+    $r_VdbStats->{$vdb}->{'dbsize'} = $r_dbSpace->[0];
+    $r_VdbStats->{$vdb}->{'dbfree'} = $r_dbSpace->[1];
+
+    if ( $vdb eq 'WRAN_SUBNETWORK_MIRROR_CS' ) {
+        $r_CsStats->{'Region_CS'}->{'vdb'} = $vdb;
+        $r_CsStats->{'Seg_masterservice_CS'}->{'vdb'} = $vdb;
+    }
+    else {
+        $r_CsStats->{$vdb}->{'vdb'} = $vdb;
+    }
+
+    my $totalsFile = $outdir . "/" . $vdb . "/totals.html";
+    if ( -r $totalsFile ) {
+        $r_CsStats->{$vdb}->{'tx'} = parseTx($totalsFile);
+    }
+}
+
+sub parseDbSpace
+{
+    my ($fileName) = @_;
+
+    open DBSPACE, $fileName or die "Cannot open $fileName";
+
+    my @dbSpace = ( 0, 0 );
+    while ( my $line = <DBSPACE> ) {
+        if ( $line =~ /^\s+Sysname \"[^\"]+\"\s+Size: (\d+)K/ ) {
+            $dbSpace[0] += $1;
+        }
+        elsif ( $line =~ /^\s+Total available (?:extent )?free space in DB : (\d+)KB/ ) {
+            $dbSpace[1] = $1;
+        }
+    }
+    close DBSPACE;
+    return \@dbSpace;
+}
+
+sub parseTx
+{
+    my ($fileName) = @_;
+
+    open TOTALS, $fileName or die "Cannot open $fileName";
+    my $txTotal = 0;
+    while ( my $line = <TOTALS> ) {
+        if ( $line =~ /^\<tr> <td>[^<]*<\/td> <td>(\d+)<\/td>/ ) {
+            $txTotal += $1;
+        }
+    }
+    close TOTALS;
+    return $txTotal;
+}
+
+sub parseObjects
+{
+    my ($fileName) = @_;
+
+    if ( $DEBUG > 3 ) { print "parseObjects: fileName=$fileName\n" };
+
+    open OBJ, $fileName or die "Cannot open $fileName";
+
+    my @objects = ();
+    while ( my $line = <OBJ> ) {
+        # Pre 5.2 format
+        if ( $line =~ /^(\d+) \'com\.ericsson\.nms\.cif\.cs\.mo\.([^\.]+)\.([^\.]+)\.([^\']+)MO\'/ ) {
+            my ($count,$model,$mim,$moClass) = ($1,$2,$3,$4);
+            if ( $DEBUG > 5 ) { print "parseObjects: count=$count model=$model, mim=$mim moClass=$moClass\n" };
+
+            if ( $count > 0 ) {
+                my $r_info = {
+                    'model' => $model,
+                    'mim'   => $mim,
+                    'mo'    => $moClass,
+                    'count' => $count
+                    };
+                push @objects, $r_info;
+            }
+        }
+        elsif ( $line =~ /^(\d+) \'com\.ericsson\.nms\.cif\.cs\.mo\.mim([^\.]+)\.(.*)Impl\'/ ) {
+            my ($count,$model,,$moClass) = ($1,$2,$3);
+            if ( $DEBUG > 5 ) { print "parseObjects: count=$count model=$model, moClass=$moClass\n" };
+
+            if ( $count > 0 ) {
+                my $r_info = {
+                    'model' => $model,
+                    'mo'    => $moClass,
+                    'count' => $count
+                    };
+                push @objects, $r_info;
+            }
+        }
+    }
+    close OBJ;
+    if ( $DEBUG > 3 ) { print Dumper("parseObjects: objects", \@objects); }
+    return \@objects;
+}
+
+# OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+sub parseLocks
+{
+    my ($fileName) = @_;
+    my ($i, @locks);
+    my @srchstr = qw(total outstanding deadlocks conflicts requests objects);
+
+    # Open file in READ mode
+    open LOCKS, "<$fileName" or die "Cannot open $fileName";
+
+    # Iterate thru file lines
+    while ( my $line = <LOCKS> ) {
+        # Retrieve parameter values
+        for ($i=0; $i<=$#srchstr; $i++) {
+            if ( $line =~ /^\s+$srchstr[$i] = (-?\d+)/ ) { $locks[$i] = "$1"; }
+        }
+    }
+    close LOCKS;
+
+    return \@locks;
+}
+
+# OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+sub parseLogfile
+{
+    my ($logFile, $date) = @_;
+
+    my ($y,$m,$d) = split(/-/, $date);
+    $d =~ s/^0/ /;
+    my $month = $monthMap{$m};
+
+    my $data = "";
+    my $matched = 0; # have we seen today's date yet?
+    my @matchedLines = ();
+
+    open LOGFILE, $logFile, or die "Cannot open $logFile";
+    # No point in parsing all the file, if its larger then 1MB, seek to
+    # 1MB from the end
+    my  @fileStat = stat($logFile);
+    if ( $fileStat[7] > (1024*1024) ) {
+        my $oneMegFromEnd = $fileStat[7] - (1024*1024);
+        if ( $DEBUG > 5 ) { print "parseLogfile: fileSize=$fileStat[7], seeking to $oneMegFromEnd\n"; }
+        seek(LOGFILE, $oneMegFromEnd, 0);
+    }
+    # Limit to 5k lines
+    while ( (my $line = <LOGFILE>) && ($#matchedLines < 5000) ) {
+        if ( $DEBUG > 9 ) { print "parseLogfile: matched=$matched line=$line"; }
+        if ($matched == 0) {
+            # Lines with date start with either PID or Process
+            if ($line =~ /^P.* $month\s+$d \d{2,2}:\d{2,2}:\d{2,2} $y$/) {
+                if ( $DEBUG > 7 ) { print "parseLogfile: matched on line=$line"; }
+                $matched = 1;
+                push @matchedLines, $line;
+            }
+        } else {
+            push @matchedLines, $line;
+        }
+    }
+    close LOGFILE;
+    my $data = join('', @matchedLines );
+    if ( $DEBUG > 6) { print "parseLogfile: data $data"; }
+    return \$data;
+}
+
+# OSS-RC 12 WP00584: CR: 418/109 18-FCP 103 8147/13 - Versant Instrumentation [2011-11-06 RK]
+sub parseProfile
+{
+    my ($fileName) = @_;
+    my ($i, @profile);
+
+    my %profile = ();
+    foreach my $param ( keys %VDB_PROFILE_PARAMS ) {
+        $profile{$param} = undef;
+    }
+
+    # Open file in READ mode
+    open PROFILE, "<$fileName" or die "Cannot open $fileName";
+
+    # Iterate thru file lines
+    while ( my $line = <PROFILE> )
+    {
+        if ( $DEBUG > 7 ) { print "parseProfile: line=$line"; }
+        if ( ($line !~ /^#/) && ($line =~ /^(\S+)\s+(.*)/) ) {
+            my ($name,$value) = ($1,$2);
+
+            # Stat is the only param allowed have spaces
+            if ( $name eq "stat" ) {
+                $value =~ s/\s+$//;
+            } else {
+                ($value) = $value =~ /^(\S+)/;
+            }
+
+            if ( $DEBUG > 7 ) { print "parseProfile: name=$name value=$value"; }
+            if ( exists $profile{$name} ) {
+                $profile{$name} = $value;
+            }
+        }
+    }
+    close PROFILE;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseProfile: profile", \%profile); }
+
+    return \%profile;
+}
+
+sub parseInstr
+{
+    my ($fileName) = @_;
+    my $r_Stat = {};
+
+    open INSTR, $fileName or die "Failed to open $fileName";
+
+    while ( my $line = <INSTR> ) {
+        if ( $DEBUG > 10 ) { print "parseInstr: $line"; }
+
+        if ( $line =~ /^\d+/ ) {
+            chop $line;
+            my @fields = split / /, $line;
+            if ( $DEBUG > 8 ) { print Dumper("parseInstr: fields", \@fields); }
+
+            if ( $fields[2] =~ /^VDB_/ ) {
+                if ( $DEBUG > 6 ) { print "parseInstr: processing $fields[2]\n"; }
+
+                if ( exists $r_Stat->{$fields[2]}->{'last'} ) {
+                    my ($time) = $fields[1] =~ /^([\d:]+)\.\d+$/;
+                    #12-02-07 00:07:12.172 VDB_ONRM_CS 416 0 0 0 0 0 0 1 0 2
+
+                    my $statLine = sprintf("%s:%s %s", $fields[0], $time, $fields[2]);
+                    for ( my $i = 3; $i <= 12; $i++ ) {
+                        my $value;
+                        if ( $i == $ACTIVE_FIELD ) { $value = $fields[$ACTIVE_FIELD]; }
+                        else {
+                            if ( $fields[$i] >= $r_Stat->{$fields[2]}->{'last'}->[$i] ) {
+                                $value = $fields[$i] - $r_Stat->{$fields[2]}->{'last'}->[$i];
+                            }
+                            else { $value = $fields[$i]; }
+                        }
+
+                        if ( $DEBUG > 6 ) { print "parseInstr: value=$value fields[$i]=", $fields[$i], " last[$i]=", $r_Stat->{$fields[2]}->{'last'}->[$i], "\n"; }
+
+                        $r_Stat->{$fields[2]}->{'total'}->{$i - 3} += $value;
+                        $statLine .= " " . $value;
+                    }
+
+                    push @{$r_Stat->{$fields[2]}->{'stats'}}, $statLine;
+                    $r_Stat->{$fields[2]}->{'last'} = \@fields;
+                }
+                else {
+                    if ( $DEBUG > 5 ) { print "parseInstr: first line for $fields[2]\n"; }
+
+                    $r_Stat->{$fields[2]}->{'last'} = \@fields;
+                    $r_Stat->{$fields[2]}->{'stats'} = [];
+                }
+            }
+        }
+    }
+
+    close INSTR;
+    if ( $DEBUG > 4 ) { print Dumper("parseInstr: r_Stat", $r_Stat); }
+    return $r_Stat;
+}
+
+sub parsePlanned
+{
+    my ($file) = @_;
+
+    my %plannedCount = ();
+    open PLANNED, $file or die "Failed to open $file";
+    my $validLines = 0; my $invalidLines = 0;
+    while ( my $line = <PLANNED> ) {
+        my ($model,$moType,$count) = $line =~ /^com\.ericsson\.nms\.cif\.cs\.mo\.mim([^\.]+)\.(\S+)Impl (\d+)$/;
+        if ( defined $model ) {
+            $plannedCount{$model . ":" . $moType} = $count;
+            $validLines++;
+        } else {
+            print "WARN: Failed to parse planned count line $line";
+            $invalidLines++;
+        }
+    }
+    close PLANNED;
+
+    if ( $DEBUG > 5 ) { print Dumper("parsePlanned: plannedCount", \%plannedCount); }
+
+    if ( $validLines == 0 && $invalidLines > 0 ) {
+        return undef;
+    } else {
+        return \%plannedCount;
+    }
+}
+
+sub fixMoNames($) {
+    my ($fixMode) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    # Get list of tables that use mo_names
+    my $r_allTableRows = dbSelectAllArr($dbh, sprintf("SELECT DISTINCT(table_name) FROM INFORMATION_SCHEMA.COLUMNS WHERE COLUMN_NAME = 'moid' AND table_schema = '%s'",
+                                                 getStatsDbName()));
+    my @referringTableList = ();
+    foreach my $r_row ( @{$r_allTableRows} ) {
+        push @referringTableList, $r_row->[0];
+    }
+
+    print "Reading used ids from referring tables\n";
+    my %usedIds = ();
+    foreach my $referringTable ( @referringTableList ) {
+        print " $referringTable\n";
+        my $r_AllIdRows = dbSelectAllArr($dbh, "SELECT DISTINCT(moid) FROM $referringTable");
+        foreach my $r_row ( @{$r_AllIdRows} ) {
+            $usedIds{'all'}->{$r_row->[0]}++;
+            $usedIds{$referringTable}->{$r_row->[0]}++;
+        }
+    }
+    if ( $DEBUG > 2 ) { print Dumper("fixMoNames: usedIds->all", $usedIds{'all'}); }
+
+    print "Reading all ids\n";
+    my %unusedIds = ();
+    my $r_AllIdNameRows = dbSelectAllArr($dbh, "SELECT id, name FROM mo_names");
+    foreach my $r_row ( @{$r_AllIdNameRows} ) {
+        if ( ! exists $usedIds{'all'}->{$r_row->[0]} ) {
+            $unusedIds{$r_row->[0]} = $r_row->[1];
+        }
+    }
+
+    if ( $DEBUG > 2 ) { print Dumper("fixMoNames: unusedIds", \%unusedIds); }
+
+    if ( $fixMode eq "test" ) {
+        return;
+    }
+
+    print "Deleting unused rows\n";
+    foreach my $id ( keys %unusedIds ) {
+        printf "%6d %s\n", $id, $unusedIds{$id};
+        dbDo($dbh, "DELETE FROM mo_names WHERE id = $id") or
+            die "Failed to delete id $id";
+    }
+
+    delete $usedIds{'all'};
+    fixDups($dbh,\%usedIds);
+    compactId($dbh,\%usedIds);
+}
+
+sub fixDups
+{
+    my ($dbh, $r_usedIds) = @_;
+
+    logMsg("Checking for duplicate names in in mo_names");
+
+    my $dupSth = $dbh->prepare("SELECT count(*) as num, name FROM mo_names GROUP BY name HAVING num > 1")
+        or die "Couldn't prepare statement: " . $dbh->errstr;
+    $dupSth->execute() or die "Couldn't execute statement: " . $dupSth->errstr;
+
+    my $idSth = $dbh->prepare("SELECT id FROM mo_names WHERE name = ?")
+        or die "Couldn't prepare statement: " . $dbh->errstr;
+
+    while ( my $r_fromRow = $dupSth->fetchrow_hashref() )
+    {
+        my $theName = $r_fromRow->{'name'};
+        $idSth->execute($theName) or die "Couldn't execute statement: " . $idSth->errstr;
+
+        my @ids = ();
+        while ( my $r_IdRow = $idSth->fetchrow_hashref() )
+        {
+            push @ids, $r_IdRow->{'id'};
+        }
+        logMsg(" Found multiple ids (" . join(",", @ids) . ") for " . $theName );
+        my $keepId = pop @ids;
+        foreach my $replaceId ( @ids )
+        {
+            logMsg("  Replacing $replaceId with $keepId");
+
+            foreach my $referringTable ( keys %{$r_usedIds} ) {
+                if ( exists $r_usedIds->{$referringTable}->{$replaceId} ) {
+                    delete $r_usedIds->{$referringTable}->{$replaceId};
+                    dbDo( $dbh, "UPDATE $referringTable SET moid = $keepId WHERE moid = $replaceId") or
+                        die "Failed to update moid to from $replaceId to $keepId in $referringTable";
+                }
+            }
+            dbDo($dbh,"DELETE FROM mo_names WHERE id = $replaceId") or
+                die "Failed to delete $replaceId from mo_names";
+        }
+    }
+
+    $dupSth->finish;
+    $idSth->finish;
+}
+
+sub compactId
+{
+    my ($dbh,$r_usedIds) = @_;
+
+    #print Dumper($r_usedIds);
+
+    logMsg(" Remove AUTO_INCREMENT property mo_names");
+    dbDo($dbh, "ALTER TABLE mo_names MODIFY COLUMN id SMALLINT UNSIGNED NOT NULL") or die "Failed";
+
+    my $r_NameToId = getIdMap($dbh, "mo_names", "id", "name", [] );
+
+    my @idList = values %{$r_NameToId};
+    my %idMap = ();
+    my $countName = 0;
+    foreach my $name ( keys %{$r_NameToId} )
+    {
+        $countName++;
+        $idMap{$r_NameToId->{$name}} = $name;
+    }
+    my @idList = sort {$a <=> $b} keys %idMap;
+    logMsg(" Number of rows=$countName, max id = " . $idList[$#idList]);
+    logMsg(sprintf("%5s %5s %5s %10s %-32s %s", '', 'From', 'To', 'Rows', 'Name', " Tables"));
+    my $remappedCount = 0;
+    for ( my $id = 1; ($id <= $countName) && (! checkExit()); $id++ )
+    {
+        # Find a hole in the id sequnce
+        if ( ! exists $idMap{$id} ) {
+            $remappedCount++;
+            my $idToRemap = pop @idList;
+            my $nameToRemap = $idMap{$idToRemap};
+            $r_NameToId->{$nameToRemap} = $id;
+
+            dbDo( $dbh, "UPDATE mo_names SET id = $id WHERE id = $idToRemap") or
+                die "Failed to change id to from $idToRemap to $id in mo_names";
+
+            my $rowsUpdated = 0;
+            my $tableStr = "";
+            foreach my $referringTable ( keys %{$r_usedIds} ) {
+                if ( exists $r_usedIds->{$referringTable}->{$idToRemap} ) {
+                    my $rowsUpdatedInTable =
+                        dbDo( $dbh, "UPDATE $referringTable SET moid = $id WHERE moid = $idToRemap");
+                    $tableStr .= " " . $referringTable . "=" . $rowsUpdatedInTable;
+                    $rowsUpdated += $rowsUpdatedInTable;
+                }
+            }
+            logMsg(sprintf("%5d %5d %5d %10d %-32s %s", $remappedCount, $idToRemap, $id, $rowsUpdated, $nameToRemap, $tableStr));
+
+            $CHECK_EXIT--;
+        }
+    }
+
+    logMsg(" Reset AUTO_INCREMENT property mo_names");
+    dbDo($dbh, "ALTER TABLE mo_names MODIFY COLUMN id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT") or
+        die "Failed to ALTER id column";
+
+    my $r_allResults = dbSelectAllArr($dbh, "SELECT MAX(id) FROM mo_names");
+    my $maxId = $r_allResults->[0]->[0];
+    logMsg(" Set AUTO_INCREMENT value for mo_names to " . ($maxId + 1));
+    dbDo($dbh, "ALTER TABLE mo_names AUTO_INCREMENT = " . ($maxId + 1) ) or
+            die "Failed to ALTER AUTO_INCREMENT";
+}
+
+sub logMsg
+{
+    my ($msg) = @_;
+    print scalar(localtime(time())) . " ". $msg . "\n";
+}
+
+sub checkExit
+{
+    if ( $CHECK_EXIT > 0 ) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+sub fixProfileTypes {
+    my ($fixMode) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    dbDo($dbh, "LOCK TABLES vdb_profile_types WRITE, versant_dbs WRITE") or die "Failed to lock tables";
+
+    my $r_data = dbSelectAllArr($dbh,"SELECT * FROM vdb_profile_types") or die "Failed to SELECT all profile types";
+    my %profileById = ();
+    my %distinctProfiles = ();
+    foreach my $r_profile ( @{$r_data} ) {
+        my $profileId = shift @{$r_profile};
+        $profileById{$profileId} = $r_profile;
+        my $profileStr = join('', @{$r_profile});
+        if ( ! exists $distinctProfiles{$profileStr} ) {
+            $distinctProfiles{$profileStr} = [];
+        }
+        push @{$distinctProfiles{$profileStr}}, $profileId;
+    }
+
+    foreach my $profileStr ( keys %distinctProfiles ) {
+        my $r_dupProfileIds = $distinctProfiles{$profileStr};
+        if ( $#{$r_dupProfileIds} > 0 ) {
+            my $numDup = $#{$r_dupProfileIds};
+            logMsg("WARN: Duplicate profiles $numDup");
+            my $firstProfileId = shift @{$r_dupProfileIds};
+            my $count = 0;
+            foreach my $otherProfileId ( @{$r_dupProfileIds} ) {
+                $count++;
+                logMsg(" Replacing $count profileid=$otherProfileId");
+                # dbDo($dbh, "UPDATE versant_dbs SET profileid = $firstProfileId WHERE profileid = $otherProfileId")
+                #     or die "Failed to update profileid FROM $otherProfileId to $firstProfileId";
+                # dbDo($dbh, "DELETE FROM vdb_profile_types WHERE id = $otherProfileId")
+                #     or die "Failed to delete profile id $otherProfileId";
+                # if ( $count >= 5000 ) {
+                #     exit 1;
+                # }
+            }
+        }
+
+    }
+
+    dbDo($dbh, "UNLOCK TABLES") or die "Failed to unlock tables";
+}

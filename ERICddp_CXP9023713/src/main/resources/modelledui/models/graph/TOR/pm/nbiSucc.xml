@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Successful Requests"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="nginx_requests">
+        <reference table="sites" condition="nginx_requests.siteid = sites.id"/>
+        <reference table="servers" condition="nginx_requests.serverid = servers.id"/>
+        <reference table="k8s_pod_app_names" condition="nginx_requests.appid = k8s_pod_app_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND nginx_requests.statusCode = 200 AND k8s_pod_app_names.name = 'fileaccessnbi'</where>
+      <column db="numRequests" label="Successful Requests"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+
+</modelledgraph>

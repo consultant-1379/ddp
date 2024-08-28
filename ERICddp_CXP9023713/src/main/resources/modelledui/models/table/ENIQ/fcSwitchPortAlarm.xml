@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_fc_switch_port_alarms">
+    <reference table="sites" condition="eniq_fc_switch_port_alarms.siteid = sites.id"/>
+    <reference table="eniq_fc_port_switch_names" condition="eniq_fc_port_switch_names.id = eniq_fc_switch_port_alarms.switchNameID"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_fc_switch_port_alarms.date = '%date%' </where>
+
+  <column db="eniq_fc_port_switch_names.switchName" label="Switch Name "/>
+  <column db="eniq_fc_switch_port_alarms.port" label="Port "/>
+  <column db="eniq_fc_switch_port_alarms.state" label="State "/>
+</modelledtable>

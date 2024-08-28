@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="k8s_pod_cadvisor">
+  <reference table="sites" condition="k8s_pod_cadvisor.siteid = sites.id"/>
+  <reference table="k8s_pod_app_names" condition="k8s_pod_cadvisor.appid = k8s_pod_app_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND k8s_pod_cadvisor.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="k8s_pod_app_names.name"/>
+ </groupby>
+
+ <order columnid="tcpu" direction="DESC"/>
+
+ <column db="k8s_pod_app_names.name" label="App Name" id="appname"/>
+ <column db="SUM(k8s_pod_cadvisor.cpu_user + k8s_pod_cadvisor.cpu_sys)" label="Total CPU" id="tcpu"/>
+ <column db="SUM(k8s_pod_cadvisor.cpu_throttled)" label="Total CPU Throttled"/>
+ <column db="MAX(k8s_pod_cadvisor.mem_mb)" label="Max Memory"/>
+ <column db="SUM(k8s_pod_cadvisor.net_rx_mb + k8s_pod_cadvisor.net_tx_mb)" label="Total Network"/>
+
+ <ctxmenu keycol="appname" targettype="url" >
+  <item id="appname" label="Plot"/>
+  <urltarget arg="plot"/>
+ </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@jvm_lr_neo4j"
+  sampleinterval="900">
+
+  <table name="jvm_lr">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>nameid</multi>
+    <metricgroup name="stats:(\S*)">
+      <metric source="neo4j_vm_memory_pool_compressed_class_space" target="ccs_used" scale="1048576"/>
+      <metric source="neo4j_vm_memory_pool_metaspace" target="meta_used" scale="1048576"/>
+      <property name="nameid"  xsi:type="multilabelproperty" label="service" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

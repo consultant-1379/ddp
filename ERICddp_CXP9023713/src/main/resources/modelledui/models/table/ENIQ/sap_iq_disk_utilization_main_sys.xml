@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_data_layer_sap_iq">
+    <reference table="sites" condition="eniq_data_layer_sap_iq.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_data_layer_sap_iq.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="timeStamp"/>
+  <where>sites.name = '%site%' AND eniq_data_layer_sap_iq.time IN ( '%timeStamp%' ) AND eniq_data_layer_sap_iq.mainDbFiles IS NOT NULL</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instances" id="diskMainUtilInstance"/>
+  <column db="eniq_data_layer_sap_iq.mainDbFiles " label="MainDB Files"/>
+  <column db="eniq_data_layer_sap_iq.mainDbSizeInGb" label="MainDB Size(GB)"/>
+  <column db="eniq_data_layer_sap_iq.mainDbUsagePercentage" label="MainDB Usage(%)"/>
+  <column db="eniq_data_layer_sap_iq.sysmainDbFiles" label="SysMainDB Files"/>
+  <column db="eniq_data_layer_sap_iq.sysmainDbSizeInGb" label="SysMainDB Size(GB)"/>
+  <column db="eniq_data_layer_sap_iq.sysmainDbUsagePercentage" label="SysMainDB Usage(%)"/>
+
+  <ctxmenu keycol="diskMainUtilInstance" targettype="url" >
+    <item id="diskMainUtilInstance" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

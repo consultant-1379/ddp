@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="autoidservice"/>
+    <service name="autocellmgt"/>
+  </services>
+
+  <hooks module="TOR::cm::AutoID">
+    <hook>prestore</hook>
+  </hooks>
+
+  <table name="enm_saidserv_function_instr">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="moid" reftable="enm_saidserv_instr_motypes"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.autocellid.ejb.instrumentation.autocellid-services:type=InstrumentationMetrics$">
+      <metric source="dpsCmFunctionCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsCmFunctionAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsCmFunctionDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsENodeBFunctionCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsENodeBFunctionAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsENodeBFunctionDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellFDDCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellFDDAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellFDDDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellTDDCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellTDDAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellTDDDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranFreqRelationCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranFreqRelationAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranFreqRelationDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellRelationCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellRelationAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsEUtranCellRelationDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalENodeBFunctionCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalENodeBFunctionAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalENodeBFunctionDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalEUtranCellFDDCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalEUtranCellFDDAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalEUtranCellFDDDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalEUtranCellTDDCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalEUtranCellTDDAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsExternalEUtranCellTDDDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsSectorCarrierCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsSectorCarrierAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsSectorCarrierDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsSectorEquipmentFunctionCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsSectorEquipmentFunctionAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsSectorEquipmentFunctionDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsRfBranchCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsRfBranchAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsRfBranchDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsAntennaSubunitCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsAntennaSubunitAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsAntennaSubunitDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsRetSubUnitCreatedEventCount" target="dpsFunctionCreatedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsRetSubUnitAttributeChangedEventCount" target="dpsFunctionAttributeChangedEventCount" delta="true" filteridle="true"/>
+      <metric source="dpsRetSubUnitDeletedEventCount" target="dpsFunctionDeletedEventCount" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,2 @@
+BEGIN nameA
+BEGIN nameB

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="enm_neo4j_leader">
+    <reference table="sites" condition="enm_neo4j_leader.siteid = sites.id"/>
+    <reference table="servers" condition="enm_neo4j_leader.serverid = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND enm_neo4j_leader.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+ <column db="time" label="Time" formatter="ddpFormatTime"/>
+ <column db="servers.hostname" label="Leader"/>
+ <column db="dbname" label="Database Name"/>
+
+</modelledtable>

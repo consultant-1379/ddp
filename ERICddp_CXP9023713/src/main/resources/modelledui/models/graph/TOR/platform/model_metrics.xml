@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Count"
+>
+  <title value="Model Metrics"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_deployed" label="Deployed Models"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_undeployed" label="Un-deployed Models"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_unique" label="Unique Models"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_new" label="New Models"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_overwritten" label="Overwritten Models"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_notwritten" label="Not-written Models"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_validated" label="Models Validated"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="n_dependencies" label="Dependencies Calculated"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="orphansCreated" label="Orphans Created"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="orphansRemoved" label="Orphans Removed"/>
+    </query>
+    <query timecol="time">
+      <dbtables main="enm_mdt_execution">
+        <reference table="sites" condition="enm_mdt_execution.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="orphansReclaimed" label="Orphans Reclaimed"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>
+

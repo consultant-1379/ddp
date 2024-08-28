@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_domainproxy_v2_instr">
+    <reference table="sites" condition="enm_domainproxy_v2_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_domainproxy_v2_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+
+  <where>sites.name = '%site%' AND enm_domainproxy_v2_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="MAX(numberOfValidGrants)" label="MAX Valid Grants"/>
+  <column db="MAX(numberOfMaintainedGrants)" label="MAX Maintained Grants"/>
+  <column db="MAX(numberOfActiveCells)" label="MAX Active Cells"/>
+  <column db="MAX(numberOfInactiveCells)" label="MAX Inactive Cells"/>
+  <column db="MAX(numberOfTransmittingCells)" label="MAX Transmitting Cells"/>
+  <column db="MAX(numberOfRegisteredCbsds)" label="MAX Registered CBSDS"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="plotAbsoluteCounts" label="Plot graphs"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

@@ -1,0 +1,119 @@
+#!/usr/bin/perl
+
+#===============================================================================================================================
+# Script  : parseSMFRestartLogs
+# Author  : Ankit Singh (xankadi)
+# Purpose : The purpose of this script is to parse eniqServiceRestart_YYYY-MM-DD.txt files which contains information
+#           about restart timestamps of ENIQ SMF services.
+# Usage   : ${ANALYSIS_BIN}/ENIQ/parseSMFRestartLogs --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER}  --date ${SQL_DATE}
+#===============================================================================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $dbh;
+our $DEBUG = 0;
+our $smfRestartTable = "eniq_smf_restart_details";
+
+sub main {
+    my ($site, $server, $date, $logFile, $startTime);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "logfile=s" => \$logFile,
+        "debug=s" => \$DEBUG
+    );
+
+    if( $DEBUG > 0 ){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+
+    $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    my $serverId = getServerId($dbh, $siteId, $server);
+    my ($r_parsedData, $r_smfServiceNames) = parseSmfRestartLogs($logFile, $date);
+    my $r_smfNameIdMap = getIdMap($dbh, "eniq_smf_services", "service_id", "service_name", $r_smfServiceNames);
+    my $bcpFile = createBcpFile($r_parsedData, $r_smfNameIdMap, $siteId, $serverId);
+    removeOldData($siteId, $serverId, $date);
+    loadDb($bcpFile);
+    $dbh->disconnect;
+    if( $DEBUG > 0 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): $startTime\n";
+        print "End Time (EPOCH milliseconds): $endTime\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseSmfRestartLogs {
+    my ($logFileToBeParsed, $date) = @_;
+    my @r_parsedData = ();
+    my @r_smfServiceNames = ();
+
+    open FILE, "<$logFileToBeParsed" or die "Can't open file to read $logFileToBeParsed\n";
+    while (my $line = <FILE>){
+        if ( my ($serviceName, $restartTime) = $line =~ /^Service Name: \w+\-(.*).service.*(\d{2}:\d{2}:\d{2}).*$/ ) {
+            my $mySqlTime = "$date $restartTime";
+            my %r_dataForLine = (
+                serviceName => "$serviceName",
+                restartTime => "$mySqlTime"
+                );
+        push (@r_parsedData, \%r_dataForLine);
+        push (@r_smfServiceNames, $serviceName);
+        }
+        elsif (($serviceName, $restartTime) = $line =~ /^Service Name: (\w+).*(\d{2}:\d{2}:\d{2}).*$/ ) {
+            my $mySqlTime = "$date $restartTime";
+            my %r_dataForLine = (
+                serviceName => "$serviceName",
+                restartTime => "$mySqlTime"
+                );
+        push (@r_parsedData, \%r_dataForLine);
+        push (@r_smfServiceNames, $serviceName);
+        }
+    }
+    close FILE;
+    if ( $DEBUG > 1 ) { print Dumper ("Parsed Data", \@r_parsedData); }
+    return (\@r_parsedData, \@r_smfServiceNames);
+}
+
+sub createBcpFile {
+    my ($r_parsedData, $r_smfNameIdMap, $siteId, $serverId) = @_;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my $bcpFile = "$tmpDir/eniq_smf_restart.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    for my $lineData ( @$r_parsedData ) {
+        printf BCP "%d|%d|%d|%s|\n",
+            $siteId,
+            $serverId,
+            $r_smfNameIdMap->{$lineData->{serviceName}},
+            $lineData->{restartTime};
+    }
+    close BCP;
+    if ( $DEBUG > 2 ) { system ("/usr/bin/cat $bcpFile\n"); }
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($siteId, $serverId, $date) = @_;
+    my $deleteStatement = "DELETE FROM $smfRestartTable WHERE site_id = $siteId AND server_id = $serverId AND restart_time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 3 ) { print "SQL query for removal of old data: $deleteStatement \n" };
+    dbDo($dbh, $deleteStatement) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $insertStatement = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $smfRestartTable FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 4 ) { print "SQL query for removal of old data: $insertStatement \n" };
+    dbDo($dbh, $insertStatement) or die "Failed to load data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

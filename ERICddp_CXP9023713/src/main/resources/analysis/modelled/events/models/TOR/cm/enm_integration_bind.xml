@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_integration_bind">
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="autoprovisioning"/>
+    <service name="consautoprov"/>
+  </services>
+
+  <events>
+  <!-- 2019-05-31 13:12:20,638 INFO [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] (EJB default - 24) INTEGRATION_BIND {"BIND_TYPE":"Late","NODE_TYPE":"RadioNode","NODE_NAME":"LTE01dg2ERBS00017","_Thread":"EJB default - 24","PROJECT_NAME":"apTafProject91"} -->
+    <event name="INTEGRATION_BIND">
+      <metric source="PROJECT_NAME" target="projectName" />
+      <metric source="NODE_NAME" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="NODE_TYPE" target="netypeid" />
+      <metric source="BIND_TYPE" target="bindType" />
+      <property name="activityType" xsi:type="fixedproperty" value="Integration"/>
+    </event>
+    <event name="MIGRATION_BIND">
+      <metric source="PROJECT_NAME" target="projectName" />
+      <metric source="NODE_NAME" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="NODE_TYPE" target="netypeid" />
+      <metric source="BIND_TYPE" target="bindType" />
+      <property name="activityType" xsi:type="fixedproperty" value="Migration"/>
+    </event>
+  </events>
+</modelledevents>

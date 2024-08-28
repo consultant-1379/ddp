@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ namespace="prometheus@eniq_data_layer_sap_iq">
+  <table name="eniq_data_layer_sap_iq">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="sapIqVersionId" reftable="eniq_data_layer_sap_iq_versions"/>
+  </table>
+  <metricgroups>
+    <metricgroup name="datalayer">
+      <metric source="SAP_IQ_Version" target="sapIqVersionId"/>
+      <metric source="MainDB_Usage_Percentage" target="mainDbUsagePercentage"/>
+      <metric source="MainDB_Files" target="mainDbFiles" />
+      <metric source="MainDB_Size_In_GB" target="mainDbSizeInGb" />
+      <metric source="Sysmain_Usage_Percentage" target="sysmainDbUsagePercentage" />
+      <metric source="Sysmain_Files" target="sysmainDbFiles" />
+      <metric source="Sysmain_Size_In_GB" target="sysmainDbSizeInGb" />
+      <metric source="TempDB_Usage_Percentage" target="tempDbUsagePercentage"/>
+      <metric source="TempDB_Files" target="tempDbFiles"/>
+      <metric source="TempDB_Size_In_GB" target="tempDbSizeInGb" />
+      <metric source="Main_Cache_In_Use_Percentage" target="mainCacheInUsePercentage"/>
+      <metric source="Main_Cache_Hit_Rate_In_Percentage" target="mainCacheHitRateInPercentage"/>
+      <metric source="Temp_Cache_In_Use_Percentage" target="tempCacheInUsePercentage"/>
+      <metric source="Temp_Cache_Hit_Rate_In_Percentage" target="tempCacheHitRateInPercentage"/>
+      <metric source="Catalog_Cache_Usage_In_Percentage" target="cacheUsedInPercentage"/>
+      <metric source="Large_Memory_Flexible_Percentage" target="largeMemoryFlexiblePercentage"/>
+      <metric source="Large_Memory_Inflexible_Percentage" target="largeMemoryInflexiblePercentage"/>
+      <metric source="Total_Connections" target="totalConnections"/>
+      <metric source="Active_Connections" target="activeConnections"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

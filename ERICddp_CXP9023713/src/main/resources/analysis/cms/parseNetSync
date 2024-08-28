@@ -1,0 +1,308 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use Time::Local;
+use StatsDB;
+use DBI;
+
+our $DEBUG=0;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+our $IDLE = 0;
+our $GET_NODES = 1;
+our $SYNC = 2;
+
+main();
+
+sub main()
+{
+
+    my ($logFile,$site,$date,$tp);
+    my @timesStr = ();
+
+    my $result = GetOptions(
+			    "log=s" => \$logFile,
+			    "times=s{1,}" =>\@timesStr,
+			    "debug=i" => \$DEBUG,
+			    "site=s" => \$site,
+	                    "tp=s" => \$tp,
+			    "date=s" => \$date
+			    );
+    
+    ($result == 1) or die "Invalid options";
+
+    my $r_netSyncs = parseLog(\@timesStr, $logFile,$tp);
+
+    if ( $site )
+    {
+	storeResults( $site, $date, $r_netSyncs );
+    }
+}
+
+
+
+sub storeResults
+{
+    my ($site,$date,$r_NetSync) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+ 
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) 
+    {
+	print "ERROR: Could not find siteid for $site\n";
+	return;
+    }
+
+    exeSql($dbh,"DELETE FROM cms_net_sync WHERE siteid = $siteId AND starttime BETWEEN \'" . $date . " 00:00:00\' AND \'" . $date . " 23:59:59\'");
+
+    foreach my $r_OneSync ( @{$r_NetSync} )
+    {
+	exeSql($dbh, sprintf("INSERT INTO cms_net_sync (siteid, starttime, endtime, alive, synced) VALUES ( %d, %s, %s, %d, %d )",
+			     $siteId,
+			     $dbh->quote(timeToStr($r_OneSync->{'start'})),
+			     $dbh->quote(timeToStr($r_OneSync->{'end'})),
+			     $r_OneSync->{'alive'},
+			     $r_OneSync->{'synced'}));
+    }
+
+    $dbh->disconnect();
+}
+
+sub parseLog
+{
+    my ($r_timesStr,$logFile,$tp) = @_;
+
+    my @startTimes = ();
+    foreach my $aTimeStr ( @{$r_timesStr} )
+    {
+	push @startTimes, parseTime($aTimeStr);
+    }
+
+    my @netSyncs = ();
+
+
+    my %counter = ();
+    $counter{'ATTRIBUTE_SYNC_NODES'}->{'idle'} = 0;
+    $counter{'TOPOLOGY_SYNC_NODES'}->{'idle'} = 0;
+    $counter{'SYNCHRONIZATION_ONGOING_RBS'}->{'idle'} = 0;
+    $counter{'SYNCHRONIZATION_ONGOING_RNC'}->{'idle'} = 0;
+    $counter{'SYNCHRONIZATION_ONGOING_RANAG'}->{'idle'} = 0;
+    $counter{'SYNCHRONIZATION_ONGOING_ERBS'}->{'idle'} = 0;
+
+
+#     $counter{$tp}->{'idle'} = 0;
+#     if ( $tp eq 'THREADPOOL_EXECUTING' )
+#     {
+# 	$counter{'THREADPOOL_EXECUTING'}->{'idle'} = 6;
+#     }
+
+    my $timeIndex = 0;
+    my $state = $IDLE;
+    open INPUT, $logFile or die  "Cannot open input $logFile";
+    my ($dumpTime,$dumpTimeStr);
+
+    my ($alive,$total,$synced);
+    while ( (my $line = getLine()) && ($timeIndex <= $#startTimes) )
+    {
+	if ( $line =~ /^DUMP START \S+ (\S+) (\d+) (\S+) \S+ (\d+)/o )
+	{
+	    my ($month, $date, $time, $year) = ($1, $2, $3, $4);
+	    $dumpTime = parseNeadTime($year,$month,$date,$time);
+
+	    $dumpTimeStr = "$year-$month-$date $time";
+	    
+	    if ( $state == $IDLE )
+	    {
+		if ( $dumpTime >= $startTimes[$timeIndex] )
+		{
+		    if ( $DEBUG > 2 ) { print "$dumpTimeStr Start of sync timeIndex=$timeIndex startTimes[$timeIndex]=", timeToStr($startTimes[$timeIndex]), "\n"; }
+
+		    $state = $GET_NODES;
+		    $alive = -1;
+		    $total = -1;
+		    $synced = -1;
+		}
+	    }
+	    elsif ( $state == $SYNC )
+	    {
+		if ( $timeIndex < $#startTimes )
+		{
+		    if ( $dumpTime >= $startTimes[$timeIndex+1] )
+		    {
+			print "$dumpTimeStr OVERLAPPING SYNCS\n";
+			$timeIndex++;
+			$state=$IDLE;
+		    }
+		}
+	    }
+	}
+	elsif ( $state == $GET_NODES )
+	{
+	    if ( $line =~ /^TOTAL_NODES = (\d+)/ )
+	    {
+		my $value = $1;
+		if ( ($value > 0) && ($value == $total) )
+		{
+		    # We seen two conseq value for TOTAL_NODES giving the same result
+		    # so we can move to SYNC state
+		    if ( $DEBUG > 2 ) { print "$dumpTimeStr moving to sync state TOTAL_NODE=$value\n"; }
+		    $state = $SYNC;
+		}
+		$total = $value;
+	    }
+	}
+	elsif ( $state == $SYNC )
+	{
+	    if ( $line =~ /^DUMP STOP/ )
+	    {
+		if ( $DEBUG > 7 ) { print Dumper("counter", \%counter); }
+
+		my $finished = 1;
+		foreach my $counterName ( keys %counter )
+		{
+		    if ( $finished == 1 )
+		    {
+			if ( exists $counter{$counterName}->{'value'} )
+			{
+			    if ( $counter{$counterName}->{'value'} > $counter{$counterName}->{'idle'} )
+			    {
+				$finished = 0;
+				if ( $DEBUG > 5 ) { print "$dumpTimeStr $counterName = $counter{$counterName}->{'value'}\n"; }
+			    }
+			}
+			else
+			{
+			    if ( $DEBUG > 2 ) { print "$dumpTimeStr $counterName missing\n"; }
+			    $finished = 0;
+			}
+		    }
+		}
+		
+		if ( $finished == 1 )
+		{
+		    if ( $DEBUG > 2 ) { print "$dumpTimeStr syncCompletd for timeIndex=$timeIndex\n"; }
+
+		    $state = $IDLE;
+
+		    if ( $alive > 0 )
+		    {
+			my $r_NetSync = {
+			    'start'  => $startTimes[$timeIndex],
+			    'end'    => $dumpTime,
+			    'alive'  => $alive,
+			    'synced' => $synced
+			    };
+			push @netSyncs, $r_NetSync;
+		    }
+
+		    $timeIndex++;
+		}
+
+		foreach my $counterName ( keys %counter )
+		{
+		    delete $counter{$counterName}->{'value'}; # Reset counter
+		}
+	    }
+	    elsif ( $line =~ /^(\S+) = (\d+)/ )
+	    {
+		my ($name,$value) = ($1,$2);
+		
+		if ( exists $counter{$name} )
+		{
+		    $counter{$name}->{'value'} = $value;
+		}
+		elsif ( $name eq 'TOTAL_NODES' )
+		{
+		    $total = $value;
+		}
+		elsif ( $name eq 'ALIVE_NODES' )
+		{
+		    $alive = $value;
+		}	
+		elsif ( $name eq 'SYNCED_NODES' )
+		{
+		    $synced = $value;
+		}			
+	    }		
+	}		 
+    }
+
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("netSyncs", \@netSyncs ); }
+
+    return \@netSyncs;
+}
+
+sub getLine()
+{
+    my $line = <INPUT>;
+    if ( $DEBUG > 9 ) { print "getLine: line = $line"; }
+    return $line;
+}
+
+sub parseTime
+{
+    my ($timeStr) = @_;
+
+    my ($year,$month,$day,$hour,$min,$sec) = $timeStr =~
+	/^(\d{4,4})-(\d{2,2})-(\d{2,2}):(\d{2,2}):(\d{2,2})\.(\d{2,2})/;
+
+    my $timeVal = timelocal( $sec, $min, $hour, $day, $month - 1, $year - 1900 );
+
+    if ( $DEBUG > 7 ) { print "parseTime: timeStr=$timeStr timeVal=$timeVal(", timeToStr($timeVal), ")\n"; }
+
+    return $timeVal;
+}
+
+sub parseNeadTime
+{
+    my ($year,$month,$date,$time) = @_;
+
+    $month = $monthMap{$month};
+    my ($hour,$min,$sec) = split /:/, $time;
+    my $timeVal = timelocal( $sec, $min, $hour, $date, $month - 1, $year - 1900 );
+
+    return $timeVal;
+}
+
+sub timeToStr
+{
+    my ($timeVal) = @_;
+
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($timeVal);
+
+    return sprintf("%04d-%02d-%02d %02d:%02d:%02d", $year + 1900, $mon + 1, $mday, $hour, $min, $sec );
+}
+
+
+sub exeSql
+{
+    my ($dbh,$sql) = @_;
+
+    if ( $DEBUG > 2 ) { print "exeSql $sql\n"; }
+
+    $dbh->do($sql) or die "Failed to execute $sql" . $dbh->errstr;
+}
+    
+	

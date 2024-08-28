@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_mdt_execution">
+  </table>
+
+  <events>
+      <!--  MDT_Execution_Completed {"Undeployed Models":"1","Phase2 Time":451235,"Model Root Dir I/O Time":9873,"Phase1 Time":2044,"Total Time":465022,"Unique Models":"50","Start Time":"2018-12-09 11:19:47","Deployed Models":"50","Phase3 Time":953} -->
+      <event name="MDT_Execution_Completed" time_source="Start Time">
+        <metric source="Deployed Models" target="n_deployed"/>
+        <metric source="Undeployed Models" target="n_undeployed"/>
+        <metric source="Unique Models" target="n_unique"/>
+        <metric source="Total Time" target="t_total"/>
+        <metric source="Phase1 Time" target="t_phase1"/>
+        <metric source="Phase2 Time" target="t_phase2"/>
+        <metric source="Phase3 Time" target="t_phase3"/>
+        <metric source="Model Root Dir I/O Time" target="t_rootdir_io"/>
+        <metric source="Newly Deployed Models" target="n_new"/>
+        <metric source="Overwritten Models" target="n_overwritten"/>
+        <metric source="Not-Written Models" target="n_notwritten"/>
+        <metric source="Models Validated" target="n_validated"/>
+        <metric source="Dependencies Calculated" target="n_dependencies"/>
+        <metric source="Model JARs" target="n_model_jars"/>
+        <metric source="JARs with Model Meta Info" target="n_meta_info"/>
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,97 @@
+#!/bin/bash
+
+while getopts h:s:u:p:d:D: name
+  do
+  case $name in
+      h) HOST_NAME="${OPTARG}";;
+      s) SOURCE_FILE="${OPTARG}";;
+      u) USER_NAME="${OPTARG}";;
+      p) PASSWD="${OPTARG}";;
+      d) DEST_FILE="${OPTARG}";;
+      D) DEST_DIR="${OPTARG}";;
+  esac
+done
+
+usage() {
+    echo "USAGE: $0 -h <host name> -s <source file> -u <user name> -p <password> -d <destination path>"
+    exit 5
+}
+
+if [ -z "${HOST_NAME}" ] ; then
+    usage "Must supply a host name"
+fi
+
+if [ -z "${USER_NAME}" ] ; then
+    usage "Must supply a valid user name"
+fi
+
+if [ -z "${PASSWD}" ] ; then
+    usage "Must supply a valid password"
+fi
+
+if [ -z "${DEST_DIR}" ] ; then
+    usage "Must supply a destination path"
+fi
+
+if [ -r /usr/local/bin/expect ] ; then
+    EXPECT=/usr/local/bin/expect
+    SCP=/bin/scp
+    STRIP_CR="dos2unix -437"
+else
+    EXPECT=/usr/bin/expect
+    SCP=/usr/bin/scp
+    STRIP_CR="tr -d '\015'"
+fi
+
+    EXPECT_SCRIPT=/tmp/ilo_rexec
+    cat > ${EXPECT_SCRIPT} <<EOF
+log_user 0
+set timeout 30
+spawn ${SCP} -o UserKnownHostsFile=/dev/null -o CheckHostIP=no -o StrictHostKeyChecking=no -o NumberOfPasswordPrompts=1 ${SOURCE_FILE} ${USER_NAME}@${HOST_NAME}:${DEST_FILE}
+log_user 1
+expect {
+    "yes/no)?" {
+        send "yes\r"
+    }
+    "lost connection" {
+        send_user "Unknown Host"
+        exit 4
+    }
+EOF
+
+    if [ ! -z "${PASSWD}" ] ; then
+        cat >> ${EXPECT_SCRIPT} <<EOF
+    -re "^Password:|password:" {
+        send "${PASSWD}\r"
+        expect {
+             "Permission denied*" { 
+                  send_user "Wrong password" 
+                  exit 2
+             }
+             "*No such file or directory*" {
+                  send_user "ERROR: No such file or directory\n"
+                  exit 3
+             }
+        }
+    }
+EOF
+    fi
+    cat >> ${EXPECT_SCRIPT} <<EOF
+    timeout {
+        send_user "ERROR: Timeout\n"
+        exit 100
+    }
+    eof {}
+}
+EOF
+
+    # Need strip out ^M added by expect and spawn or password prompt logs
+    ${EXPECT} -f ${EXPECT_SCRIPT} 2>&1 | ${STRIP_CR} | grep -v "$USER_NAME@"
+    EXIT_CODE=${PIPESTATUS[0]}
+
+    /bin/rm -f ${EXPECT_SCRIPT}
+
+    if [ ${EXIT_CODE} -ne 0 ] ; then
+        echo "ERROR: Non-zero exit (${EXIT_CODE}) for ${USER_NAME}@${HOST_NAME} ${CMD}"
+        exit ${EXIT_CODE}
+    fi      

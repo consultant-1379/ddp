@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+###########################################################################################################################
+# --------- parseHardwareDetails -----------
+#  This script parses the OCS and BIS hardware details log files for DDP and stores data to DB
+#  @author - Akshay Randive
+#  usage parseHardwareDetails --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+###########################################################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dbh, $site, $siteId, $server, $serverId, $logFile, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $r_parsedHardwareInfo = parseData($logFile);
+    my $bcpFile = createBcpFile($r_parsedHardwareInfo, $siteId, $serverId, $date);
+    my $table = "bis_ocs_hardware_details";
+    removeOldData($table, $dbh, $siteId, $serverId, $date);
+    loadDb($bcpFile, $table, $dbh);
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($logFile) = @_;
+    my @ocsBisHardwareInfoArray = ();
+    my %ocs_bis_hash;
+    my $line = `tail -1 $logFile`;
+    chomp($line);
+    if ($line =~ /^"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(\d+)"\s+"(.*)"\s+"(\d+)"\s+"(\d+)"$/) {
+        %ocs_bis_hash = getHashData($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+        push (@ocsBisHardwareInfoArray, \%ocs_bis_hash);
+    } elsif ($line =~ /^".*"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(.*)"\s+"(\d+)"\s+"(.*)"\s+"(\d+)"\s+"(\d+)"\s+"(.*)"$/) {
+        %ocs_bis_hash = getHashData($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+        push (@ocsBisHardwareInfoArray, \%ocs_bis_hash);
+    }
+    if ( $DEBUG > 1 ) {
+        print Dumper("OCS-BIS Hardware Information", @ocsBisHardwareInfoArray);
+    }
+
+    return (\@ocsBisHardwareInfoArray);
+}
+
+sub getHashData($$$$$$$$$$$) {
+    my ($serverSystemValue, $bios, $osName, $osVersion, $systemBootTime, $phyMem, $totalDisk, $processors, $cpuType, $cpuClockSpeed, $totalCores) = @_;
+    my $sbtDate = convertDateToSql($systemBootTime);
+    $phyMem  =~ s/[^0-9]//g;
+    my %ocs_bis_hash = (
+        serverType => "$serverSystemValue",
+        bios => "$bios",
+        osName => "$osName",
+        osVersion => "$osVersion",
+        systemBootTime => "$sbtDate",
+        phyMem => "$phyMem",
+        totalDisk => "$totalDisk",
+        processors => "$processors",
+        cpuType => "$cpuType",
+        cpuClockSpeed => "$cpuClockSpeed",
+        totalCores => "$totalCores"
+    );
+    return (%ocs_bis_hash);
+}
+
+sub createBcpFile($$$$) {
+    my ($r_parsedHardwareInfo, $siteId, $serverId, $date) = @_;
+    my $hardwareBcpFile = getBcpFileName("hardware_details");
+    open BCP, ">$hardwareBcpFile" or die "Cannot open BCPFile $hardwareBcpFile";
+    for my $ocsBisHardwareInfo ( @$r_parsedHardwareInfo ) {
+        printf BCP "%s|%d|%d|%s|%s|%s|%s|%s|%s|%s|%d|%s|%d|%d\n",
+            $date,
+            $siteId,
+            $serverId,
+            $ocsBisHardwareInfo->{serverType},
+            $ocsBisHardwareInfo->{bios},
+            $ocsBisHardwareInfo->{osName},
+            $ocsBisHardwareInfo->{osVersion},
+            $ocsBisHardwareInfo->{systemBootTime},
+            $ocsBisHardwareInfo->{phyMem},
+            $ocsBisHardwareInfo->{totalDisk},
+            $ocsBisHardwareInfo->{processors},
+            $ocsBisHardwareInfo->{cpuType},
+            $ocsBisHardwareInfo->{cpuClockSpeed},
+            $ocsBisHardwareInfo->{totalCores};
+
+    }
+    close BCP;
+    if ($DEBUG > 2) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $hardwareBcpFile");
+    }
+    return $hardwareBcpFile;
+}
+
+sub convertDateToSql($) {
+    my $timeStamp = shift;
+    my ($month, $day, $year, $hour, $min, $sec, $ampm);
+    if ($timeStamp =~ /^(\d+)\/(\d+)\/(\d{4,4}),\s+(\d+):(\d+):(\d+)\s+(\w+)/) {
+        $month = $1; $day = $2; $year = $3; $hour = $4; $min = $5; $sec = $6; $ampm = $7;
+        if ( $ampm eq 'PM' ) {
+            if ( $hour != 12 ) {$hour += 12;}
+        }
+    }
+    elsif ($timeStamp =~ /^(\d+)\/(\d+)\/(\d{4,4}),\s+(\d+):(\d+):(\d+)/) {
+        $month = $1; $day = $2; $year = $3; $hour = $4; $min = $5; $sec = $6;
+    }
+    return "$year-$month-$day $hour:$min:$sec";
+}
+
+sub removeOldData($$$$$) {
+    my ($table, $dbh, $siteId, $serverId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND serverId = $serverId AND date = '$date' ";
+    if ( $DEBUG > 3 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($bcpFile, $table, $dbh) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

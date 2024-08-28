@@ -1,0 +1,13 @@
+#!/usr/bin/env perl
+
+use Time::Local;
+
+while ( $line = <STDIN> )
+{
+    $_ = $line;
+    ($day, $month, $year, $hour, $min,$sec, $remainder) = /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+) (.*)$/;
+    $time = timelocal($sec, $min, $hour, $day, $month - 1, $year + 100);
+    $time += int $ARGV[0]/2;
+    ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($time);
+    printf "%02d-%02d-%02d:%02d:%02d:%02d $remainder\n", $mday, $mon + 1, $year - 100, $hour, $min, $sec;
+}

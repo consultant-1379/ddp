@@ -1,0 +1,594 @@
+#!/usr/bin/env perl
+########################################################################################
+#  Description --------- parseWfData -----------
+#  This script parses the Wfinstr log file for DDP
+#  and store data to Db
+#  usage parseWfData -- ${ANALYSIS_BIN}/ENIQ/parseWfData --dir ${DATADIR}/ENIQ
+#                    --site ${SITE} --date ${SQL_DATE}
+########################################################################################
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+our $DEBUG = 0;
+sub parseSGEH($) {
+    my ($logFile) = @_;
+    my @records = ();
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseSGEH: line=$line"; }
+        my @fields = split(/;/,$line);
+        if ( $#fields >= 7  ) {
+            my $r_record = {
+                'min_start' => $fields[1],
+                'max_end'   => $fields[2],
+                'wf'        => $fields[3],
+                'files'     => $fields[4],
+                'events'    => $fields[5],
+                'bytes'     => $fields[6],
+                'delay'     => $fields[7]
+            };
+            foreach my $key ( 'events', 'bytes' ) {
+                if ( $r_record->{$key} eq "NULL" ) {
+                    $r_record->{$key} = 0;
+                }
+            }
+            if ( $DEBUG > 8 ) { print Dumper("parseSGEH: r_record", $r_record ); }
+            push @records, $r_record;
+        } else {
+            if ( $DEBUG > 0 ) { print "WARN: parseSGEH didn't match #fields=$#fields line $line\n"; }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 7 ) { print Dumper("parseSGEH: records", \@records ); }
+    return \@records;
+}
+sub parseEFA($$) {
+    my ($logFile,$tzOffsetSec) = @_;
+    my @records = ();
+    my %recByIdTime = ();
+    open INPUT, $logFile or die "Cannot read log $logFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseEFA: line=$line"; }
+        chop $line;
+        my @fields = split(/;/,$line);
+        if ( $#fields >= 6  ) {
+            my $r_record = $recByIdTime{$fields[2]}->{$fields[5]};
+            if ( ! defined $r_record ) {
+                $r_record = {
+                    'wf'    => $fields[2],
+                    'min_starttr' => $fields[5],
+                    'min_start' => StatsTime::parseTime( $fields[5], $StatsTime::TIME_YYYYMDHMS ) + $tzOffsetSec,
+                    'max_end'   => StatsTime::parseTime( $fields[6], $StatsTime::TIME_YYYYMDHMS ),
+                    'files' => $fields[3],
+                    'events' => 0,
+                    'bytes'  => 0,
+                    'delay'  => 0
+                };
+                push @records, $r_record;
+                $recByIdTime{$fields[2]}->{$fields[5]} = $r_record;
+            }
+            if ( $fields[1] eq 'LTEEFA_HFA' ) {
+                $r_record->{'hfa'} = $fields[4];
+            } elsif ( $fields[1] eq 'LTEEFA_CFA' ) {
+                $r_record->{'cfa'} = $fields[4];
+            }
+            if ( $DEBUG > 8 ) { print Dumper("parseEFA: r_record", $r_record ); }
+        } else {
+            if ( $DEBUG > 0 ) { print "WARN: parseEFA didn't match #fields=$#fields line $line\n"; }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 7 ) { print Dumper("parseSessions: records", \@records ); }
+    return \@records;
+}
+sub groupEFA($) {
+    my ($r_records) = @_;
+    my @sortedRecs = sort { $a->{'min_start'} <=> $b->{'min_start'} } @{$r_records};
+    my @groups = ();
+    my $r_currGrp = undef;
+    foreach my $r_record ( @sortedRecs ) {
+        my $wfId = $r_record->{'wfid'};
+        my $wfStartTime = $r_record->{'min_start'};
+        my $wfEndTime = $r_record->{'max_end'};
+        if ( ! defined $r_currGrp || exists $r_currGrp->{'wf'}->{$wfId} || abs($r_currGrp->{'min_start'} - $wfStartTime) > 10 ) {
+            if ( $DEBUG > 5 ) { print Dumper("groupEFA: r_currGrp", $r_currGrp); }
+            $r_currGrp = {
+                'min_start' => $wfStartTime,
+                'max_end'   => $wfEndTime,
+                'wf'  => { $wfId => $r_record }
+            };
+            push @groups, $r_currGrp;
+        } else {
+            $r_currGrp->{'wf'}->{$wfId} = $r_record;
+            if ( $wfStartTime < $r_currGrp->{'min_start'} ) {
+                $r_currGrp->{'min_start'} = $wfStartTime;
+            }
+            if ( $wfEndTime > $r_currGrp->{'max_end'} ) {
+                $r_currGrp->{'max_end'} = $wfEndTime;
+            }
+        }
+        $r_currGrp->{'files'} += $r_record->{'files'};
+        $r_currGrp->{'hfa'} += $r_record->{'hfa'};
+        $r_currGrp->{'cfa'} += $r_record->{'cfa'};
+    }
+    if ( $DEBUG > 7 ) { print Dumper("groupEFA: groups", \@groups ); }
+    return \@groups;
+}
+sub groupWF($$) {
+    my ($r_recordsByWf,$wf) = @_;
+    my $r_records = $r_recordsByWf->{$wf};
+    if ( ! defined $r_records ) {
+        return;
+    }
+    my @groupedRecords = ();
+    my %currRecordByInst = ();
+    foreach my $r_record ( @{$r_records} ) {
+        my $r_currRecord = $currRecordByInst{$r_record->{'inst'}};
+        if ( ! defined $r_currRecord ) {
+            $r_currRecord = $r_record;
+            $currRecordByInst{$r_record->{'inst'}} = $r_record;
+            push @groupedRecords, $r_record;
+        } else {
+            my $time_diff = parseTime($r_record->{'time'}, $StatsTime::TIME_SQL) - parseTime($r_currRecord->{'time'}, $StatsTime::TIME_SQL);
+            if ( $r_record->{'time'} eq $r_currRecord->{'time'} || ( $time_diff < 5) ) {
+                foreach my $key ( keys %{$r_record->{'stats'}} ) {
+                    my $successHandlingRecord;
+                    my $successHandlingStr;
+                    my @eventIds;
+                    if ( $key eq "SuccEventList" ) {
+                        $successHandlingRecord = $r_record->{'stats'}->{$key};
+                        ($successHandlingStr) = $successHandlingRecord =~ /^\[(.*)\]$/;
+                        @eventIds = split /EventId=/,$successHandlingStr;
+                    }
+                    if ( defined  $r_currRecord->{'stats'}->{$key} ) {
+                        if ( $key eq "SuccEventList" ) {
+                            foreach my $index (1 .. $#eventIds) {
+                                my ($eventId, $totalIngress, $successIngress, $dbEgress, $candForFilter) = $eventIds[$index] =~ /^(\d+),\w+=(\d+),\w+=(\d+),\w+=(\d+),\w+=(\d+),?$/;
+                                my $eventHash = ${$r_currRecord->{'stats'}->{$key}};
+                                $eventHash->{$eventId}->{'totalIngress'} = $eventHash->{$eventId}->{'totalIngress'} + $totalIngress;
+                                $eventHash->{$eventId}->{'successIngress'} = $eventHash->{$eventId}->{'successIngress'} + $successIngress;
+                                $eventHash->{$eventId}->{'dbEgress'} = $eventHash->{$eventId}->{'dbEgress'} + $dbEgress;
+                                $eventHash->{$eventId}->{'candForFilter'} = $eventHash->{$eventId}->{'candForFilter'} + $candForFilter;
+                                $r_currRecord->{'stats'}->{$key} = \$eventHash;
+                            }
+                            if ( $DEBUG > 4 ) {print Dumper("Current Record:",\$r_currRecord);}
+                        } else {
+                            $r_currRecord->{'stats'}->{$key} = $r_currRecord->{'stats'}->{$key} + $r_record->{'stats'}->{$key};
+                        }
+                    } else {
+                        $r_currRecord->{'stats'}->{$key} = $r_record->{'stats'}->{$key};
+                        if ( $key eq "SuccEventList" ) {
+                            my $eventHash = {};
+                            if ( $DEBUG > 5 ) { print Dumper ("Events Id line :",\@eventIds); }
+                            foreach my $index (1 .. $#eventIds){
+                                my ($eventId, $totalIngress, $successIngress, $dbEgress, $candForFilter) = $eventIds[$index] =~ /^(\d+),\w+=(\d+),\w+=(\d+),\w+=(\d+),\w+=(\d+),?$/;
+                                $eventHash->{$eventId}->{'totalIngress'} = $totalIngress;
+                                $eventHash->{$eventId}->{'successIngress'} = $successIngress;
+                                $eventHash->{$eventId}->{'dbEgress'} = $dbEgress;
+                                $eventHash->{$eventId}->{'candForFilter'} = $candForFilter;
+                            }
+                            if ( $DEBUG > 5 ) {print Dumper("Event List:",\$eventHash); }
+                            $r_currRecord->{'stats'}->{$key} = \$eventHash;
+                        }
+                        if ( $DEBUG > 5 ) {print Dumper("Curr Record:",\$r_currRecord); }
+                    }
+                }
+            } else {
+                $currRecordByInst{$r_record->{'inst'}} = $r_record;
+                push @groupedRecords, $r_record;
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("groupWF: $wf groupedRecords",\@groupedRecords); }
+    $r_recordsByWf->{$wf} = \@groupedRecords;
+}
+
+sub store($$$$$) {
+    my ($site,$date,$r_efaRecs,$r_sgehRecs,$r_recordsByWf) = @_;
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    (( defined $siteId ) && ( $siteId > -1 )) or die "ERROR: Cannot find siteid for $site";
+    my %allWf = ();
+    if ( defined $r_efaRecs ) {
+        foreach my $r_record ( @{$r_efaRecs} ) {
+            $allWf{$r_record->{'wf'}} = 1;
+        }
+    }
+    if ( defined $r_sgehRecs ) {
+        foreach my $r_record ( @{$r_sgehRecs} ) {
+            $allWf{$r_record->{'wf'}} = 1;
+        }
+    }
+    my @wfList = keys %{$r_recordsByWf};
+    foreach my $wf ( @wfList ) {
+        foreach my $r_record ( @{$r_recordsByWf->{$wf}} ) {
+            my $wfName = $wf . "." . $r_record->{'inst'};
+            $allWf{$wfName} = 1;
+        }
+    }
+    my @allWfList = keys %allWf;
+    my $r_wfIdMap = getIdMap($dbh,"eniq_workflow_names","id", "name", \@allWfList );
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    if ( defined $r_efaRecs && $#{$r_efaRecs} > -1 ) {
+        my $bcpFileName = "$tmpDir/efa.bcp";
+        my @sortedRecs = sort { $a->{'min_start'} <=> $b->{'min_start'} } @{$r_efaRecs};
+        open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+        foreach my $r_record ( @sortedRecs ) {
+            my $wfStartTime = $r_record->{'min_start'};
+            my $wfEndTime = $r_record->{'max_end'};
+            printf BCP "%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+            $siteId,
+            formatTime($r_record->{'min_start'}, $StatsTime::TIME_SQL),
+            formatTime($r_record->{'max_end'}, $StatsTime::TIME_SQL),
+            $r_wfIdMap->{$r_record->{'wf'}},
+            $r_record->{'files'},
+            $r_record->{'events'},
+            $r_record->{'bytes'},
+            $r_record->{'delay'},
+            $r_record->{'cfa'},
+            $r_record->{'hfa'};
+        }
+        close BCP;
+        dbDo($dbh, sprintf("DELETE FROM eniq_wf_efa WHERE siteid = %d AND starttime BETWEEN '%s' AND '%s'",
+                           $siteId,
+                           formatTime($sortedRecs[0]->{'min_start'}, $StatsTime::TIME_SQL),
+                           formatTime($sortedRecs[$#sortedRecs]->{'min_start'}, $StatsTime::TIME_SQL)))
+            or die "Failed to remove old data";
+        dbDo($dbh,"LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE eniq_wf_efa")
+            or die "Failed to load data";
+    }
+    if ( defined $r_sgehRecs && $#{$r_sgehRecs} > -1 ) {
+        my $sgehBcpFile = "$tmpDir/sgeh.bcp";
+        open BCP, ">$sgehBcpFile" or die "Cannot open $sgehBcpFile";
+        foreach my $r_record ( @{$r_sgehRecs} ) {
+            printf BCP "%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\n",
+            $siteId, $r_record->{'min_start'}, $r_record->{'max_end'},
+            $r_wfIdMap->{$r_record->{'wf'}},
+            $r_record->{'files'},$r_record->{'events'},$r_record->{'bytes'},
+            $r_record->{'delay'};
+        }
+        close BCP;
+        dbDo($dbh, sprintf("DELETE FROM eniq_wf_sgeh WHERE siteid = %d AND starttime BETWEEN '%s' AND '%s'",
+                           $siteId, $r_sgehRecs->[0]->{'min_start'}, $r_sgehRecs->[$#{$r_sgehRecs}]->{'min_start'}))
+            or die "Failed to remove old data".$dbh->errstr."\n";
+        dbDo($dbh,"LOAD DATA LOCAL INFILE '$sgehBcpFile' INTO TABLE eniq_wf_sgeh")
+            or die "Failed to load data".$dbh->errstr."\n";
+    }
+
+    # Data from wfinstr.log
+    my %tableMap = (
+        'STREAMING_CTR.WF02_CTR_Stream_Collector'   => 'eniq_streaming_ctr_collector',
+        'STREAMING_CTUM.WF02_CTUM_Stream_Collector' => 'eniq_streaming_ctum_collector',
+        'EBSL.WF_LTEES_COUNTER'                     => 'eniq_ltees_counter',
+        'SGEH.WF_SGEH_Processing_NFS'               => 'eniq_sgeh_processing_nfs',
+        'LTEEFA_EE.WF06_Processor'                  => 'eniq_lteefa_processor',
+        'LTEEFA_EE.WF08_LoadBalanceRfEvents'        => 'eniq_lteefa_rfevents_load_balance',
+        'STREAMING_DVTP.WF02_EPG_Stream_Collector'  => 'eniq_streaming_dvtp_collector',
+        'STREAMING_DVTP.WF03_Processing'            => 'eniq_dvtp_processor',
+        'EBSL.WF_LTEES_TOPOLOGY_DELTA_OSSRC1'       => 'eniq_delta_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_DELTA_OSSRC2'       => 'eniq_delta_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_DELTA_OSSRC3'       => 'eniq_delta_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_DELTA_OSSRC4'       => 'eniq_delta_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_OSSRC1'             => 'eniq_ltees_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_OSSRC2'             => 'eniq_ltees_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_OSSRC3'             => 'eniq_ltees_topology',
+        'EBSL.WF_LTEES_TOPOLOGY_OSSRC4'             => 'eniq_ltees_topology'
+        );
+    my %ctrEventDistrib = ();
+    my %dvtpEventDistrib = ();
+
+    foreach my $wf ( keys %{$r_recordsByWf} ) {
+        if ( $DEBUG > 0 ) { print "store: wf=$wf\n"; }
+        if ( ! exists $tableMap{$wf} ) {
+            print "WARN: Unknown workflow $wf\n";
+            next;
+        }
+        print "Loading for WF $wf\n";
+        # Get the available columns in the target table
+        my $r_schemaRows = dbSelectAllArr($dbh, "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '$tableMap{$wf}' AND TABLE_SCHEMA = DATABASE()");
+        my @dataCols = ();
+        foreach my $r_schemaRow ( @{$r_schemaRows} ) {
+            if ( $DEBUG > 8 ) { print Dumper("TableColumns: @$r_schemaRow\n"); }
+            my $columnName = $r_schemaRow->[0];
+            if ( $columnName ne 'time' && $columnName ne 'siteid' && $columnName ne 'wfid' ) {
+                push @dataCols, $columnName;
+            }
+        }
+        if ( $DEBUG > 3 ) { print "storeData: dataCols " . join(",", @dataCols) . "\n"; }
+        my $bcpFileName = $tmpDir . "/" . $wf . ".bcp";
+        my $bcpRFEnrich= "${tmpDir}/rfEnrich.bcp";
+        if ( -e $bcpRFEnrich ) {
+            unlink($bcpRFEnrich);
+        }
+        open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+        my $r_columns;
+        my $bcpSuccess= "${tmpDir}/successHandlingTable.bcp";
+        if ( -e $bcpSuccess ) {
+            unlink($bcpSuccess);
+        }
+        foreach my $r_record ( @{$r_recordsByWf->{$wf}} ) {
+            my $wfName = $wf . "." . $r_record->{'inst'};
+
+            # Success handling logic
+            my $successHandlingHash = delete $r_record->{'stats'}->{'SuccEventList'};
+            open BCPSuccess, ">>$bcpSuccess" or die "Cannot open $bcpSuccess";
+            if ( defined $successHandlingHash ) {
+                foreach my $eventId ( keys ${$successHandlingHash} ) {
+                    printf BCPSuccess "%s,%d,%d,%d,%d,%d,%d\n",
+                            $r_record->{'time'},
+                            $siteId,
+                            $eventId,
+                            ${$successHandlingHash}->{$eventId}->{'totalIngress'},
+                            ${$successHandlingHash}->{$eventId}->{'successIngress'},
+                            ${$successHandlingHash}->{$eventId}->{'dbEgress'},
+                            ${$successHandlingHash}->{$eventId}->{'candForFilter'};
+                }
+            }
+            close BCPSuccess;
+
+            # Handling for RF Enrichment data for LTEEFA_EE.WF06_Processor WF.
+            my $rfEventDistRecord = delete $r_record->{'stats'}->{'RFEventDistribution'};
+            if ( defined $rfEventDistRecord ) {
+                open BCPRF, ">>$bcpRFEnrich" or die "Cannot open $bcpRFEnrich";
+                my ($rfEventDistStr) = $rfEventDistRecord =~ /^\[(.*)\]$/;
+                my @record = ();
+                my @eventIds = split /EventId=/,$rfEventDistStr;
+                for my $index (1 .. $#eventIds) {
+                    my @eventList = $eventIds[$index] =~ /^(\d+),\w+=(\d+),\w+=(\d+),\w+=(\d+),?$/;
+                    push @record, [@eventList];
+                }
+                my $r_parsedData = \@record;
+                for my $i (0 .. $#$r_parsedData) {
+                    printf BCPRF "%s,%d",
+                    $r_record->{'time'}, $siteId;
+                    for my $j (0 .. $#{$r_parsedData->[$i]}) {
+                        print BCPRF ",".$r_parsedData->[$i][$j];
+                    }
+                    print BCPRF "\n";
+                }
+            }
+            close BCPRF;
+
+            # EventCounts from the CTR streaming WF need special handling
+            # so we strip it out here from the record
+            my $eventCountsStr = delete $r_record->{'stats'}->{'EventCounts'};
+            if ( defined $eventCountsStr ) {
+                $eventCountsStr =~ s/^\[//;
+                $eventCountsStr =~ s/\]$//;
+                my @events = split(",",$eventCountsStr);
+                my ($recordDate,$recordHour) = $r_record->{'time'} =~ /^(\S+) (\d{2,2}):/;
+                foreach my $event ( @events ) {
+                    my ($eventId,$eventCount) = $event =~ /^(\d+)=(\d+)$/;
+                    if ( defined $eventId ) {
+                        if ( $wf eq 'STREAMING_CTR.WF02_CTR_Stream_Collector' ) {
+                            $ctrEventDistrib{$recordDate}->{$recordHour}->{$eventId} += $eventCount;
+                        } elsif ( $wf eq 'STREAMING_DVTP.WF02_EPG_Stream_Collector' ) {
+                            $dvtpEventDistrib{$recordDate}->{$recordHour}->{$eventId} += $eventCount;
+                        }
+                    }
+                }
+            }
+            my @outputValues = ( $r_record->{'time'}, $siteId, $r_wfIdMap->{$wfName} );
+            foreach my $columnName ( @dataCols ) {
+                my $value = $r_record->{'stats'}->{$columnName};
+                if ( defined $value ) {
+                    push @outputValues, $value;
+                } else {
+                    push @outputValues, '\N';
+                }
+            }
+            print BCP join("\t", @outputValues), "\n";
+        }
+        close BCP;
+        if ( -s $bcpSuccess ){
+            my $deleteSql = "DELETE FROM eniq_sgeh_success_handling WHERE siteid = $siteId AND time BETWEEN '$r_recordsByWf->{$wf}->[0]->{'time'}' AND '$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}'";
+            if ( $DEBUG > 5 ) { print "SQL query for removal of old data: $deleteSql \n" };
+            dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+            my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpSuccess\' INTO TABLE eniq_sgeh_success_handling FIELDS TERMINATED BY ','";
+            if ( $DEBUG > 6 ) { print "SQL query for inserting data: $insertSql \n" };
+            dbDo($dbh, $insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+        }
+        unlink($bcpSuccess);
+
+        # Data loading and removal for RF Enrichment
+        if ( $wf eq 'LTEEFA_EE.WF06_Processor' && -s $bcpRFEnrich ) {
+            if ( "'$r_recordsByWf->{$wf}->[0]->{'time'}'" ne ' ' && "'$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}'" ne ' ' ) {
+            my $deleteSql = "DELETE FROM eniq_lteefa_rf_enrichment WHERE siteid = $siteId AND time BETWEEN '" .
+            $r_recordsByWf->{$wf}->[0]->{'time'} . "' AND '" .
+            $r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'} . "'";
+            if ( $DEBUG > 5 ) { print "SQL query for removal of old data: $deleteSql \n" };
+            dbDo($dbh, $deleteSql) or die "Failed to delete old RF enrichment data".$dbh->errstr."\n";
+            }
+            my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpRFEnrich\' INTO TABLE eniq_lteefa_rf_enrichment FIELDS TERMINATED BY ','";
+            if ( $DEBUG > 6 ) { print "SQL query for inserting RF enrichment data: $insertSql \n" };
+            dbDo($dbh, $insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+            unlink($bcpRFEnrich);
+        }
+
+        if ( $wf =~ /EBSL\.WF_LTEES_TOPOLOGY_DELTA_OSSRC(\d)/ ) {
+            if ( "'$r_recordsByWf->{$wf}->[0]->{'time'}'" ne ' ' && "'$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}'" ne ' ' ) {
+            my $deleteSql = "DELETE FROM $tableMap{$wf} WHERE siteid = $siteId AND time BETWEEN
+            '$r_recordsByWf->{$wf}->[0]->{'time'}' AND
+            '$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}' AND
+            OSSRC = $1";
+            dbDo($dbh, $deleteSql) or die "Failed to remove old data".$dbh->errstr."\n";
+            }
+        } elsif ( $wf =~ /(EBSL\.WF_LTEES_TOPOLOGY_OSSRC\d)/ ) {
+             my $wfName = $wf . "." . $r_recordsByWf->{$wf}->[0]->{'inst'};
+             if ( "'$r_recordsByWf->{$wf}->[0]->{'time'}'" ne ' ' && "'$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}'" ne ' ' ) {
+             my $deleteSql = "DELETE FROM $tableMap{$wf} WHERE siteid = $siteId AND time BETWEEN
+            '$r_recordsByWf->{$wf}->[0]->{'time'}' AND
+            '$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}' AND
+             wfid = $r_wfIdMap->{$wfName}";
+             dbDo($dbh, $deleteSql) or die "Failed to remove old data".$dbh->errstr."\n";
+             }
+        } else {
+            if ( "'$r_recordsByWf->{$wf}->[0]->{'time'}'" ne ' ' && "'$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}'" ne ' ' ) {
+            my $deleteSql = "DELETE FROM $tableMap{$wf} WHERE siteid = $siteId AND time BETWEEN
+            '$r_recordsByWf->{$wf}->[0]->{'time'}' AND
+            '$r_recordsByWf->{$wf}->[$#{$r_recordsByWf->{$wf}}]->{'time'}'";
+            dbDo($dbh, $deleteSql) or die "Failed to remove old data".$dbh->errstr."\n";
+            }
+        }
+            if ( -s $bcpFileName ) {
+            my $loadSql = "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE $tableMap{$wf}
+            (time,siteid,wfid," . join(",",@dataCols) . ")";
+            dbDo($dbh, $loadSql) or die "Failed to load new data".$dbh->errstr."\n";
+            }
+    }
+
+    my %eventDistribMap = (
+        'eniq_ctr_eventdistrib' => \%ctrEventDistrib,
+        'eniq_dvtp_eventdistrib' => \%dvtpEventDistrib
+        );
+    foreach my $datetime ( keys %ctrEventDistrib){
+        foreach my $eventDistribTable ( keys %eventDistribMap ) {
+            my $r_eventDistribByHour = $eventDistribMap{$eventDistribTable}->{$datetime};
+            if ( defined $r_eventDistribByHour ) {
+                dbDo($dbh,"DELETE FROM $eventDistribTable WHERE siteid = $siteId AND time BETWEEN '$datetime 00:00:00' AND '$datetime 23:59:59'")
+                    or die "Failed to remove old data";
+
+                my $bcpFileName = $tmpDir . "/$eventDistribTable.$datetime.bcp";
+                open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+                foreach my $hour ( sort {$a <=> $b} keys %{$r_eventDistribByHour} ) {
+                    my $r_eventDistrib = $r_eventDistribByHour->{$hour};
+                    my $timestamp = sprintf("$datetime %02d:00:00",$hour);
+                    my $hourTotalEvents = 0;
+                    foreach my $eventId ( keys %{$r_eventDistrib} ) {
+                        $hourTotalEvents += $r_eventDistrib->{$eventId};
+                    }
+                    foreach my $eventId ( keys %{$r_eventDistrib} ) {
+                        my $precent = sprintf("%5.2f", (100*$r_eventDistrib->{$eventId})/$hourTotalEvents);
+                        my @values = ( $siteId, $timestamp, $eventId, $r_eventDistrib->{$eventId}, $precent );
+                        print BCP join("\t", @values), "\n";
+                    }
+                }
+                close BCP;
+                dbDo($dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE $eventDistribTable")
+                    or die "Failed to load new data".$dbh->errstr."\n";
+            }
+        }
+    }
+    $dbh->disconnect();
+}
+sub parseWfInstrLog($$) {
+    my ($file,$r_recordsByWf) = @_;
+    if ( $DEBUG > 4 ) { print Dumper("r_recordsByWf data:", \$r_recordsByWf); }
+    open INPUT, $file or die "Cannot open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseWfInstrLog: line=$line\n"; }
+        my ($date,$time,$info) = $line =~ /(\S+) (\S+) (.*)/;
+        my @infoFields = split(';',$info);
+        my $wfName = shift @infoFields;
+        my ($folder,$wf,$inst) = $wfName =~ /^([^\.]+)\.([^\.]+)\.([^\.]+)/;
+        if ( $DEBUG > 8 ) { print Dumper("parseWfInstrLog: wfName=$wfName folder=$folder wf=$wf inst=$inst infoField", \@infoFields); }
+        my %nameValues = ();
+        foreach my $field ( @infoFields ) {
+            if ( $field =~ /^Delta Topology Processed (\w+)=(\d+)/ ){
+                my ($name, $value) = $field =~ /Delta Topology Processed (\w+)=(\d+)/;
+                $name =~ s/Files/files/;
+                $nameValues{$name} = $value;
+               ($name, $value) = $wf =~ /\w+(OSSRC)(\d)/;
+                $name =~ s/OSSRC/ossrc/;
+                $nameValues{$name} = $value;
+            }else {
+                my ($name, $value) = $field =~ /^([^=]+)=(.*)/;
+                $name =~ s/^\s+|\s+$//g;
+                $nameValues{$name} = $value;
+            }
+        }
+        my $r_records = $r_recordsByWf->{$folder . "." . $wf};
+        if ( ! defined $r_records ) {
+            $r_records = [];
+            $r_recordsByWf->{$folder . "." . $wf} = $r_records;
+        }
+
+        if ( $DEBUG > 8 ) { print Dumper("r_records main:", \$r_records); }
+        push @{$r_records}, {
+            'time' => "$date $time",
+            'inst' => $inst,
+            'stats' => \%nameValues
+        };
+    }
+    close INPUT;
+}
+sub main {
+    my ($site,$date,$dir,$tzOffset);
+    my $result = GetOptions (
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "tzoff=s" => \$tzOffset,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+    my $tzOffsetSec = 0;
+    if ( defined $tzOffset ) {
+        $tzOffsetSec = $tzOffset * 3600;
+        if ( $DEBUG > 0 ) { print "main: tzOffsetSec=$tzOffsetSec\n"; }
+    }
+    my $r_efaRecs = undef;
+    # if ( -r "$dir/efa.log" ) {
+    #   $r_efaRecs = parseEFA("$dir/efa.log",$tzOffsetSec);
+    # }
+    my $r_sgehRecs = undef;
+    # if ( -r "$dir/sgeh.log" ) {
+    #   $r_sgehRecs = parseSGEH("$dir/sgeh.log");
+    # }
+    #
+    # wfinstr logs
+    #
+    my %recordsByWf = ();
+    opendir(my $dh, $dir) || die "can't opendir $dir: $!";
+    my @allFiles = readdir($dh);
+    closedir $dh;
+    my @wfInstrFiles = ();
+    if ( $DEBUG > 0 ) { print Dumper("main: allFiles", \@allFiles); }
+    foreach my $file ( @allFiles ) {
+        if ( $file =~ /^wfinstr.log/ ) {
+            push @wfInstrFiles, $file;
+        }
+    }
+    if ( $DEBUG > 0 ) { print Dumper("main: wfInstrFiles", \@wfInstrFiles); }
+    if ( $#wfInstrFiles > -1 ) {
+        # The the files, need to "move" the wfinstr.log to the end of the list
+        my @sortedWfInstrFiles = sort @wfInstrFiles;
+        my $wfFile = shift @sortedWfInstrFiles;
+        push @sortedWfInstrFiles, $wfFile;
+        foreach my $wfInstrFile ( @sortedWfInstrFiles ) {
+            print "Parsing $wfInstrFile\n";
+
+            parseWfInstrLog($dir . "/" . $wfInstrFile, \%recordsByWf);
+        }
+    }
+    if ( $DEBUG > 7 ) { print Dumper("main: recordsByWf", \%recordsByWf); }
+    foreach my $wf ( 'EBSL.WF_LTEES_COUNTER', 'SGEH.WF_SGEH_Processing_NFS' ) {
+            groupWF(\%recordsByWf, $wf);
+    }
+    store($site,$date,$r_efaRecs,$r_sgehRecs,\%recordsByWf);
+    # my $r_efaGrps = groupEFA($r_efaRecs);
+    # foreach my $r_efaGrp ( @{$r_efaGrps} ) {
+    #   my @wfIds = sort { $a <=> $b } keys %{$r_efaGrp->{'wf'}};
+    #   my $duration = $r_efaGrp->{'max_end'} - $r_efaGrp->{'min_start'};
+    #   printf "%s %s %20s %4d %5d %10d %10d %10.1f %10.1f\n",
+    #   formatTime($r_efaGrp->{'min_start'}, $StatsTime::TIME_SQL),
+    #   formatTime($r_efaGrp->{'max_end'}, $StatsTime::TIME_SQL),
+    #   join(",", @wfIds),
+    #   $r_efaGrp->{'max_end'} - $r_efaGrp->{'min_start'},
+    #   $r_efaGrp->{'files'}, $r_efaGrp->{'hfa'}, $r_efaGrp->{'cfa'},
+    #   $r_efaGrp->{'hfa'} / $duration, $r_efaGrp->{'cfa'} / $duration,
+    # }
+
+}
+
+main;

@@ -1,0 +1,20 @@
+#!/bin/bash
+
+DAYS_TO_KEEP=$1
+if [ -z "${DAYS_TO_KEEP}" ] ; then
+    echo "ERROR: Usage: $0 <days to keep>"
+    exit 1
+fi
+
+for DIR in internal customer ; do
+    DATE=$(date)
+    DATA_FILES_DIR=/archive/${DIR}/data_files    
+    echo "${DATE} Deleting files from ${DATA_FILES_DIR}"
+    find ${DATA_FILES_DIR} -type f -mtime +${DAYS_TO_KEEP}
+    find ${DATA_FILES_DIR} -type f -mtime +${DAYS_TO_KEEP} -delete
+
+    DATE=$(date)    
+    echo "${DATE} Deleting empty dirs from ${DATA_FILES_DIR}"
+    find ${DATA_FILES_DIR} -type d -empty    
+    find ${DATA_FILES_DIR} -type d -empty -delete
+done

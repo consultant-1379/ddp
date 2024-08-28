@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_filetransfer_connections">
+    <reference table="sites" condition="enm_filetransfer_connections.siteid = sites.id"/>
+    <reference table="servers" condition="enm_filetransfer_connections.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverId"/>
+  <where>sites.name = '%site%' AND enm_filetransfer_connections.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND servers.id IN (%serverId%)</where>
+
+  <groupby>
+    <column db="connectionType"/>
+    <column db="usecase"/>
+  </groupby>
+
+  <column db="CONCAT(connectionType,':',usecase)" label="Connection Type" visible="false" id="ConnectionId"/>
+  <column db="servers.hostname" label="Instance Name"/>
+  <column db="connectionType" label="Connection Type"/>
+  <column db="usecase" label="Usecase "/>
+  <column db="SUM(numOfSessions)" label="Number of Sessions"/>
+  <column db="SUM(readSize + writeSize)" label="File Transfer Size"/>
+  <column db="ROUND(SUM(readSize))" label="Read"/>
+  <column db="SUM(writeSize)" label="Write "/>
+  <column db="SUM(successSessionCount)" label="Success"/>
+  <column db="SUM(numOfSessions - successSessionCount)" label="Failures"/>
+
+  <ctxmenu keycol="ConnectionId" targettype="url" multiselect="true">
+    <item id="connections" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

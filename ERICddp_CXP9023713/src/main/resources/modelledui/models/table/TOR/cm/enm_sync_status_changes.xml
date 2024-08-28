@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_sync_status_changes">
+    <reference table="sites" condition="enm_sync_status_changes.siteid = sites.id"/>
+    <reference table="servers" condition="enm_sync_status_changes.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_sync_status_changes.neid = enm_ne.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_sync_status_changes.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time" formatter="ddpFormatTime"/>
+  <column db="enm_ne.name" label="Network Element"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="syncStatus" label="Status"/>
+  <column db="reason" label="Reason"/>
+</modelledtable>

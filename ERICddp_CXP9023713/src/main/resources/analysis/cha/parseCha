@@ -1,0 +1,353 @@
+#!/usr/bin/env perl
+use strict;
+use Getopt::Long;
+use StatsDB;
+use StatsCommon;
+use DBI;
+
+our $DEBUG = 0;
+our $dash_date; 
+our $site;
+our %cha_hash=();
+our %scf_rec = ();
+our %incompleteRec = ();
+
+main();
+
+sub main()
+{
+    my $cmdFile; my $scfFile;
+    my $opt = GetOptions(
+                    "cmd=s"  => \$cmdFile,
+                    "scf=s" => \$scfFile,
+                    "date=s" => \$dash_date,
+                    "site=s" => \$site,
+                    "debug=s" => \$DEBUG
+                    );
+    ( $opt == 1 ) or die("Invalid Args");
+    if ( ! $dash_date || ! $site )
+    {
+       print "SQL Date and site is required\n";
+       exit 1;
+    }
+    if ( ! $cmdFile && ! $scfFile )
+    {
+       print "Both or either CHA command or CHA System Command file required\n";
+       exit 1;  
+    }
+    if ( -r $cmdFile )
+    {
+    readCommandFile($cmdFile);
+    }
+    if ( -r $scfFile)
+    {
+    readSystemFile($scfFile);
+    }
+    store();
+}
+# This method reads the CHA Command file and store the record for each command entry. Below is an example entry line from command log.
+# 23554, pmo1, newsc.mml, /home/nmsadm/cha/cmdfile/, nmsadm, 2009-09-07 16:21:58, 2009-09-07 16:22:17, success, 19, 0, 0, 0.000000
+# Each line represents 1 command sent to a node. 
+sub readCommandFile()
+{
+    my ($cmdlog)=@_;
+    open CMD, "$cmdlog" or die "Cannot open $cmdlog";
+    while(<CMD>)
+    {
+    # Record contains spaces so individual fields will also have spaces resulting in extra fields being inserted into DB e.g. oss_users 
+    $_ =~ s/,\s+/,/g;
+    my ($pid, $host, $command, $path, $user, $start, $end, $result, $duration, $pr, $rss, $cpu) = split(",",$_);
+    addCMDRecord($pid, $user, $start, $end, $pr, $rss, $cpu, $command, $path, $result);
+    }
+    close CMD;
+}
+
+# Below mentioned CHA primitives are part of 1 record. It can be found in cha_scf.log file. Whenever it encounters such record, it will get the total duration from CHFStart process.
+# For memory (pr & rss) it adds the respecitve memory of CHFStart + the largest value of other primitives. Reason is CHFStart process will run in parallel with other sequential runs of other primitives.
+# For CPU it is the SUM of all primitives as it is the time in seconds ( sys + user ).
+#CFHConnect, 20792, 20661, nmsadm, 2009-11-10 03:21:13, 2009-11-10 03:21:15, 2, 24096, 17432, 0.000000
+#CFHRouting, 20807, 20661, nmsadm, 2009-11-10 03:21:15, 2009-11-10 03:21:16, 1, 24128, 17464, 0.000000
+#CFHSend, 20817, 20661, nmsadm, 2009-11-10 03:21:16, 2009-11-10 03:21:17, 1, 24096, 17408, 0.000000
+#CHFStart, 20677, 20661, nmsadm, 2009-11-10 03:21:08, 2009-11-10 03:21:18, 10, 27144, 21832, 0.000000, SDM_command, /var/opt/ericsson/nms_axe_cha_cha/nms_axe_cha_cha/data/scripts/
+#CFHStop, 20832, 20661, nmsadm, 2009-11-10 03:21:17, 2009-11-10 03:21:18, 1, 24088, 17400, 0.000000
+# Reference Format IWD - 4/15519-15/FCP 1038147 Rev PA5
+sub readSystemFile()
+{
+    my ($scf)=@_;
+    # Read the unsorted file
+    open FILE, $scf or die "cannot open $scf file";
+    while(<FILE>)
+    {
+    # Line contain spaces so individual fields will also have spaces resulting in extra fields being inserted into DB e.g. oss_users
+    $_ =~ s/,\s+/,/g;
+    my ( $_primitive, $_pid, $_ppid, $_user, $_start_time, $_end_time, $_duration, $_pr, $_rss, $_cpu, $_command, $_path ) = split(",",$_);
+    addSCFRecord( $_primitive, $_ppid, $_user, $_start_time, $_end_time, $_pr, $_rss, $_cpu, $_command, $_path );
+    }
+    close FILE;
+}
+
+# Add the SYSTEM_COMMAND record in a hash. This will also handle the unlikely situation should the PPID is re-used by system within a day.
+# Since SCF record is complex record. One record will atleast have CHFStart and CFHStop but their order is un-predictable. The value of CHFStart 
+# is added with the highest value of other primitives that is why the array contains prMem, rsMem (for CHFStart) and prMemOther, rssMemOther to store the highest values of 
+# of other primitives. In the end it will be add up with CHFStart memory. 
+# The parameter (finished & stop) is used to identify CHFStart and CFHStop primitive. These parameter provides the control to calculate the result as one need the complete 
+# record before results can be calculated.
+sub addSCFRecord()
+{
+    my $isStopFound = 0;
+    my $finished = "false";
+    my ($primitive, $ppid, $user, $start_time, $end_time, $pr, $rss, $cpu, $command, $path) = @_;
+    if ( $DEBUG > 5 ) { print "addSCFRecord: primitive=$primitive, ppid=$ppid, user=$user, start=$start_time, end=$end_time, pr=$pr, rss=$rss, cpu=$cpu, cmd=$command, path=$path\n"; }
+    chomp($path);
+    $command = $path . $command;
+    $command = jpsShortName($command);# To get the short name e.g. if it contains any known timestamps etc it will return a short name.
+    if ( $primitive =~ /^CFHStop/ )
+    {
+        $isStopFound = 1;
+    }
+    if ( $primitive =~ /^CHFStart/ )
+    {
+        $finished = "true";
+    }
+    if ( ! exists $scf_rec{$ppid} )
+    {
+        $scf_rec{$ppid} = [];
+        my $r_cmdInfo = {
+            "cmd" => $command,
+            "startTime" => $start_time,
+            "stopTime" => $end_time,
+            "prMem" => $pr,
+            "rssMem" => $rss,
+            "prMemOther" => $pr,
+            "rssMemOther" => $rss,
+            "cpu" => $cpu,
+            "user" => $user,
+            "stop" => $isStopFound,
+            "finished" => $finished  };
+            push @{$scf_rec{$ppid}}, $r_cmdInfo;
+
+    }
+    else 
+    {
+        my $r_cmdList = $scf_rec{$ppid};
+        foreach my $_cmdInfo ( @{$r_cmdList} )
+        {
+        my $_isStopFound = $_cmdInfo->{"stop"};
+        my $_finished = $_cmdInfo->{"finished"};
+            if ( $_finished eq "false" || $_isStopFound == 0 )
+            {
+              $_cmdInfo->{"cpu"} += $cpu;
+              if ( $primitive eq "CHFStart" )
+              {
+              $_cmdInfo->{"cmd"} = $command;
+              $_cmdInfo->{"startTime"} = $start_time;
+              $_cmdInfo->{"stopTime"} = $end_time;
+              $_cmdInfo->{"finished"} = "true";
+              $_cmdInfo->{"prMem"} = $pr;
+              $_cmdInfo->{"rssMem"} = $rss;
+              }
+              else
+              {
+              my $_pr = $_cmdInfo->{"prMemOther"};
+              $_cmdInfo->{"prMemOther"} = $pr  if $pr > $_pr; 
+              my $_rss = $_cmdInfo->{"rssMemOther"};
+              $_cmdInfo->{"rssMemOther"} = $rss  if $rss > $_rss;
+              $_cmdInfo->{"stop"} = 1 if ( $primitive eq "CFHStop" );
+              }
+
+              if ( $_cmdInfo->{"finished"} eq "true" && $_cmdInfo->{"stop"} == 1 )
+              {
+              $_cmdInfo->{"prMem"} += $_cmdInfo->{"prMemOther"};
+              $_cmdInfo->{"rssMem"} += $_cmdInfo->{"rssMemOther"}; 
+              }
+            }
+            # Highly Unlikely situation where same PPID may be used again within log in a day.
+            else
+            { 
+                #Its a new record with same PPID
+                my $isFound=0; my $ppid2=$ppid;
+                do
+                {
+                   $ppid2 *= 10;  # Append a zero in existing PPID until new record to be inserted becomes unique  
+                   if ( ! exists $scf_rec{$ppid2} )
+                   {
+                       $isFound=1;
+                   } 
+                }
+                while ( $isFound != 1);
+                if ( ! exists $incompleteRec{$ppid} )
+                {
+                $incompleteRec{$ppid}=$ppid2;
+                addSCFRecord($primitive, $ppid2, $user, $start_time, $end_time, $pr, $rss, $cpu, $command, "" );
+                }
+                else
+                {
+                addSCFRecord($primitive, $incompleteRec{$ppid}, $user, $start_time, $end_time, $pr, $rss, $cpu, $command, "");
+                    #if($primitive eq "CHFStart") 
+                    #if ( $_finished eq "true" && $_isStopFound == 1 )
+                    #{ delete $incompleteRec{$ppid} if exists $incompleteRec{$ppid}; }
+                }
+             }
+        }
+   }
+}
+
+# This method will add the record for both command file and system command file.
+sub addCMDRecord
+{
+    my ($ppid, $user, $start_time, $end_time, $pr, $rss, $cpu, $command, $path, $result) = @_;
+    if ( $DEBUG > 5 ) { print "addCMDRecord: ppid=$ppid, user=$user, start=$start_time, end=$end_time, pr=$pr, rss=$rss, cpu=$cpu, cmd=$command, path=$path, result=$result \n"; }
+    chomp($path);
+    $command = $path . $command;
+    $command = jpsShortName($command);# To get the short name e.g. if it contains any known timestamps etc it will return a short name.
+
+    #If its a new record with same PPID
+    if ( exists $cha_hash{$ppid} )
+    {
+    my $isFound=0;
+    do
+    {
+        $ppid *= 10;  # Append a zero in existing PPID until new record can be inserted in hash
+        if ( ! exists $cha_hash{$ppid} )
+        {
+        $isFound=1;
+        }
+    }
+    while ( $isFound != 1);
+    }
+
+    my $r_cmdInfo = {
+            "cmd" => $command,
+            "startTime" => $start_time,
+            "stopTime" => $end_time,
+            "prMem" => $pr,
+            "rssMem" => $rss,
+            "cpu" => $cpu,
+	    "user" => $user,
+            "result" => $result };
+    if ( ! exists $cha_hash{$ppid} )
+    {
+        $cha_hash{$ppid} = [];
+    }
+    push @{$cha_hash{$ppid}}, $r_cmdInfo;
+}
+
+# Stores the record into the database.
+sub store()
+{
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    #
+    # Get map of MC name to id, insert any missing names
+    #
+    my %userCounts = ();
+    my %cmdCounts = ();
+    foreach my $r_chaInfoList ( values %cha_hash ) 
+    {
+        foreach my $r_chaInfo ( @{$r_chaInfoList} ) 
+        {
+            if ( defined $r_chaInfo->{"user"} ) {
+                $userCounts{$r_chaInfo->{"user"}}++;
+            }
+	    if ( defined $r_chaInfo->{"cmd"} ) {
+		$cmdCounts{$r_chaInfo->{"cmd"}}++;
+	    }
+        }
+    }
+    foreach my $r_scfInfoList ( values %scf_rec )
+    {
+        foreach my $r_scfInfo ( @{$r_scfInfoList} )
+        {
+            if ( defined $r_scfInfo->{"user"} ) {
+                $userCounts{$r_scfInfo->{"user"}}++;
+            }
+            if ( defined $r_scfInfo->{"cmd"} ) {
+                $cmdCounts{$r_scfInfo->{"cmd"}}++;
+            }
+        }
+    }
+    my @_chaUsersStrings = keys %userCounts;
+    my @_chaCmdStrings = keys %cmdCounts;
+    my $r_nameMap = getIdMap($dbh,"cha_cmd_names", "id", "name", \@_chaCmdStrings );
+    my $r_chaUsersMap = getIdMap($dbh, "oss_users", "id", "name", \@_chaUsersStrings );
+
+    # Remove any existing row
+    dbDo($dbh, "DELETE FROM cha_instrumentation WHERE siteid = $siteId AND end_time BETWEEN '$dash_date 00:00:00' AND '$dash_date 23:59:59'");
+    my $type="COMMAND";
+    foreach my $ppid ( sort keys %cha_hash )
+    {
+        my $r_chaInfoList = $cha_hash{$ppid};
+        foreach my $r_ChaInfo ( @{$r_chaInfoList} )
+        {
+            my $cmd= $r_ChaInfo->{"cmd"};
+            my $start= $r_ChaInfo->{"startTime"};
+            my $end= $r_ChaInfo->{"stopTime"};
+            my $pr= $r_ChaInfo->{"prMem"};
+            my $rss = $r_ChaInfo->{"rssMem"};
+            my $cpu= $r_ChaInfo->{"cpu"};
+            my $result = $r_ChaInfo->{"result"};
+            
+	    my $uid = 1;
+            if ( exists $r_ChaInfo->{"user"} && defined $r_ChaInfo->{"user"} && $r_ChaInfo->{"user"} ne "" ) {
+                $uid = $r_chaUsersMap->{$r_ChaInfo->{"user"}};
+            }
+            my $cmdid = $r_nameMap->{$cmd};
+            if ( $start =~ /$dash_date \d+:\d+:\d+/ && $end =~ /$dash_date \d+:\d+:\d+/)
+            {
+            if ( $DEBUG > 5 ) { print "INSERT INTO cha_instrumentation (cmdid,siteid,uid,cmdtype,start_time,end_time,result,prMem,rssMem,cpuusage) VALUES ($cmdid,$siteId,$uid,$type,\'$start\',\'$end\',$result,$pr,$rss,$cpu)"; }
+            dbDo($dbh, sprintf("INSERT INTO cha_instrumentation (cmdid,siteid,uid,cmdtype,start_time,end_time,result,prMem,rssMem,cpuusage) VALUES (%d, %d, %d, %s, %s, %s, %s, %d, %d, %d)",
+                               $cmdid,
+                               $siteId,
+			       $uid,
+	                       lc($dbh->quote($type)),
+                               lc($dbh->quote($start)),
+			       lc($dbh->quote($end)),
+                               lc($dbh->quote($result)),
+			       $pr,
+			       $rss,   
+			       $cpu) )
+                or die "Failed to insert in cha_instrumentation table";
+            }
+        }
+    }
+    $type="SYSTEM_COMMAND";
+    my $result="-";
+    foreach my $ppid ( sort keys %scf_rec )
+    {
+        my $r_scfInfoList = $scf_rec{$ppid};
+        foreach my $r_ScfInfo ( @{$r_scfInfoList} )
+        {
+            my $cmd= $r_ScfInfo->{"cmd"};
+            my $start= $r_ScfInfo->{"startTime"};
+            my $end= $r_ScfInfo->{"stopTime"};
+            my $pr= $r_ScfInfo->{"prMem"};
+            my $rss = $r_ScfInfo->{"rssMem"};
+            my $cpu= $r_ScfInfo->{"cpu"};
+
+            my $uid = 1;
+            if ( exists $r_ScfInfo->{"user"} && defined $r_ScfInfo->{"user"} && $r_ScfInfo->{"user"} ne "" ) {
+                $uid = $r_chaUsersMap->{$r_ScfInfo->{"user"}};
+            }
+            my $cmdid = $r_nameMap->{$cmd};
+            if ( $start =~ /$dash_date \d+:\d+:\d+/ && $end =~ /$dash_date \d+:\d+:\d+/)
+            {
+            if ( $DEBUG > 5 ) { print "INSERT INTO cha_instrumentation (cmdid,siteid,uid,cmdtype,start_time,end_time,result,prMem,rssMem,cpuusage) VALUES ($cmdid,$siteId,$uid,$type,\'$start\',\'$end\',$result,$pr,$rss,$cpu)"; }
+            dbDo($dbh, sprintf("INSERT INTO cha_instrumentation (cmdid,siteid,uid,cmdtype,start_time,end_time,result,prMem,rssMem,cpuusage) VALUES (%d, %d, %d, %s, %s, %s, %s, %d, %d, %d)",
+                               $cmdid,
+                               $siteId,
+                               $uid,
+                               lc($dbh->quote($type)),
+                               lc($dbh->quote($start)),
+                               lc($dbh->quote($end)),
+                               lc($dbh->quote($result)),
+                               $pr,
+                               $rss,
+                               $cpu) )
+                or die "Failed to insert in cha_instrumentation table";
+            }
+        }
+    }
+    $dbh->disconnect;
+}

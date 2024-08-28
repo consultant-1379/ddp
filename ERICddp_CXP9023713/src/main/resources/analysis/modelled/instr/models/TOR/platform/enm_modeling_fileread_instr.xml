@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <table name="enm_modeling_fileread_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.modeling.modelservice.mbean:type=ModelServiceFileBean$">
+      <metric source="ModelReadTimeAvg" target="avgModelReadTime"/>
+      <metric source="ModelReadTimeMax" target="maxModelReadTime"/>
+      <metric source="RepoReadTime" target="repoReadTime"/>
+      <metric source="RepoReadTimeMax" target="maxRepoReadTime"/>
+      <metric source="RepoReads" target="repoReads" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

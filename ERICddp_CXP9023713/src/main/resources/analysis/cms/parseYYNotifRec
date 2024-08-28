@@ -1,0 +1,222 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use Time::Local;
+use StatsDB;
+use DBI;
+
+our $DEBUG=0;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+main();
+
+
+sub main()
+{
+
+    my ($inFile,$site,$date);
+    my @timesStr = ();
+
+    my $result = GetOptions(
+			    "input=s" => \$inFile,
+			    "debug=i" => \$DEBUG,
+			    "site=s" => \$site,
+			    "date=s" => \$date
+			    );
+    
+    ($result == 1) or die "Invalid options";
+
+    my $r_results = readInput($inFile);
+    if ( $site ) {
+	store($site,$date,$r_results->[0],$r_results->[1]);
+    }
+}
+
+sub store
+{
+    my ($site,$date,$r_counts, $r_countsByNode) = @_;
+    
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    
+    dbDo($dbh,"DELETE FROM nead_notifrec WHERE date = '$date' AND siteid = $siteId");
+    
+    my %allMo = ();
+    my %allAttrib = ();
+    foreach my $eventType ( keys %{$r_counts} ) 
+    {
+	foreach my $nodeType ( keys %{$r_counts->{$eventType}} )
+	{
+	    foreach my $moType ( keys %{$r_counts->{$eventType}->{$nodeType}} )
+	    {
+		$allMo{$moType}++;
+
+		if ( $eventType eq 'AVC' ) 
+		{
+		    foreach my $attrib ( keys %{$r_counts->{$eventType}->{$nodeType}->{$moType}} )
+		    {
+			$allAttrib{$attrib}++;
+		    }
+		}
+	    }
+	}
+    }
+
+    my @allMoList = keys %allMo;
+    my $r_MoIdMap = getIdMap($dbh, "mo_names", "id", "name", \@allMoList );
+
+    my @allAttribList = keys %allAttrib;
+    push @allAttribList, 'NA';
+    my $r_AttribIdMap = getIdMap($dbh, "nead_attrib_names", "id", "name", \@allAttribList );
+
+    my $sql = "INSERT INTO nead_notifrec (date,siteid,eventtype,nodetype,moid,attribid,count) VALUES(%s,%d,%s,%s,%d,%s,%d)";
+    foreach my $eventType ( keys %{$r_counts} ) 
+    {	
+	foreach my $nodeType ( keys %{$r_counts->{$eventType}} )
+	{
+	    foreach my $moType ( keys %{$r_counts->{$eventType}->{$nodeType}} )
+	    {
+		my $moId = $r_MoIdMap->{$moType};
+
+		if ( $eventType eq 'AVC' || $eventType eq 'SDN' ) 
+		{
+		    foreach my $attrib ( keys %{$r_counts->{$eventType}->{$nodeType}->{$moType}} )
+		    {
+			dbDo($dbh, sprintf($sql, 
+					   $dbh->quote($date), $siteId, 
+					   $dbh->quote($eventType), $dbh->quote($nodeType),
+					   $moId, $r_AttribIdMap->{$attrib}, 
+					   $r_counts->{$eventType}->{$nodeType}->{$moType}->{$attrib})
+			    );
+		    }
+		}
+		else
+		{
+		    dbDo($dbh, sprintf($sql, 
+				       $dbh->quote($date), $siteId, 
+				       $dbh->quote($eventType), $dbh->quote($nodeType),
+				       $moId, $r_AttribIdMap->{'NA'},
+				       $r_counts->{$eventType}->{$nodeType}->{$moType})
+			);
+		}
+	    }
+	}
+    }
+
+    dbDo($dbh,"DELETE FROM nead_notiftop WHERE date = '$date' AND siteid = $siteId");   
+    my $r_neIdMap = getIdMap($dbh,"ne","id","name",[],$siteId,"siteid");
+    foreach my $neFdn ( keys %{$r_countsByNode} ) {
+	my ($neName) = $neFdn =~ /MeContext=(.*)$/;
+	if ( exists $r_neIdMap->{$neName} ) {
+	    dbDo($dbh, sprintf("INSERT INTO nead_notiftop (date,siteid,neid,count) VALUES ('%s',%d,%d,%d)",
+			       $date,$siteId,$r_neIdMap->{$neName},$r_countsByNode->{$neFdn}))
+		or die "Insert for $neFdn failed";
+	}
+    }
+
+    $dbh->disconnect();
+}
+    
+			      
+#
+# Return hashmap
+#  EventType => NodeType => MoType 
+#   where
+#    event type AVC,CREATE,DELETE
+#    node type RNC,RBS,RANAG
+#   
+#  If Event = AVC, then MoType => attribute => count
+#  else
+#     MoType => count
+#
+sub readInput
+{
+    my ($inFile) = @_;
+
+    my %counts = ();
+    my %countsByNode = ();
+    my ($month, $date, $time, $year);
+    open IN, $inFile or die "Cannot open $inFile";   
+    while ( my $line = <IN> )
+    {
+	if ( $DEBUG > 9 ) { print "readInput line=$line"; }
+	if ( $line =~ /^DUMP START \S+ (\S+) (\d+) (\S+) \S+ (\d+)/o )
+	{
+	    ($month, $date, $time, $year) = $line =~ /^DUMP START \S+ (\S+) (\d+) (\S+) \S+ (\d+)/o;
+	    $month = $monthMap{$month};
+	}
+	elsif ( $line =~ /^NOTIFICATIONRECEIVEDSTATS = (\S+)/ )
+	{
+	    my $nrsTxt = $1;
+	    # Workaround for NEAD bug where the content of the SDN was being included
+	    if ( $nrsTxt =~ /reservedBy=\{/ ) {
+		$nrsTxt =~ s/reservedBy=\{[^\}]*\}/reservedBy/g;
+	    }
+	    my @parts = split( /,/, $nrsTxt );
+
+	    if ( $DEBUG > 7 ) { print Dumper("readInput parts", \@parts); }
+
+	    foreach my $part ( @parts ) 
+	    {
+		my ($info,$count) = $part =~ /^(.*):(\d+)$/;
+		my @infoFields = split(/_/, $info);
+		if ( $DEBUG > 7 ) { print Dumper("readInput count=$count infoFields", \@infoFields); }
+		
+		if ( $infoFields[2] eq 'AVC' ) {		    
+		    $counts{'AVC'}->{$infoFields[0]}->{$infoFields[1]}->{$infoFields[3]} += $count;
+		} elsif ( $infoFields[2] eq 'SDN' ) {
+		    $counts{'SDN'}->{$infoFields[0]}->{$infoFields[1]}->{$infoFields[3]} += $count;
+		} elsif ( $infoFields[2] eq 'C' ) {		   
+		    $counts{'CREATE'}->{$infoFields[0]}->{$infoFields[1]} += $count;
+		} elsif ( $infoFields[2] eq 'D' ) {		   
+		    $counts{'DELETE'}->{$infoFields[0]}->{$infoFields[1]} += $count;
+		}	       
+	    }
+	}
+	elsif ( $line =~ /^NOTIFICATIONNODETOP10 = (\S+)/ ) { 
+	    my @parts = split(/:/, $1);
+	    if ( $DEBUG > 8 ) { print Dumper("readInput top10 parts",\@parts); }
+
+	    for ( my $index = 0; $index < $#parts; $index++ ) {
+		if ( $parts[$index+1] =~ /^(\d+),(\S+)/ ) {
+		    my ($count,$fdn) = ($1,$2);
+		    if ( $DEBUG > 7 ) { print "readInput top10 count=$count, fdn=$fdn\n"; }		    
+		    $countsByNode{$parts[$index]} += $count;
+		    $parts[$index+1] = $fdn;
+		} elsif ( $parts[$index+1] =~ /^(\d+)$/ ) {
+		    my $count = $1;
+		    if ( $DEBUG > 7 ) { print "readInput top10 last count=$count, fdn=$parts[$index]\n"; }		    
+		    $countsByNode{$parts[$index]} += $1;
+		}
+	    }
+	}
+    }
+    close IN;
+
+    if ( $DEBUG > 4 ) { 
+	print Dumper("readInput: counts", \%counts); 
+	print Dumper("readInput: countsByNode", \%countsByNode); 
+    }
+
+    my @results = ( \%counts, \%countsByNode );
+    return \@results;
+}

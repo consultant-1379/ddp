@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Memory(MB)"
+>
+ <title value="OS Memory Profile"/>
+ <queries>
+  <query timecol="timeStamp" multiseries="eniq_stats_os_memory_profile_Rhel.metrics">
+   <dbtables main="eniq_stats_os_memory_profile_Rhel">
+    <reference table="sites" condition="eniq_stats_os_memory_profile_Rhel.siteId = sites.id"/>
+    <reference table="servers" condition="eniq_stats_os_memory_profile_Rhel.serverId = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="metrics"/>
+   <param name="hostname"/>
+   <where>sites.name = '%s' AND eniq_stats_os_memory_profile_Rhel.metrics IN (%s) AND servers.hostname = '%s'</where>
+   <column db="ROUND(eniq_stats_os_memory_profile_Rhel.bytes)/1024" label="Bytes"/>
+   <column db="eniq_stats_os_memory_profile_Rhel.metrics" label="Metrics"/>
+
+  </query>
+ </queries>
+ <size width="800" height="400"/>
+
+</modelledgraph>

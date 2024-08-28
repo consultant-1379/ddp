@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($infile,$outfile);	
+    my @columns = ();
+    
+    my $result = GetOptions(
+			    "in=s" => \$infile,
+			    "out=s"  => \$outfile,
+			    "cols=n{,}"  => \@columns,
+			    "debug=s" => \$DEBUG
+			    ); 
+    ($result == 1) or die "Invalid args";
+
+    open IN, $infile or die "Cannot open $infile";
+    open OUT, ">$outfile" or die "Cannot open $outfile";
+
+    my %isDelta = ();
+    foreach my $colIndex ( @columns )
+    {
+	$isDelta{$colIndex} = 1;
+    }
+
+    my $r_PrevVals;
+    while ( my $line = <IN> )
+    {
+	if ( $line =~ /^\d/ )
+	{
+	    chop $line;
+	    my @fields = split / /, $line;
+
+	    if ( $r_PrevVals )
+	    {
+		for ( my $i = 0; $i <= $#fields; $i++ )
+		{
+		    my $value = $fields[$i];
+
+		    if ( $isDelta{$i} && ($value >= $r_PrevVals->[$i]) )
+		    {
+			$value -= $r_PrevVals->[$i];
+		    }
+
+		    if ( $DEBUG > 5 ) { print "i=$i isDelta{$i}=$isDelta{$i} fields[$i]=$fields[$i]  r_PrevVals[$i]=$r_PrevVals->[$i] value=$value\n"; }
+
+		    if ( $i > 0 )
+		    {
+			print OUT " ";
+		    }
+		    print OUT $value;
+		}
+		print OUT "\n";
+	    }
+	    $r_PrevVals = \@fields;
+	}
+    }
+
+    close IN;
+    close OUT;
+    
+}
+	    

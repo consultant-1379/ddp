@@ -1,0 +1,106 @@
+#!/bin/bash
+
+MNT_PNT="/mnt"
+FS_LIST="/data /data/stats/oss /data/ftproot /data/ddp /data/archive"
+
+log() {
+    MSG=$1
+    TIME=`date +%H:%M:%S`
+    echo "${TIME} ${MSG}"
+}
+
+getDataFsNode() {
+    /usr/cluster/bin/clresource status data_fs > /tmp/data_fs.status 2>&1
+    if [ $? -ne 0 ] ; then
+	echo ""
+    else
+	grep 'Online' /tmp/data_fs.status | sed 's/^data_fs//' | awk '{print $1}'
+    fi
+}
+
+mountfs() {
+    DATA_FS_NODE=`getDataFsNode`
+    if [ -z "${DATA_FS_NODE}" ] ; then
+	echo "ERROR: data_fs does not appear to be online"
+	exit 1
+    fi
+
+    for FS in ${FS_LIST} ; do
+	/usr/sbin/mount | egrep "^${MNT_PNT}${FS}" > /dev/null
+	if [ $? -ne 0 ] ; then
+	    log "INFO: Mounting ${FS}"
+	    if [ ! -d ${MNT_PNT}${FS} ] ; then
+		log "Creating directory ${MNT_PNT}${FS}"
+		mkdir ${MNT_PNT}${FS}
+	    fi
+
+	    /usr/sbin/mount prochost:${FS} ${MNT_PNT}${FS}
+	    if [ $? -ne 0 ] ; then
+		log "ERROR: Failed to mount ${FS}"
+		exit 1
+	    fi
+	fi
+    done
+}
+
+umountfs() {
+   FS_LIST_REV=""
+   for FS in ${FS_LIST} ; do
+       FS_LIST_REV="${FS} ${FS_LIST_REV}"
+   done
+   for FS in ${FS_LIST_REV} ; do
+      /usr/sbin/mount | egrep "^${MNT_PNT}${FS} on prochost" > /dev/null
+      if [ $? -eq 0 ] ; then
+	  log "INFO: Un-mounting ${MNT_PNT}${FS}"
+         /usr/sbin/umount -f ${MNT_PNT}${FS}
+
+      fi
+   done
+}
+
+if [ "$1" = "start" ] ; then
+   mountfs >> /tmp/remotefs.log
+   $0 run >> /tmp/remotefs.log 2>&1 & 
+elif [ "$1" = "run" ] ; then
+   rm -rf /tmp/remotefs.exit
+
+   DATA_FS_NODE=`getDataFsNode`
+   THIS_NODE=`hostname`
+   COUNT=0
+   while [ ! -r /tmp/remotefs.exit ] ; do
+      sleep 1
+      let COUNT=${COUNT}+1
+      if [ ${COUNT} -ge 60 ] ; then
+         COUNT=0
+	 CURR_DATA_FS_NODE=`getDataFsNode`
+         log "INFO: data_fs on node: ${CURR_DATA_FS_NODE}"
+
+	 if [ -z "${CURR_DATA_FS_NODE}" ] ; then
+	     echo "ERROR: data_fs seems to be offline"
+	     umountfs
+	     exit 1
+	 fi
+
+	 if [ "${CURR_DATA_FS_NODE}" != "${DATA_FS_NODE}" ] ; then
+	     if [ "${DATA_FS_NODE}" != "${THIS_NODE}" ] ; then
+		 umountfs
+	     fi
+
+	     if [ "${CURR_DATA_FS_NODE}" != "${THIS_NODE}" ] ; then
+		 mountfs
+	     fi
+	 fi
+      fi
+   done
+
+   DATE=`date`
+   log "INFO: Shutting down"
+   rm -rf /tmp/remotefs.exit
+
+elif [ "$1" = "stop" ] ; then
+   touch /tmp/remotefs.exit
+   while [ -r /tmp/remotefs.exit ] ; do
+      sleep 1
+   done   
+   umountfs
+fi 

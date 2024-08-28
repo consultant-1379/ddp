@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_pmic_rest_nbi">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="pmservice"/>
+  </services>
+
+  <events>
+    <!-- PMIC_REST_NBI_METRICS {"Request_Type":"List Subscriptions Rest NBI","Http_Method":"GET","Total_Time_Taken_To_Respond_Request":26,"Total_Request_Recieved":1,"Total_Failed_Http_Response":0} -->
+    <event name="PMIC_REST_NBI_METRICS">
+      <metric source="host" target="serverid"/>
+      <metric source="Request_Type" target="requestType"/>
+      <metric source="Http_Method" target="httpMethod"/>
+      <metric source="Total_Time_Taken_To_Respond_Request" target="totalTimeTakenToRespondRequest"/>
+      <metric source="Total_Request_Recieved" target="totalRequestRecieved"/>
+      <metric source="Total_Failed_Http_Response" target="totalFailedHttpResponse"/>
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_cm_topology_model">
+  <reference table="sites" condition="ecson_cm_topology_model.siteid = sites.id"/>
+  <reference table="servers" condition="ecson_cm_topology_model.serverid  = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_cm_topology_model.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Servers" id="serverNames"/>
+ <column db="SUM(ecson_cm_topology_model.cm_logical_process_time_count)" label="Process Time (ms)"/>
+ <column db="SUM(ecson_cm_topology_model.cm_logical_request_count)" label="Post Request"/>
+
+</modelledtable>

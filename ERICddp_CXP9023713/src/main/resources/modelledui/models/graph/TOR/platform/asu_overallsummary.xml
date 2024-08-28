@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ ylabel="Duration(minutes)"
+>
+<title value="Auto Software Upgrade Flow Instances"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="enm_flow_asu_overallsummary">
+    <reference table="sites" condition="enm_flow_asu_overallsummary.siteId=sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where> sites.name = '%s' AND enm_flow_asu_overallsummary.eventName = 'ASU' </where>
+   <column db="(enm_flow_asu_overallsummary.totalTimetaken/60000)" label="Duration"/>
+  </query>
+ </queries>
+ <size width="800" height="300"/>
+</modelledgraph>

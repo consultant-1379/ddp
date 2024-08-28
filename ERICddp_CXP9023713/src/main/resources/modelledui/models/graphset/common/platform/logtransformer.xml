@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="logtransformer">
+      <reference table="sites" condition="logtransformer.siteid = sites.id"/>
+      <reference table="servers" condition="logtransformer.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="events_in" type="sb" ylabel=" " forcelegend="true">
+      <title value="Events In"/>
+      <column db="events_in" label = "Events In"/>
+    </graph>
+    <graph name="events_out" type="sb" ylabel=" " forcelegend="true">
+      <title value="Events Out"/>
+      <column db="events_out" label = "Events Out"/>
+    </graph>
+    <graph name="events_duration" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Duration Per Event In"/>
+      <column db="events_duration_millis / events_in" label = "Duration / Event In"/>
+    </graph>
+    <graph name="pipelines_events_in" type="sb" ylabel=" " forcelegend="true">
+      <title value="Pipelines Events In"/>
+      <column db="pipelines_events_in" label = "Pipelines Events In"/>
+    </graph>
+    <graph name="pipelines_events_out" type="sb" ylabel=" " forcelegend="true">
+      <title value="Pipelines Events Out"/>
+      <column db="pipelines_events_out" label = "Pipelines Events Out"/>
+    </graph>
+    <graph name="pipelines_queue_latency" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Pipelines Queue Latency"/>
+      <column db="pipelines_events_queue_push_duration/ pipelines_events_in" label = "Pipelines Queue Latency"/>
+    </graph>
+    <graph name="pipelines_events_duration" type="tsc" ylabel=" " forcelegend="true">
+      <title value="Duration / Pipelines Events In"/>
+      <column db="pipelines_events_duration_millis / pipelines_events_in" label = "Duration / Pipelines Events In"/>
+    </graph>
+    <graph name="piplelines_queue_size" type="sb" ylabel=" " forcelegend="true">
+      <title value="Pipelines Queue Size(MB)"/>
+      <column db="pipelines_queue_size_mb" label = "Pipelines Queue Size(MB)"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>events_in</member>
+      <member>events_out</member>
+      <member>events_duration</member>
+      <member>pipelines_events_in</member>
+      <member>pipelines_events_out</member>
+      <member>pipelines_queue_latency</member>
+      <member>pipelines_events_duration</member>
+      <member>piplelines_queue_size</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

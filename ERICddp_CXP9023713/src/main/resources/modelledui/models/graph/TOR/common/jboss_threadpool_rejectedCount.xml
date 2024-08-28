@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="Rejected Count"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="enm_sg_specific_threadpool">
+     <reference table="sites" condition="enm_sg_specific_threadpool.siteid = sites.id"/>
+     <reference table="enm_sg_specific_threadpool_names" condition="enm_sg_specific_threadpool.threadpoolid = enm_sg_specific_threadpool_names.id"/>
+     <reference table="servers" condition="enm_sg_specific_threadpool.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="srvids"/>
+   <param name="tp"/>
+   <where>sites.name = '%s' AND enm_sg_specific_threadpool.serverid IN ( %s ) AND enm_sg_specific_threadpool_names.name = '%s'</where>
+   <column db="rejectedCount" label="Rejected Count"/>
+  </query>
+ </queries>
+ <size width="320" height="320"/>
+</modelledgraph>

@@ -1,0 +1,50 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+remoteLoad() {
+    # Get the index of the last file we loaded
+    # Note: we never "reload" data into the External Store
+    ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/externalstore.fileindex <<EOF
+SELECT id INTO @siteid FROM sites WHERE name = '${SITE}';
+use ddpadmin;
+SELECT fileindex
+FROM external_store
+WHERE
+ external_store.siteid = @siteid AND
+ external_store.date = "${SQL_DATE}";
+EOF
+    local FILE_INDEX=0
+    if [ -s ${TMP_DIR}/externalstore.fileindex ] ; then
+        FILE_INDEX=$(cat ${TMP_DIR}/externalstore.fileindex)
+    fi
+    /data/ddp/externalstore/remoteload -site ${SITE} -dir ${REMOTE_WRITER_DIR} -index ${FILE_INDEX} -endpoint ${EXTERNAL_STORE_ENDPOINT}
+    if [ $? -eq 0 ] ; then
+        # Store the index of last file we loaded
+        local LAST_FILE_INDEX=$(ls ${REMOTE_WRITER_DIR} | egrep "dump.*.gz" | tail --lines 1 | sed -e 's/^dump.//' -e 's/.gz$//')
+        ${ANALYSIS_BIN}/sql/runSql <<EOF
+SELECT id INTO @siteid FROM sites WHERE name = '${SITE}';
+use ddpadmin;
+DELETE FROM external_store
+WHERE
+ external_store.siteid = @siteid AND
+ external_store.date = "${SQL_DATE}";
+INSERT INTO external_store (siteid, date, fileindex) VALUES (@siteid, '${SQL_DATE}', ${LAST_FILE_INDEX});
+EOF
+    fi
+}
+
+SITE=$1
+REMOTE_WRITER_DIR=$2
+SQL_DATE=$3
+EXTERNAL_STORE_ENDPOINT=$4
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/data/tmp
+fi
+if [ ! -z ${INCR_DIR} ]; then
+    INCR_DIR=${TMP_DIR}
+fi
+
+remoteLoad

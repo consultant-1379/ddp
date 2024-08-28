@@ -1,0 +1,134 @@
+#!/usr/bin/env perl
+# Script to process and store the PM metrics collected
+# by the single_instr run - these are SGw, PDM, PDM_SNMP,
+# SMIA, as defined in 38/159 41-FCP 103 6749 Rev. A and
+# 1/102 62-52/FCP 103 6749 Rev. F
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+
+use Time::Local;
+use Date::Parse;
+use File::Basename;
+
+our $DEBUG = 0;
+our ($site, $siteId);
+our $date;
+our $dbh;
+our $datadir;
+
+# instr metric name => database table name
+our %mcs = (
+    "sgw" => "sgw_instr",
+    "PDM" => "pdm_instr",
+    "PDM_SNMP" => "pdm_snmp_instr",
+    "smia" => "smia_instr"
+);
+
+sub main() {
+    my $result = GetOptions (
+        "datadir=s" => \$datadir,
+        "debug=s" => \$DEBUG,
+        "site=s" => \$site,
+        "date=s" => \$date
+    );
+    ($result == 1) or die "Invalid arguments";
+    $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+    $siteId = getSiteId($dbh,$site);
+    if (! defined($datadir)) {
+        print "ERROR: you must supply an instr file!\n";
+        exit 1;
+    } elsif ($date !~ /^20[0-9][0-9]-[0-1][0-9]-[0-3][0-9]$/) {
+        print "ERROR: you must supply a valid (SQL format - YYYY-MM-DD) date!\n";
+        exit 1;
+    } elsif (! defined($site)) {
+        print "ERROR: you must supply a site!\n";
+        exit 1;
+    }
+    if ( $DEBUG > 2 ) { print "main: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    foreach my $mc (sort keys %mcs) {
+        processStats($mc, $mcs{$mc});
+    }
+}
+
+sub getMetrics {
+    my ($mc) = shift;
+    my $cfg = $datadir . "/single_instr.cfg";
+    open CFG, $cfg or die "Could not open config file!";
+    while (my $line = <CFG>) {
+        if ($DEBUG > 9) { print "Processing config line " . $line . "MC: " . $mc . "\n"; }
+        # Use the first (hopefully only!) match we get
+        if ($line =~ /^$mc,(.*)$/) {
+            if ($DEBUG > 9) { print "Matched " . $mc . "\n"; }
+            return split(",", $1);
+        }
+    }
+    close CFG;
+    return 0;
+}
+
+sub processStats() {
+    my ($mc, $table) = @_;
+    if ($DEBUG > 2) { print "Processing for metric " . $mc . ", table " . $table . "\n"; }
+    my $sql = "DESCRIBE " . $table;
+    my $sth = $dbh->prepare($sql) or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute() or die "Couldn't execute statement: $sql error=" . $sth->errstr;
+    my @cols;
+    # find out what columns we are supposed to have
+    while ( my $row = $sth->fetchrow_arrayref()) {
+        if ($row->[0] !~ /^siteid$|^date$/) { push(@cols, $row->[0]); }
+    }
+    my @metrics = getMetrics($mc);
+    # compare collected with DB - we should match, but may not (early versions
+    # of DDC collected the wrong parameters)
+    foreach my $metric (@metrics) {
+        my $found = 0;
+        foreach my $col (@cols) {
+            if ($col =~ /^$metric$/) {
+                $found = 1;
+                last;
+            }
+        }
+        if ($found != 1) {
+            print "Metric " . $metric . " for MC " . $mc . " undefined in table " . $table . "\n";
+            return;
+        }
+    }
+    # We're still here, all the metrics must have columns
+    my $mfile = $datadir . "/single_instr.txt";
+    open MFILE, $mfile or die "Could not open metrics file " . $mfile;
+    while (my $line = <MFILE>) {
+        if ($line =~ /^[0-3][0-9]-[0-1][0-9]-[0-9][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9][0-9][0-9] $mc (.*)$/) {
+            if ($DEBUG > 9) { print $mc . ": matched line " . $line; }
+            my @vals = split(" ", $1);
+            # We will parse multiple lines and store if present, the last
+            # valid line in the file will be the one stored. Normally we
+            # should see only one line per metric.
+            if (scalar(@vals) == scalar(@metrics)) {
+                # We got all the metrics
+                $sql = "DELETE FROM " . $table . " WHERE date = '" . $date . "' AND siteid = " . $siteId;
+                $dbh->do($sql) or die "Failed to delete from " . $table . ": " . $!;
+                $sql = "INSERT INTO " . $table . " (siteid,date";
+                foreach my $metric (@metrics) {
+                    $sql .= "," . $metric;
+                }
+                $sql .= ") VALUES (" . $siteId . ",'" . $date . "'";
+                foreach my $val (@vals) {
+                    $sql .= "," . $val;
+                }
+                $sql .= ")";
+                $dbh->do($sql) or print "Error inserting data: " . $!;
+            }
+        }
+    }
+}
+
+main();

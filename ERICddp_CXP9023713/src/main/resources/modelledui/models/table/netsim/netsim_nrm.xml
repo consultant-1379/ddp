@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="netsim_nrm">
+    <reference table="sites" condition="netsim_nrm.siteid = sites.id"/>
+    <reference table="servers" condition="netsim_nrm.serverid = servers.id"/>
+    <reference table="netsim_nrm_names" condition="netsim_nrm.nrmid = netsim_nrm_names.id"/>
+    <reference table="netsim_module_names" condition="netsim_nrm.moduleid = netsim_module_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND netsim_nrm.date = '%date%'</where>
+
+  <groupby>
+    <column db="netsim_nrm_names.name"/>
+    <column db="netsim_module_names.name"/>
+  </groupby>
+
+  <column id="count" db="COUNT(*)" label="Count" visible="false"/>
+  <column db="netsim_nrm_names.name" label="NRM"/>
+  <column db="netsim_module_names.name" label="Module"/>
+</modelledtable>

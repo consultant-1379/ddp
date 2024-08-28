@@ -1,0 +1,34 @@
+#!/usr/bin/env perl
+
+my $db_ddl = $ARGV[0];
+
+open INPUT, $db_ddl or die "Cannot open $db_ddl";
+my $table = undef;
+
+my %serverIdCols = ();
+while ( my $line = <INPUT> ) {
+    if ( $line =~ /^CREATE\s+TABLE\s+(\S+)/ ) {
+        $table = $1;
+    } elsif ( $line =~ /^\s+(\S+)\s+SMALLINT\s+.*REFERENCES\s+(\S+)/ ) {
+        my ($referingColumn,$referenceTable) = ($1,$2);
+        if ( $referenceTable =~ /^servers/ ) {
+            $serverIdCols{$table}->{$referingColumn} = 1;
+        }
+    }
+}
+close INPUT;
+
+$table = undef;
+while ( my $line = <STDIN> ) {
+    if ( $line =~ /^CREATE TABLE `(\S+)`/ ) {
+        $table = $1;
+    } elsif ( $line =~ /^\s+`(\S+)`/ ) {
+        my $column = $1;
+        if ( exists $serverIdCols{$table} && exists $serverIdCols{$table}->{$column} ) {
+            $line = sprintf "  %s INT UNSIGNED NOT NULL,\n", $column;
+        }
+    }
+    print $line;
+}
+
+

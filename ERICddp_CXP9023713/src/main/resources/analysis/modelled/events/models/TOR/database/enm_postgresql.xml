@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_postgres_dbsize" timecol="date">
+    <keycol name="dbid" reftable="enm_postgres_names"/>
+    <keycol name="largest_table_id" reftable="enm_postgres_largest_table"/>
+  </table>
+
+  <services>    
+    <service name="postgres"/>
+    <!--
+      On LITP deployments there is no ERICenmsg RPM for postgres, so we use one of
+      the other servicegroups that run on the same host here
+      For blade, postgres is on db-1 or db-1 which is the same as jmsserver
+    -->
+    <service name="jmsserver"/>
+    <!-- For rack, postgres is on db-1 or db-3 which is the same as eshistoricaldata -->
+    <service name="eshistoricaldata"/>
+  </services>
+
+  <!-- postgresql_fs_monitor {\"Database Name\": \"wfsdb_shmcoreserv\", \"Allocated Table Size (MB)\": 64, \"Allocated Size (MB)\": 128, \"Current Size (MB)\": 20, \"Current Table Size (MB)\": 7, \"ID\": 19364, \"Largest Table Name\": \"act_ru_meter_log\"}","timestamp":"2019-11-17T03:08:02.707470+00:00"}} -->
+  <events>      
+      <event name="postgresql_fs_monitor">
+        <metric source="Database Name" target="dbid"/>
+        <metric source="Allocated Table Size (MB)" target="alloc_table_size"/>
+        <metric source="Allocated Size (MB)" target="allocSize"/>
+        <metric source="Current Size (MB)" target="sizemb"/>
+        <metric source="Current Table Size (MB)" target="current_table_size"/>
+        <metric source="ID" target="id"/>
+        <metric source="Largest Table Name" target="largest_table_id"/>
+      </event>
+  </events>
+</modelledevents>

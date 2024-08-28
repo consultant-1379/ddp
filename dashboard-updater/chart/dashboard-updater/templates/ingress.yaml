@@ -1,0 +1,30 @@
+{{- $fullName := include "dashboard-updater.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "dashboard-updater.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    nginx.ingress.kubernetes.io/auth-tls-secret: "grafana/ddpsrva01-client-ca"
+spec:
+  ingressClassName: ddpsrva01-nginx
+  rules:
+  - host: ddpsrva01.athtem.eei.ericsson.se
+    http:
+      paths:
+          - path: /dashboard-updater(/|$)(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+  tls:
+    - hosts:
+      - ddpsrva01.athtem.eei.ericsson.se
+      secretName: ddpsrva01-tls

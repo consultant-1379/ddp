@@ -1,0 +1,159 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseEventDistribution -----------
+#       This script is generic script to parse EventWiseOutputDetails_<SOURCE_NAME> EDE logs
+#       in CSV format and store data to DB.
+#       @author - Sunil Yadav (xsunyad)
+#       usage  parseEventDistribution  --logfile <EventWiseOutputDetails_[SOURCE_NAME].csv> --instance <EDE Instance Name>
+#                --site <site> --date <YYYY-MM-DD>
+######################################################################
+
+use strict;
+use warnings;
+use EventNameIDMapping;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+use POSIX 'strftime';
+
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $siteId = "";
+our $dbh = "";
+our $logFile = "";
+our $edeInstance = "";
+our $table = "ede_event_distribution_details";
+our $firstTimeStamp = "";
+our $lastTimeStamp = "";
+our $bcpFile = "";
+our @dataSource = "";
+our $r_dataSourceIdMap = 0;
+our $temporaryLogFile = "";
+
+sub main {
+    my $site = "";
+    my $date = "";
+    GetOptions (
+        "logfile=s"  => \$logFile,
+        "instance=s" => \$edeInstance,
+        "site=s"     => \$site,
+        "date=s"     => \$date,
+        "debug:s"    => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    @dataSource = $logFile =~ /^.*EventWiseOutputDetails_(\w+).csv$/;
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $bcpFile = "${tmpDir}/${table}_metrics.bcp";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    temporaryLogFileCreation($date);
+    parseData();
+    loadDb();
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub temporaryLogFileCreation {
+    my ($date) = @_ ;
+    my @logFileName = $logFile =~ /^.*(EventWiseOutputDetails_.*.csv)$/;
+    $temporaryLogFile = "$tmpDir/tmp_$logFileName[0]";
+    my $currentDate = "$date 00:00:00";
+    my $currentDateEpochSeconds = parseTime( $currentDate, $StatsTime::TIME_YYYYMD_HMS );
+    my $currentDateStamp = strftime("%Y%m%d", localtime $currentDateEpochSeconds);
+    my $oneDayAgoEpochSeconds = $currentDateEpochSeconds - 24*60*60;
+    my $previousDateStamp = strftime("%Y%m%d", localtime $oneDayAgoEpochSeconds);
+    `egrep "$previousDateStamp|$currentDateStamp|Rop Folder" $logFile > $temporaryLogFile`;
+}
+
+sub parseData {
+    my $count = 0;
+    my @eventNames;
+    my @dataSourceList = ();
+    push (@dataSourceList, $dataSource[0]);
+    $r_dataSourceIdMap = getIdMap($dbh, "data_source_id_mapping", "id", "data_source", \@dataSourceList);
+    open FILE, "<$temporaryLogFile" or die "Can't open file to read $temporaryLogFile\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    my $headerLine = <FILE>;
+    $headerLine =~ s/\n//g;
+    my @headerLineData = split(',', $headerLine);
+    my $sourceHashRef = getSourceHashRef($dataSource[0]);
+    for( my $index = 1; $index < $#headerLineData; $index++ ) {
+        if( defined( ${sourceHashRef}->{$headerLineData[$index]} ) ) {
+            push(@eventNames, ${sourceHashRef}->{ $headerLineData[$index]} );
+        }
+        else {
+            push(@eventNames, $headerLineData[$index] );
+        }
+    }
+    push(@eventNames, "OTHER_EVENTS");
+    my $r_eventId = getIdMap($dbh, "ede_event_name_id_mapping", "id", "event_name", \@eventNames);
+    while (my $line = <FILE>) {
+        $line =~ s/\n//g;
+        my @lineData = (split /\,/, $line);
+        if ($DEBUG > 2) {
+            print Dumper("LINE's DATA", @lineData);
+        }
+        my $ropTime = convertDateToSql($lineData[0]);
+        my $totalEventsCount = 0;
+        for(my $index = 1; $index <= $#lineData; $index++) {
+            $totalEventsCount += $lineData[$index];
+        }
+        if ( $count == 0) {
+            $firstTimeStamp = $ropTime;
+        }
+        $count++;
+        $lastTimeStamp = $ropTime;
+        my $counterForEventCount = 1;
+        foreach my $eventName (@eventNames) {
+            printf BCP "%s|%d|%s|%d|%s|%d|%d|%d\n",
+            $ropTime,
+            $siteId,
+            $edeInstance,
+            $r_dataSourceIdMap->{$dataSource[0]},
+            $lineData[0],
+            $r_eventId->{$eventName},
+            $lineData[$counterForEventCount],
+            $totalEventsCount;
+            $counterForEventCount++;
+        }
+    }
+    close BCP;
+    close FILE;
+    unlink($temporaryLogFile);
+}
+
+sub convertDateToSql {
+    my $timeStamp = shift;
+    my ($y, $m, $d, $h, $M) = $timeStamp =~ /^([1-9][0-9][0-9][0-9])([0-1][0-9])([0-3][0-9])([0-2][0-9])([0-5][0-9])$/;
+    return "$y-$m-$d $h:$M:00";
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND ede_instance = '$edeInstance' AND data_source_id = $r_dataSourceIdMap->{$dataSource[0]} AND time BETWEEN '$firstTimeStamp' AND '$lastTimeStamp'";
+    if ($DEBUG > 5) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $loadDataIntoDB = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY '|'";
+    if ($DEBUG > 5) { print "SQL query for inserting data: $loadDataIntoDB \n" };
+    removeOldData();
+    dbDo($dbh, $loadDataIntoDB) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

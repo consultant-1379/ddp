@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="Files"
+ timespan="day"
+ useragg="false"
+>
+  <presetagg type="COUNT" interval="Hourly" />
+  <title value="Number Of Data Files Uploaded"/>
+  <queries>
+    <query timecol="uploaded">
+      <dbtables main="ddpadmin.ddp_makestats"/>
+
+      <where></where>
+      <column db="*" label="Count"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

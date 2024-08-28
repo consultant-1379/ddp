@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_cm_restconf_nbi">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="restconfserv"/>
+  </services>
+
+  <events>
+    <!--2022-04-19 08:33:02,044 INFO [com.ericsson.oss.itpf.EVENT_DATA_LOGGER] (default task-1) RESTCONF_NBI.REQUEST_TOTALS {"totalReqQueryParam":0,"totalResDataSize":16038, "userIndex":-1, "reqMethod":"GET","yangRequestUri":"/data/ietf-network:networks", "totalMOsRead":27,"reqMediaType":"NONE", "moPerSecDelete":0,"totalNodes":20, "reqAcceptType":"JSON","moPerSecRead":0,"totalMOsUpdated":0,"totalMOsDeleted":0,"rootModuleName":"ietf-network:networks", "totalSkippedNodes":1,"reqType":"DATA", "totalResTime":4291,"moPerSecCreate":0, "moPerSecUpdate":0,"totalReqDataSize":0, "resStatus":"SUCCESS","totalDpsTxTime":41,"totalMOsCreated":0}-->
+    <event name="RESTCONF_NBI.REQUEST_TOTALS">
+      <metric source="host" target="serverid"/>
+      <metric source="userIndex" target="userIndex"/>
+      <metric source="resStatus" target="resStatus"/>
+      <metric source="reqMethod" target="reqMethod"/>
+      <metric source="rootModuleName" target="rootModuleName"/>
+      <metric source="reqType" target="reqType"/>
+      <metric source="totalMOsUpdated" target="totalMOsUpdated"/>
+      <metric source="totalMOsDeleted" target="totalMOsDeleted"/>
+      <metric source="totalMOsRead" target="totalMOsRead"/>
+      <metric source="totalMOsCreated" target="totalMOsCreated"/>
+      <metric source="totalReqDataSize" target="totalReqDataSize"/>
+      <metric source="totalResDataSize" target="totalResDataSize"/>
+    </event>
+  </events>
+</modelledevents>

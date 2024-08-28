@@ -1,0 +1,32 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_bulk_import_ui">
+    <reference table="sites" condition="enm_bulk_import_ui.siteid = sites.id"/>
+    <reference table="servers" condition="enm_bulk_import_ui.serverid = servers.id" join="LEFT OUTER JOIN"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_bulk_import_ui.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="jobId" label="Job Id"/>
+  <column db="status" label="Status"/>
+  <column db="IFNULL(TIMEDIFF(time(time), SEC_TO_TIME(ROUND(elapsedTime))), 'NA')" label="Job Start"/>
+  <column db="time" label="Job End" formatter="ddpFormatTime"/>
+  <column db="numberOfNodes" label="Number of Nodes"/>
+  <column db="IFNULL((servers.hostname), 'NA' )" label="Hostname"/>
+  <column db="elapsedTime" label="Elapsed Time"/>
+  <column db="mosProcessed" label="MOs Processed"/>
+  <column db="IFNULL(ROUND((mosProcessed)/(elapsedTime),3),0)" label="MOs Processed/Sec"/>
+  <column db="fileFormat" label="File Format"/>
+  <column db="invocation" label="Invocation Flow"/>
+  <column db="IF(validationPolicies='', 'NA', validationPolicies)" label="Validation Policies"/>
+  <column db="IF(executionPolicies='', 'NA', executionPolicies)" label="Execution Policies"/>
+  <column db="createOperations" label="Create Operations"/>
+  <column db="deleteOperations" label="Delete Operations"/>
+  <column db="updateOperations" label="Update Operations"/>
+  <column db="actionOperations" label="Action Operations"/>
+  <column db="validCount" label="Total Valid"/>
+  <column db="invalidCount" label="Total Invalid"/>
+  <column db="executedCount" label="Total Executed"/>
+  <column db="executionErrorCount" label="Total Execution Error"/>
+</modelledtable>

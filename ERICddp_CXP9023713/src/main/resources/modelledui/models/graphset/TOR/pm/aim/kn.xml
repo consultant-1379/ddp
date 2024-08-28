@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_aim_knowledge_instr">
+      <reference table="sites" condition="enm_aim_knowledge_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_aim_knowledge_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="totalCombinedDimensionKeysCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCombinedDimensionKeysCreated"/>
+      <column db="totalCombinedDimensionKeysCreated" label="totalCombinedDimensionKeysCreated"/>
+    </graph>
+    <graph name="totalCombinedDimensionKeysCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCombinedDimensionKeysCreated"/>
+      <column db="totalCombinedDimensionKeysCreated"/>
+    </graph>
+    <graph name="totalElementsReceivedToProcess" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalElementsReceivedToProcess"/>
+      <column db="totalElementsReceivedToProcess"/>
+    </graph>
+    <graph name="singleDimensionKeysSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="singleDimensionKeysSize"/>
+      <column db="singleDimensionKeysSize"/>
+    </graph>
+    <graph name="combinedDimensionKeysSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="combinedDimensionKeysSize"/>
+      <column db="combinedDimensionKeysSize"/>
+    </graph>
+    <graph name="totalCombinedDimensionKeysRemovedFromMemory" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCombinedDimensionKeysRemovedFromMemory"/>
+      <column db="totalCombinedDimensionKeysRemovedFromMemory"/>
+    </graph>
+    <graph name="totalEvictedKeysFromSingleDimensionKeys" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalEvictedKeysFromSingleDimensionKeys"/>
+      <column db="totalEvictedKeysFromSingleDimensionKeys"/>
+    </graph>
+    <graph name="totalTimeReadingCombinedDimensionKeys" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeReadingCombinedDimensionKeys"/>
+      <column db="totalTimeReadingCombinedDimensionKeys"/>
+    </graph>
+    <graph name="totalTimeReadingSingleDimensionKeys" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeReadingSingleDimensionKeys"/>
+      <column db="totalTimeReadingSingleDimensionKeys"/>
+    </graph>
+    <graph name="totalTimeSavingCombinedDimensionKeys" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeSavingCombinedDimensionKeys"/>
+      <column db="totalTimeSavingCombinedDimensionKeys"/>
+    </graph>
+    <graph name="totalTimeSavingSingleDimensionKeys" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeSavingSingleDimensionKeys"/>
+      <column db="totalTimeSavingSingleDimensionKeys"/>
+    </graph>
+    <graph name="totalCallsToStorageWhenCacheIsUsed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCallsToStorageWhenCacheIsUsed"/>
+      <column db="totalCallsToStorageWhenCacheIsUsed"/>
+    </graph>
+    <graph name="totalRequestsToGetCombinedDimensionKeysInBatch" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalRequestsToGetCombinedDimensionKeysInBatch"/>
+      <column db="totalRequestsToGetCombinedDimensionKeysInBatch"/>
+    </graph>
+    <graph name="totalTimeToGetSingleDimensionKeysInBatch" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeToGetSingleDimensionKeysInBatch"/>
+      <column db="totalTimeToGetSingleDimensionKeysInBatch"/>
+    </graph>
+    <graph name="totalRequestToGetOneCombinedDimensionKey" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalRequestToGetOneCombinedDimensionKey"/>
+      <column db="totalRequestToGetOneCombinedDimensionKey"/>
+    </graph>
+    <graph name="totalRequestsToGetSingleDimensionKeysInBatch" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalRequestsToGetSingleDimensionKeysInBatch"/>
+      <column db="totalRequestsToGetSingleDimensionKeysInBatch"/>
+    </graph>
+    <graph name="totalRequestToGetOneSingleDimensionKey" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalRequestToGetOneSingleDimensionKey"/>
+      <column db="totalRequestToGetOneSingleDimensionKey"/>
+    </graph>
+    <graph name="totalTimeToGetCombinedDimensionKeysInBatch" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeToGetCombinedDimensionKeysInBatch"/>
+      <column db="totalTimeToGetCombinedDimensionKeysInBatch"/>
+    </graph>
+    <graph name="totalTimeToGetOneCombinedDimensionKey" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeToGetOneCombinedDimensionKey"/>
+      <column db="totalTimeToGetOneCombinedDimensionKey"/>
+    </graph>
+    <graph name="totalTimeToGetOneSingleDimensionKey" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeToGetOneSingleDimensionKey"/>
+      <column db="totalTimeToGetOneSingleDimensionKey"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="totalCombinedDimensionKeysCreated">
+      <member>totalCombinedDimensionKeysCreated</member>
+    </group>
+    <group name="totalElementsReceivedToProcess">
+      <member>totalElementsReceivedToProcess</member>
+    </group>
+    <group name="singleDimensionKeysSize">
+      <member>singleDimensionKeysSize</member>
+    </group>
+    <group name="combinedDimensionKeysSize">
+      <member>combinedDimensionKeysSize</member>
+    </group>
+    <group name="totalCombinedDimensionKeysRemovedFromMemory">
+      <member>totalCombinedDimensionKeysRemovedFromMemory</member>
+    </group>
+    <group name="totalEvictedKeysFromSingleDimensionKeys">
+      <member>totalEvictedKeysFromSingleDimensionKeys</member>
+    </group>
+    <group name="totalTimeReadingCombinedDimensionKeys">
+      <member>totalTimeReadingCombinedDimensionKeys</member>
+    </group>
+    <group name="totalTimeReadingSingleDimensionKeys">
+      <member>totalTimeReadingSingleDimensionKeys</member>
+    </group>
+    <group name="totalTimeSavingCombinedDimensionKeys">
+      <member>totalTimeSavingCombinedDimensionKeys</member>
+    </group>
+    <group name="totalTimeSavingSingleDimensionKeys">
+      <member>totalTimeSavingSingleDimensionKeys</member>
+    </group>
+    <group name="totalCallsToStorageWhenCacheIsUsed">
+      <member>totalCallsToStorageWhenCacheIsUsed</member>
+    </group>
+    <group name="totalRequestsToGetCombinedDimensionKeysInBatch">
+      <member>totalRequestsToGetCombinedDimensionKeysInBatch</member>
+    </group>
+    <group name="totalTimeToGetSingleDimensionKeysInBatch">
+      <member>totalTimeToGetSingleDimensionKeysInBatch</member>
+    </group>
+    <group name="totalRequestToGetOneCombinedDimensionKey">
+      <member>totalRequestToGetOneCombinedDimensionKey</member>
+    </group>
+    <group name="totalRequestsToGetSingleDimensionKeysInBatch">
+      <member>totalRequestsToGetSingleDimensionKeysInBatch</member>
+    </group>
+    <group name="totalRequestToGetOneSingleDimensionKey">
+      <member>totalRequestToGetOneSingleDimensionKey</member>
+    </group>
+    <group name="totalTimeToGetCombinedDimensionKeysInBatch">
+      <member>totalTimeToGetCombinedDimensionKeysInBatch</member>
+    </group>
+    <group name="totalTimeToGetOneCombinedDimensionKey">
+      <member>totalTimeToGetOneCombinedDimensionKey</member>
+    </group>
+    <group name="totalTimeToGetOneSingleDimensionKey">
+      <member>totalTimeToGetOneSingleDimensionKey</member>
+    </group>
+    <group name="all">
+      <member>totalCombinedDimensionKeysCreated</member>
+      <member>totalElementsReceivedToProcess</member>
+      <member>singleDimensionKeysSize</member>
+      <member>combinedDimensionKeysSize</member>
+      <member>totalCombinedDimensionKeysRemovedFromMemory</member>
+      <member>totalEvictedKeysFromSingleDimensionKeys</member>
+      <member>totalTimeReadingCombinedDimensionKeys</member>
+      <member>totalTimeReadingSingleDimensionKeys</member>
+      <member>totalTimeSavingCombinedDimensionKeys</member>
+      <member>totalTimeSavingSingleDimensionKeys</member>
+      <member>totalCallsToStorageWhenCacheIsUsed</member>
+      <member>totalRequestsToGetCombinedDimensionKeysInBatch</member>
+      <member>totalTimeToGetSingleDimensionKeysInBatch</member>
+      <member>totalRequestToGetOneCombinedDimensionKey</member>
+      <member>totalRequestsToGetSingleDimensionKeysInBatch</member>
+      <member>totalRequestToGetOneSingleDimensionKey</member>
+      <member>totalTimeToGetCombinedDimensionKeysInBatch</member>
+      <member>totalTimeToGetOneCombinedDimensionKey</member>
+      <member>totalTimeToGetOneSingleDimensionKey</member>
+    </group>
+    <group name="knNonMain">
+      <member>totalCombinedDimensionKeysCreated</member>
+      <member>singleDimensionKeysSize</member>
+      <member>combinedDimensionKeysSize</member>
+      <member>totalRequestsToGetCombinedDimensionKeysInBatch</member>
+      <member>totalTimeToGetSingleDimensionKeysInBatch</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

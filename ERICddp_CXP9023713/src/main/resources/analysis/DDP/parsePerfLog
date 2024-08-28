@@ -1,0 +1,82 @@
+#!/usr/bin/env perl
+
+use strict;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+
+our $DEBUG=0;
+
+main();
+
+
+sub main()
+{
+    my ($perfDataFile, $site);
+    my $result = GetOptions("perf=s"  => \$perfDataFile,
+                            "debug=n" => \$DEBUG,
+                            );
+			    
+    my $r_data = loadData($perfDataFile);
+    storeData($r_data,$site);
+}
+
+sub storeData
+{
+    my ($r_data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    
+    my $dbh = connect_db();
+
+    # Don't use db.table as this breaks replication
+    dbDo( $dbh, "use ddpadmin");
+
+    my %pages = ();
+    foreach my $r_row ( @{$r_data} ) {
+	$pages{$r_row->{'file'}}++;
+    }
+    my @pageNames = keys %pages;
+    my $r_pageIdMap = getIdMap($dbh, "ddp_page_names", "id", "name", \@pageNames );
+
+    dbDo( $dbh, sprintf("DELETE FROM ddp_page_exec WHERE time BETWEEN '%s' AND '%s'",
+			$r_data->[0]->{'time'}, $r_data->[$#{$r_data}]->{'time'}) ) or
+			    die "Failed to remove data from page_exe";
+			
+    foreach my $r_row ( @{$r_data} ) {
+	dbDo($dbh, sprintf("INSERT INTO ddp_page_exec (time,pageid,duration) VALUES ( '%s', %d, %s )",
+			   $r_row->{'time'}, $r_pageIdMap->{$r_row->{'file'}}, $r_row->{'duration'}) )
+	    or die "Failed to insert row";
+    }
+
+    $dbh->disconnect;
+}
+
+sub loadData
+{
+    my ($perfDataFile) = @_;
+
+    my @data = ();
+
+    open DATA, $perfDataFile or die "Cannot open $perfDataFile";
+    while ( my $line = <DATA> ) {
+	my ($day,$time,$file, $duration, $url) = $line =~
+	    /^(\S+) (\S+) (\S+)\s+([\d\.]+)\s+(.*)/;
+	if ( defined $day ) {
+	    my $r_Data = {
+		'time' => $day . " " . $time,
+		'file' => $file,
+		'duration' => $duration
+	    };
+	    push @data, $r_Data;
+	} else {
+	    print "WARN: Cannot parse $line";
+	}
+    }
+    close DATA;
+    if ( $DEBUG > 5 ) { print Dumper("loadData data", \@data); }
+   return \@data;
+}

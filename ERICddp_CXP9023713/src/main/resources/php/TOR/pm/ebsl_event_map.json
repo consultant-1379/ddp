@@ -1,0 +1,2020 @@
+{
+    "events": [
+        {
+            "id": 0,
+            "name": "RRC_RRC_CONNECTION_SETUP"
+        },
+        {
+            "id": 1,
+            "name": "RRC_RRC_CONNECTION_REJECT"
+        },
+        {
+            "id": 2,
+            "name": "RRC_RRC_CONNECTION_REQUEST"
+        },
+        {
+            "id": 3,
+            "name": "RRC_RRC_CONNECTION_RE_ESTABLISHMENT_REQUEST"
+        },
+        {
+            "id": 4,
+            "name": "RRC_RRC_CONNECTION_RE_ESTABLISHMENT_REJECT"
+        },
+        {
+            "id": 5,
+            "name": "RRC_RRC_CONNECTION_RELEASE"
+        },
+        {
+            "id": 6,
+            "name": "RRC_DL_INFORMATION_TRANSFER"
+        },
+        {
+            "id": 7,
+            "name": "RRC_MOBILITY_FROM_E_UTRA_COMMAND"
+        },
+        {
+            "id": 8,
+            "name": "RRC_RRC_CONNECTION_RECONFIGURATION"
+        },
+        {
+            "id": 9,
+            "name": "RRC_SECURITY_MODE_COMMAND"
+        },
+        {
+            "id": 10,
+            "name": "RRC_UE_CAPABILITY_ENQUIRY"
+        },
+        {
+            "id": 11,
+            "name": "RRC_MEASUREMENT_REPORT"
+        },
+        {
+            "id": 12,
+            "name": "RRC_RRC_CONNECTION_SETUP_COMPLETE"
+        },
+        {
+            "id": 13,
+            "name": "RRC_RRC_CONNECTION_RECONFIGURATION_COMPLETE"
+        },
+        {
+            "id": 16,
+            "name": "RRC_UL_INFORMATION_TRANSFER"
+        },
+        {
+            "id": 17,
+            "name": "RRC_SECURITY_MODE_COMPLETE"
+        },
+        {
+            "id": 18,
+            "name": "RRC_SECURITY_MODE_FAILURE"
+        },
+        {
+            "id": 19,
+            "name": "RRC_UE_CAPABILITY_INFORMATION"
+        },
+        {
+            "id": 21,
+            "name": "RRC_MASTER_INFORMATION_BLOCK"
+        },
+        {
+            "id": 22,
+            "name": "RRC_SYSTEM_INFORMATION"
+        },
+        {
+            "id": 23,
+            "name": "RRC_SYSTEM_INFORMATION_BLOCK_TYPE_1"
+        },
+        {
+            "id": 24,
+            "name": "RRC_CONNECTION_RE_ESTABLISHMENT"
+        },
+        {
+            "id": 25,
+            "name": "RRC_CONNECTION_RE_ESTABLISHMENT_COMPLETE"
+        },
+        {
+            "id": 26,
+            "name": "RRC_UE_INFORMATION_RESPONSE"
+        },
+        {
+            "id": 27,
+            "name": "RRC_UE_INFORMATION_REQUEST"
+        },
+        {
+            "id": 28,
+            "name": "RRC_MBSFNAREA_CONFIGURATION"
+        },
+        {
+            "id": 29,
+            "name": "RRC_CSFB_PARAMETERS_REQUEST_CDMA2000"
+        },
+        {
+            "id": 30,
+            "name": "RRC_CSFB_PARAMETERS_RESPONSE_CDMA2000"
+        },
+        {
+            "id": 31,
+            "name": "RRC_HANDOVER_FROM_EUTRA_PREPARATION_REQUEST"
+        },
+        {
+            "id": 32,
+            "name": "RRC_UL_HANDOVER_PREPARATION_TRANSFER"
+        },
+        {
+            "id": 33,
+            "name": "RRC_MBMS_INTEREST_INDICATION"
+        },
+        {
+            "id": 34,
+            "name": "RRC_INTER_FREQ_RSTD_MEASUREMENT_INDICATION"
+        },
+        {
+            "id": 35,
+            "name": "RRC_MOBILITY_FROM_E_UTRA_COMMAND_EXT"
+        },
+        {
+            "id": 36,
+            "name": "RRC_DL_INFORMATION_TRANSFER_NB"
+        },
+        {
+            "id": 37,
+            "name": "RRC_MASTER_INFORMATION_BLOCK_NB"
+        },
+        {
+            "id": 38,
+            "name": "RRC_RRC_CONNECTION_RE_ESTABLISHMENT_NB"
+        },
+        {
+            "id": 39,
+            "name": "RRC_RRC_CONNECTION_RE_ESTABLISHMENT_COMPLETE_NB"
+        },
+        {
+            "id": 40,
+            "name": "RRC_RRC_CONNECTION_RE_ESTABLISHMENT_REJECT_NB"
+        },
+        {
+            "id": 41,
+            "name": "RRC_RRC_CONNECTION_RE_ESTABLISHMENT_REQUEST_NB"
+        },
+        {
+            "id": 42,
+            "name": "RRC_RRC_CONNECTION_RECONFIGURATION_NB"
+        },
+        {
+            "id": 43,
+            "name": "RRC_RRC_CONNECTION_RECONFIGURATION_COMPLETE_NB"
+        },
+        {
+            "id": 44,
+            "name": "RRC_RRC_CONNECTION_REJECT_NB"
+        },
+        {
+            "id": 45,
+            "name": "RRC_RRC_CONNECTION_RELEASE_NB"
+        },
+        {
+            "id": 46,
+            "name": "RRC_RRC_CONNECTION_REQUEST_NB"
+        },
+        {
+            "id": 47,
+            "name": "RRC_RRC_CONNECTION_SETUP_NB"
+        },
+        {
+            "id": 48,
+            "name": "RRC_RRC_CONNECTION_SETUP_COMPLETE_NB"
+        },
+        {
+            "id": 49,
+            "name": "RRC_SYSTEM_INFORMATION_NB"
+        },
+        {
+            "id": 50,
+            "name": "RRC_SYSTEM_INFORMATION_BLOCK_TYPE_1_NB"
+        },
+        {
+            "id": 51,
+            "name": "RRC_UE_CAPABILITY_ENQUIRY_NB"
+        },
+        {
+            "id": 52,
+            "name": "RRC_UE_CAPABILITY_INFORMATION_NB"
+        },
+        {
+            "id": 53,
+            "name": "RRC_UL_INFORMATION_TRANSFER_NB"
+        },
+        {
+            "id": 54,
+            "name": "RRC_IN_DEVICE_COEX_INDICATION"
+        },
+        {
+            "id": 55,
+            "name": "RRC_SCG_FAILURE_INFORMATION_NR"
+        },
+        {
+            "id": 56,
+            "name": "RRC_LOGGED_MEASUREMENT_CONFIGURATION"
+        },
+        {
+            "id": 57,
+            "name": "RRC_UL_INFORMATION_TRANSFER_MRDC"
+        },
+        {
+            "id": 1024,
+            "name": "S1_DOWNLINK_S1_CDMA2000_TUNNELING"
+        },
+        {
+            "id": 1025,
+            "name": "S1_DOWNLINK_NAS_TRANSPORT"
+        },
+        {
+            "id": 1026,
+            "name": "S1_ENB_STATUS_TRANSFER"
+        },
+        {
+            "id": 1027,
+            "name": "S1_ERROR_INDICATION"
+        },
+        {
+            "id": 1028,
+            "name": "S1_HANDOVER_CANCEL"
+        },
+        {
+            "id": 1029,
+            "name": "S1_HANDOVER_CANCEL_ACKNOWLEDGE"
+        },
+        {
+            "id": 1030,
+            "name": "S1_HANDOVER_COMMAND"
+        },
+        {
+            "id": 1031,
+            "name": "S1_HANDOVER_FAILURE"
+        },
+        {
+            "id": 1032,
+            "name": "S1_HANDOVER_NOTIFY"
+        },
+        {
+            "id": 1033,
+            "name": "S1_HANDOVER_PREPARATION_FAILURE"
+        },
+        {
+            "id": 1034,
+            "name": "S1_HANDOVER_REQUEST"
+        },
+        {
+            "id": 1035,
+            "name": "S1_HANDOVER_REQUEST_ACKNOWLEDGE"
+        },
+        {
+            "id": 1036,
+            "name": "S1_HANDOVER_REQUIRED"
+        },
+        {
+            "id": 1037,
+            "name": "S1_INITIAL_CONTEXT_SETUP_FAILURE"
+        },
+        {
+            "id": 1038,
+            "name": "S1_INITIAL_CONTEXT_SETUP_REQUEST"
+        },
+        {
+            "id": 1039,
+            "name": "S1_INITIAL_CONTEXT_SETUP_RESPONSE"
+        },
+        {
+            "id": 1040,
+            "name": "S1_INITIAL_UE_MESSAGE"
+        },
+        {
+            "id": 1041,
+            "name": "S1_MME_STATUS_TRANSFER"
+        },
+        {
+            "id": 1042,
+            "name": "S1_NAS_NON_DELIVERY_INDICATION"
+        },
+        {
+            "id": 1043,
+            "name": "S1_PAGING"
+        },
+        {
+            "id": 1044,
+            "name": "S1_PATH_SWITCH_REQUEST"
+        },
+        {
+            "id": 1045,
+            "name": "S1_PATH_SWITCH_REQUEST_ACKNOWLEDGE"
+        },
+        {
+            "id": 1046,
+            "name": "S1_PATH_SWITCH_REQUEST_FAILURE"
+        },
+        {
+            "id": 1047,
+            "name": "S1_RESET"
+        },
+        {
+            "id": 1048,
+            "name": "S1_RESET_ACKNOWLEDGE"
+        },
+        {
+            "id": 1049,
+            "name": "S1_ERAB_MODIFY_REQUEST"
+        },
+        {
+            "id": 1050,
+            "name": "S1_ERAB_MODIFY_RESPONSE"
+        },
+        {
+            "id": 1051,
+            "name": "S1_ERAB_RELEASE_COMMAND"
+        },
+        {
+            "id": 1052,
+            "name": "S1_ERAB_RELEASE_RESPONSE"
+        },
+        {
+            "id": 1054,
+            "name": "S1_ERAB_SETUP_REQUEST"
+        },
+        {
+            "id": 1055,
+            "name": "S1_ERAB_SETUP_RESPONSE"
+        },
+        {
+            "id": 1056,
+            "name": "S1_S1_SETUP_FAILURE"
+        },
+        {
+            "id": 1057,
+            "name": "S1_S1_SETUP_REQUEST"
+        },
+        {
+            "id": 1058,
+            "name": "S1_S1_SETUP_RESPONSE"
+        },
+        {
+            "id": 1059,
+            "name": "S1_UE_CAPABILITY_INFO_INDICATION"
+        },
+        {
+            "id": 1060,
+            "name": "S1_UE_CONTEXT_MODIFICATION_FAILURE"
+        },
+        {
+            "id": 1061,
+            "name": "S1_UE_CONTEXT_MODIFICATION_REQUEST"
+        },
+        {
+            "id": 1062,
+            "name": "S1_UE_CONTEXT_MODIFICATION_RESPONSE"
+        },
+        {
+            "id": 1063,
+            "name": "S1_UE_CONTEXT_RELEASE_COMMAND"
+        },
+        {
+            "id": 1064,
+            "name": "S1_UE_CONTEXT_RELEASE_COMPLETE"
+        },
+        {
+            "id": 1065,
+            "name": "S1_UE_CONTEXT_RELEASE_REQUEST"
+        },
+        {
+            "id": 1066,
+            "name": "S1_UPLINK_S1_CDMA2000_TUNNELING"
+        },
+        {
+            "id": 1067,
+            "name": "S1_UPLINK_NAS_TRANSPORT"
+        },
+        {
+            "id": 1068,
+            "name": "S1_ENB_CONFIGURATION_UPDATE"
+        },
+        {
+            "id": 1069,
+            "name": "S1_ENB_CONFIGURATION_UPDATE_ACKNOWLEDGE"
+        },
+        {
+            "id": 1070,
+            "name": "S1_ENB_CONFIGURATION_UPDATE_FAILURE"
+        },
+        {
+            "id": 1071,
+            "name": "S1_MME_CONFIGURATION_UPDATE"
+        },
+        {
+            "id": 1072,
+            "name": "S1_MME_CONFIGURATION_UPDATE_ACKNOWLEDGE"
+        },
+        {
+            "id": 1073,
+            "name": "S1_MME_CONFIGURATION_UPDATE_FAILURE"
+        },
+        {
+            "id": 1074,
+            "name": "S1_ENB_DIRECT_INFORMATION_TRANSFER"
+        },
+        {
+            "id": 1075,
+            "name": "S1_MME_DIRECT_INFORMATION_TRANSFER"
+        },
+        {
+            "id": 1076,
+            "name": "S1_WRITE_REPLACE_WARNING_REQUEST"
+        },
+        {
+            "id": 1077,
+            "name": "S1_WRITE_REPLACE_WARNING_RESPONSE"
+        },
+        {
+            "id": 1078,
+            "name": "S1_KILL_REQUEST"
+        },
+        {
+            "id": 1079,
+            "name": "S1_KILL_RESPONSE"
+        },
+        {
+            "id": 1080,
+            "name": "S1_ERAB_RELEASE_INDICATION"
+        },
+        {
+            "id": 1081,
+            "name": "S1_DOWNLINK_UE_ASSOCIATED_LPPA_TRANSPORT"
+        },
+        {
+            "id": 1082,
+            "name": "S1_UPLINK_UE_ASSOCIATED_LPPA_TRANSPORT"
+        },
+        {
+            "id": 1083,
+            "name": "S1_DOWNLINK_NON_UE_ASSOCIATED_LPPA_TRANSPORT"
+        },
+        {
+            "id": 1084,
+            "name": "S1_UPLINK_NON_UE_ASSOCIATED_LPPA_TRANSPORT"
+        },
+        {
+            "id": 1085,
+            "name": "S1_WIFI_ACCESS_DECISION_REQUEST"
+        },
+        {
+            "id": 1086,
+            "name": "S1_WIFI_ACCESS_DECISION_RESPONSE"
+        },
+        {
+            "id": 1087,
+            "name": "S1_OVERLOAD_START"
+        },
+        {
+            "id": 1088,
+            "name": "S1_OVERLOAD_STOP"
+        },
+        {
+            "id": 1089,
+            "name": "S1_THROUGHPUT_ESTIMATION_REQUEST"
+        },
+        {
+            "id": 1090,
+            "name": "S1_THROUGHPUT_ESTIMATION_RESPONSE"
+        },
+        {
+            "id": 1091,
+            "name": "S1_DOWNLINK_S1_CDMA2000_TUNNELING_EXT"
+        },
+        {
+            "id": 1092,
+            "name": "S1_REROUTE_NAS_REQUEST"
+        },
+        {
+            "id": 1093,
+            "name": "S1_CONNECTION_ESTABLISHMENT_INDICATION"
+        },
+        {
+            "id": 1095,
+            "name": "S1_ERAB_MODIFICATION_INDICATION"
+        },
+        {
+            "id": 1096,
+            "name": "S1_ERAB_MODIFICATION_CONFIRM"
+        },
+        {
+            "id": 1097,
+            "name": "S1_ENB_CP_RELOCATION_INDICATION"
+        },
+        {
+            "id": 1098,
+            "name": "S1_MME_CP_RELOCATION_INDICATION"
+        },
+        {
+            "id": 1099,
+            "name": "S1_SECONDARY_RAT_DATA_USAGE_REPORT"
+        },
+        {
+            "id": 2048,
+            "name": "X2_RESET_REQUEST"
+        },
+        {
+            "id": 2049,
+            "name": "X2_RESET_RESPONSE"
+        },
+        {
+            "id": 2050,
+            "name": "X2_X2_SETUP_REQUEST"
+        },
+        {
+            "id": 2051,
+            "name": "X2_X2_SETUP_RESPONSE"
+        },
+        {
+            "id": 2052,
+            "name": "X2_ERROR_INDICATION"
+        },
+        {
+            "id": 2053,
+            "name": "X2_ENB_CONFIGURATION_UPDATE"
+        },
+        {
+            "id": 2054,
+            "name": "X2_ENB_CONFIGURATION_UPDATE_ACKNOWLEDGE"
+        },
+        {
+            "id": 2055,
+            "name": "X2_ENB_CONFIGURATION_UPDATE_FAILURE"
+        },
+        {
+            "id": 2056,
+            "name": "X2_X2_SETUP_FAILURE"
+        },
+        {
+            "id": 2057,
+            "name": "X2_HANDOVER_CANCEL"
+        },
+        {
+            "id": 2058,
+            "name": "X2_HANDOVER_REQUEST"
+        },
+        {
+            "id": 2059,
+            "name": "X2_HANDOVER_REQUEST_ACKNOWLEDGE"
+        },
+        {
+            "id": 2060,
+            "name": "X2_SN_STATUS_TRANSFER"
+        },
+        {
+            "id": 2061,
+            "name": "X2_UE_CONTEXT_RELEASE"
+        },
+        {
+            "id": 2062,
+            "name": "X2_HANDOVER_PREPARATION_FAILURE"
+        },
+        {
+            "id": 2063,
+            "name": "S1_LOCATION_REPORTING_CONTROL"
+        },
+        {
+            "id": 2064,
+            "name": "S1_LOCATION_REPORT"
+        },
+        {
+            "id": 2065,
+            "name": "S1_LOCATION_REPORT_FAILURE_INDICATION"
+        },
+        {
+            "id": 2066,
+            "name": "S1_MME_CONFIGURATION_TRANSFER"
+        },
+        {
+            "id": 2067,
+            "name": "S1_ENB_CONFIGURATION_TRANSFER"
+        },
+        {
+            "id": 2068,
+            "name": "X2_PRIVATE_MESSAGE"
+        },
+        {
+            "id": 2069,
+            "name": "X2_RLF_INDICATION"
+        },
+        {
+            "id": 2070,
+            "name": "X2_HANDOVER_REPORT"
+        },
+        {
+            "id": 2071,
+            "name": "X2_CONTEXT_FETCH_REQUEST"
+        },
+        {
+            "id": 2072,
+            "name": "X2_CONTEXT_FETCH_RESPONSE"
+        },
+        {
+            "id": 2073,
+            "name": "X2_CONTEXT_FETCH_FAILURE"
+        },
+        {
+            "id": 2074,
+            "name": "X2_CONTEXT_FETCH_RESPONSE_ACCEPT"
+        },
+        {
+            "id": 2076,
+            "name": "X2_CELL_ACTIVATION_REQUEST"
+        },
+        {
+            "id": 2077,
+            "name": "X2_CELL_ACTIVATION_RESPONSE"
+        },
+        {
+            "id": 2078,
+            "name": "X2_CELL_ACTIVATION_FAILURE"
+        },
+        {
+            "id": 2079,
+            "name": "X2_PROPRIETARY_CELL_SLEEP_START_REQUEST"
+        },
+        {
+            "id": 2080,
+            "name": "X2_PROPRIETARY_CELL_SLEEP_STOP_REQUEST"
+        },
+        {
+            "id": 2081,
+            "name": "X2_PROPRIETARY_CELL_SLEEP_RESPONSE"
+        },
+        {
+            "id": 2082,
+            "name": "X2_PROPRIETARY_CELL_SLEEP_FAILURE"
+        },
+        {
+            "id": 2083,
+            "name": "X2_SGNB_RELEASE_REQUIRED"
+        },
+        {
+            "id": 2084,
+            "name": "X2_SGNB_RELEASE_CONFIRM"
+        },
+        {
+            "id": 2085,
+            "name": "X2_SGNB_RELEASE_REQUEST"
+        },
+        {
+            "id": 2086,
+            "name": "X2_SGNB_RELEASE_REQUEST_ACKNOWLEDGE"
+        },
+        {
+            "id": 2087,
+            "name": "X2_SGNB_RELEASE_REQUEST_REJECT"
+        },
+        {
+            "id": 2088,
+            "name": "X2_SGNB_ACTIVITY_NOTIFICATION"
+        },
+        {
+            "id": 2089,
+            "name": "X2_SGNB_ADDITION_REQUEST"
+        },
+        {
+            "id": 2090,
+            "name": "X2_SGNB_ADDITION_REQUEST_ACKNOWLEDGE"
+        },
+        {
+            "id": 2091,
+            "name": "X2_SGNB_ADDITION_REQUEST_REJECT"
+        },
+        {
+            "id": 2092,
+            "name": "X2_SGNB_RECONFIGURATION_COMPLETE"
+        },
+        {
+            "id": 2093,
+            "name": "X2_RESOURCE_STATUS_REQUEST"
+        },
+        {
+            "id": 2094,
+            "name": "X2_RESOURCE_STATUS_RESPONSE"
+        },
+        {
+            "id": 2095,
+            "name": "X2_RESOURCE_STATUS_FAILURE"
+        },
+        {
+            "id": 2096,
+            "name": "X2_RESOURCE_STATUS_UPDATE"
+        },
+        {
+            "id": 2097,
+            "name": "X2_ENDC_X2_SETUP_REQUEST"
+        },
+        {
+            "id": 2098,
+            "name": "X2_ENDC_X2_SETUP_RESPONSE"
+        },
+        {
+            "id": 2099,
+            "name": "X2_ENDC_X2_SETUP_FAILURE"
+        },
+        {
+            "id": 2100,
+            "name": "X2_ENDC_CONFIGURATION_UPDATE"
+        },
+        {
+            "id": 2101,
+            "name": "X2_ENDC_CONFIGURATION_UPDATE_ACKNOWLEDGE"
+        },
+        {
+            "id": 2102,
+            "name": "X2_ENDC_CONFIGURATION_UPDATE_FAILURE"
+        },
+        {
+            "id": 2103,
+            "name": "X2_SGNB_MODIFICATION_REQUEST"
+        },
+        {
+            "id": 2104,
+            "name": "X2_SGNB_MODIFICATION_REQUEST_ACKNOWLEDGE"
+        },
+        {
+            "id": 2105,
+            "name": "X2_SGNB_MODIFICATION_REQUEST_REJECT"
+        },
+        {
+            "id": 2106,
+            "name": "X2_ENDC_SGNB_MODIFICATION_REQUIRED"
+        },
+        {
+            "id": 2107,
+            "name": "X2_ENDC_SGNB_MODIFICATION_CONFIRM"
+        },
+        {
+            "id": 2108,
+            "name": "X2_ENDC_SGNB_MODIFICATION_REFUSE"
+        },
+        {
+            "id": 2109,
+            "name": "X2_SECONDARY_RAT_DATA_USAGE_REPORT"
+        },
+        {
+            "id": 2110,
+            "name": "X2_ENDC_RRC_TRANSFER"
+        },
+        {
+            "id": 2111,
+            "name": "X2_SGNB_CHANGE_REQUIRED"
+        },
+        {
+            "id": 2112,
+            "name": "X2_SGNB_CHANGE_CONFIRM"
+        },
+        {
+            "id": 2113,
+            "name": "X2_SGNB_CHANGE_REFUSE"
+        },
+        {
+            "id": 2114,
+            "name": "X2_RETRIEVE_UE_CONTEXT_REQUEST"
+        },
+        {
+            "id": 2115,
+            "name": "X2_RETRIEVE_UE_CONTEXT_RESPONSE"
+        },
+        {
+            "id": 2116,
+            "name": "X2_RETRIEVE_UE_CONTEXT_FAILURE"
+        },
+        {
+            "id": 2117,
+            "name": "X2_DATA_FORWARDING_ADDRESS_INDICATION"
+        },
+        {
+            "id": 2118,
+            "name": "X2_ENDC_CONFIGURATION_TRANSFER"
+        },
+        {
+            "id": 3072,
+            "name": "INTERNAL_PER_RADIO_UTILIZATION"
+        },
+        {
+            "id": 3074,
+            "name": "INTERNAL_PER_UE_ACTIVE_SESSION_TIME"
+        },
+        {
+            "id": 3075,
+            "name": "INTERNAL_PER_RADIO_UE_MEASUREMENT"
+        },
+        {
+            "id": 3076,
+            "name": "INTERNAL_PER_UE_TRAFFIC_REP"
+        },
+        {
+            "id": 3077,
+            "name": "INTERNAL_PER_UE_RB_TRAFFIC_REP"
+        },
+        {
+            "id": 3078,
+            "name": "INTERNAL_PER_CAP_LICENSE_UTIL_REP"
+        },
+        {
+            "id": 3079,
+            "name": "INTERNAL_PER_CELL_TRAFFIC_REPORT"
+        },
+        {
+            "id": 3081,
+            "name": "INTERNAL_PER_RADIO_CELL_MEASUREMENT"
+        },
+        {
+            "id": 3083,
+            "name": "INTERNAL_PER_RADIO_CELL_MEASUREMENT_TDD"
+        },
+        {
+            "id": 3084,
+            "name": "INTERNAL_PER_PROCESSOR_LOAD"
+        },
+        {
+            "id": 3085,
+            "name": "INTERNAL_PER_PRB_LICENSE_UTIL_REP"
+        },
+        {
+            "id": 3086,
+            "name": "INTERNAL_PER_CELL_QCI_TRAFFIC_REP"
+        },
+        {
+            "id": 3087,
+            "name": "INTERNAL_PER_UE_LCG_TRAFFIC_REP"
+        },
+        {
+            "id": 3088,
+            "name": "INTERNAL_PER_RADIO_CELL_NOISE_INTERFERENCE_PRB"
+        },
+        {
+            "id": 3089,
+            "name": "INTERNAL_PER_RADIO_CELL_CQI_SUBBAND"
+        },
+        {
+            "id": 3090,
+            "name": "INTERNAL_PER_UETR_RADIO_UTILIZATION"
+        },
+        {
+            "id": 3091,
+            "name": "INTERNAL_PER_UETR_UE_ACTIVE_SESSION_TIME"
+        },
+        {
+            "id": 3092,
+            "name": "INTERNAL_PER_UETR_RADIO_UE_MEASUREMENT"
+        },
+        {
+            "id": 3093,
+            "name": "INTERNAL_PER_UETR_UE_TRAFFIC_REP"
+        },
+        {
+            "id": 3094,
+            "name": "INTERNAL_PER_UETR_UE_RB_TRAFFIC_REP"
+        },
+        {
+            "id": 3095,
+            "name": "INTERNAL_PER_UETR_CELL_QCI_TRAFFIC_REP"
+        },
+        {
+            "id": 3096,
+            "name": "INTERNAL_PER_UETR_UE_LCG_TRAFFIC_REP"
+        },
+        {
+            "id": 3097,
+            "name": "INTERNAL_PER_UETR_CAP_LICENSE_UTIL_REP"
+        },
+        {
+            "id": 3098,
+            "name": "INTERNAL_PER_UETR_PRB_LICENSE_UTIL_REP"
+        },
+        {
+            "id": 3099,
+            "name": "INTERNAL_PER_UETR_CELL_TRAFFIC_REPORT"
+        },
+        {
+            "id": 3101,
+            "name": "INTERNAL_PER_UETR_RADIO_CELL_MEASUREMENT"
+        },
+        {
+            "id": 3102,
+            "name": "INTERNAL_PER_UETR_RADIO_CELL_NOISE_INTERFERENCE_PRB"
+        },
+        {
+            "id": 3103,
+            "name": "INTERNAL_PER_UETR_RADIO_CELL_CQI_SUBBAND"
+        },
+        {
+            "id": 3105,
+            "name": "INTERNAL_PER_UETR_RADIO_CELL_MEASUREMENT_TDD"
+        },
+        {
+            "id": 3106,
+            "name": "INTERNAL_PER_EVENT_ETWS_REPET_COMPL"
+        },
+        {
+            "id": 3107,
+            "name": "INTERNAL_PER_EVENT_CMAS_REPET_COMPL"
+        },
+        {
+            "id": 3108,
+            "name": "INTERNAL_PER_RADIO_UE_MEASUREMENT_TA"
+        },
+        {
+            "id": 3110,
+            "name": "INTERNAL_PER_BRANCH_UL_NOISEINTERF_REPORT"
+        },
+        {
+            "id": 3111,
+            "name": "INTERNAL_PER_UETR_BRANCH_UL_NOISEINTERF_REPORT"
+        },
+        {
+            "id": 3112,
+            "name": "INTERNAL_PER_UE_MDT_M1_REPORT"
+        },
+        {
+            "id": 3113,
+            "name": "INTERNAL_PER_UE_MDT_M2_REPORT"
+        },
+        {
+            "id": 3114,
+            "name": "INTERNAL_PER_CELL_MDT_M3_REPORT"
+        },
+        {
+            "id": 3115,
+            "name": "INTERNAL_PER_UE_MDT_M4_REPORT"
+        },
+        {
+            "id": 3116,
+            "name": "INTERNAL_PER_UE_MDT_M5_REPORT"
+        },
+        {
+            "id": 3117,
+            "name": "INTERNAL_PER_PARTITION_REPORT"
+        },
+        {
+            "id": 3118,
+            "name": "INTERNAL_PER_UETR_PARTITION_REPORT"
+        },
+        {
+            "id": 3119,
+            "name": "INTERNAL_PER_BRANCH_UPPTS_UL_INTERFERENCE_REPORT"
+        },
+        {
+            "id": 3120,
+            "name": "INTERNAL_PER_UETR_BRANCH_UPPTS_UL_INTERFERENCE_REPORT"
+        },
+        {
+            "id": 3121,
+            "name": "INTERNAL_PER_BB_EENB_EVENT"
+        },
+        {
+            "id": 3123,
+            "name": "INTERNAL_PER_CELLGROUP_MEAS_REPORT"
+        },
+        {
+            "id": 3125,
+            "name": "INTERNAL_PER_CELL_TRAFFIC_REPORT2"
+        },
+        {
+            "id": 3126,
+            "name": "INTERNAL_PER_UETR_CELL_TRAFFIC_REPORT2"
+        },
+        {
+            "id": 3127,
+            "name": "INTERNAL_PER_DUCT_INTERFERENCE_REPORT"
+        },
+        {
+            "id": 3128,
+            "name": "INTERNAL_PER_CELL_NOISEINTERF_SC_NB_REPORT"
+        },
+        {
+            "id": 3129,
+            "name": "INTERNAL_PER_UE_MDT_M6_UL_REPORT"
+        },
+        {
+            "id": 3130,
+            "name": "INTERNAL_PER_UE_MDT_M6_DL_REPORT"
+        },
+        {
+            "id": 3131,
+            "name": "INTERNAL_PER_UE_MDT_M7_REPORT"
+        },
+        {
+            "id": 3135,
+            "name": "INTERNAL_PER_RRC_SCELL_CONFIG_INFO"
+        },
+        {
+            "id": 4097,
+            "name": "INTERNAL_PROC_RRC_CONN_SETUP"
+        },
+        {
+            "id": 4098,
+            "name": "INTERNAL_PROC_S1_SIG_CONN_SETUP"
+        },
+        {
+            "id": 4099,
+            "name": "INTERNAL_PROC_ERAB_SETUP"
+        },
+        {
+            "id": 4102,
+            "name": "INTERNAL_PROC_HO_PREP_S1_OUT"
+        },
+        {
+            "id": 4103,
+            "name": "INTERNAL_PROC_HO_PREP_S1_IN"
+        },
+        {
+            "id": 4104,
+            "name": "INTERNAL_PROC_HO_EXEC_S1_OUT"
+        },
+        {
+            "id": 4105,
+            "name": "INTERNAL_PROC_HO_EXEC_S1_IN"
+        },
+        {
+            "id": 4106,
+            "name": "INTERNAL_PROC_INITIAL_CTXT_SETUP"
+        },
+        {
+            "id": 4107,
+            "name": "INTERNAL_PROC_DNS_LOOKUP"
+        },
+        {
+            "id": 4108,
+            "name": "INTERNAL_PROC_REVERSE_DNS_LOOKUP"
+        },
+        {
+            "id": 4109,
+            "name": "INTERNAL_PROC_SCTP_SETUP"
+        },
+        {
+            "id": 4110,
+            "name": "INTERNAL_PROC_HO_PREP_X2_OUT"
+        },
+        {
+            "id": 4111,
+            "name": "INTERNAL_PROC_HO_PREP_X2_IN"
+        },
+        {
+            "id": 4112,
+            "name": "INTERNAL_PROC_HO_EXEC_X2_OUT"
+        },
+        {
+            "id": 4113,
+            "name": "INTERNAL_PROC_HO_EXEC_X2_IN"
+        },
+        {
+            "id": 4114,
+            "name": "INTERNAL_PROC_ERAB_RELEASE"
+        },
+        {
+            "id": 4116,
+            "name": "INTERNAL_PROC_S1_SETUP"
+        },
+        {
+            "id": 4117,
+            "name": "INTERNAL_PROC_ANR_CGI_REPORT"
+        },
+        {
+            "id": 4118,
+            "name": "INTERNAL_PROC_X2_SETUP"
+        },
+        {
+            "id": 4119,
+            "name": "INTERNAL_PROC_S1_TENB_CONF_LOOKUP"
+        },
+        {
+            "id": 4120,
+            "name": "INTERNAL_PROC_RRC_CONN_RECONF_NO_MOB"
+        },
+        {
+            "id": 4121,
+            "name": "INTERNAL_PROC_RRC_CONNECTION_RE_ESTABLISHMENT"
+        },
+        {
+            "id": 4122,
+            "name": "INTERNAL_PROC_ERAB_MODIFY"
+        },
+        {
+            "id": 4123,
+            "name": "INTERNAL_PROC_X2_RESET"
+        },
+        {
+            "id": 4124,
+            "name": "INTERNAL_PROC_SCTP_SHUTDOWN"
+        },
+        {
+            "id": 4125,
+            "name": "INTERNAL_PROC_UE_CTXT_RELEASE"
+        },
+        {
+            "id": 4126,
+            "name": "INTERNAL_PROC_UE_CTXT_MODIFY"
+        },
+        {
+            "id": 4128,
+            "name": "INTERNAL_PROC_UE_CTXT_FETCH"
+        },
+        {
+            "id": 4129,
+            "name": "INTERNAL_PROC_M3_SETUP"
+        },
+        {
+            "id": 4130,
+            "name": "INTERNAL_PROC_MBMS_SESSION_START"
+        },
+        {
+            "id": 4131,
+            "name": "INTERNAL_PROC_SOFT_LOCK"
+        },
+        {
+            "id": 4132,
+            "name": "INTERNAL_PROC_UETR_RRC_SCELL_CONFIGURED"
+        },
+        {
+            "id": 4133,
+            "name": "INTERNAL_PROC_MIMO_SLEEP_SWITCHED"
+        },
+        {
+            "id": 4134,
+            "name": "INTERNAL_PROC_NON_PLANNED_PCI_CGI_REPORT"
+        },
+        {
+            "id": 4135,
+            "name": "INTERNAL_PROC_CELL_SLEEP_TRIGGERED"
+        },
+        {
+            "id": 4136,
+            "name": "INTERNAL_PROC_NAS_TRANSFER_DL"
+        },
+        {
+            "id": 4137,
+            "name": "INTERNAL_PROC_MBMS_SESSION_UPDATE"
+        },
+        {
+            "id": 4138,
+            "name": "INTERNAL_PROC_CSG_CELL_CGI_REPORT"
+        },
+        {
+            "id": 4139,
+            "name": "INTERNAL_PROC_ANR_PCI_CONFLICT_CGI_REPORT"
+        },
+        {
+            "id": 4140,
+            "name": "INTERNAL_PROC_RRC_SCELL_CONFIGURED"
+        },
+        {
+            "id": 4141,
+            "name": "INTERNAL_PROC_ML_MEAS_REPORT"
+        },
+        {
+            "id": 4142,
+            "name": "INTERNAL_PROC_MN_MCG_RELOCATION"
+        },
+        {
+            "id": 4143,
+            "name": "INTERNAL_PROC_ML_PA_MEAS_REPORT"
+        },
+        {
+            "id": 4144,
+            "name": "INTERNAL_PROC_X2_SGNB_ADDITION"
+        },
+        {
+            "id": 4145,
+            "name": "INTERNAL_PROC_ENDC_X2_SETUP"
+        },
+        {
+            "id": 4146,
+            "name": "INTERNAL_PROC_X2_MN_INIT_SGNB_MOD"
+        },
+        {
+            "id": 4147,
+            "name": "INTERNAL_PROC_ML_IMC_MEAS_REPORT"
+        },
+        {
+            "id": 4148,
+            "name": "INTERNAL_PROC_INTRA_CELL_HO_EXEC_OUT"
+        },
+        {
+            "id": 4149,
+            "name": "INTERNAL_PROC_INTRA_CELL_HO_PREP_OUT"
+        },
+        {
+            "id": 5120,
+            "name": "INTERNAL_EVENT_RRC_ERROR"
+        },
+        {
+            "id": 5123,
+            "name": "INTERNAL_EVENT_NO_RESET_ACK_FROM_MME"
+        },
+        {
+            "id": 5124,
+            "name": "INTERNAL_EVENT_S1AP_PROTOCOL_ERROR"
+        },
+        {
+            "id": 5127,
+            "name": "INTERNAL_EVENT_PM_RECORDING_FAULT_JVM"
+        },
+        {
+            "id": 5128,
+            "name": "INTERNAL_EVENT_MAX_UETRACES_REACHED"
+        },
+        {
+            "id": 5131,
+            "name": "INTERNAL_EVENT_UNEXPECTED_RRC_MSG"
+        },
+        {
+            "id": 5133,
+            "name": "INTERNAL_EVENT_PM_EVENT_SUSPECTMARKED"
+        },
+        {
+            "id": 5134,
+            "name": "INTERNAL_EVENT_INTEGRITY_VER_FAIL_RRC_MSG"
+        },
+        {
+            "id": 5136,
+            "name": "INTERNAL_EVENT_X2_CONN_RELEASE"
+        },
+        {
+            "id": 5137,
+            "name": "INTERNAL_EVENT_X2AP_PROTOCOL_ERROR"
+        },
+        {
+            "id": 5138,
+            "name": "INTERNAL_EVENT_MAX_STORAGESIZE_REACHED"
+        },
+        {
+            "id": 5139,
+            "name": "INTERNAL_EVENT_MAX_FILESIZE_REACHED"
+        },
+        {
+            "id": 5140,
+            "name": "INTERNAL_EVENT_MAX_FILESIZE_RECOVERY"
+        },
+        {
+            "id": 5143,
+            "name": "INTERNAL_EVENT_PM_DATA_COLLECTION_LOST"
+        },
+        {
+            "id": 5144,
+            "name": "INTERNAL_EVENT_NEIGHBCELL_CHANGE"
+        },
+        {
+            "id": 5145,
+            "name": "INTERNAL_EVENT_NEIGHBENB_CHANGE"
+        },
+        {
+            "id": 5146,
+            "name": "INTERNAL_EVENT_NEIGHBREL_ADD"
+        },
+        {
+            "id": 5147,
+            "name": "INTERNAL_EVENT_NEIGHBREL_REMOVE"
+        },
+        {
+            "id": 5148,
+            "name": "INTERNAL_EVENT_UE_ANR_CONFIG_PCI"
+        },
+        {
+            "id": 5149,
+            "name": "INTERNAL_EVENT_UE_ANR_PCI_REPORT"
+        },
+        {
+            "id": 5153,
+            "name": "UE_MEAS_INTRAFREQ1"
+        },
+        {
+            "id": 5154,
+            "name": "UE_MEAS_INTRAFREQ2"
+        },
+        {
+            "id": 5155,
+            "name": "UE_MEAS_EVENT_FEAT_NOT_AVAIL"
+        },
+        {
+            "id": 5156,
+            "name": "UE_MEAS_EVENT_NOT_CONFIG"
+        },
+        {
+            "id": 5157,
+            "name": "INTERNAL_EVENT_UE_MEAS_FAILURE"
+        },
+        {
+            "id": 5159,
+            "name": "INTERNAL_EVENT_ANR_CONFIG_MISSING"
+        },
+        {
+            "id": 5166,
+            "name": "INTERNAL_EVENT_LICENSE_UNAVAILABLE"
+        },
+        {
+            "id": 5167,
+            "name": "INTERNAL_EVENT_EUTRAN_FREQUENCY_ADD"
+        },
+        {
+            "id": 5168,
+            "name": "INTERNAL_EVENT_FREQ_REL_ADD"
+        },
+        {
+            "id": 5170,
+            "name": "INTERNAL_EVENT_RECOMMENDED_NR_SI_UPDATES_REACHED"
+        },
+        {
+            "id": 5171,
+            "name": "INTERNAL_EVENT_IP_ADDR_GET_FAILURE"
+        },
+        {
+            "id": 5172,
+            "name": "INTERNAL_EVENT_UE_CAPABILITY"
+        },
+        {
+            "id": 5173,
+            "name": "INTERNAL_EVENT_ANR_PCI_REPORT_WANTED"
+        },
+        {
+            "id": 5174,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_A1"
+        },
+        {
+            "id": 5175,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_A2"
+        },
+        {
+            "id": 5176,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_A3"
+        },
+        {
+            "id": 5177,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_A4"
+        },
+        {
+            "id": 5178,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_A5"
+        },
+        {
+            "id": 5179,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_PERIODICAL_EUTRA"
+        },
+        {
+            "id": 5180,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B2_GERAN"
+        },
+        {
+            "id": 5181,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B2_UTRA"
+        },
+        {
+            "id": 5182,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B2_CDMA2000"
+        },
+        {
+            "id": 5183,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_PERIODICAL_GERAN"
+        },
+        {
+            "id": 5184,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_PERIODICAL_UTRA"
+        },
+        {
+            "id": 5185,
+            "name": "INTERNAL_UE_MEAS_ABORT"
+        },
+        {
+            "id": 5192,
+            "name": "INTERNAL_EVENT_ONGOING_UE_MEAS"
+        },
+        {
+            "id": 5193,
+            "name": "INTERNAL_EVENT_UE_MOBILITY_EVAL"
+        },
+        {
+            "id": 5194,
+            "name": "INTERNAL_EVENT_NEIGHBCELL_ADDITIONAL_CGI"
+        },
+        {
+            "id": 5195,
+            "name": "INTERNAL_EVENT_SON_UE_OSCILLATION_PREVENTED"
+        },
+        {
+            "id": 5196,
+            "name": "INTERNAL_EVENT_SON_OSCILLATION_DETECTED"
+        },
+        {
+            "id": 5197,
+            "name": "INTERNAL_EVENT_IMLB_CONTROL"
+        },
+        {
+            "id": 5198,
+            "name": "INTERNAL_EVENT_IMLB_ACTION"
+        },
+        {
+            "id": 5200,
+            "name": "INTERNAL_EVENT_SPID_PRIORITY_IGNORED"
+        },
+        {
+            "id": 5201,
+            "name": "INTERNAL_EVENT_RIM_RAN_INFORMATION_RECEIVED"
+        },
+        {
+            "id": 5202,
+            "name": "INTERNAL_EVENT_ERAB_DATA_INFO"
+        },
+        {
+            "id": 5203,
+            "name": "INTERNAL_EVENT_TOO_EARLY_HO"
+        },
+        {
+            "id": 5204,
+            "name": "INTERNAL_EVENT_TOO_LATE_HO"
+        },
+        {
+            "id": 5205,
+            "name": "INTERNAL_EVENT_HO_WRONG_CELL"
+        },
+        {
+            "id": 5206,
+            "name": "INTERNAL_EVENT_HO_WRONG_CELL_REEST"
+        },
+        {
+            "id": 5207,
+            "name": "INTERNAL_EVENT_RRC_UE_INFORMATION"
+        },
+        {
+            "id": 5208,
+            "name": "INTERNAL_EVENT_S1_NAS_NON_DELIVERY_INDICATION"
+        },
+        {
+            "id": 5209,
+            "name": "INTERNAL_EVENT_S1_ERROR_INDICATION"
+        },
+        {
+            "id": 5210,
+            "name": "INTERNAL_EVENT_X2_ERROR_INDICATION"
+        },
+        {
+            "id": 5211,
+            "name": "INTERNAL_EVENT_ADMISSION_BLOCKING_STARTED"
+        },
+        {
+            "id": 5212,
+            "name": "INTERNAL_EVENT_ADMISSION_BLOCKING_STOPPED"
+        },
+        {
+            "id": 5213,
+            "name": "INTERNAL_EVENT_ADMISSION_BLOCKING_UPDATED"
+        },
+        {
+            "id": 5214,
+            "name": "INTERNAL_EVENT_ERAB_ROHC_FAIL_LIC_REJECT"
+        },
+        {
+            "id": 5215,
+            "name": "INTERNAL_EVENT_LB_INTER_FREQ"
+        },
+        {
+            "id": 5217,
+            "name": "INTERNAL_EVENT_PCI_CONFLICT_DETECTED"
+        },
+        {
+            "id": 5218,
+            "name": "INTERNAL_EVENT_PCI_CONFLICT_RESOLVED"
+        },
+        {
+            "id": 5220,
+            "name": "INTERNAL_EVENT_LB_SUB_RATIO"
+        },
+        {
+            "id": 5221,
+            "name": "INTERNAL_EVENT_ETWS_REQ"
+        },
+        {
+            "id": 5222,
+            "name": "INTERNAL_EVENT_ETWS_RESP"
+        },
+        {
+            "id": 5223,
+            "name": "INTERNAL_EVENT_CMAS_REQ"
+        },
+        {
+            "id": 5224,
+            "name": "INTERNAL_EVENT_CMAS_RESP"
+        },
+        {
+            "id": 5225,
+            "name": "INTERNAL_EVENT_ETWS_REPET_STOPPED"
+        },
+        {
+            "id": 5226,
+            "name": "INTERNAL_EVENT_CMAS_REPET_STOPPED"
+        },
+        {
+            "id": 5227,
+            "name": "INTERNAL_EVENT_UE_ANR_CONFIG_PCI_REMOVE"
+        },
+        {
+            "id": 5228,
+            "name": "INTERNAL_EVENT_ADV_CELL_SUP_DETECTION"
+        },
+        {
+            "id": 5229,
+            "name": "INTERNAL_EVENT_ADV_CELL_SUP_RECOVERY_ATTEMPT"
+        },
+        {
+            "id": 5230,
+            "name": "INTERNAL_EVENT_ADV_CELL_SUP_RECOVERY_RESULT"
+        },
+        {
+            "id": 5233,
+            "name": "INTERNAL_EVENT_LOAD_CONTROL_STATE_TRANSITION"
+        },
+        {
+            "id": 5234,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B1_UTRA"
+        },
+        {
+            "id": 5235,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B1_CDMA2000"
+        },
+        {
+            "id": 5236,
+            "name": "INTERNAL_EVENT_CELL_DL_CAPACITY"
+        },
+        {
+            "id": 5237,
+            "name": "INTERNAL_EVENT_MBMS_INTEREST_INDICATION"
+        },
+        {
+            "id": 5238,
+            "name": "INTERNAL_EVENT_ANR_STOP_MEASURING"
+        },
+        {
+            "id": 5239,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_A6"
+        },
+        {
+            "id": 5240,
+            "name": "INTERNAL_EVENT_UETR_MEASUREMENT_REPORT_RECEIVED"
+        },
+        {
+            "id": 5241,
+            "name": "INTERNAL_EVENT_UETR_RRC_SCELL_DECONFIGURED"
+        },
+        {
+            "id": 5242,
+            "name": "INTERNAL_EVENT_UE_LB_QUAL"
+        },
+        {
+            "id": 5243,
+            "name": "INTERNAL_EVENT_UE_LB_MEAS"
+        },
+        {
+            "id": 5244,
+            "name": "INTERNAL_EVENT_MIMO_SLEEP_DETECTED"
+        },
+        {
+            "id": 5245,
+            "name": "INTERNAL_EVENT_WIFI_MOBILITY_EVAL_CONNECTED"
+        },
+        {
+            "id": 5246,
+            "name": "INTERNAL_EVENT_WIFI_MOBILITY_EVAL_IDLE"
+        },
+        {
+            "id": 5247,
+            "name": "INTERNAL_EVENT_RIM_RAN_INFORMATION_SENT"
+        },
+        {
+            "id": 5248,
+            "name": "INTERNAL_EVENT_CANDNREL_ADD"
+        },
+        {
+            "id": 5249,
+            "name": "INTERNAL_EVENT_CANDNREL_REMOVE"
+        },
+        {
+            "id": 5250,
+            "name": "INTERNAL_EVENT_LB_EVALUATION_TO"
+        },
+        {
+            "id": 5251,
+            "name": "INTERNAL_EVENT_RIM_RAN_STATUS_CHANGED"
+        },
+        {
+            "id": 5252,
+            "name": "INTERNAL_EVENT_DL_COMP_MEAS_CONFIG_REJECT"
+        },
+        {
+            "id": 5253,
+            "name": "INTERNAL_EVENT_DL_COMP_MEAS_REP_DISCARD"
+        },
+        {
+            "id": 5254,
+            "name": "INTERNAL_EVENT_CELL_WAKEUP_TRIGGERED"
+        },
+        {
+            "id": 5255,
+            "name": "INTERNAL_EVENT_CELL_WAKEUP_DETECTED"
+        },
+        {
+            "id": 5256,
+            "name": "INTERNAL_EVENT_COV_CELL_DISCOVERY_START"
+        },
+        {
+            "id": 5257,
+            "name": "INTERNAL_EVENT_COV_CELL_DISCOVERY_UPDATE"
+        },
+        {
+            "id": 5258,
+            "name": "INTERNAL_EVENT_COV_CELL_DISCOVERY_END"
+        },
+        {
+            "id": 5259,
+            "name": "INTERNAL_EVENT_DYNAMIC_UE_ADMISSION_BLOCKING_STARTED"
+        },
+        {
+            "id": 5260,
+            "name": "INTERNAL_EVENT_DYNAMIC_UE_ADMISSION_BLOCKING_STOPPED"
+        },
+        {
+            "id": 5261,
+            "name": "INTERNAL_EVENT_DYNAMIC_UE_ADMISSION_BLOCKING_UPDATED"
+        },
+        {
+            "id": 5262,
+            "name": "INTERNAL_EVENT_MEASUREMENT_REPORT_RECEIVED"
+        },
+        {
+            "id": 5263,
+            "name": "INTERNAL_EVENT_RETAIN_UECTXT_HIGH_ARP_DRB"
+        },
+        {
+            "id": 5264,
+            "name": "INTERNAL_EVENT_RESUME_LOW_ARP_DRB_DL_RLC_FAIL"
+        },
+        {
+            "id": 5265,
+            "name": "INTERNAL_EVENT_ERAB_RELEASE_DELAYED"
+        },
+        {
+            "id": 5266,
+            "name": "INTERNAL_EVENT_ANR_HO_LEVEL_CHANGED"
+        },
+        {
+            "id": 5267,
+            "name": "UE_MEAS_INTERFREQ1"
+        },
+        {
+            "id": 5268,
+            "name": "UE_MEAS_INTERFREQ2"
+        },
+        {
+            "id": 5269,
+            "name": "UE_MEAS_GERAN1"
+        },
+        {
+            "id": 5270,
+            "name": "UE_MEAS_GERAN2"
+        },
+        {
+            "id": 5271,
+            "name": "UE_MEAS_UTRAN1"
+        },
+        {
+            "id": 5272,
+            "name": "UE_MEAS_UTRAN2"
+        },
+        {
+            "id": 5273,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B1_GERAN"
+        },
+        {
+            "id": 5274,
+            "name": "INTERNAL_EVENT_MBMS_CELL_SELECTION"
+        },
+        {
+            "id": 5275,
+            "name": "INTERNAL_EVENT_PARTITION_CONFIG_MISSING"
+        },
+        {
+            "id": 5276,
+            "name": "INTERNAL_EVENT_FLEX_FILTER_ISSUE"
+        },
+        {
+            "id": 5277,
+            "name": "INTERNAL_EVENT_RRC_ERROR_NB"
+        },
+        {
+            "id": 5278,
+            "name": "INTERNAL_EVENT_RRC_SCELL_DECONFIGURED"
+        },
+        {
+            "id": 5279,
+            "name": "INTERNAL_EVENT_DLHARQ_ANMODE_CONFIG"
+        },
+        {
+            "id": 5280,
+            "name": "INTERNAL_EVENT_CELL_SLEEP_CRITERIA_FAILED"
+        },
+        {
+            "id": 5281,
+            "name": "INTERNAL_EVENT_CELL_SLEEP_PROHIBIT_TRIGGERED"
+        },
+        {
+            "id": 5282,
+            "name": "INTERNAL_EVENT_CA_WAITING_FOR_COVERAGE"
+        },
+        {
+            "id": 5284,
+            "name": "INTERNAL_EVENT_ENDC_X2_CONN_RELEASE"
+        },
+        {
+            "id": 5285,
+            "name": "INTERNAL_EVENT_PTM_CELL_TRAFFIC_LOAD_STATE"
+        },
+        {
+            "id": 5286,
+            "name": "INTERNAL_EVENT_PTM_CELL_RESERVED"
+        },
+        {
+            "id": 5287,
+            "name": "INTERNAL_EVENT_PTM_UE_HO_BLOCKED"
+        },
+        {
+            "id": 5288,
+            "name": "INTERNAL_EVENT_PTM_OFFLOAD_MEASURED_UE"
+        },
+        {
+            "id": 5289,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B1_NR"
+        },
+        {
+            "id": 5290,
+            "name": "INTERNAL_EVENT_MEMORY_MECHANISM_STATE_TRANSITION"
+        },
+        {
+            "id": 5292,
+            "name": "INTERNAL_EVENT_MEAS_CONFIG_B1_ENDC_SETUP"
+        },
+        {
+            "id": 5293,
+            "name": "INTERNAL_EVENT_UE_MR_PHR_NB"
+        },
+        {
+            "id": 5294,
+            "name": "INTERNAL_EVENT_UNEXPECTED_S1X2_MSG"
+        },
+        {
+            "id": 5295,
+            "name": "INTERNAL_EVENT_FILE_CONTENT_REMOVED_FOR_HIGHER_PRIORITY_FILES"
+        },
+        {
+            "id": 5296,
+            "name": "INTERNAL_EVENT_ML_GENERAL"
+        },
+        {
+            "id": 5297,
+            "name": "INTERNAL_PER_SHARING_GROUP_REPORT"
+        },
+        {
+            "id": 5298,
+            "name": "INTERNAL_EVENT_UE_ENDC_HO_QUAL"
+        },
+        {
+            "id": 5299,
+            "name": "INTERNAL_EVENT_UE_ENDC_HO_MEAS"
+        },
+        {
+            "id": 5300,
+            "name": "INTERNAL_EVENT_NEIGHBGNB_CHANGE"
+        },
+        {
+            "id": 5326,
+            "name": "INTERNAL_PER_THROUGHPUT_CELL_REPORT"
+        },
+        {
+            "id": 8192,
+            "name": "M3_M3_SETUP_REQUEST"
+        },
+        {
+            "id": 8193,
+            "name": "M3_M3_SETUP_RESPONSE"
+        },
+        {
+            "id": 8194,
+            "name": "M3_M3_SETUP_FAILURE"
+        },
+        {
+            "id": 8195,
+            "name": "M3_MBMS_SESSION_START_REQUEST"
+        },
+        {
+            "id": 8196,
+            "name": "M3_MBMS_SESSION_START_RESPONSE"
+        },
+        {
+            "id": 8197,
+            "name": "M3_MBMS_SESSION_START_FAILURE"
+        },
+        {
+            "id": 8198,
+            "name": "M3_MBMS_SESSION_STOP_REQUEST"
+        },
+        {
+            "id": 8199,
+            "name": "M3_MBMS_SESSION_STOP_RESPONSE"
+        },
+        {
+            "id": 8200,
+            "name": "M3_RESET"
+        },
+        {
+            "id": 8201,
+            "name": "M3_MCE_CONFIGURATION_UPDATE_REQUEST"
+        },
+        {
+            "id": 8202,
+            "name": "M3_MCE_CONFIGURATION_UPDATE_RESPONSE"
+        },
+        {
+            "id": 8203,
+            "name": "M3_MCE_CONFIGURATION_UPDATE_FAILURE"
+        },
+        {
+            "id": 8204,
+            "name": "M3_MBMS_SESSION_UPDATE_REQUEST"
+        },
+        {
+            "id": 8205,
+            "name": "M3_MBMS_SESSION_UPDATE_RESPONSE"
+        },
+        {
+            "id": 8206,
+            "name": "M3_MBMS_SESSION_UPDATE_FAILURE"
+        },
+        {
+            "id": 9216,
+            "name": "INTERNAL_TESTEVENT_UE"
+        },
+        {
+            "id": 9217,
+            "name": "INTERNAL_TESTEVENT_CELL1"
+        },
+        {
+            "id": 9218,
+            "name": "INTERNAL_TESTEVENT_EXT"
+        },
+        {
+            "id": 9219,
+            "name": "INTERNAL_TESTEVENT_CELL2"
+        },
+        {
+            "id": 9220,
+            "name": "INTERNAL_TESTEVENT_BASIC"
+        },
+        {
+            "id": 9221,
+            "name": "INTERNAL_TESTEVENT_BB_CELL"
+        },
+        {
+            "id": 9222,
+            "name": "INTERNAL_TESTEVENT_BB_RB"
+        },
+        {
+            "id": 9223,
+            "name": "INTERNAL_TESTEVENT_BB_UE"
+        },
+        {
+            "id": 9224,
+            "name": "INTERNAL_TESTEVENT_BB_BBM"
+        },
+        {
+            "id": 9225,
+            "name": "INTERNAL_PROC_TESTEVENT_MANY_START"
+        },
+        {
+            "id": 9226,
+            "name": "INTERNAL_PROC_TESTEVENT_POST"
+        },
+        {
+            "id": 9227,
+            "name": "INTERNAL_PROC_TESTEVENT_MANY_STOP"
+        },
+        {
+            "id": 9228,
+            "name": "INTERNAL_PROC_TESTEVENT_NOPARAM_START"
+        },
+        {
+            "id": 9229,
+            "name": "INTERNAL_PROC_TESTEVENT_COMPLEX"
+        },
+        {
+            "id": 9230,
+            "name": "INTERNAL_TESTEVENT_MANDATORY_OVERRIDE"
+        },
+        {
+            "id": 9233,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_1"
+        },
+        {
+            "id": 9234,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_2"
+        },
+        {
+            "id": 9235,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_3"
+        },
+        {
+            "id": 9236,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_4"
+        },
+        {
+            "id": 9237,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_5"
+        },
+        {
+            "id": 9238,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_6"
+        },
+        {
+            "id": 9239,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_7"
+        },
+        {
+            "id": 9240,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_8"
+        },
+        {
+            "id": 9241,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_9"
+        },
+        {
+            "id": 9242,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_10"
+        },
+        {
+            "id": 9243,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_11"
+        },
+        {
+            "id": 9244,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_12"
+        },
+        {
+            "id": 9245,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_13"
+        },
+        {
+            "id": 9246,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_14"
+        },
+        {
+            "id": 9247,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_15"
+        },
+        {
+            "id": 9248,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_16"
+        },
+        {
+            "id": 9249,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_17"
+        },
+        {
+            "id": 9250,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_18"
+        },
+        {
+            "id": 9251,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_19"
+        },
+        {
+            "id": 9252,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_20"
+        },
+        {
+            "id": 9253,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_21"
+        },
+        {
+            "id": 9254,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_22"
+        },
+        {
+            "id": 9255,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_23"
+        },
+        {
+            "id": 9256,
+            "name": "INTERNAL_TESTEVENT_PROC_BASE_24"
+        },
+        {
+            "id": 9257,
+            "name": "INTERNAL_TESTEVENT_L3"
+        }
+    ]
+}

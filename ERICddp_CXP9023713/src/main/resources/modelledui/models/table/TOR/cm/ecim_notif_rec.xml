@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_mscmce_notifrec">
+    <reference table="sites" condition="enm_mscmce_notifrec.siteid = sites.id"/>
+    <reference table="mo_names" condition="enm_mscmce_notifrec.moid = mo_names.id"/>
+    <reference table="enm_mscm_attrib_names" condition="enm_mscmce_notifrec.attribid = enm_mscm_attrib_names.id" join="LEFT OUTER JOIN"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="sg"/>
+  <where>enm_mscmce_notifrec.date = '%date%' AND sites.name = '%site%' AND enm_mscmce_notifrec.servicegroup = '%sg%'</where>
+
+  <order columnid="cnt" direction="DESC"/>
+
+  <column db="CONCAT( enm_mscmce_notifrec.eventtype, ':', mo_names.name, ':', IFNULL( enm_mscm_attrib_names.name, 'NA' ) )" label="id" id="id" visible="false"/>
+  <column db="eventtype" label="Event Type"/>
+  <column db="mo_names.name" label="MO"/>
+  <column db="IFNULL(enm_mscm_attrib_names.name,'NA')" label="Attribute"/>
+  <column db="enm_mscmce_notifrec.count" label="Count" id="cnt"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="true">
+    <item id="plotnotifrec" label="Plot for last month"/>
+    <urltarget arg="notifAct"/>
+  </ctxmenu>
+</modelledtable>

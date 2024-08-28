@@ -1,0 +1,433 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseResUsageStats
+# Author  : Maheedhar Reddy Rachamalla (xmahrac)
+# Purpose : The purpose of this script is to retrieve resource usage statistics from DB and store
+#           them under corresponding JSON files so that DDP can quickly load and plot them
+# Usage   : ${ANALYSIS_BIN}/TOR/parseResUsageStats --site ${SITE} --date ${SQL_DATE} \
+#           --analysisOut ${ANALYSIS_OUTPUT}/resource_usage
+#=====================================================================
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use JSON;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub printJsonToFile($$) {
+    open (JSON, ">$_[1]") or warn "Unable to open file: $!";
+    print JSON encode_json($_[0]) . "\n";
+    close JSON;
+}
+
+sub getTopTenVMs($) {
+    my ($vmTotals) = @_;
+
+    my $counter = 0;
+    my %topTenVMs = ();
+    foreach my $server (sort { $vmTotals->{$b} <=> $vmTotals->{$a} || $a cmp $b } keys %{$vmTotals} ) {
+        $topTenVMs{$server} = $vmTotals->{$server};
+        if ( ++$counter == 10 ) {
+            last;
+        }
+    }
+    return \%topTenVMs;
+}
+
+sub getIopsData($$$$) {
+    my ($siteId, $date, $dbh, $analysisOut) = @_;
+
+    # The position indices of the parameters in the rows returned from DB
+    my $slotIdx   = 0;
+    my $serverIdx = 1;
+    my $iopsIdx   = 2;
+
+    # Don't change the order of fields returned in the below query and make
+    # sure the order matches with the above position indices
+
+    # Force the use of the correct index (TORF-254541)
+    my $sql = "
+SELECT
+ DATE_FORMAT(hires_disk_stat.time, '%Y-%m-%d %H:%i:00') AS slot,
+ servers.hostname AS server,
+ SUM(rws) AS rws
+FROM
+ hires_disk_stat FORCE INDEX(siteIdIdx), raw_devices, servers
+WHERE
+ hires_disk_stat.siteid = $siteId AND
+ hires_disk_stat.time BETWEEN '$date 00:00:00' AND '$date 23:59:59' AND
+ hires_disk_stat.serverid = servers.id AND servers.type IN ('ENM_VM' , 'MASTER') AND
+ hires_disk_stat.diskid = raw_devices.diskid AND
+ hires_disk_stat.serverid = raw_devices.serverid AND
+ raw_devices.date = '$date'
+GROUP BY slot, server
+ORDER BY slot, server";
+
+    # Retrieve the IOPS data from DB
+    my $results = dbSelectAllArr($dbh, $sql) or die "Failed to query hires_disk_stat";
+
+    my %iopsVmTotals = ();
+    foreach my $row (@{$results}) {
+        $row->[$slotIdx] =  parseTime($row->[$slotIdx], $TIME_YYYYMD_HMS, $TZ_GMT)  * 1000;
+        $iopsVmTotals{$row->[$serverIdx]} += $row->[$iopsIdx];
+    }
+
+    my $topTenIopsVMs = getTopTenVMs(\%iopsVmTotals);
+    printJsonToFile(\%iopsVmTotals, "$analysisOut/vm_iops_totals_all.json");
+
+    my %iopsStatsDaily = ();
+    foreach my $server (keys %{$topTenIopsVMs}) {
+        $iopsStatsDaily{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $iopsStatsDaily{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my %iopsStatsDailyAll = ();
+    my %iopsDailyOthers = ();
+    foreach my $row (@{$results}) {
+        if ( exists $topTenIopsVMs->{$row->[$serverIdx]} ) {
+            push (@{$iopsStatsDaily{$row->[$serverIdx]}->{'data'}}, [$row->[$slotIdx] + 0, $row->[$iopsIdx] + 0]);
+        }
+        else {
+            $iopsDailyOthers{$row->[$slotIdx]} += $row->[$iopsIdx];
+        }
+        $iopsStatsDailyAll{$row->[$serverIdx]}->{$row->[$slotIdx] + 0} = $row->[$iopsIdx] + 0;
+    }
+
+    foreach (sort {$a <=> $b} keys %iopsDailyOthers) {
+        push (@{$iopsStatsDaily{'Other'}->{'data'}}, [$_ + 0, $iopsDailyOthers{$_} + 0]);
+    }
+
+    open (DAILYJSON, ">$analysisOut/vm_iops_stats_topn.json");
+    print DAILYJSON "[\n";
+    foreach my $server (sort { $topTenIopsVMs->{$b} <=> $topTenIopsVMs->{$a} || $a cmp $b } keys %{$topTenIopsVMs}) {
+        print DAILYJSON encode_json($iopsStatsDaily{$server}) . ",\n";
+    }
+    print DAILYJSON encode_json($iopsStatsDaily{'Other'}) . "\n";
+    print DAILYJSON "]\n";
+    close DAILYJSON;
+
+    open (DAILYALLJSON, ">$analysisOut/vm_iops_stats_all.json");
+    foreach my $server (sort keys %iopsStatsDailyAll) {
+        print DAILYALLJSON encode_json( { $server => $iopsStatsDailyAll{$server} } ) . "\n";
+    }
+    close DAILYALLJSON;
+}
+
+sub getCpuMemUsgData($$$$) {
+    my ($siteId, $date, $dbh, $analysisOut) = @_;
+
+    # The position indices of the parameters in the rows returned from DB
+    my $slotIdx     = 0;
+    my $serverIdx   = 1;
+    my $cpuUsageIdx = 2;
+    my $cpuStealIdx = 3;
+    my $memUsageIdx = 4;
+
+    # Don't change the order of fields returned in the below query and make
+    # sure the order matches with the above position indices
+    my $sql = "
+SELECT
+    DATE_FORMAT(hires_server_stat.time, '%Y-%m-%d %H:%i:00') AS 'slot',
+    servers.hostname AS 'server',
+    IFNULL( ( sys + user + IFNULL(guest, 0) )/100, 0 ) * ( servercpu.num * IFNULL(cputypes.cores, 1) * IFNULL(cputypes.threadsPerCore, 1) ) AS 'cpu_usage_min',
+    IFNULL( steal/100, 0 ) * ( servercpu.num * IFNULL(cputypes.cores, 1) * IFNULL(cputypes.threadsPerCore, 1) ) AS 'cpu_steal_min',
+    IFNULL(memused, 0) AS 'mem_usage_mb'
+FROM
+ hires_server_stat FORCE INDEX(siteIdx), servers, servercfg, servercpu, cputypes
+WHERE
+ hires_server_stat.siteid = $siteId AND
+ hires_server_stat.time BETWEEN '$date 00:00:00' AND '$date 23:59:59' AND
+ hires_server_stat.serverid = servers.id AND
+ hires_server_stat.serverid = servercfg.serverid AND
+ servercfg.cfgid = servercpu.cfgid AND
+ servercpu.typeid = cputypes.id AND
+ servercfg.date = '$date' AND
+ servers.type = 'ENM_VM'
+ORDER BY hires_server_stat.time, server";
+
+    # Retrieve the CPU & Memory usage data from DB
+    my $results = dbSelectAllArr($dbh, $sql);
+
+    my %cpuUsageVmTotals = ();
+    my %cpuStealVmTotals = ();
+    my %memUsageVmTotals = ();
+    foreach my $row (@{$results}) {
+        $row->[$slotIdx] =  parseTime($row->[$slotIdx], $TIME_YYYYMD_HMS, $TZ_GMT)  * 1000;
+        $cpuUsageVmTotals{$row->[$serverIdx]} += $row->[$cpuUsageIdx];
+        $cpuStealVmTotals{$row->[$serverIdx]} += $row->[$cpuStealIdx];
+        $memUsageVmTotals{$row->[$serverIdx]} += $row->[$memUsageIdx];
+    }
+
+    my $topTenCpuUsageVMs = getTopTenVMs(\%cpuUsageVmTotals);
+    printJsonToFile(\%cpuUsageVmTotals, "$analysisOut/vm_cpu_usage_totals_all.json");
+
+    my $topTenCpuStealVMs = getTopTenVMs(\%cpuStealVmTotals);
+    printJsonToFile(\%cpuStealVmTotals, "$analysisOut/vm_cpu_steal_totals_all.json");
+
+    my $topTenMemUsageVMs = getTopTenVMs(\%memUsageVmTotals);
+    printJsonToFile(\%memUsageVmTotals, "$analysisOut/vm_mem_usage_totals_all.json");
+
+    my %cpuUsageStatsDaily = ();
+    foreach my $server (keys %{$topTenCpuUsageVMs}) {
+        $cpuUsageStatsDaily{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $cpuUsageStatsDaily{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my %cpuStealStatsDaily = ();
+    foreach my $server (keys %{$topTenCpuStealVMs}) {
+        $cpuStealStatsDaily{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $cpuStealStatsDaily{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my %memUsageStatsDaily = ();
+    foreach my $server (keys %{$topTenMemUsageVMs}) {
+        $memUsageStatsDaily{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $memUsageStatsDaily{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my %cpuUsageDailyOthers = ();
+    my %cpuStealDailyOthers = ();
+    my %memUsageDailyOthers = ();
+
+    my %cpuUsageStatsDailyAll = ();
+    my %cpuStealStatsDailyAll = ();
+    my %memUsageStatsDailyAll = ();
+    foreach my $row (@{$results}) {
+        if ( exists $topTenCpuUsageVMs->{$row->[$serverIdx]} ) {
+            push (@{$cpuUsageStatsDaily{$row->[$serverIdx]}->{'data'}}, [$row->[$slotIdx] + 0, $row->[$cpuUsageIdx] + 0]);
+        }
+        else {
+            $cpuUsageDailyOthers{$row->[$slotIdx] + 0} += $row->[$cpuUsageIdx];
+        }
+        $cpuUsageStatsDailyAll{$row->[$serverIdx]}->{$row->[$slotIdx] + 0} = $row->[$cpuUsageIdx] + 0;
+
+        if ( exists $topTenCpuStealVMs->{$row->[$serverIdx]} ) {
+            push (@{$cpuStealStatsDaily{$row->[$serverIdx]}->{'data'}}, [$row->[$slotIdx] + 0, $row->[$cpuStealIdx] + 0]);
+        }
+        else {
+            $cpuStealDailyOthers{$row->[$slotIdx] + 0} += $row->[$cpuStealIdx];
+        }
+        $cpuStealStatsDailyAll{$row->[$serverIdx]}->{$row->[$slotIdx] + 0} = $row->[$cpuStealIdx] + 0;
+
+        if ( exists $topTenMemUsageVMs->{$row->[$serverIdx]} ) {
+            push (@{$memUsageStatsDaily{$row->[$serverIdx]}->{'data'}}, [$row->[$slotIdx] + 0, $row->[$memUsageIdx] + 0]);
+        }
+        else {
+            $memUsageDailyOthers{$row->[$slotIdx] + 0} += $row->[$memUsageIdx];
+        }
+        $memUsageStatsDailyAll{$row->[$serverIdx]}->{$row->[$slotIdx] + 0} = $row->[$memUsageIdx] + 0;
+    }
+
+    foreach (sort {$a <=> $b} keys %cpuUsageDailyOthers) {
+        push (@{$cpuUsageStatsDaily{'Other'}->{'data'}}, [$_ + 0, $cpuUsageDailyOthers{$_} + 0]);
+    }
+    foreach (sort {$a <=> $b} keys %cpuStealDailyOthers) {
+        push (@{$cpuStealStatsDaily{'Other'}->{'data'}}, [$_ + 0, $cpuStealDailyOthers{$_} + 0]);
+    }
+    foreach (sort {$a <=> $b} keys %memUsageDailyOthers) {
+        push (@{$memUsageStatsDaily{'Other'}->{'data'}}, [$_ + 0, $memUsageDailyOthers{$_} + 0]);
+    }
+
+    open (DAILYJSON, ">$analysisOut/vm_cpu_usage_stats_topn.json");
+    print DAILYJSON "[\n";
+    foreach my $server (sort { $topTenCpuUsageVMs->{$b} <=> $topTenCpuUsageVMs->{$a} || $a cmp $b } keys %{$topTenCpuUsageVMs}) {
+        print DAILYJSON encode_json($cpuUsageStatsDaily{$server}) . ",\n";
+    }
+    print DAILYJSON encode_json($cpuUsageStatsDaily{'Other'}) . "\n";
+    print DAILYJSON "]\n";
+    close DAILYJSON;
+
+    open (DAILYALLJSON, ">$analysisOut/vm_cpu_usage_stats_all.json");
+    foreach my $server (sort keys %cpuUsageStatsDailyAll) {
+        print DAILYALLJSON encode_json( { $server => $cpuUsageStatsDailyAll{$server} } ) . "\n";
+    }
+    close DAILYALLJSON;
+
+    open (DAILYJSON, ">$analysisOut/vm_cpu_steal_stats_topn.json");
+    print DAILYJSON "[\n";
+    foreach my $server (sort { $topTenCpuStealVMs->{$b} <=> $topTenCpuStealVMs->{$a} || $a cmp $b } keys %{$topTenCpuStealVMs}) {
+        print DAILYJSON encode_json($cpuStealStatsDaily{$server}) . ",\n";
+    }
+    print DAILYJSON encode_json($cpuStealStatsDaily{'Other'}) . "\n";
+    print DAILYJSON "]\n";
+    close DAILYJSON;
+
+    open (DAILYALLJSON, ">$analysisOut/vm_cpu_steal_stats_all.json");
+    foreach my $server (sort keys %cpuStealStatsDailyAll) {
+        print DAILYALLJSON encode_json( { $server => $cpuStealStatsDailyAll{$server} } ) . "\n";
+    }
+    close DAILYALLJSON;
+
+    open (DAILYJSON, ">$analysisOut/vm_mem_usage_stats_topn.json");
+    print DAILYJSON "[\n";
+    foreach my $server (sort { $topTenMemUsageVMs->{$b} <=> $topTenMemUsageVMs->{$a} || $a cmp $b } keys %{$topTenMemUsageVMs}) {
+        print DAILYJSON encode_json($memUsageStatsDaily{$server}) . ",\n";
+    }
+    print DAILYJSON encode_json($memUsageStatsDaily{'Other'}) . "\n";
+    print DAILYJSON "]\n";
+    close DAILYJSON;
+
+    open (DAILYALLJSON, ">$analysisOut/vm_mem_usage_stats_all.json");
+    foreach my $server (sort keys %memUsageStatsDailyAll) {
+        print DAILYALLJSON encode_json( { $server => $memUsageStatsDailyAll{$server} } ) . "\n";
+    }
+    close DAILYALLJSON;
+}
+
+sub getNicRxTxData($$$$) {
+    my ($siteId, $date, $dbh, $analysisOut) = @_;
+
+    # The position indices of the parameters in the rows returned from DB
+    my $slotIdx       = 0;
+    my $serverIdx     = 1;
+    my $nicUsageRxIdx = 2;
+    my $nicUsageTxIdx = 3;
+
+    # Don't change the order of fields returned in the below query and make
+    # sure the order matches with the above position indices
+
+    # Force the use of the correct index (TORF-254541)
+    my $sql = "
+SELECT
+    DATE_FORMAT(nic_stat.time, '%Y-%m-%d %H:%i:00') AS 'slot',
+    servers.hostname AS 'server',
+    SUM(nic_stat.ibytes_per_sec)/(1024*1024) AS 'rx_mbps',
+    SUM(nic_stat.obytes_per_sec)/(1024*1024) AS 'tx_mbps'
+FROM
+    nic_stat FORCE INDEX(siteIdTime), servers
+WHERE
+    nic_stat.siteid = $siteId AND
+    nic_stat.time BETWEEN '$date 00:00:00' AND '$date 23:59:59' AND
+    nic_stat.serverid = servers.id AND
+    servers.type IN ('ENM_VM', 'MASTER')
+GROUP BY slot, server
+ORDER BY slot, server";
+
+    # Retrieve the NIC usage data in terms of RX & TX from DB
+    my $results = dbSelectAllArr($dbh, $sql);
+
+    my %nicUsageRxVmTotals = ();
+    my %nicUsageTxVmTotals = ();
+    foreach my $row (@{$results}) {
+        $row->[$slotIdx] =  parseTime($row->[$slotIdx], $TIME_YYYYMD_HMS, $TZ_GMT)  * 1000;
+        $nicUsageRxVmTotals{$row->[$serverIdx]} += $row->[$nicUsageRxIdx];
+        $nicUsageTxVmTotals{$row->[$serverIdx]} += $row->[$nicUsageTxIdx];
+    }
+
+    my $topTenNicUsageRxVMs = getTopTenVMs(\%nicUsageRxVmTotals);
+    printJsonToFile(\%nicUsageRxVmTotals, "$analysisOut/vm_nic_usage_rx_totals_all.json");
+
+    my $topTenNicUsageTxVMs = getTopTenVMs(\%nicUsageTxVmTotals);
+    printJsonToFile(\%nicUsageTxVmTotals, "$analysisOut/vm_nic_usage_tx_totals_all.json");
+
+    my %nicUsageRxStatsDaily = ();
+    foreach my $server (keys %{$topTenNicUsageRxVMs}) {
+        $nicUsageRxStatsDaily{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $nicUsageRxStatsDaily{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my %nicUsageTxStatsDaily = ();
+    foreach my $server (keys %{$topTenNicUsageTxVMs}) {
+        $nicUsageTxStatsDaily{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $nicUsageTxStatsDaily{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my %nicUsageRxDailyOthers = ();
+    my %nicUsageTxDailyOthers = ();
+
+    my %nicUsageRxStatsDailyAll = ();
+    my %nicUsageTxStatsDailyAll = ();
+    foreach my $row (@{$results}) {
+        if ( exists $topTenNicUsageRxVMs->{$row->[$serverIdx]} ) {
+            push (@{$nicUsageRxStatsDaily{$row->[$serverIdx]}->{'data'}}, [$row->[$slotIdx] + 0, $row->[$nicUsageRxIdx] + 0]);
+        }
+        else {
+            $nicUsageRxDailyOthers{$row->[$slotIdx] + 0} += $row->[$nicUsageRxIdx];
+        }
+        $nicUsageRxStatsDailyAll{$row->[$serverIdx]}->{$row->[$slotIdx] + 0} = $row->[$nicUsageRxIdx] + 0;
+
+        if ( exists $topTenNicUsageTxVMs->{$row->[$serverIdx]} ) {
+            push (@{$nicUsageTxStatsDaily{$row->[$serverIdx]}->{'data'}}, [$row->[$slotIdx] + 0, $row->[$nicUsageTxIdx] + 0]);
+        }
+        else {
+            $nicUsageTxDailyOthers{$row->[$slotIdx] + 0} += $row->[$nicUsageTxIdx];
+        }
+        $nicUsageTxStatsDailyAll{$row->[$serverIdx]}->{$row->[$slotIdx] + 0} = $row->[$nicUsageTxIdx] + 0;
+    }
+
+    foreach (sort {$a <=> $b} keys %nicUsageRxDailyOthers) {
+        push (@{$nicUsageRxStatsDaily{'Other'}->{'data'}}, [$_ + 0, $nicUsageRxDailyOthers{$_} + 0]);
+    }
+    foreach (sort {$a <=> $b} keys %nicUsageTxDailyOthers) {
+        push (@{$nicUsageTxStatsDaily{'Other'}->{'data'}}, [$_ + 0, $nicUsageTxDailyOthers{$_} + 0]);
+    }
+
+    open (DAILYJSON, ">$analysisOut/vm_nic_usage_rx_stats_topn.json");
+    print DAILYJSON "[\n";
+    foreach my $server (sort { $topTenNicUsageRxVMs->{$b} <=> $topTenNicUsageRxVMs->{$a} || $a cmp $b } keys %{$topTenNicUsageRxVMs}) {
+        print DAILYJSON encode_json($nicUsageRxStatsDaily{$server}) . ",\n";
+    }
+    print DAILYJSON encode_json($nicUsageRxStatsDaily{'Other'}) . "\n";
+    print DAILYJSON "]\n";
+    close DAILYJSON;
+
+    open (DAILYALLJSON, ">$analysisOut/vm_nic_usage_rx_stats_all.json");
+    foreach my $server (sort keys %nicUsageRxStatsDailyAll) {
+        print DAILYALLJSON encode_json( { $server => $nicUsageRxStatsDailyAll{$server} } ) . "\n";
+    }
+    close DAILYALLJSON;
+
+    open (DAILYJSON, ">$analysisOut/vm_nic_usage_tx_stats_topn.json");
+    print DAILYJSON "[\n";
+    foreach my $server (sort { $topTenNicUsageTxVMs->{$b} <=> $topTenNicUsageTxVMs->{$a} || $a cmp $b } keys %{$topTenNicUsageTxVMs}) {
+        print DAILYJSON encode_json($nicUsageTxStatsDaily{$server}) . ",\n";
+    }
+    print DAILYJSON encode_json($nicUsageTxStatsDaily{'Other'}) . "\n";
+    print DAILYJSON "]\n";
+    close DAILYJSON;
+
+    open (DAILYALLJSON, ">$analysisOut/vm_nic_usage_tx_stats_all.json");
+    foreach my $server (sort keys %nicUsageTxStatsDailyAll) {
+        print DAILYALLJSON encode_json( { $server => $nicUsageTxStatsDailyAll{$server} } ) . "\n";
+    }
+    close DAILYALLJSON;
+}
+
+sub main {
+    my ($site, $date, $analysisOut);
+
+    my $result = GetOptions (
+        "site=s"        => \$site,
+        "date=s"        => \$date,
+        "analysisOut=s" => \$analysisOut,
+        "debug=s"       => \$DEBUG
+    );
+
+    die "Invalid args"  if ($result != 1);
+
+    if ( ! -d $analysisOut ) {
+        mkdir $analysisOut;
+    }
+
+    # Establish DB connection
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    my $siteId = getSiteId($dbh,$site);
+
+    getIopsData($siteId, $date, $dbh, $analysisOut);
+    getCpuMemUsgData($siteId, $date, $dbh, $analysisOut);
+    getNicRxTxData($siteId, $date, $dbh, $analysisOut);
+
+    $dbh->disconnect();
+}
+
+main();

@@ -1,0 +1,96 @@
+#!/usr/bin/perl
+####################################################################################
+#  Description --------- parseSystemBoAll -----------
+#  This script parses the system Bo All log files for DDP and stores data to DB
+#  @author - Sangeeta Mumbarkar (zmmbsng)
+#  usage parseSystemBoAll --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+#####################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $siteId;
+our $serverId;
+our $DEBUG = 0;
+our $date = "";
+
+sub main {
+    my ($site, $server, $logFile);
+    my $result = GetOptions(
+        "logfile=s"  => \$logFile,
+        "site=s"     => \$site,
+        "server=s"   => \$server,
+        "date=s"     => \$date,
+        "debug=s"    => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $bcpFile = parseData($logFile);
+    my $table = "eniq_system_bo_all";
+    removeOldData($table);
+    loadDb($bcpFile, $table);
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData {
+    my $logFile = shift;
+    my $bcpFile = getBcpFileName("parser_System_BO_All");
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while(my $line = <FILE>) {
+        chomp($line);
+        if(my ($date, $time, $cpu, $ws) = $line =~ /^"(\d+-\d+-\d+)-(\d+\:\d+:\d+)"\s+"(.*)"\s+"(.*)"/){
+            my $dateTime = $date." ".$time;
+            printf BCP "%s|%d|%d|%s|%s\n",
+            $dateTime, $siteId, $serverId, $cpu, $ws;
+        }
+    }
+    close BCP;
+    close FILE;
+    if($DEBUG > 2) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $bcpFile");
+    }
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my $table = shift;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if($DEBUG > 3) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'  ESCAPED BY '\'";
+    if($DEBUG > 4) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

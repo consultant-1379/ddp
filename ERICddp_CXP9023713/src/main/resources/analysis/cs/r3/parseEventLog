@@ -1,0 +1,557 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+
+use trimTxName;
+
+our $GROUP_SNAD = 1;
+our $GROUP_NEAD = 1;
+
+our $OUTPUT_INTERVAL = 1;
+our $NUM_CAT = 7;
+
+our $DEBUG=0;
+
+our $MAPPED_TX = '_MAPPED_';
+main();
+
+sub main
+{
+    my ($inputFile,$outputDir,$dataFile);
+    my $result = GetOptions("input=s"  => \$inputFile,
+			    "outputdir=s"  => \$outputDir,
+			    "data=s" => \$dataFile,
+			    "debug=s" => \$DEBUG
+			    );    
+    ($result == 1) or die "Invalid args"; 
+
+    my @txMap = ();
+    my @txData = ();
+    
+    readInput($inputFile, \@txMap, \@txData);
+    
+    # For files generated with "older" parseCsEventLog, we need to
+    # group txs that should have been grouped by parseCsEventLog
+    fixTxNames(\@txMap, \@txData);
+
+
+    # Foreach tx Key contains a 3 element array contain the count of create,commit,rollback
+    my $r_Totals = getTotals(\@txData, $#txMap + 1);
+
+    my $r_SortedKeys = getSortedKeys($r_Totals,\@txMap);
+    printTotals(\@txMap, $r_Totals, $r_SortedKeys, "$outputDir/totals.html" );
+    
+    groupSnadNead( $GROUP_SNAD, $GROUP_NEAD, \@txMap, \@txData, $r_Totals );
+    # Re-sort as the grouping can change the totals
+    $r_SortedKeys = getSortedKeys($r_Totals,\@txMap);
+    
+    if ( $#{$r_SortedKeys} >= $NUM_CAT )
+    {
+	$r_SortedKeys = groupOthers( $r_SortedKeys, $NUM_CAT, \@txMap, \@txData, $r_Totals);
+    }
+    
+
+    writeData( $r_SortedKeys, \@txData, $dataFile );
+    print "TX_NAMES";
+    foreach my $txKey (@{$r_SortedKeys})
+    {
+	my $r_Tx = $txMap[$txKey];
+	print "@", $r_Tx->{'name'};
+    }
+    print "\n";
+}
+
+sub readInput
+{
+    my ($inputFile,$r_TxMap,$r_Data) = @_;
+
+    open INPUT, $inputFile or die "Cannot open $inputFile";
+
+    if ( $DEBUG > 1 ) { print "readInput: reading map line\n"; }
+    my $line = <INPUT>;
+    if ( $DEBUG > 1 ) { print "readInput: read map line, size=" . length($line) . "\n"; }
+    chop $line;
+
+    my @mapParts = split /@@/, $line;
+    if ( $DEBUG > 1 ) { print "readInput: split completed, #mapParts=" . $#mapParts . "\n"; }
+
+    ( $#mapParts < 10000 ) or die "readInput: too many entries in mapParts (" . $#mapParts . ")";
+	
+    shift @mapParts;
+    foreach my $part ( @mapParts )
+    {
+	my @fields = split /::/, $part;
+	my @cnts = split /,/, $fields[1];
+	my $r_Tx = {
+	    'name' => $fields[0],
+	    'cnts' => \@cnts
+	    };
+	
+	push @{$r_TxMap}, $r_Tx;
+    }
+    if ( $DEBUG > 2 ) { print Dumper("readInput txMap", $r_TxMap ); }
+
+    my $lastMin = -1;
+    while ( $line = <INPUT> )
+    {
+	chop $line;       	
+	my @parts = split /@/, $line;
+
+	if ( $DEBUG > 8 ) { print Dumper("parts", \@parts ); }
+
+	my $currMin = shift @parts;
+
+	#
+	# If the data has gaps, then we need to put a "zero" entry
+	# either side of the "gap" 
+	#
+	if ( ($currMin - $lastMin) > $OUTPUT_INTERVAL )
+	{
+	    if ( $DEBUG > 7 ) { printf "Adding start zero entry %d\n", ($lastMin + 1); }
+
+	    my $r_StartEmptySample = {
+		'time' => $lastMin + 1,
+		};
+	    push @{$r_Data}, $r_StartEmptySample;
+
+	    if ( ($currMin - $lastMin) > ($OUTPUT_INTERVAL+1) )
+	    {
+		if ( $DEBUG > 7 ) { printf "Adding end zero entry %d\n", ($currMin - 1); }
+
+		my $r_EndEmptySample = {
+		    'time' => $currMin - 1,
+		    };
+		push @{$r_Data}, $r_EndEmptySample;
+	    }
+	}
+
+	my $r_DataSample = {
+	    'time' => $currMin,
+	    };
+	push @{$r_Data}, $r_DataSample;
+	foreach my $txCount ( @parts )
+	{
+	    my @txCountParts = split /,/, $txCount;
+	    $r_DataSample->{'data'}->{($txCountParts[0]) - 1} = [$txCountParts[1], $txCountParts[2], $txCountParts[3] ];
+	}
+
+	$lastMin = $currMin;
+    }
+    
+    close INPUT;
+}
+
+sub groupSnadNead
+{
+    my ($groupSnad,$groupNead,$r_txMap,$r_txData, $r_Totals) = @_;
+
+    my %groupedTx = ();
+
+    my $r_GrpNeadTx = {
+	'name' => 'GRP_NEAD',
+	'cnts' => []
+	};
+    push @{$r_txMap}, $r_GrpNeadTx;
+    my $cmsNeadKey = $#{$r_txMap};
+
+    my $r_GrpSnadTx = {
+	'name' => 'GRP_SNAD',
+	'cnts' => []
+	};
+    push @{$r_txMap}, $r_GrpSnadTx;
+    my $cmsSnadKey = $#{$r_txMap};    
+
+    # Create a Map key txId value snad/nead id
+    for ( my $i = 0; $i <= $#{$r_txMap}; $i++ )
+    {
+	my $txName = $r_txMap->[$i]->{'name'};
+	if ( $groupNead )
+	{
+	    if ( ($txName =~ /cms_nead_seg/) || ($txName =~/^IncrSync/) || ($txName =~/^synchSet.*Mib/) || ($txName =~ /cms:set_mib/) )
+	    {
+		$groupedTx{$i} = $cmsNeadKey;
+		if ( $DEBUG > 2 ) { print "Grouping NEAD $i $txName\n"; }
+	    }
+	}	
+	
+	if ( $groupSnad )
+	{
+	    if ( ($txName =~ /cms_snad_reg/) || (($txName =~/SNAD/) && ($txName !~ /^GRP_SNAD/)) || ($txName =~ /Rnc.*Handler/) || ($txName =~ /Automatic_ConsistencyChecker/) )
+	    {
+		$groupedTx{$i} = $cmsSnadKey;
+		if ( $DEBUG > 2 ) { print "Grouping SNAD $i $txName\n"; }
+	    }
+	}
+    }
+	    
+    # Remove all the snad/nead TXs and group them together
+    foreach my $r_TimeSample ( @{$r_txData} )
+    {
+	foreach my $key ( keys %{$r_TimeSample->{'data'}} )
+	{
+	    my $grpKey = $groupedTx{$key};
+	    if ( $grpKey )
+	    {
+		if ( $DEBUG > 6 ) { print "key = $key grpKey = $grpKey\n"; }
+
+		my $r_txCounts = $r_TimeSample->{'data'}->{$key};
+		my $r_GrpTxCounts = $r_TimeSample->{'data'}->{$grpKey};
+		if ( ! $r_GrpTxCounts )
+		{
+		    $r_GrpTxCounts = [ 0, 0, 0 ];
+		    $r_TimeSample->{'data'}->{$grpKey} = $r_GrpTxCounts
+		}
+		
+		for ( my $i = 0; $i <= $#{$r_txCounts}; $i++ )
+		{
+		    $r_GrpTxCounts->[$i] += $r_txCounts->[$i];
+		}		
+		
+		delete $r_TimeSample->{'data'}->{$key};
+	    }
+	}
+    }
+
+    # Add all the durations for the grouped tx togther
+    for ( my $i = 0; $i <= $#{$r_txMap}; $i++ )
+    {
+	my $grpKey = $groupedTx{$i};
+	if ( $grpKey )
+	{
+	    my $r_Tx = $r_txMap->[$i];
+	    my $r_TxGrp = $r_txMap->[$grpKey];
+
+	    for ( my $y = 0; $y <= $#{$r_Tx->{'cnts'}}; $y++ )
+	    {
+		$r_TxGrp->{'cnts'}->[$y] += $r_Tx->{'cnts'}->[$y];
+		$r_Tx->{'cnts'}->[$y] = 0;
+	    }
+
+	    for ( my $y = 0; $y <= $#{$r_Totals->[$i]}; $y++ )
+	    {
+		$r_Totals->[$grpKey]->[$y] += $r_Totals->[$i]->[$y];
+		$r_Totals->[$i]->[$y] = 0;
+	    }
+	}
+    }	        
+
+    if ( $DEBUG > 2 ) 
+    {
+	print Dumper("groupSnadNead: r_txMap", $r_txMap);
+	print Dumper("groupSnadNead: GRP_NEAD", $r_Totals->[$cmsNeadKey]);
+	print Dumper("groupSnadNead: GRP_SNAD", $r_Totals->[$cmsSnadKey]);
+    }
+}
+
+
+
+sub groupOthers
+{
+    my ($r_SortedKeys, $numCat, $r_txMap, $r_txData,$r_Totals) = @_;
+    
+    my %topKeys = ();
+    for ( my $i = 0; $i < $numCat; $i++ )
+    {
+	$topKeys{$r_SortedKeys->[$i]} = 1;
+    }
+
+    my $r_TxOther = {
+	'name' => 'Other',
+	'cnts' => []
+	};
+    push @{$r_txMap}, $r_TxOther;
+    my $otherKey = $#{$r_txMap};
+
+    foreach my $r_TimeSample ( @{$r_txData} )
+    {
+	foreach my $key ( keys %{$r_TimeSample->{'data'}} )
+	{
+	    if ( ! $topKeys{$key} && ($key != $otherKey) )
+	    {	       
+		my $r_txCounts = $r_TimeSample->{'data'}->{$key};
+		my $r_OtherTxCounts = $r_TimeSample->{'data'}->{$otherKey};
+		if ( ! $r_OtherTxCounts )
+		{
+		    $r_OtherTxCounts = [ 0, 0, 0 ];
+		    $r_TimeSample->{'data'}->{$otherKey} = $r_OtherTxCounts
+		}
+		
+		for ( my $i = 0; $i <= $#{$r_txCounts}; $i++ )
+		{
+		    $r_OtherTxCounts->[$i] += $r_txCounts->[$i];
+		}		
+		
+		delete $r_TimeSample->{'data'}->{$key};
+	    }
+	}
+    }
+
+    # Add all the durations for the grouped tx togther
+    for ( my $i = 0; $i <= $#{$r_txMap}; $i++ )
+    {
+	if ( (! exists $topKeys{$i}) && ($i != $otherKey) )
+	{	       
+	    my $r_Tx = $r_txMap->[$i];
+
+	    for ( my $y = 0; $y <= $#{$r_Tx->{'cnts'}}; $y++ )
+	    {
+		$r_TxOther->{'cnts'}->[$y] += $r_Tx->{'cnts'}->[$y];
+		$r_Tx->{'cnts'}->[$y] = 0;
+	    }
+	    	    
+	    for ( my $y = 0; $y <= $#{$r_Totals->[$i]}; $y++ )
+	    {
+		$r_Totals->[$otherKey]->[$y] += $r_Totals->[$i]->[$y];
+		$r_Totals->[$i]->[$y] = 0;
+	    }
+	}
+    }	        
+
+    # Resort the trimed list as grouping may change the order
+    $r_SortedKeys = getSortedKeys($r_Totals,$r_txMap);
+    my $r_TrimmedSortedKeys = [];
+    for ( my $i = 0; $i <= $numCat; $i++ )
+    {
+	push @{$r_TrimmedSortedKeys}, $r_SortedKeys->[$i];
+    }
+    
+    if ( $DEBUG > 1 ) 
+    {
+	print "groupOthers : r_TrimmedSortedKeys\n";
+	foreach my $key ( @{$r_TrimmedSortedKeys} )
+	{
+	    my $r_Tx = $r_txMap->[$key];
+	    printf "   %10d %3d %s\n", $r_Totals->[$key]->[0], $key, $r_Tx->{'name'}; 
+	}
+	print "\n";
+    }
+
+
+    return $r_TrimmedSortedKeys;
+}
+
+sub getTotals
+{
+    my ($r_txData,$numTx) = @_;
+
+    my $r_Totals = [];
+    for ( my $i = 0; $i < $numTx; $i++ )
+    {
+	$r_Totals->[$i] = [ 0, 0, 0 ];
+    }
+
+    foreach my $r_TimeSample ( @{$r_txData} )
+    {
+	foreach my $key ( keys %{$r_TimeSample->{'data'}} )
+	{
+	    my $r_txCounts = $r_TimeSample->{'data'}->{$key};
+	    for ( my $i = 0; $i <= $#{$r_txCounts}; $i++ )
+	    {
+		$r_Totals->[$key]->[$i] += $r_txCounts->[$i];
+	    }
+	}
+    }
+
+    return $r_Totals;
+}
+
+sub printTotals
+{
+    my ($r_txMap,$r_Totals,$r_SortedKeys,$outputFile) = @_;
+
+    if ( $DEBUG > 3 ) 
+    {
+	print Dumper("txMap", $r_txMap );
+        print Dumper("totals", $r_Totals );
+	print Dumper("sortedKeys", $r_SortedKeys );
+    } 
+
+    open OUTPUT, ">$outputFile" or die "Cannot write to $outputFile";
+    foreach my $key ( @{$r_SortedKeys} )
+    {
+	my $r_Tx = $r_txMap->[$key];
+	if ( $r_Tx->{'name'} ne $MAPPED_TX )
+	{
+	    printf OUTPUT "<tr> <td>%s<\/td> <td>%d<\/td> <td>%d<\/td> <td>%d<\/td>  <td>%d<\/td> <td>%d<\/td> <td>%d<\/td> <td>%d<\/td> <td>%d<\/td> <\/tr>\n",
+	    $r_Tx->{'name'}, 
+	    $r_Totals->[$key]->[0], $r_Totals->[$key]->[1], $r_Totals->[$key]->[2], 
+	    $r_Tx->{'cnts'}->[1], $r_Tx->{'cnts'}->[0], $r_Tx->{'cnts'}->[2], $r_Tx->{'cnts'}->[3], $r_Tx->{'cnts'}->[4];
+	}
+    }
+    close OUTPUT;
+}
+
+#writeData( $r_SortedKeys, \@txData, $dataFile );    
+sub writeData       
+{
+    my ($r_SortedKeys,$r_txData, $dataFile) = @_;
+
+    if ( $DEBUG > 5 ) { print Dumper( "data", $r_txData ); }	
+
+    open DATAFILE, ">$dataFile" or die "Cannot write to $dataFile";
+    foreach my $r_TimeSample ( @{$r_txData} )
+    {
+	my $timeInSec = $r_TimeSample->{'time'};
+	my $timeStamp = sprintf "%02d:%02d", int ($timeInSec / 60), int ( $timeInSec % 60 );
+
+	print DATAFILE $timeStamp;
+
+	my @runningTotal = ( 0, 0, 0 );
+	
+	foreach my $key ( @{$r_SortedKeys} )
+	{
+	    my $r_txCounts = $r_TimeSample->{'data'}->{$key};
+	    if ( $r_txCounts )
+	    {
+		for ( my $i = 0; $i <= $#{$r_txCounts}; $i++ )
+		{
+		    $runningTotal[$i] += $r_txCounts->[$i];
+		}
+	    }
+
+	    print DATAFILE " $runningTotal[0] $runningTotal[1] $runningTotal[2]";
+	}
+	print DATAFILE "\n";
+    }
+    close DATAFILE;
+}
+    
+	    
+	    
+sub getSortedKeys
+{
+    my ($r_Totals,$r_txMap) = @_;
+
+    my %txCreateCounts = ();
+    for ( my $i = 0; $i <= $#{$r_Totals}; $i++ )
+    {
+	$txCreateCounts{$i} = $r_Totals->[$i]->[0];
+    }
+
+    my $r_Result = getKeysSortedByValue(\%txCreateCounts);
+
+    if ( $DEBUG > 1 ) 
+    {
+	print "getSortedKeys: result\n";
+	foreach my $key ( @{$r_Result} )
+	{
+	    my $r_Tx =  $r_txMap->[$key];
+	    printf "   %10d %s\n", $txCreateCounts{$key}, $r_Tx->{'name'}; 
+	}
+	print "\n";
+    }
+
+    return $r_Result;
+}
+
+
+
+
+sub by_number
+{
+    return $b <=> $a;
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+        my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+        $reverseHash{$reverseKey} = $key;
+        $counter++;
+    }
+
+    my $r_Result = [];
+    foreach my $reverseKey ( sort by_number keys %reverseHash )
+    {
+        $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+
+    return $r_Result;
+}
+
+sub fixTxNames
+{
+    my ($r_txMap,$r_txData) = @_;
+ 
+    $TRIM_TX_DEBUG = $DEBUG;
+
+    my %mappedTxNames = ();
+    my %groupedTx = ();
+    
+    for ( my $i = 0; $i <= $#{$r_txMap}; $i++ )
+    {
+	my $r_srcTx = $r_txMap->[$i];
+
+	my $trimedName = trimTxName($r_srcTx->{'name'});
+	if ( $DEBUG > 6 ) { print "fixTxNames: $r_srcTx->{'name'} trimmed is $trimedName $#{$r_txMap}\n"; }
+	if ( $trimedName ne $r_txMap->[$i]->{'name'} )
+	{
+	    my $mapToId;
+	    my $r_grpTx;
+	    if ( ! exists $mappedTxNames{$trimedName} )
+	    {
+		$r_grpTx = {
+		    'name' => $trimedName,
+		    'cnts' => []
+		    };
+		push @{$r_txMap}, $r_grpTx;
+		$mapToId = $#{$r_txMap};
+		if ( $DEBUG > 4 ) { print "fixTxNames: allocating new id $mapToId for $trimedName\n"; }
+
+		$mappedTxNames{$trimedName} = $mapToId;		
+	    }
+	    else
+	    {
+		$mapToId = $mappedTxNames{$trimedName};
+		$r_grpTx = $r_txMap->[$mapToId];
+	    }
+
+	    if ( $DEBUG > 5 ) { print "fixTxNames: mapping $r_srcTx->{'name'} to $r_grpTx->{'name'} ids $i -> $mapToId\n"; }
+
+	    $groupedTx{$i} = $mapToId;
+	    
+	    for ( my $y = 0; $y <= $#{$r_srcTx->{'cnts'}}; $y++ )
+	    {
+		$r_grpTx->{'cnts'}->[$y] += $r_srcTx->{'cnts'}->[$y];
+		$r_srcTx->{'cnts'}->[$y] = 0;
+	    }			    
+	    $r_srcTx->{'name'} = $MAPPED_TX;
+
+	}
+    }
+
+    foreach my $r_TimeSample ( @{$r_txData} )
+    {
+	foreach my $key ( keys %{$r_TimeSample->{'data'}} )
+	{
+	    my $grpKey = $groupedTx{$key};
+	    if ( $grpKey )
+	    {
+		if ( $DEBUG > 6 ) { print "key = $key grpKey = $grpKey\n"; }
+
+		my $r_txCounts = $r_TimeSample->{'data'}->{$key};
+		my $r_GrpTxCounts = $r_TimeSample->{'data'}->{$grpKey};
+		if ( ! $r_GrpTxCounts )
+		{
+		    $r_GrpTxCounts = [ 0, 0, 0 ];
+		    $r_TimeSample->{'data'}->{$grpKey} = $r_GrpTxCounts
+		}
+		
+		for ( my $i = 0; $i <= $#{$r_txCounts}; $i++ )
+		{
+		    $r_GrpTxCounts->[$i] += $r_txCounts->[$i];
+		}		
+		
+		delete $r_TimeSample->{'data'}->{$key};
+	    }
+	}
+    }
+		
+}

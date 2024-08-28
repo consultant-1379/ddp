@@ -1,0 +1,255 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use StatsTime;
+use Instr;
+
+use DBI;
+use JSON;
+
+our $DEBUG = 0;
+
+sub parse($) {
+    my ($inFile) = @_;
+
+    my @samples = ();
+    my $r_sample = undef;
+    my $r_columns = undef;
+    open INPUT, $inFile or die "Cannot open $inFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parse: line=$line"; }
+
+        chomp $line;
+        if ( $line =~ /^[\d:]{12,12}$/ ) {
+            my $timestamp = $line;
+            if ( $DEBUG > 6 ) { print "parse: timestamp=$timestamp\n"; }
+            my $gotSomeJSONLine = 0;
+            # Handle the cases where the 'timestamp' line is not followed by a
+            #  line with ES stats in JSON format due to 'getlog' timeout
+            while ( $line = <INPUT> ) {
+                chomp $line;
+                if ( $line =~ /^$/ || $line =~ /^\s*$/ ) {
+                    next;
+                }
+                elsif ( $line =~ /^[\d:]{12,12}$/ ) {
+                    print "parse: Unable to find ES stats for the timestamp=$timestamp\n";
+                    $timestamp = $line;
+                    next;
+                }
+                elsif ( $line =~ /^\{.*([\d:]{12,12})$/ ) {
+                    print "parse: Found incomplete ES stats line for the timestamp=$timestamp\n";
+                    $timestamp = $1;
+                    next;
+                }
+                else {
+                    $gotSomeJSONLine = 1;
+                    last;
+                }
+            }
+            # Handle the case where the very last line is a 'timestamp' and not
+            #  followed by a line with ES stats in JSON format
+            if ( ! $gotSomeJSONLine ) {
+                print "parse: Unable to find ES stats for the timestamp=$timestamp\n";
+                next;
+            }
+            my $r_rawStats = decode_json($line);
+            my $r_nodeStats = (values %{$r_rawStats->{'nodes'}})[0];
+            if ( $DEBUG > 8 ) { print Dumper("parse: r_nodeStats", $r_nodeStats); }
+            $r_sample = {
+                'timestamp' => formatTime( parseTime($timestamp, $StatsTime::TIME_DDMMYY_HM),
+                                           $StatsTime::TIME_SQL ),
+                'stats' => {
+                    'thread_pool' => $r_nodeStats->{'thread_pool'},
+                    'jvm' => $r_nodeStats->{'jvm'},
+                    'process' => $r_nodeStats->{'process'},
+                    'indices' => $r_nodeStats->{'indices'}
+                }
+            };
+            push @samples, $r_sample;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parse: samples", \@samples); }
+
+    return \@samples;
+}
+
+sub writeGenricInstr($$) {
+    my ($r_samples,$instrFile) = @_;
+
+    open OUTPUT, ">$instrFile" or die "Failed to open $instrFile";
+    foreach my $r_sample ( @{$r_samples} ) {
+        if ( $DEBUG > 8 ) { print Dumper("writeGenricInstr: r_sample", $r_sample); }
+
+        my $timestamp = $r_sample->{'timestamp'};
+        $timestamp =~ s/^20(\d{2,2})-(\d{2,2})-(\d{2,2})/$3-$2-$1/;
+        $timestamp .= ".000";
+
+        my $r_mem = $r_sample->{'stats'}->{'jvm'}->{'mem'};
+        printf  OUTPUT "%s elasticsearch-jvm-memory 0 %d 0 %d %d %d 0 %d %d\n", $timestamp,
+        $r_mem->{'heap_committed_in_bytes'}, $r_mem->{'heap_max_in_bytes'}, $r_mem->{'heap_used_in_bytes'},
+        $r_mem->{'non_heap_committed_in_bytes'}, $r_mem->{'non_heap_committed_in_bytes'}, $r_mem->{'non_heap_used_in_bytes'};
+
+        foreach my $pool ( 'direct', 'mapped' ) {
+            my $r_pool = $r_sample->{'stats'}->{'jvm'}->{'buffer_pools'}->{$pool};
+            printf OUTPUT "%s elasticsearch-nio-memory-%s %d %d\n", $timestamp, $pool,
+            $r_pool->{'count'}, $r_pool->{'used_in_bytes'};
+        }
+
+        my $r_threads = $r_sample->{'stats'}->{'jvm'}->{'threads'};
+        printf OUTPUT "%s elasticsearch-threads %d %d\n", $timestamp,
+        $r_threads->{'count'}, $r_threads->{'peak_count'};
+
+        printf OUTPUT "%s elasticsearch-os %d 0\n", $timestamp,
+        $r_sample->{'stats'}->{'process'}->{'cpu'}->{'total_in_millis'} * 1000000;
+
+        my $r_gc = $r_sample->{'stats'}->{'jvm'}->{'gc'}->{'collectors'};
+        printf OUTPUT "%s elasticsearch-jvmgc %d %d %d %d\n", $timestamp,
+        $r_gc->{'young'}->{'collection_count'}, $r_gc->{'young'}->{'collection_time_in_millis'},
+        $r_gc->{'old'}->{'collection_count'}, $r_gc->{'old'}->{'collection_time_in_millis'};
+    }
+    close OUTPUT;
+}
+
+
+sub getThreadPoolStats($) {
+    my ($r_samples) = @_;
+
+    my %threadpools = ();
+    foreach my $r_sample ( @{$r_samples} ) {
+        my $time = StatsTime::parseTime( $r_sample->{'timestamp'}, $StatsTime::TIME_SQL);
+        while ( my ($tpName,$r_tpStats) = each %{$r_sample->{'stats'}->{'thread_pool'}} ) {
+            my $r_tp = $threadpools{$tpName};
+            if ( ! defined $r_tp ) {
+                $r_tp = [];
+                $threadpools{$tpName} = $r_tp;
+            }
+            $r_tpStats->{'timestamp'} = $r_sample->{'timestamp'};
+            $r_tpStats->{'time'} = $time;
+            push @{$r_tp}, $r_tpStats;
+        }
+    }
+
+    while ( my ($tpName,$r_tpStats) = each %threadpools ) {
+        deltaSamples($r_tpStats,['rejected','completed']);
+        my $count = 0;
+        foreach my $r_tpSample ( @{$r_tpStats} ) {
+            if ( exists $r_tpSample->{'rejected'} ) {
+                $count += $r_tpSample->{'rejected'} + $r_tpSample->{'completed'};
+            }
+        }
+
+        if ( $DEBUG > 1 ) { print "getThreadPoolStats: $tpName count=$count\n"; }
+
+        if ( $count == 0 ) {
+            delete $threadpools{$tpName};
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("getThreadPoolStats: threadpools", \%threadpools); }
+
+    return \%threadpools;
+}
+
+sub getIndicesStats($) {
+    my ($r_samples) = @_;
+
+    my @outSamples = ();
+
+    my %extractParams = (
+        'search' => [ 'query_total', 'query_time_in_millis', 'fetch_total', 'fetch_time_in_millis' ],
+        'indexing' => [ 'index_total', 'index_time_in_millis' ],
+        'store' => [ 'size_in_bytes' ],
+        'docs' => ['deleted']
+        );
+
+    foreach my $r_sample ( @{$r_samples} ) {
+        if ( $DEBUG > 9 ) { print Dumper("getIndicesStats indices", $r_sample->{'stats'}->{'indices'}); }
+
+        my $time = StatsTime::parseTime( $r_sample->{'timestamp'}, $StatsTime::TIME_SQL);
+
+        my %outSample = ( 'timestamp' => $r_sample->{'timestamp'},
+                          'time' => StatsTime::parseTime( $r_sample->{'timestamp'}, $StatsTime::TIME_SQL) );
+        push @outSamples, \%outSample;
+        while ( my ($key,$r_index) = each %{$r_sample->{'stats'}->{'indices'}} ) {
+            if ( $DEBUG > 9 ) { print Dumper("getIndicesStats key=$key r_index", $r_index); }
+            if ( exists $extractParams{$key} ) {
+                foreach my $param ( @{$extractParams{$key}} ) {
+                    if ( $param eq 'size_in_bytes' ) {
+                        $outSample{$param} = $r_index->{$param} / (1024*1024);
+                    } else {
+                        $outSample{$param} = $r_index->{$param};
+                    }
+                }
+            }
+        }
+    }
+
+    deltaSamples(\@outSamples, [ 'query_total', 'query_time_in_millis',
+                                 'fetch_total', 'fetch_time_in_millis',
+                                 'index_total', 'index_time_in_millis',
+                                 'deleted'] );
+
+    if ( $DEBUG > 5 ) { print Dumper("getIndicesStats: outSamples", \@outSamples); }
+
+    return \@outSamples;
+}
+
+sub main() {
+    my ($logFile, $site, $date, $instrFile, $type);
+    my $result = GetOptions("log=s"  => \$logFile,
+                            "date=s" => \$date,
+                            "site=s" => \$site,
+                            "instr=s" => \$instrFile,
+                            "debug=s" => \$DEBUG,
+                            "type=s" => \$type
+        );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my $r_stats = parse($logFile);
+
+    if ( defined $instrFile ) {
+        writeGenricInstr($r_stats,$instrFile);
+    }
+
+    my $r_tp_stats = getThreadPoolStats($r_stats);
+
+    my $dbh = connect_db();
+    my @tp_names = keys %{$r_tp_stats};
+    my $r_dbIdMap = getIdMap($dbh, "elasticsearch_tp_names", "id", "name",  \@tp_names );
+    my %dbColMap = (
+        'completed' => 'completed',
+        'rejected' => 'rejected',
+        'active' => 'active',
+        'queue' => 'queue');
+
+    foreach my $tp_name ( @tp_names ) {
+        instrStoreData("elasticsearch_tp",$site,{ 'tpid' => $r_dbIdMap->{$tp_name}, 'servicetype' => $type },
+            $r_tp_stats->{$tp_name}, \%dbColMap );
+    }
+
+    my %indiceColumnMap = (
+        'query_total'          => 'searchQueryCount',
+        'query_time_in_millis' => 'searchQueryTime',
+        'fetch_total'          => 'searchFetchCount',
+        'fetch_time_in_millis' => 'searchFetchTime',
+        'index_total'          => 'indexCount',
+        'index_time_in_millis' => 'indexTime',
+        'size_in_bytes'        => 'storeSizeMB',
+        'deleted'              => 'docsDeleted');
+
+    my $r_indicesStats = getIndicesStats($r_stats);
+    my %extraCols = ( 'servicetype' => $type );
+    instrStoreData("elasticsearch_indices",$site,\%extraCols,$r_indicesStats,\%indiceColumnMap);
+
+}
+
+main();

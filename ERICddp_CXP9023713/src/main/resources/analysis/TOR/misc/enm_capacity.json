@@ -1,0 +1,34 @@
+[
+    {
+        "attribute": "alarmInflowPerDay",
+        "query": "SELECT SUM(alarmCountReceivedByAPSPerMinute) FROM fm_alarmprocessing_instr WHERE siteid = @siteid AND time BETWEEN @date AND @date + INTERVAL 1 DAY"
+    },
+    {
+        "attribute": "volumeOf15minuteSnmpGetCounters",
+        "query": "SELECT SUM(snmpGetSizeResponseMessage) FROM enm_mspmip_instr WHERE siteid = @siteid AND time BETWEEN @date AND @date + INTERVAL 1 DAY"
+    },
+    {
+        "attribute": "volumeOf15MinuteDataStoredMB",
+        "query": "SELECT SUM(volumekb) / (96*1024) FROM enm_pmic_rop_fls WHERE siteid = @siteid AND fcs BETWEEN @date AND @date + INTERVAL 1 DAY"
+    },
+    {
+        "attribute": "numberOfMosSyncWrite",
+        "query": "SELECT IFNULL((SELECT SUM(total - nonlive) FROM enm_neo4j_mocounts WHERE enm_neo4j_mocounts.siteid = @siteid AND enm_neo4j_mocounts.date = @date), (SELECT SUM(count-planned) FROM mo WHERE siteid = @siteid AND date = @date))"
+    },
+    {
+        "attribute": "notificationLevelPerDay",
+        "query": "SELECT (SELECT SUM(receivedNotificationsCount) FROM enm_mscmce_notification WHERE siteid = @siteid AND time BETWEEN @date AND @date + INTERVAL 1 DAY) + (SELECT SUM(totalnotificationsreceived) FROM enm_mscmnotification_logs WHERE siteid = @siteid AND time BETWEEN @date AND @date + INTERVAL 1 DAY)"
+    },
+    {
+        "attribute": "nodeTransferVolumePerDayMB",
+        "query": "SELECT ROUND(SUM(readSize + writeSize), 6) AS nodeTransferVolumePerDayMB FROM enm_filetransfer_connections WHERE siteid = @siteid AND enm_filetransfer_connections.time BETWEEN @date AND @date + INTERVAL 1 DAY"
+    },
+    {
+        "attribute": "eventStreamRatePerSec",
+        "query": "SELECT SUM(events3 + events2) / 24 / 60 /60 FROM enm_str_msstr WHERE enm_str_msstr.time BETWEEN @date AND @date + INTERVAL 1 DAY AND enm_str_msstr.siteid = @siteid"
+    },
+    {
+        "attribute": "numberConcurrentConnectionsToManagedNetwork",
+        "query": "SELECT SUM(enm_network_element_details.count) FROM enm_network_element_details WHERE enm_network_element_details.siteid = @siteid AND enm_network_element_details.date = @date"
+    }
+]

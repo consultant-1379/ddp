@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_data_layer_sap_iq">
+    <reference table="sites" condition="eniq_data_layer_sap_iq.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_data_layer_sap_iq.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="timeStamp"/>
+  <where>sites.name = '%site%' AND eniq_data_layer_sap_iq.time IN ( '%timeStamp%' )</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instances" id="userStatsInstance"/>
+  <column db="eniq_data_layer_sap_iq.activeConnections" label="Active Connections"/>
+  <column db="eniq_data_layer_sap_iq.totalConnections" label="Total Connections"/>
+
+  <ctxmenu keycol="userStatsInstance" targettype="url" >
+    <item id="userStatsInstance" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

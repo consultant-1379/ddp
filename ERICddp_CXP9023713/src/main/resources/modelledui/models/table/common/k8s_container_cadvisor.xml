@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="k8s_container_cadvisor">
+  <reference table="sites" condition="k8s_container_cadvisor.siteid = sites.id"/>
+  <reference table="k8s_container_names" condition="k8s_container_cadvisor.containerid = k8s_container_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND k8s_container_cadvisor.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="k8s_container_names.name"/>
+ </groupby>
+
+ <order columnid="tcpu" direction="DESC"/>
+
+ <column db="k8s_container_cadvisor.containerid" label="cid" id="cid" visible="false"/>
+ <column db="k8s_container_names.name" label="Container Name"/>
+ <column db="SUM(k8s_container_cadvisor.cpu_user + k8s_container_cadvisor.cpu_sys)" label="Total CPU" id="tcpu"/>
+ <column db="SUM(k8s_container_cadvisor.cpu_throttled)" label="Total CPU Throttled"/>
+ <column db="MAX(k8s_container_cadvisor.mem_mb)" label="Max Memory"/>
+
+ <ctxmenu keycol="cid" targettype="modelledgraph" multiselect="false">
+  <item id="common/k8s_container_cadvisor_cpu" label="Plot CPU"/>
+  <item id="common/k8s_container_cadvisor_cpu_throttled" label="Plot CPU Throttled"/>
+  <item id="common/k8s_container_cadvisor_mem" label="Plot Memory"/>
+ </ctxmenu>
+
+</modelledtable>

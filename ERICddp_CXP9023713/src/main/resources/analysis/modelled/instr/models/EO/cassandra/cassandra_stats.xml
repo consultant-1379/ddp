@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^cassandra@(\S+)">
+
+  <table name="eo_cassandra_stats">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^cassandra-CASRead-Timeouts$">
+      <metric source="Count" target="casReadTimeouts" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASWrite-Timeouts$">
+      <metric source="Count" target="casWriteTimeouts" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Host-Timeouts$">
+      <metric source="Count" target="hostTimeouts" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASRead-Failures$">
+      <metric source="Count" target="casReadFailures" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASWrite-Failures$">
+      <metric source="Count" target="casWriteFailures" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASRead-Unavailables$">
+      <metric source="Count" target="casReadUnavailables" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASWrite-Unavailables$">
+      <metric source="Count" target="casWriteUnavailables" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASRead-Latency$">
+      <metric source="Count" target="casReadLatency" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CASWrite-Latency$">
+      <metric source="Count" target="casWriteLatency" delta="true" filteridle="true" />
+    </metricgroup>
+    <metricgroup name="^cassandra-Read-Latency$">
+      <metric source="Count" target="readLatency" delta="true" filteridle="true" scale="1000"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Write-Latency$">
+      <metric source="Count" target="writeLatency" delta="true" filteridle="true" scale="1000" />
+    </metricgroup>
+    <metricgroup name="^cassandra-Read-Timeouts$">
+      <metric source="Count" target="readTimeouts" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Write-Timeouts$">
+      <metric source="Count" target="writeTimeouts" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Write-Failures$">
+      <metric source="Count" target="writeFailures" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Read-Failures$">
+      <metric source="Count" target="readFailures" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Write-Unavailables$">
+      <metric source="Count" target="writeUnavailables" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Read-Unavailables$">
+      <metric source="Count" target="readUnavailables" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CompletedTasks-MemtableFlushWriter$">
+      <metric source="Value" target="completedTasksMemtableFlushWriter" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CompletedTasks-Mutation$">
+      <metric source="Value" target="completedTasksMutation" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CompletedTasks-Read$">
+      <metric source="Value" target="completedTasksRead" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-TotalBlockedTasks-CompactionExecutor$">
+      <metric source="Count" target="totalBlockedTasksCompactionExecutor" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-TotalBlockedTasks-MemtableFlushWriter$">
+      <metric source="Count" target="totalBlockedTasksMemtableFlushWriter" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-TotalBlockedTasks-MutationStage$">
+      <metric source="Count" target="totalBlockedTasksMutationStage" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-TotalBlockedTasks-ReadStage$">
+      <metric source="Count" target="totalBlockedTasksReadStage" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-CommitLog-Waiting-On-Segment-Allocation$">
+      <metric source="Count" target="commitLogWaitingOnSegmentAllocation" delta="true" filteridle="true" />
+    </metricgroup>
+    <metricgroup name="^cassandra-Dropped-Read$">
+      <metric source="Count" target="droppedRead" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Dropped-Mutations$">
+      <metric source="Count" target="droppedMutations" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Storage-Exceptions$">
+      <metric source="Count" target="storageExceptions" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Storage-Load$">
+      <metric source="Count" target="storageLoad" scale="1048576"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Total-Hints$">
+      <metric source="Count" target="totalHints" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Client-Connected-Native-Clients$">
+      <metric source="Value" target="clientConnectedNativeClients"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Pending-Compactions$">
+      <metric source="Value" target="pendingCompactions"/>
+    </metricgroup>
+    <metricgroup name="^cassandra-Pending-Flushes$">
+      <metric source="Value" target="pendingFlushes" />
+    </metricgroup>
+    <metricgroup name="^cassandra-Total-Compactions$">
+      <metric source="Value" target="totalCompactions" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>
+

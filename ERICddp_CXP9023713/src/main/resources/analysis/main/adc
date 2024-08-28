@@ -1,0 +1,109 @@
+#!/bin/bash
+
+CONFIG_FILE=$1
+ADC_DIR=$2
+
+LOCK_FILE=/tmp/adc.lock
+exec 3>${LOCK_FILE}
+flock --exclusive --nonblock 3
+if [ $? -eq 1 ] ; then
+    echo "$(date) WARNING: Already running"
+    exit 0
+fi
+
+. ${CONFIG_FILE}
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+if [ -z "${ADC_DIR}" ] ; then
+    ADC_DIR=${INCOMING_ROOT}/adc
+fi
+
+###
+# There are currently two file naming formats supported:
+# i)  OSS_DATA
+#     - Original naming convention
+#     - ftp username in field #2
+#     - e.g. OSS_DATA@hi3g_sweden@STOCKHOLM@SWEDEN@OSSWCDMA@OSS@5@OSS_PERF@200803180400.zip
+# ii) PROD_<TOOL_NAME>@<CUSTOMER_NAME>@<COLLECTION_NAME>@<TIMESTAMP>@<NODE_NAME>@<NODE_INSTALLATION_TYPE>@<SITE_COUNTRY>@<SITE_NAME>@<NODE_INSTALLATION_RELEASE>@<SITE_MARKET>@<RDT_ORDER_ID>
+#     - Introducted February 2013 [TDDDCDDP-65]
+#     - ftp username in field #8
+#     - e.g. PROD_GTF_V1052_DDCTOOL_01@Turkcell@GENERIC_FILE_TRANSFER_DIRECT@201302060115@Tunali@OSS@Turkey@turkcell_tunali_ankara@R5.3@RMEA@26539.zip
+###
+INCOMING_DATA_FILES=$(find ${ADC_DIR} -mmin +1 \( -name "*.zip" -or -name "*.zip.gpg" \))
+
+if [ -z "${INCOMING_DATA_FILES}" ]; then
+    rm /tmp/adc.lock
+    exit
+fi
+
+extractFiles() {
+    local DATA_FILE=$1
+    local FTP_ACCOUNT=$2
+
+    FILE_TYPE=$(echo ${DATA_FILE} | awk -F\. '{print $NF}')
+    if [ "${FILE_TYPE}" = "gpg" ] ; then
+        echo "$(date) INFO: Decrypting ${DATA_FILE}"
+        DECRYPTED_DATA_FILE=$(basename ${DATA_FILE} .gpg)
+        gpg --output ${DECRYPTED_DATA_FILE} --decrypt ${DATA_FILE}
+        if [ $? -eq 0 ] ; then
+            DATA_FILE=${DECRYPTED_DATA_FILE}
+        else
+            echo "$(date) WARN: Failed to decrypt ${DATA_FILE}"
+            return
+        fi
+    fi
+
+    unzip -q ${DATA_FILE}
+
+    # Files from Cloud Native may be prefixed by the account name
+    DDC_DATA_FILES=$(find . -type f \( -name 'DDC_*.tar.gz' -o -name "${FTP_ACCOUNT}@DDC_*.tar.gz" \) )
+    for FILE in ${DDC_DATA_FILES} ; do
+        echo "$(date) INFO : Moving ${FILE} to ${INCOMING_ROOT}/${FTP_ACCOUNT}"
+        touch ${FILE} # Make sure that the file has the current date
+        local ACCOUNT_AND_FILE=$(basename ${FILE})
+        local FILE_ONLY=$(echo ${ACCOUNT_AND_FILE} | sed "s/^${FTP_ACCOUNT}@//")
+        mv ${FILE} ${INCOMING_ROOT}/${FTP_ACCOUNT}/${FILE_ONLY}
+        # Make sure the file can be read by statsadm
+        chown statsadm:statsadm ${INCOMING_ROOT}/${FTP_ACCOUNT}/${FILE_ONLY}
+    done
+
+    rm -f ${TMP_DIR}/* > /dev/null
+}
+
+TMP_DIR=/data/tmp/adc.$$
+mkdir ${TMP_DIR}
+cd ${TMP_DIR}
+
+for DATA_FILE in ${INCOMING_DATA_FILES}; do
+    echo "$(date) INFO : Processing ${DATA_FILE}"
+
+    # Get the ftp username from the file name.
+    FTP_ACCOUNT=""
+    echo ${DATA_FILE} | egrep "\/OSS_DATA" > /dev/null
+    if [ $? -eq 0 ] ; then
+        FTP_ACCOUNT=$(echo ${DATA_FILE} | awk -F@ '{print $2}')
+    else
+        echo ${DATA_FILE} | egrep "\/PROD" > /dev/null
+        if [ $? -eq 0 ] ; then
+            FTP_ACCOUNT=$(echo ${DATA_FILE} | awk -F@ '{print $8}')
+        fi
+    fi
+
+    if [ -z "${FTP_ACCOUNT}" ] ; then
+        echo "ERROR cound not extract FTP account from ${DATA_FILE}"
+    else
+        if [ -d ${INCOMING_ROOT}/${FTP_ACCOUNT} ] ; then
+            extractFiles ${DATA_FILE} ${FTP_ACCOUNT}
+       else
+            echo "$(date) ERROR: No matching account for ${FTP_ACCOUNT}"
+        fi
+    fi
+
+    rm -f ${DATA_FILE}
+done
+
+cd /
+rm -rf ${TMP_DIR} /tmp/adc.lock
+

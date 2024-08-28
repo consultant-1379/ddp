@@ -1,0 +1,23 @@
+#!/bin/bash
+
+EXIT_FILE=$1
+
+MY_DIR=$(dirname $0)
+
+MIGRATE_STATE_DIR=/data/tmp/migrate_serverid
+if [ ! -r ${MIGRATE_STATE_DIR}/run ] ; then
+    echo "INFO: ${MIGRATE_STATE_DIR}/run not found"
+    exit 1
+fi
+
+find ${MIGRATE_STATE_DIR} -name 'alter_*' -delete
+
+${MY_DIR}/generateAlter --dir ${MIGRATE_STATE_DIR}
+
+ALTER_FILES=$(ls ${MIGRATE_STATE_DIR} | egrep '^alter_')
+if [ -z "${ALTER_FILES}" ] ; then
+    echo "No alter files found"
+    /bin/rm ${MIGRATE_STATE_DIR}/run
+fi
+
+/usr/bin/parallel -j 4 ${MY_DIR}/apply ${MIGRATE_STATE_DIR} ${EXIT_FILE} -- ${ALTER_FILES}

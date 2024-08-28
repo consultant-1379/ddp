@@ -1,0 +1,225 @@
+#!/usr/bin/perl
+#===============================================================================================================================
+# Script  : parseLoaderAggregatorFailureSet
+# Author  : Sunil Yadav (xsunyad)
+# Purpose : The purpose of this script is to parse loaderAggregatorSetFailure_YYYY-MM-DD.txt files which contains information
+#           about failed sets of loader/aggregator/topology/support and also to parse delimiterErrorLoaderSet_YYYY-MM-DD.txt
+#           file which contains information about loader sets with delimiter errors.
+# Usage   : ${ANALYSIS_BIN}/ENIQ/parseLoaderAggregatorFailureSet --dir ${DIR} --site ${SITE} --date ${SQL_DATE}
+#===============================================================================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($site, $startTime, $date, $dir, $r_techPackList, $r_loaderSetList);
+    my $table = "eniq_loader_aggregator_failedset_details";
+    my $result = GetOptions(
+        "dir=s"     => \$dir,
+        "site=s"    => \$site,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    parseData($dbh, $dir, $siteId, $date, $table);
+    $dbh->disconnect;
+}
+
+sub parseData($$$$$) {
+    my ($dbh, $dir, $siteId, $date, $table) = @_;
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    closedir DIR;
+    if ( $DEBUG > 1 ) {
+        print Dumper("Files to be parsed", @files);
+    }
+
+    foreach my $file (@files) {
+        next if $file =~ /^\./;
+        if ( $file =~ /^loaderAggregatorSetFailure_(.*)/ ) {
+            my $filteredLogFile = "/data/tmp/loaderAggregatorLog";
+            # Filtering lines which contain failed set infomation for loader and aggregator.
+            `egrep "Loader_|Aggregator_|TopologyLoader_|Support" $dir/$file | egrep "SEVERE" > $filteredLogFile`;
+            if ( -s $filteredLogFile ) {
+                my ($r_parsedData, $firstTimestamp, $lastTimestamp) = parseLoaderAggregatoFailureLogs($filteredLogFile, $date);
+                my $bcpFile = createBcpFile($r_parsedData, $siteId);
+                removeOldData($dbh, $siteId, $table, $firstTimestamp, $lastTimestamp);
+                loadDb($dbh, $bcpFile, $table);
+            }
+        }
+        elsif ( $file =~ /^delimiterErrorLoaderSet_(.*)/ ) {
+            if ( -s "$dir/$file" ) {
+                my $bcpFile = parseDelimiterErrorLoaderSetLogs($file, $date, $dir, $siteId);
+                my $table = "eniq_loader_delimiter_error";
+                my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time_stamp BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+                if ( $DEBUG > 7 ) {
+                    print "SQL query for removal of old data of loader set with delimiter error: $deleteSql \n";
+                }
+                dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+                my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+                if ( $DEBUG > 8 ) {
+                    print "SQL query for inserting data of loader set with delimiter error: $insertSql \n";
+                }
+                dbDo($dbh, $insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+                unlink($bcpFile);
+            }
+        } elsif ( $file =~ /^IBSErrorLoaderSet_(.*)/ ) {
+            if ( -s "$dir/$file" ) {
+                my ($r_IBSLoaderParsedData, $r_techPacNameList, $r_loaderSetList) = parseIBSLoaderLogs($file, $date, $dir, $siteId);
+                my $techPackIdMap = getIdMap($dbh, "eniq_IBS_techpack_id_mapping", "id", "techPackName", $r_techPacNameList);
+                my $loaderSetIdMap = getIdMap($dbh, "eniq_IBS_loaderset_id_mapping", "id", "loaderSetName", $r_loaderSetList);
+
+                my $table = "eniq_IBS_error_loaderset";
+                my $bcpFile = createIBSLoaderBcpFile($r_IBSLoaderParsedData, $techPackIdMap, $loaderSetIdMap, $siteId);
+
+                my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND timeStamp BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+                if ( $DEBUG > 9 ) {
+                    print "SQL query for removal of old data of loader set with IBS error: $deleteSql \n";
+                }
+                dbDo($dbh, $deleteSql) or die "Failed to delete old data" . $dbh->errstr . "\n";
+                my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+                if ( $DEBUG > 10 ) {
+                    print "SQL query for inserting data of loader set with IBS error: $insertSql \n";
+                }
+                dbDo($dbh, $insertSql) or die "Failed to load Data" . $dbh->errstr . "\n";
+            }
+        }
+    }
+}
+
+sub parseDelimiterErrorLoaderSetLogs($$$$) {
+    my ($logFile, $date, $dir, $siteId) = @_;
+    my $bcpFile = getBcpFileName("loader_delimiter_error");
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    open FILE, "<$dir/$logFile" or die "Can't open file to read $logFile";
+    while(my $line = <FILE>) {
+        chomp($line);
+        if ( my ($timeStamp, $techPackName, $loaderSet) = $line =~ /(\d{2}:\d{2}:\d{2}) \d+ \w+ \w+.(\w+).(?:Loader).(\w+) : .*$/ ) {
+           my $dateTime = $date." ".$timeStamp;
+           printf BCP "%s|%d|%s|%s\n",
+           $dateTime, $siteId, $techPackName, $loaderSet;
+        }
+    }
+    close BCP;
+    close FILE;
+    if($DEBUG > 6) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $bcpFile");
+    }
+    return $bcpFile;
+}
+
+sub parseLoaderAggregatoFailureLogs {
+    my ($logFileToBeParsed, $date) = @_;
+    my @r_parsedData = ();
+    my ($firstTimeStamp, $lastTimeStamp);
+    my $firstLine = "true";
+    open FILE, "<$logFileToBeParsed" or die "Can't open file to read $logFileToBeParsed\n";
+    while (my $line = <FILE>) {
+        if ( my ($timeStamp, $techPackName, $failedSet) = $line =~ /(\d{2}:\d{2}:\d{2}) \d+ \w+ \w+.(\w+).(?:Loader|Aggregator|Topology|Support).(\w+) : .*$/ ) {
+            my $sqlTimeStamp = "$date $timeStamp";
+            if ($firstLine eq "true") {
+                $firstTimeStamp = $sqlTimeStamp;
+                $firstLine = "false";
+            }
+            $lastTimeStamp = $sqlTimeStamp;
+            my %r_dataForLine = (
+                timeStamp    => "$sqlTimeStamp",
+                techPackName => "$techPackName",
+                failedSet    => "$failedSet"
+                );
+            push (@r_parsedData, \%r_dataForLine);
+        }
+    }
+    close FILE;
+    unlink($logFileToBeParsed);
+    if ( $DEBUG > 2 ) { print Dumper ("Parsed Data", \@r_parsedData); }
+    return (\@r_parsedData, $firstTimeStamp, $lastTimeStamp);
+}
+
+sub parseIBSLoaderLogs($$$$) {
+    my ($logFile, $date, $dir, $siteId) = @_;
+    my @techPackList = ();
+    my @loaderSetList = ();
+    my @parsedData = ();
+
+    open FILE, "<$dir/$logFile" or die "Can't open file to read $logFile";
+    while(my $line = <FILE>) {
+        chomp($line);
+        if ( $line =~ /(\d{2}:\d{2}:\d{2}) \d+ \w+ \w+..(\w+).(?:Loader|Aggregator|Topology|Support).(\w+).\d+.*$/ ) {
+            my $dateTime = "$date $1";
+            my %r_dataForLine = (
+                timeStamp => "$dateTime",
+                techPackName => $2,
+                loaderSetName => $3
+            );
+            push (@parsedData, \%r_dataForLine);
+            push (@techPackList, $2);
+            push (@loaderSetList, $3);
+        }
+    }
+    close BCP;
+    close FILE;
+    return (\@parsedData, \@techPackList, \@loaderSetList);
+}
+
+sub createIBSLoaderBcpFile($$$$) {
+    my ($r_IBSLoaderParsedData, $techPackIdMap, $loaderSetIdMap, $siteId) = @_;
+    my $bcpFile = getBcpFileName("IBS_error_loaderset");
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    foreach my $data_element ( @$r_IBSLoaderParsedData ) {
+        if ( defined $data_element->{'techPackName'} || defined $data_element->{'loaderSetName'} ) {
+            printf BCP "%s|%d|%d|%d\n",
+                $data_element->{timeStamp},
+                $siteId,
+                $techPackIdMap->{$data_element->{'techPackName'}},
+                $loaderSetIdMap->{$data_element->{'loaderSetName'}};
+        }
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub createBcpFile {
+    my ($r_parsedData, $siteId) = @_;
+    my $bcpFile = "/data/tmp/loader_aggregator_failedset.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    for my $lineData ( @$r_parsedData ) {
+        printf BCP "%d,%s,%s,%s\n",
+        $siteId,
+        $lineData->{timeStamp},
+        $lineData->{techPackName},
+        $lineData->{failedSet};
+    }
+    close BCP;
+    if ( $DEBUG > 3 ) { system ("/usr/bin/cat $bcpFile\n"); }
+    return $bcpFile;
+}
+
+sub removeOldData($$$$$) {
+    my ($dbh, $siteId, $table, $firstTimestamp, $lastTimestamp) = @_;
+    if ($firstTimestamp ne '' && $lastTimestamp ne '') {
+        my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time_stamp BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+        if ( $DEBUG > 4 ) { print "SQL query for removal of old data: $deleteSql \n" };
+        dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+    }
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 5 ) { print "SQL query for inserting data: $insertSql \n" };
+    dbDo($dbh, $insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

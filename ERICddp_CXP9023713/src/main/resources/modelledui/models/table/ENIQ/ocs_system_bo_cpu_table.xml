@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_ocs_system_bo">
+    <reference table="sites" condition="eniq_ocs_system_bo.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_ocs_system_bo.serverid = servers.id"/>
+    <reference table="eniq_bo_process_name_id_mapping" condition="eniq_bo_process_name_id_mapping.id = eniq_ocs_system_bo.proId"/>
+    <reference table="eniq_bo_desc_id_mapping" condition="eniq_bo_desc_id_mapping.id = eniq_ocs_system_bo.desId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_ocs_system_bo.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <groupby rollup="false">
+    <column db="eniq_ocs_system_bo.pid"/>
+  </groupby>
+
+  <column db="eniq_bo_process_name_id_mapping.processName" label="Process Name"/>
+  <column db="eniq_bo_desc_id_mapping.description" label="Description"/>
+  <column db="eniq_ocs_system_bo.processStartTime" label="Process Start Time"/>
+  <column db="ROUND(eniq_ocs_system_bo.cpu, 2)" label="CPU Utilization (%)"/>
+
+</modelledtable>

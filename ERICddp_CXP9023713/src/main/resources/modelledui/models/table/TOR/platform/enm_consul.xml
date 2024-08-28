@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_consul_n_sam_events">
+    <reference table="sites" condition="enm_consul_n_sam_events.siteid = sites.id"/>
+    <reference table="servers" condition="enm_consul_n_sam_events.serverid= servers.id"/>
+    <reference table="enm_consul_event_names" condition="enm_consul_n_sam_events.event_id= enm_consul_event_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where> sites.name = '%site%' AND (enm_consul_n_sam_events.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59') </where>
+  <order columnid="time" direction="ASC"/>
+
+  <column id="time" db="time" label = "Time" formatter = "ddpFormatTime"/>
+  <column db="hostname" label="Member" />
+  <column db="enm_consul_event_names.name" label="Message"/>
+
+</modelledtable>

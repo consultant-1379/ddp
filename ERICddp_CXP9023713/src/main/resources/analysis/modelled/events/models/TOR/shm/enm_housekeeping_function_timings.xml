@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_housekeeping_function_timings" timecol="time">
+    <keycol name="siteid" reftable="sites"/>
+  </table>
+
+  <services>
+    <service name="shmservice"/>
+  </services>
+
+  <events>
+    <!-- SHM.SOFTWARE_PACKAGE_HOUSEKEEPING_TIMINGS {"_Thread":"EJB async - 31","Function":"SCAN","Duration":1395{color}}-->
+    <event name="SHM.SOFTWARE_PACKAGE_HOUSEKEEPING_TIMINGS">
+      <metric source="Function" target="function"/>
+      <metric source="Duration" target="duration"/>
+    </event>
+  </events>
+</modelledevents>

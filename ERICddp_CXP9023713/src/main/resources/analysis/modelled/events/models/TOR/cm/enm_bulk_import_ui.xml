@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_bulk_import_ui">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+  <services>
+    <service name="importexportservice"/>
+  </services>
+
+  <events>
+    <event name="BULK_CMIMPORT.importInvocationParameters">
+      <metric source="jobId" target="jobId"/>
+      <metric source="serverId" target="serverid"/>
+      <metric source="fileFormat" target="fileFormat"/>
+      <metric source="numberOfNodes" target="numberOfNodes"/>
+      <metric source="invocation" target="invocation"/>
+      <metric source="validationPolicies" target="validationPolicies" convert="tostring"/>
+      <metric source="executionPolicies" target="executionPolicies" convert="tostring"/>
+      <metric source="createOperations" target="createOperations"/>
+      <metric source="deleteOperations" target="deleteOperations"/>
+      <metric source="updateOperations" target="updateOperations"/>
+      <metric source="actionOperations" target="actionOperations"/>
+      <metric source="status" target="status"/>
+      <metric source="elapsedTime" target="elapsedTime"/>
+      <metric source="mosProcessed" target="mosProcessed"/>
+      <metric source="validCount" target="validCount"/>
+      <metric source="invalidCount" target="invalidCount"/>
+      <metric source="executedCount" target="executedCount"/>
+      <metric source="executionErrorCount" target="executionErrorCount"/>
+    </event>
+  </events>
+</modelledevents>
+

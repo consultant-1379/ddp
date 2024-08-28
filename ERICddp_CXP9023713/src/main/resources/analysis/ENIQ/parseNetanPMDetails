@@ -1,0 +1,471 @@
+#!/usr/bin/perl
+###############################################################################################################################
+# Description ---------   parseNetanPMDetails -------------------------------
+# This script parses the Netan PME and PMA logs and stores data to Db
+# @author - Sunil Yadav (xsunyad)
+# usage ${ANALYSIS_BIN}/parseNetanPMDetails --dir ${DIR} --site {SITE} --date {SQL_DATE}
+###############################################################################################################################
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dir, $site, $date);
+    my $result = GetOptions (
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    parseData($dbh, $dir, $siteId, $date);
+    $dbh->disconnect;
+}
+
+sub parseData($$$$) {
+    my ($dbh, $dir, $siteId, $date) = @_;
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    closedir DIR;
+    if ( $DEBUG > 1 ) {
+        print Dumper("Files to be parsed", @files);
+    }
+    my $table;
+    my $bcpFile;
+    foreach my $file (@files) {
+        next if $file =~ /^\./;
+        if ( $file =~ /PMEx_/ ) {
+            $bcpFile = parsePMELog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_netan_pme_details";
+        } elsif ( $file =~ /PMA_/ ) {
+            $bcpFile = parsePMALog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_netan_pma_details";
+        } elsif ( $file =~ /pmdb_collections_summary/ ) {
+            $bcpFile = parsePMCollectionSummaryLog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_netan_pmdb_collections_summary_details";
+        } elsif ( $file =~ /pmdb_alarms_summary/ ) {
+            $bcpFile = parsePMAlarmSummaryLog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_netan_pmdb_alarm_summary_details";
+        } elsif ( $file =~ /pmdb_reports_summary/ ) {
+            $bcpFile = parsePMReportSummaryLog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_netan_pmdb_report_summary_details";
+        } elsif ( $file =~ /CustomKPI_Details/ ) {
+            $bcpFile = parsePMCustomKPILog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_netan_custom_kpi_details";
+        } else {
+            return;
+        }
+        removeOldData($dbh, $table, $siteId, $date);
+        loadDb($dbh, $bcpFile, $table);
+    }
+}
+
+sub parsePMELog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+    my @fetchList = ();
+    my @queryList = ();
+    my @measureList = ();
+    my @tableList = ();
+    my @dataSourceList = ();
+    my @queryCategoryList = ();
+    my @pmeArrayData = ();
+
+    my $bcpFile = getBcpFileName("netan_pme_info");
+    my ($fetchNameIdMap, $queryNameIdMap, $measureNameIdMap, $tableNameIdMap, $queryCategoryIdMap, $dataSourceIdMap);
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        if ($. <= 1500) {
+            chomp($line);
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(\d+);(\d+);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*)$/ ) {
+                my %pmeHashData = (
+                    collectionTime => $1,
+                    fetchName => $2,
+                    queryName => $3,
+                    measureName => $4,
+                    queryCategory => $5,
+                    tableName => $6,
+                    measureType => $7,
+                    timeAggegationLevel => $8,
+                    objectAggregationLevel => $9,
+                    queryExecutionTime => $10,
+                    rowCount => $11,
+                    rowCountMultiFact => $12,
+                    startDateTime => $13,
+                    endDateTime => $14,
+                    preFetchFilterDayOfWeek => $15,
+                    preFetchFilterMeasureType => $16,
+                    dataSource => $17,
+                    reportMode => $18,
+                    reportID => $19,
+                    collectionType => $20,
+                    nodeCount => $21,
+                    preFetchFilterHourOfDay => $22
+                );
+
+                push (@pmeArrayData, \%pmeHashData);
+                push (@fetchList, $2);
+                push (@queryList, $3);
+                push (@measureList, $4);
+                push (@queryCategoryList, $5);
+                push (@tableList, $6);
+                push (@dataSourceList, $17);
+            }
+        }
+    }
+
+    $fetchNameIdMap = getIdMap($dbh, "eniq_netan_pme_fetch_name_id_mapping_details", "id", "fetchName", \@fetchList);
+    $queryNameIdMap = getIdMap($dbh, "eniq_netan_pme_query_name_id_mapping_details", "id", "queryName", \@queryList);
+    $measureNameIdMap = getIdMap($dbh, "eniq_netan_pme_measure_name_id_mapping_details", "id", "measureName", \@measureList);
+    $tableNameIdMap = getIdMap($dbh, "eniq_aggregated_counter_table_name_id_mapping", "id", "tableName", \@tableList);
+    $dataSourceIdMap = getIdMap($dbh, "eniq_netan_pme_data_source_id_mapping_details", "id", "dataSource", \@dataSourceList);
+    $queryCategoryIdMap = getIdMap($dbh, "eniq_netan_pme_query_category_id_mapping_details", "id", "queryCategory", \@queryCategoryList);
+
+    my $counter = 0;
+
+    foreach my $data_element ( @pmeArrayData ) {
+        printf BCP "%s|%d|%d|%d|%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
+        $data_element->{collectionTime},
+        $siteId,
+        $fetchNameIdMap->{$fetchList[$counter]},
+        $queryNameIdMap->{$queryList[$counter]},
+        $measureNameIdMap->{$measureList[$counter]},
+        $tableNameIdMap->{$tableList[$counter]},
+        $dataSourceIdMap->{$dataSourceList[$counter]},
+        $queryCategoryIdMap->{$queryCategoryList[$counter]},
+        $data_element->{measureType},
+        $data_element->{timeAggegationLevel},
+        $data_element->{objectAggregationLevel},
+        $data_element->{queryExecutionTime},
+        $data_element->{rowCount},
+        $data_element->{rowCountMultiFact},
+        $data_element->{startDateTime},
+        $data_element->{endDateTime},
+        $data_element->{preFetchFilterDayOfWeek},
+        $data_element->{preFetchFilterMeasureType},
+        $data_element->{reportMode},
+        $data_element->{reportID},
+        $data_element->{collectionType},
+        $data_element->{nodeCount},
+        $data_element->{preFetchFilterHourOfDay};
+
+        $counter++;
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePMALog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+
+    my @processList = ();
+    my @tableList = ();
+    my @nodeTypeList = ();
+    my @pmaArrayData = ();
+
+    my $bcpFile = getBcpFileName("netan_pma_info");
+    my ($processNameIdMap, $tableNameIdMap, $nodeTypeIdMap);
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        if ($. <= 8500) {
+            chomp($line);
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});(\d+);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*)$/ ) {
+                my %pmaHashData = (
+                    collectionTime => $1,
+                    alarmId => $2,
+                    processName => $3,
+                    subProcessType => $4,
+                    subProcessCompletionStatus => $5,
+                    tableName => $6,
+                    rowCountFromENIQ => $7,
+                    mfENIQ => $8,
+                    rowCountToENM => $9,
+                    mfENM => $10,
+                    queryExecutionTime => $11,
+                    collectionType => $12,
+                    nodeCount => $13,
+                    nodeType => $14
+                );
+
+                push (@pmaArrayData, \%pmaHashData);
+                push (@processList, $3);
+                push (@tableList, $6);
+                push (@nodeTypeList, $14);
+            }
+        }
+    }
+
+    $processNameIdMap = getIdMap($dbh, "eniq_netan_pma_process_name_id_mapping_details", "id", "processName", \@processList);
+    $tableNameIdMap = getIdMap($dbh, "eniq_aggregated_counter_table_name_id_mapping", "id", "tableName", \@tableList);
+    $nodeTypeIdMap = getIdMap($dbh, "ne_types", "id", "name", \@nodeTypeList);
+
+    my $counter = 0;
+
+    foreach my $data_element ( @pmaArrayData ) {
+        printf BCP "%s|%d|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
+        $data_element->{collectionTime},
+        $siteId,
+        $data_element->{alarmId},
+        $processNameIdMap->{$processList[$counter]},
+        $data_element->{subProcessType},
+        $data_element->{subProcessCompletionStatus},
+        $tableNameIdMap->{$tableList[$counter]},
+        $data_element->{rowCountFromENIQ},
+        $data_element->{mfENIQ},
+        $data_element->{rowCountToENM},
+        $data_element->{mfENM},
+        $data_element->{queryExecutionTime},
+        $data_element->{collectionType},
+        $data_element->{nodeCount},
+        $nodeTypeIdMap->{$nodeTypeList[$counter]};
+
+        $counter++;
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePMCollectionSummaryLog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+
+    my @nodeTypeList = ();
+    my @pmCollectionArrayData = ();
+
+    my $bcpFile = getBcpFileName("netan_pm_collection_summary_info");
+    my $nodeTypeIdMap;
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        if ($. <= 1000) {
+            chomp($line);
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});(.*);(.*);(.*);(.*);(.*);(.*)$/ ) {
+                my %pmCollectionHashData = (
+                    collectionTime => $1,
+                    collectionId => $2,
+                    collectionType => $3,
+                    nodeType => $4,
+                    createdOn => $5,
+                    lastModifiedOn => $6,
+                    nodeCount => $7
+                );
+
+                push (@pmCollectionArrayData, \%pmCollectionHashData);
+                push (@nodeTypeList, $4);
+            }
+        }
+    }
+
+    $nodeTypeIdMap = getIdMap($dbh, "ne_types", "id", "name", \@nodeTypeList);
+
+    my $counter = 0;
+
+    foreach my $data_element ( @pmCollectionArrayData ) {
+        printf BCP "%s|%d|%d|%s|%d|%s|%s|%s\n",
+        $data_element->{collectionTime},
+        $siteId,
+        $data_element->{collectionId},
+        $data_element->{collectionType},
+        $nodeTypeIdMap->{$nodeTypeList[$counter]},
+        $data_element->{createdOn},
+        $data_element->{lastModifiedOn},
+        $data_element->{nodeCount};
+
+        $counter++;
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePMAlarmSummaryLog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+
+    my @measureNameList = ();
+    my @nodeTypeList = ();
+    my @pmAlarmArrayData = ();
+
+    my $bcpFile = getBcpFileName("netan_pm_alarm_summary_info");
+    my ($measureIdMap, $nodeTypeIdMap);
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        if ($. <= 1000) {
+            chomp($line);
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});(\d+);(.*);(.*);(.*);(.*);(.*);(\d+);(.*);(.*);(.*);(.*);(.*);(.*);(.*);(.*)$/ ) {
+                my %pmAlarmHashData = (
+                    collectionTime => $1,
+                    alarmId => $2,
+                    alarmType => $3,
+                    measureName => $4,
+                    severity => $5,
+                    alarmState => $6,
+                    probableCause => $7,
+                    schedule => $8,
+                    aggregation => $9,
+                    lookBackVal => $10,
+                    lookBackUnit => $11,
+                    dataRangeVal => $12,
+                    dataRangeUnit => $13,
+                    nodeType => $14,
+                    systemArea => $15,
+                    measureType => $16
+                );
+
+                push (@pmAlarmArrayData, \%pmAlarmHashData);
+                push (@measureNameList, $4);
+                push (@nodeTypeList, $14);
+            }
+        }
+    }
+
+    $measureIdMap = getIdMap($dbh, "eniq_netan_pme_measure_name_id_mapping_details", "id", "measureName", \@measureNameList);
+    $nodeTypeIdMap = getIdMap($dbh, "ne_types", "id", "name", \@nodeTypeList);
+
+    my $counter = 0;
+
+    foreach my $data_element ( @pmAlarmArrayData ) {
+        printf BCP "%s|%d|%d|%s|%d|%s|%s|%s|%d|%s|%s|%s|%s|%s|%d|%s|%s\n",
+        $data_element->{collectionTime},
+        $siteId,
+        $data_element->{alarmId},
+        $data_element->{alarmType},
+        $measureIdMap->{$measureNameList[$counter]},
+        $data_element->{severity},
+        $data_element->{alarmState},
+        $data_element->{probableCause},
+        $data_element->{schedule},
+        $data_element->{aggregation},
+        $data_element->{lookBackVal},
+        $data_element->{lookBackUnit},
+        $data_element->{dataRangeVal},
+        $data_element->{dataRangeUnit},
+        $nodeTypeIdMap->{$nodeTypeList[$counter]},
+        $data_element->{systemArea},
+        $data_element->{measureType};
+
+        $counter++;
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePMReportSummaryLog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+
+    my @pmReportArrayData = ();
+    my $bcpFile = getBcpFileName("netan_pm_report_summary_info");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        if ($. <= 1000) {
+            chomp($line);
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});(\d+);(.*);(.*);(.*)$/ ) {
+                my %pmReportHashData = (
+                    collectionTime => $1,
+                    reportId => $2,
+                    reportAccess => $3,
+                    createdOn => $4,
+                    lastModifiedOn => $5
+                );
+
+                push (@pmReportArrayData, \%pmReportHashData);
+            }
+        }
+    }
+
+    my $counter = 0;
+
+    foreach my $data_element ( @pmReportArrayData ) {
+        printf BCP "%s|%d|%d|%s|%s|%s\n",
+        $data_element->{collectionTime},
+        $siteId,
+        $data_element->{reportId},
+        $data_element->{reportAccess},
+        $data_element->{createdOn},
+        $data_element->{lastModifiedOn};
+
+        $counter++;
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePMCustomKPILog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+
+    my @pmCustomKpiArrayData = ();
+    my $bcpFile = getBcpFileName("netan_pm_custom_kpi_info");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        if ($. <= 1000) {
+            chomp($line);
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});(\d+)/ ) {
+                my %pmCustomKpiHashData = (
+                    collectionTime => $1,
+                    numberOfCustomKPI => $2
+                );
+
+                push (@pmCustomKpiArrayData, \%pmCustomKpiHashData);
+            }
+        }
+    }
+
+    foreach my $data_element ( @pmCustomKpiArrayData ) {
+        printf BCP "%s|%d|%d\n",
+        $data_element->{collectionTime},
+        $siteId,
+        $data_element->{numberOfCustomKPI};
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub removeOldData($$$$) {
+    my ($dbh, $table, $siteId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

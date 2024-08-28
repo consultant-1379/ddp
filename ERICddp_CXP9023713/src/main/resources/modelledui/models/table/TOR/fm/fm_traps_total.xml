@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_mssnmpfm_instr">
+    <reference table="sites" condition="enm_mssnmpfm_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_mssnmpfm_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverIds"/>
+  <where>sites.name = '%site%' AND enm_mssnmpfm_instr.serverid IN (%serverIds%) AND enm_mssnmpfm_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance" id="srv"/>
+  <column db="SUM(trapsReceived)" label="Traps Received"/>
+  <column db="SUM(trapsDiscarded)" label="Traps Discarded"/>
+  <column db="SUM(trapsForwarded)" label="Traps Forwarded"/>
+  <column db="SUM(trapsForwardedFailures)" label="Traps Forwarded Failures"/>
+  <column db="SUM(IFNULL(syncAlarmCommand,0))" label="Alarm Synchronizations"/>
+
+</modelledtable>

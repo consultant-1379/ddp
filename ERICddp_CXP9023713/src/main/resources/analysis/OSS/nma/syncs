@@ -1,0 +1,208 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsTime;
+use StatsCommon;
+
+our $DEBUG = 0;
+
+our %STATS_INFO = (
+    'WT'        => 'twait',
+    'NM-S'      => 'tneconnect',
+    'NM-R'      => 'tneresp',
+    'NM-SC'     => 'tneclose',
+    'NM-SCRP'   => 'tnesub',
+    'NMA'       => 'tnma',
+    'Total'     => 'ttotal',
+    'R-CS'      => 'treadmo',
+    'C-CS'      => 'tcreatemo',
+    'U-CS'      => 'tupdatemo',
+    'D-CS'      => 'tdeletemo',
+    'C-MOs'     => 'ncreatedmo',
+    'U-MOs'     => 'nupdatedmo',
+    'D-MOs'     => 'ndeletedmo'
+    );
+
+sub parseLog($$) {
+    my ($logFile,$r_syncs) = @_;
+
+    open INPUT, $logFile or die "Cannot open $logFile";
+    while ( my $line = <INPUT> ) {
+	if ( $DEBUG > 9 ) { print "parseLog: $. line=$line"; }
+        my ($date, $time, $logType, $mc, $rest) = $line =~ 
+	    /^(\S+) (\S+) (\S+) \"([^\"]*)\" (.*)/;
+	if ( ! defined $mc ) {
+	    next;
+	}
+	if ( $DEBUG > 8 ) { print "parseLvLog: date=$date time=$time logType=$logType mc=$mc\n"; }
+	if ( $logType ne 'SYSTEM' ) {
+	    next;
+	}
+	
+	my ( $resource, $userId, $cmd, $actId, $type, $severity, $oldState, $newState, $addInfo) = $rest =~
+            /^( |\S+) \"(.*)\" \"(.*)\" \"(.*)\" \"(.*)\" (\S+) \"(.*)\" \"(.*)\" \"(.*)\"$/;
+	if ( ! defined $addInfo ) {
+	    if ( $DEBUG > 5 ) { print "parseLvLog: Failed to parse rest=\"$rest\"\n"; }
+	    next;	   
+        }
+
+#2014-03-03 05:37.52 SYSTEM "nma1" RNC04PRBS01 "nmsadm" "COM.ERICSSON.OSS.COMMON.NMA.FULL_SYNCH" "" "" NULL "" "" "Progress : SYNCINFO:SubNetwork=ONRM_ROOT_MO_R,SubNetwork=RNC41,MeContext=RNC04PRBS01 3758:FULL SYNC STOPPED, SUCCESS:1NE:RNC04PRBS01;WT:209;NM-S:3700;NM-R:8005;NM-SC:143;NM-SCRP:507;NM:12355;NMA:-74982700;Execution:-74970345;Total:-74970136;C-MOs:13;U-MOs:777;D-MOs:3;R-CS:(442);C-CS:(23);U-CS:0;D-CS:4;SUCCESS "
+        
+        if ( $addInfo =~ /^Progress : SYNCINFO:(\S+) \d+:FULL SYNC STOPPED, SUCCESS:(.*)/ ) {
+	    my ($node,$statsStr) = ($1,$2);
+	    if ( $DEBUG > 7 ) { print "parseLvLog: node=$node statsStr=$statsStr\n"; }
+
+	    my @statNameValues = split(";",$statsStr);
+	    my $r_syncStat = {
+		'time' => "$date $time",
+		'ne'   => $node,
+		'mc'   => $mc,
+	    };
+	    push @{$r_syncs}, $r_syncStat;
+
+	    foreach my $statNameValue ( @statNameValues ) {
+		my ($name,$value) = $statNameValue =~ /^([^:]+):(\d+)/;
+		if ( defined $value ) {
+		    if ( exists $STATS_INFO{$name}) {
+			$r_syncStat->{$STATS_INFO{$name}} = $value;
+		    } else {
+			if ( $DEBUG > 8 ) { print "parseLog: unknown stat $name\n"; }
+		    }
+		} else { 
+		    if ( $DEBUG > 0 ) { print "parseLog: Failed to parse $statNameValue\n"; }
+		}
+	    }
+	    if ( $DEBUG > 5 ) { print Dumper("parseLog: r_syncStat", $r_syncStat); }	
+	}
+    }
+}
+
+sub loadNeMap($$) {
+    my ($dbh,$siteId) = @_;
+
+    my $r_AllNe = readNe($dbh,$siteId);
+    my %neMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) { 
+	my $shortName = $r_NeRow->{'name'};
+
+    # if the rns.name is the same as the ne.type then we know we have an entry on a level 1 Subnetwork.
+    if ( $r_NeRow->{'rns'} ne  $r_NeRow->{'type'}){
+	    $shortName = $r_NeRow->{'rns'} . "," . $shortName;
+	}
+	$neMap{$shortName} = $r_NeRow->{'neid'};
+    }
+
+    if ( $DEBUG > 1 ) { print Dumper("loadNeMap: neMap", \%neMap); }
+    return \%neMap;
+}
+
+sub store($$) {
+    my ($site,$r_syncs) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 1 ) { print "store: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_NeMap = loadNeMap($dbh,$siteId);
+    
+    my %mc = ();
+    my ($minTime,$maxTime);
+    foreach my $r_sync ( @{$r_syncs} ) {
+	$mc{$r_sync->{'mc'}} = 1;
+
+	my $time = parseTime( $r_sync->{'time'}, $StatsTime::TIME_YYYYMD_HMS );
+	if ( ! defined $minTime || $time < $minTime ) {
+	    $minTime = $time;
+	}
+	if ( ! defined $maxTime || $time > $maxTime ) {
+	    $maxTime = $time;
+	}
+    }
+
+    my @mcList = keys %mc;
+    my $r_mcIdMap = getIdMap( $dbh, "mc_names", "id", "name", \@mcList);
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = "$tmpDir/nma_sync_success.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName\n";    
+    my @dbCols = values %STATS_INFO;
+    foreach my $r_sync ( @{$r_syncs} ) {
+	my $node;
+	if ( $r_sync->{'ne'} =~ /SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=([^:]*)/ ) {	    
+	    $node = $1 . "," . $2;
+	} else {
+	    ($node) = $r_sync->{'ne'} =~ /SubNetwork=[^,]*,MeContext=([^:]*)/;
+	}
+	my $nodeId = $r_NeMap->{$node};
+	if ( ! defined $nodeId ) {
+	    print "WARN: Could not find id for node $node ($r_sync->{'ne'})\n";
+	    next;
+	}
+
+	my @fields = (
+	    $siteId,
+	    $r_sync->{'time'},
+	    $r_mcIdMap->{$r_sync->{'mc'}},
+	    $nodeId );
+	foreach my $dbCol ( @dbCols ) {
+	    if ( exists $r_sync->{$dbCol} ) {
+		push @fields, $r_sync->{$dbCol};
+	    } else {
+		push @fields, '\N';
+	    }
+	}
+	print BCP join("\t",@fields), "\n";
+    }
+    close BCP;
+
+    dbDo($dbh,sprintf("DELETE FROM nma_sync_success WHERE siteid = %d AND time BETWEEN '%s' AND '%s'",
+		      $siteId,formatTime($minTime,$StatsTime::TIME_SQL),
+		      formatTime($maxTime,$StatsTime::TIME_SQL)))
+	or die "Failed to delete old data";
+    dbDo($dbh,sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE nma_sync_success (siteid,time,mcid,neid,%s)",
+		      $bcpFileName, join(",",@dbCols)))
+	or die "Failed to load new data";
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($lvLogDir,$site);
+    my $result = GetOptions(
+        "lvlogdir=s" => \$lvLogDir,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    my @lvLogs = ();
+    opendir(my $dh, $lvLogDir) || die "can't opendir $lvLogDir: $!";    
+    while ( my $file = readdir($dh) ) {
+	if ( $file =~ /^nma/ ) {
+	    push @lvLogs, $lvLogDir . "/" . $file;
+	}
+    }
+    
+    my @syncs = ();
+    foreach my $lvLog ( @lvLogs ) { 
+	parseLog($lvLog,\@syncs);
+    }
+
+    if ( $#syncs > -1 && defined $site ) {
+	store($site,\@syncs);
+    }
+}
+
+main();

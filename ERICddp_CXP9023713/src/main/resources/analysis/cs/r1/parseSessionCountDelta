@@ -1,0 +1,398 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+
+$filter = "";
+$range = "00:00,23:59";
+
+$selectMode = "create";
+$DEBUG=0;
+$result = GetOptions("count=s"  => \$countFile,
+		     "data=s"  => \$dataFile,
+		     "filter=s"    => \$filter,
+		     "range=s" => \$range,
+		     "mode=s" => \$selectMode ,
+		     "debug=s" => \$DEBUG
+		     );
+
+($result == 1) or die "Invalid args"; 
+( -r $countFile ) or die "$eventsFile cannot be read";
+
+
+$GROUP_SNAD = 1;
+$GROUP_NEAD = 1;
+
+if ( $filter ne "" ) 
+{
+	$GROUP_SNAD = 0;
+	$GROUP_NEAD = 0;
+}
+
+$OUTPUT_INTERVAL = 1;
+$NUM_CAT = 7;
+
+open COUNT, $countFile or die "Cannot open $countFile";
+
+@sampleTimes = ();
+@samples = ();
+
+@sessionCounts = ();
+@activeCount = ();
+
+$_ = $range;
+($minHour,$minMin,$maxHour,$maxMin) = /^(\d+):(\d+),(\d+):(\d+)/;
+$minTime = $minHour * 60 + $minMin;
+$maxTime = $maxHour * 60 + $maxMin;
+
+$lastTime = $minTime;
+
+$numSessionLines = 0;
+while ( $line = <COUNT> )
+{
+    chop $line;
+    @parts = split /@/, $line;
+    if ( $parts[0] eq "SESSIONNAMES" )
+    {
+	$numSessionLines++;
+	@sessions = split /@@/, $line;
+	# Remove the SESSIONNAMES part
+	shift @sessions;
+
+	if ( $numSessionLines > 1 )
+	{
+	    close COUNT;
+	    next;
+	}
+    }
+    else
+    {
+	#
+	# If we are reading a data line and we have
+	# already read the session list, then we probably have
+	# data from a previous day which we must remove cause
+	# we only want the data for today, only do this once!
+	#
+	if ( $#sessions > -1 )
+	{
+	    #print "Resetting counters\n";
+
+	    @sampleTimes = ();
+	    @samples = ();
+	    @sessionCounts = ();
+	    @activeCount = ();
+	    @sessions = ();
+	}
+
+	@timeFields = split /:/, $parts[0];
+	if ( $#timeFields == 1 )
+	{
+	    $hour = $timeFields[0];
+	    $min  = $timeFields[1];
+	}
+	else
+	{
+	    $hour = $timeFields[2];
+	    $min  = $timeFields[3];
+	}
+
+	shift @parts;
+
+	$thisTime = ($hour*60) + $min;
+	if ( ($thisTime >= $minTime) and ($thisTime <= $maxTime) )
+	{
+	    #
+            # If the data has gaps, then we need to put a "zero" entry
+	    # either side of the "gap" 
+            #
+	    if ( ($thisTime - $lastTime) > $OUTPUT_INTERVAL )
+	    {
+		$lastTime += $OUTPUT_INTERVAL;
+		$lastHour = int ($lastTime / 60);
+		$lastMin = ($lastTime % 60);
+
+		$sampleTimes[$#sampleTimes+1] = sprintf "%02d:%02d", $lastHour, $lastMin;
+		$samples[$#samples+1] = {};
+
+		if ( ($thisTime - $lastTime) > $OUTPUT_INTERVAL )
+		{
+		    while ( ($thisTime - $lastTime) > $OUTPUT_INTERVAL )
+		    {
+			$lastTime += $OUTPUT_INTERVAL;
+		    }
+		    $lastHour = int ($lastTime / 60);
+		    $lastMin = ($lastTime % 60);
+		    $sampleTimes[$#sampleTimes+1] = sprintf "%02d:%02d", $lastHour, $lastMin;
+		    $samples[$#samples+1] = {};
+		}
+	    }
+
+
+	    $sampleTimes[$#sampleTimes+1] = sprintf "%02d:%02d", $hour, $min;
+	    $r_TimeSample = {};
+	    $samples[$#samples+1] = $r_TimeSample;
+	    foreach $sessCount ( @parts )
+	    {
+		@sessCountParts = split /,/, $sessCount;
+		$sessKey = shift @sessCountParts;
+		$r_Sample = [$sessCountParts[0], $sessCountParts[5], $sessCountParts[6] ];
+		$r_TimeSample->{$sessKey} = $r_Sample;
+		
+		if ( $selectMode eq "create" ) 
+		{
+		    $sessionCounts[$sessKey] += $sessCountParts[0];
+		}
+		else
+		{
+		    $activeCount[$sessKey] += ($sessCountParts[0] - $sessCountParts[5]);
+		    if ( $activeCount[$sessKey] < 0 )
+		    {
+			$activeCount[$sessKey] = 0;
+		    }
+		    if ( $activeCount[$sessKey] > $sessionCounts[$sessKey] )
+		    {
+			$sessionCounts[$sessKey] = $activeCount[$sessKey];
+		    }
+		}		    
+	    }
+	    $lastTime = $thisTime;
+	}
+    }
+}
+close COUNT;
+
+if ( $filter )
+{    
+    #print "$filter\n";
+    foreach $r_TimeSample ( @samples )
+    {
+	foreach $key ( keys %{$r_TimeSample} )
+	{
+	    #print "Checking $sessions[$key]\n";
+	    if ( ! ( $sessions[$key] =~ /$filter/) )
+	    {
+		#print "Removing\n";
+		delete $r_TimeSample->{$key};
+		$sessionCounts[$key] = 0;
+	    }
+	}
+    }
+}
+elsif ( $GROUP_SNAD or $GROUP_NEAD )
+{
+    %groupedSess = ();
+    $cmsNeadKey = $#sessions + 1;
+    $cmsSnadKey = $#sessions + 2;
+    
+    
+    for ( $i = 0; $i <= $#sessions; $i++ )
+    {
+	if ( $GROUP_NEAD )
+	{
+	    if ( ($sessions[$i] =~ /^cms_nead_seg/) || ($sessions[$i] =~/^IncrSync/) || ($sessions[$i] =~/^synchSet.*Mib/) )
+	    {
+		$groupedSess{$i} = $cmsNeadKey;
+		$sessionCounts[$cmsNeadKey] += $sessionCounts[$i];
+		$sessionCounts[$i] = 0;
+	    }
+	}	
+	
+	if ( $GROUP_SNAD )
+	{
+	    if ( ($sessions[$i] =~ /^cms_snad_reg/) || ($sessions[$i] =~/^SNAD/) || ($sessions[$i] =~ /^Rnc.*Handler/) )
+	    {
+		#print "Grouping SNAD $sessions[$i] \n";
+		
+		$groupedSess{$i} = $cmsSnadKey;
+		$sessionCounts[$cmsSnadKey] += $sessionCounts[$i];
+		$sessionCounts[$i] = 0;
+	    }
+	}
+    }
+
+    $sessions[$cmsNeadKey] = "cms_nead";
+    $sessions[$cmsSnadKey] = "cms_snad";
+
+	
+    foreach $r_TimeSample ( @samples )
+    {
+	%grpTotal = ();
+
+	foreach $key ( keys %{$r_TimeSample} )
+	{
+	    $grpKey = $groupedSess{$key};
+	    if ( $grpKey )
+	    {
+		$r_GrpdSample = $r_TimeSample->{$key};
+		$r_GrpTotal = $grpTotal{$grpKey};
+		if ( ! $r_GrpTotal )
+		{
+		    $r_GrpTotal = [ 0, 0, 0 ];
+		    $grpTotal{$grpKey} = $r_GrpTotal;
+		}
+		
+		for ( $i = 0; $i <= $#{$r_GrpdSample}; $i++ )
+		{
+		    $r_GrpTotal->[$i] += $r_GrpdSample->[$i];
+		}		
+		
+		delete $r_TimeSample->{$key};
+	    }
+	}
+    
+	foreach $grpKey ( keys %grpTotal )
+	{
+	    #print "Adding $grpKey ",  $grpTotal{$grpKey}, " ", $grpTotal{$grpKey}->[0], " ", $grpTotal{$grpKey}->[1], " ", $grpTotal{$grpKey}->[2], "\n";
+	    $r_TimeSample->{$grpKey} = $grpTotal{$grpKey};
+	}
+    }
+}
+
+%sortableCounts = ();
+for ( $i = 0; $i <= $#sessionCounts; $i++ )
+{
+    $sortableKey = sprintf "%d%03d", $sessionCounts[$i], $i;
+    $sortableCounts{$sortableKey} = $i;
+}
+    
+@sortedKeys = sort by_number keys %sortableCounts;
+@topN = ();
+for ( $i = $#sessionCounts; $i > $#sessionCounts - $NUM_CAT; $i-- )
+{
+    $topN[$#topN+1] = $sortableCounts{$sortedKeys[$i]};
+}
+
+for $key ( @topN )
+{
+    ($sessionName,$sessionTime) = split "::", $sessions[$key];
+    #print  "$sessionName $key\n";
+}
+
+
+@activeCount = ();
+@endedCount = ();
+for ( $i = 0; $i <= $#topN + 1; $i++ )
+{
+    $activeCount[$i] = 0;
+    $endedCount[$i] = 0;
+}
+
+open DATA, ">$dataFile" or die "Cannot open $dataFile\n";
+$lineCount = 0;
+for ( $i = 0; $i <= $#sampleTimes; $i++ )
+{
+    #
+    # If this is the first line in the current output peroid
+    #
+    if ( $lineCount == 0 )
+    {
+	$timeStamp = $sampleTimes[$i];
+
+	for ( $y = 0; $y <= $#topN + 1; $y++ )
+	{
+	    $createCount[$y] = 0;
+	}
+    }
+
+    $lineCount++;
+
+    #
+    # Foreach entry in topN, check if the session has
+    # data for the current line. 
+    #
+    for ( $y = 0; $y <= $#topN; $y++ )
+    {
+	$r_Sample = $samples[$i]->{$topN[$y]};
+	#$sessCreated = 0;
+	if ( $r_Sample )
+	{
+	    $activeCount[$y] += $r_Sample->[0] - $r_Sample->[1];
+	    if ( $activeCount[$y] < 0 ) { $activeCount[$y] = 0; }
+	    $endedCount[$y] += $r_Sample->[1] - $r_Sample->[2];
+	    if ( $endedCount[$y] < 0 ) { $endedCount[$y] = 0; }
+	    $createCount[$y] += $r_Sample->[0];
+
+	    delete $samples[$i]->{$topN[$y]};
+	}
+	#print DATA " ", $sessCreated, " ", $activeCount[$y], " ", $endedCount[$y];
+    }
+
+    #
+    # Sum remain data into "Other"
+    #
+    foreach $key ( keys %{$samples[$i]} )
+    {
+	$r_Sample = $samples[$i]->{$key};
+	$createCount[$#activeCount] += $r_Sample->[0];
+
+	$activeCount[$#activeCount] += $r_Sample->[0] - $r_Sample->[1];
+	if ( $activeCount[$#activeCount] < 0 ) { $activeCount[$#activeCount] = 0; }
+	$endedCount[$#endedCount] += $r_Sample->[1] - $r_Sample->[2];
+	if ( $endedCount[$#endedCount] < 0 ) { $endedCount[$#endedCount] = 0; }
+
+    }
+    
+    if ( ($lineCount == $OUTPUT_INTERVAL) or ($i == $#sampleTimes) )
+    {
+	print DATA $timeStamp;
+	$createCountTotal = 0;
+	$activeCountTotal = 0;
+	$endedCountTotal = 0;
+	for ( $y = 0; $y <= $#activeCount; $y++ )
+	{	    
+	    print DATA " ", ($createCountTotal + $createCount[$y]), " ", ($activeCountTotal + $activeCount[$y]), " ", ($endedCountTotal + $endedCount[$y]);
+	    $createCountTotal += $createCount[$y];
+	    $activeCountTotal += $activeCount[$y];
+	    $endedCountTotal += $endedCount[$y];
+	}	    
+	print DATA "\n";
+
+	$lineCount = 0;
+    }
+}
+close DATA;
+
+if ( $selectMode eq "create" )
+{
+    $plotCmd = "plot";
+    $topN[$#topN+1] = $#sessions + 1;
+    $sessions[$#sessions+1] = "Other";
+    for ( $i = $#topN; $i >= 0; $i-- )
+    {
+	if ( $i < $#topN )
+	{
+	    $plotCmd .= ", ";
+	}
+	
+	($sessionName,$sessionTime) = split "::", $sessions[$topN[$i]];
+	$plotCmd .= " \"$dataFile\" using 1:" . (2 + ($i*3)) . " title \"$sessionName\" with boxes";
+    }
+    print "$plotCmd\n";
+}
+else
+{
+    @plotCmd = ();
+    $plotCmd[0] = "plot";
+    $plotCmd[1] = "plot";
+
+    $topN[$#topN+1] = $#sessions + 1;
+    $sessions[$#sessions+1] = "Other";
+    for ( $i = $#topN; $i >= 0; $i-- )
+    {
+	if ( $i < $#topN )
+	{
+	    $plotCmd[0] .= ", ";
+	    $plotCmd[1] .= ", ";
+	}
+	
+	($sessionName,$sessionTime) = split "::", $sessions[$topN[$i]];
+	$plotCmd[0] .= " \"$dataFile\" using 1:" . (3 + ($i*3)) . " title \"$sessionName\" with boxes";
+	$plotCmd[1] .= " \"$dataFile\" using 1:" . (4 + ($i*3)) . " title \"$sessionName\" with boxes";
+    }
+    print "$plotCmd[0]\n";
+    print "$plotCmd[1]\n";
+}
+
+sub by_number
+{
+    return $a <=> $b;
+}

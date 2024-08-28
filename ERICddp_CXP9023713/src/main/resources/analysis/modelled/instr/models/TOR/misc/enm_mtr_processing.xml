@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <table name="enm_mtr_processing">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.\S+:type=StatsIncomingMediationTaskRequest$">
+      <metric source="mediationTaskRequestCount" target="n_count" delta="true"/>
+      <metric source="totalDelayInMillis" target="t_delay" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

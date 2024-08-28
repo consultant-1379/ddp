@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^PerfParse@(\S+)">
+
+  <table name="eo_perf_service_stats">
+    <keycol name="serviceid" reftable="eo_perf_service_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>serviceid</multi>
+
+    <metricgroup name="^(\S+)">
+      <metric source="Count" target="count" />
+      <metric source="Total" target="total" />
+      <metric source="Min" target="min" />
+      <metric source="Max" target="max" />
+      <property name="serviceid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

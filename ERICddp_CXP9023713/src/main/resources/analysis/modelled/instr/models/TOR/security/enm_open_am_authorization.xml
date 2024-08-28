@@ -1,0 +1,35 @@
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@enm_open_am_authorization"
+  sampleinterval="60">
+
+  <services>
+    <service name="sso"/>
+  </services>
+  <table name="enm_open_am_authorization">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+  <metricgroups>
+    <metricgroup name="am_authorization_policy_set_evaluate_count">
+      <metric source="am_authorization_policy_set_evaluate_count" target="amAuthorizationPolicySetEvaluateCount" delta="true" filteridle="true">
+        <labelfilter name="outcome" value="success"/>
+        <labelfilter name="policy_set" value="ENMPolicies"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="am_authorization_policy_set_evaluate_action_count">
+      <metric source="am_authorization_policy_set_evaluate_action_count" target="amAuthorizationPolicySetEvaluateActionCount" delta="true" filteridle="true">
+        <labelfilter name="action_type" value="GET"/>
+        <labelfilter name="outcome" value="allow"/>
+        <labelfilter name="policy_set" value="ENMPolicies"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="am_authorization_policy_set_evaluate_seconds_total">
+      <metric source="am_authorization_policy_set_evaluate_seconds_total" target="amAuthorizationPolicySetEvaluateSecondsTotal" delta="true" filteridle="true">
+        <labelfilter name="outcome" value="success"/>
+        <labelfilter name="policy_set" value="ENMPolicies"/>
+      </metric>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>
+

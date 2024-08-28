@@ -1,0 +1,66 @@
+#!/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($neadFile,$pmsFile,$outFile);
+    my $result = GetOptions("nead=s"  => \$neadFile,
+			    "pms=s" => \$pmsFile,
+			    "out=s"  => \$outFile,
+			    "debug=s" => \$DEBUG
+			    );       
+    ($result == 1) or die "Invalid args"; 
+
+    my %neadAlive = ();
+    readNead( $neadFile, \%neadAlive );
+    writeDelta( $pmsFile, \%neadAlive, $outFile );
+}
+
+sub readNead
+{
+    my ($neadFile, $r_neadAlive) = @_;
+
+    open NEAD, $neadFile or die "Cannot open nead file $neadFile";
+    while ( my $line = <NEAD> )
+    {
+	#06-05-05:15:50:47 4108
+	my ($time,$value) = $line =~
+	    /^(\S+):\d+ (\d+)/;
+	$r_neadAlive->{$time} = $value;
+    }
+    close NEAD;
+
+    if ( $DEBUG > 3 ) { print Dumper("readNead: neadAlive", $r_neadAlive); }
+}
+
+sub writeDelta
+{
+    my ($pmsFile, $r_neadAlive,$outFile) = @_;
+    
+    open PMS, $pmsFile or die "Cannot open pms file $pmsFile";
+    open OUT, ">$outFile" or die "Cannot open out file $outFile";
+    while ( my $line = <PMS> )
+    {
+	#09-06-05:00:01 4110
+	my ($time,$value) = $line =~
+	    /^(\S+):\d+ \d+ (\d+)/;
+
+	if ( $DEBUG > 4 ) { print "writeDelta: time=$time value=$value\n"; }
+
+	if ( exists $r_neadAlive->{$time} )
+	{
+	    print OUT $time, " ", ($r_neadAlive->{$time} - $value), "\n";
+	}
+    }
+    close PMS;
+    close NEAD;
+}
+
+	

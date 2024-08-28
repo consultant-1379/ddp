@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_aim_anomaly_instr">
+      <reference table="sites" condition="enm_aim_anomaly_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_aim_anomaly_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="validKpiValuesProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="validKpiValuesProcessed"/>
+      <column db="validKpiValuesProcessed"/>
+    </graph>
+    <graph name="invalidKpiValuesProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="invalidKpiValuesProcessed"/>
+      <column db="invalidKpiValuesProcessed"/>
+    </graph>
+    <graph name="emptyKpiResultsReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="emptyKpiResultsReceived"/>
+      <column db="emptyKpiResultsReceived"/>
+    </graph>
+    <graph name="totalEventsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalEventsCreated"/>
+      <column db="totalEventsCreated"/>
+    </graph>
+    <graph name="totalOpenKpiEventsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalOpenKpiEventsCreated"/>
+      <column db="totalOpenKpiEventsCreated"/>
+    </graph>
+    <graph name="totalClosedKpiEventsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalClosedKpiEventsCreated"/>
+      <column db="totalClosedKpiEventsCreated"/>
+    </graph>
+    <graph name="totalEventsDropped" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalEventsDropped"/>
+      <column db="totalEventsDropped"/>
+    </graph>
+    <graph name="totalProcessingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalProcessingTime"/>
+      <column db="totalProcessingTime"/>
+    </graph>
+    <graph name="currentlyActiveAnomalies" type="sb" ylabel="Count" forcelegend="true">
+      <title value="currentlyActiveAnomalies"/>
+      <column db="currentlyActiveAnomalies"/>
+    </graph>
+    <graph name="totalKpiResultsCollected" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalKpiResultsCollected"/>
+      <column db="totalKpiResultsCollected"/>
+    </graph>
+    <graph name="totalLoadKpiValuesProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalLoadKpiValuesProcessed"/>
+      <column db="totalLoadKpiValuesProcessed"/>
+    </graph>
+    <graph name="totalMonitoringKpiValuesProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalMonitoringKpiValuesProcessed"/>
+      <column db="totalMonitoringKpiValuesProcessed"/>
+    </graph>
+    <graph name="loadKpiProcessingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="loadKpiProcessingTime"/>
+      <column db="loadKpiProcessingTime"/>
+    </graph>
+    <graph name="monitoringKpiProcessingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="monitoringKpiProcessingTime"/>
+      <column db="monitoringKpiProcessingTime"/>
+    </graph>
+    <graph name="totalAnomalyReadingsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalAnomalyReadingsCreated"/>
+      <column db="totalAnomalyReadingsCreated"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="validKpiValuesProcessed">
+      <member>validKpiValuesProcessed</member>
+    </group>
+    <group name="invalidKpiValuesProcessed">
+      <member>invalidKpiValuesProcessed</member>
+    </group>
+    <group name="emptyKpiResultsReceived">
+      <member>emptyKpiResultsReceived</member>
+    </group>
+    <group name="totalEventsCreated">
+      <member>totalEventsCreated</member>
+    </group>
+    <group name="totalOpenKpiEventsCreated">
+      <member>totalOpenKpiEventsCreated</member>
+    </group>
+    <group name="totalClosedKpiEventsCreated">
+      <member>totalClosedKpiEventsCreated</member>
+    </group>
+    <group name="totalEventsDropped">
+      <member>totalEventsDropped</member>
+    </group>
+    <group name="totalProcessingTime">
+      <member>totalProcessingTime</member>
+    </group>
+    <group name="currentlyActiveAnomalies">
+      <member>currentlyActiveAnomalies</member>
+    </group>
+    <group name="totalKpiResultsCollected">
+      <member>totalKpiResultsCollected</member>
+    </group>
+    <group name="totalLoadKpiValuesProcessed">
+      <member>totalLoadKpiValuesProcessed</member>
+    </group>
+    <group name="totalMonitoringKpiValuesProcessed">
+      <member>totalMonitoringKpiValuesProcessed</member>
+    </group>
+    <group name="loadKpiProcessingTime">
+      <member>loadKpiProcessingTime</member>
+    </group>
+    <group name="monitoringKpiProcessingTime">
+      <member>monitoringKpiProcessingTime</member>
+    </group>
+    <group name="totalAnomalyReadingsCreated">
+      <member>totalAnomalyReadingsCreated</member>
+    </group>
+    <group name="all">
+      <member>validKpiValuesProcessed</member>
+      <member>invalidKpiValuesProcessed</member>
+      <member>emptyKpiResultsReceived</member>
+      <member>totalEventsCreated</member>
+      <member>totalOpenKpiEventsCreated</member>
+      <member>totalClosedKpiEventsCreated</member>
+      <member>totalEventsDropped</member>
+      <member>totalProcessingTime</member>
+      <member>currentlyActiveAnomalies</member>
+      <member>totalKpiResultsCollected</member>
+      <member>totalLoadKpiValuesProcessed</member>
+      <member>totalMonitoringKpiValuesProcessed</member>
+      <member>loadKpiProcessingTime</member>
+      <member>monitoringKpiProcessingTime</member>
+      <member>totalAnomalyReadingsCreated</member>
+    </group>
+    <group name="anNonMain">
+      <member>validKpiValuesProcessed</member>
+      <member>invalidKpiValuesProcessed</member>
+      <member>emptyKpiResultsReceived</member>
+      <member>totalEventsCreated</member>
+      <member>totalOpenKpiEventsCreated</member>
+      <member>totalClosedKpiEventsCreated</member>
+      <member>totalEventsDropped</member>
+      <member>totalProcessingTime</member>
+      <member>currentlyActiveAnomalies</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

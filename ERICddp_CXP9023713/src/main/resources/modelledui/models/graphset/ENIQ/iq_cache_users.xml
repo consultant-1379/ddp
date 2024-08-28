@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="iq_monitor_summary"/>
+    <param name="serverid"/>
+    <where>iq_monitor_summary.serverid = %d </where>
+  </query>
+
+  <graphs>
+    <graph name="main_hr_cache" type="tsc" ylabel="%">
+      <title value="Main Cache Hit Rate"/>
+      <column db="main_hr" label="Hit Rate"/>
+    </graph>
+    <graph name="temp_hr_cahche" type="tsc" ylabel="%">
+      <title value="Temp Cache Hit Rate"/>
+      <column db="temp_hr" label="Hit Rate"/>
+    </graph>
+    <graph name="active_users_count" type="tsc" ylabel="Users">
+      <title value="Active Users"/>
+      <column db="active_users" label="Active Users"/>
+    </graph>
+    <graph name="main_inuse_cache" type="tsc" ylabel="%">
+      <title value="Main Cache In Use"/>
+      <column db="main_inuse" label="Main Cache In Use" />
+    </graph>
+    <graph name="temp_inuse_cache" type="tsc" ylabel="%">
+      <title value="Temp Cache In Use"/>
+      <column db="temp_inuse" label="Temp Cache In Use"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="iqcache">
+      <member>main_hr_cache</member>
+      <member>temp_hr_cahche</member>
+      <member>active_users_count</member>
+      <member>main_inuse_cache</member>
+      <member>temp_inuse_cache</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

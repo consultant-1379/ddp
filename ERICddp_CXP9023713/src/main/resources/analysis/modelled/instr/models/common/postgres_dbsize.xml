@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@postgres_stats_db"
+    sampleinterval="86400">
+
+  <table name="enm_postgres_dbsize" timecol="date">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="dbid" reftable="enm_postgres_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>dbid</multi>
+    <metricgroup name="^pg_database_size:(\S+)$">
+      <metric source="pg_database_size" target="sizemb"  scale="1048576"/>
+      <property name="dbid" xsi:type="multilabelproperty" label="datname" filtervalue="^(?!template|postgres)" index="1"/>
+    </metricgroup>
+    <metricgroup name="^pg_database_size_bytes:(\S+)$">
+      <metric source="pg_database_size_bytes" target="sizemb"  scale="1048576"/>
+      <property name="dbid" xsi:type="multilabelproperty" label="datname" filtervalue="^(?!template|postgres)" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

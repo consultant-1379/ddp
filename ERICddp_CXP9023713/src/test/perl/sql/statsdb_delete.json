@@ -1,0 +1,47 @@
+{
+    "comment": "For table1, we should see P20231001 being truncated and P20230901 being dropped, for table11 we should see P20231001 being truncated",
+    "queries": [
+    ],
+    "dbDo": [
+        "ALTER TABLE table1 TRUNCATE PARTITION P20231001",
+        "ALTER TABLE table1 DROP PARTITION P20230901",
+        "ALTER TABLE table11 TRUNCATE PARTITION P20231001"
+    ],
+
+    "prepstmt": {
+        "SELECT TABLE_NAME, COUNT(*) FROM INFORMATION_SCHEMA.PARTITIONS WHERE TABLE_SCHEMA = (SELECT DATABASE()) AND PARTITION_NAME IS NOT NULL GROUP BY TABLE_NAME": [
+            {
+                "param": [],
+                "rows": [
+                    [ "table1", 2 ],
+                    [ "table11", 2 ]
+                ]
+            }
+        ],
+        "SELECT PARTITION_NAME, PARTITION_ORDINAL_POSITION, FROM_DAYS(PARTITION_DESCRIPTION), TABLE_ROWS, PARTITION_COMMENT FROM INFORMATION_SCHEMA.PARTITIONS WHERE TABLE_SCHEMA = (SELECT DATABASE()) AND PARTITION_NAME IS NOT NULL AND TABLE_NAME = ?": [
+            {
+                "param": [ "table1" ],
+                "rows": [
+                    [ "P20230901", 1, "2023-09-01", 0, "" ],
+                    [ "P20231001", 2, "2023-10-01", 0, "" ],
+                    [ "P20231101", 3, "2023-11-01", 0, "" ],
+                    [ "P20231201", 4, "2023-12-01", 0, "" ],
+                    [ "P20240101", 5, "2024-01-01", 0, "" ],
+                    [ "P20240201", 6, "2024-02-01", 0, "" ],
+                    [ "PMAXVALUE", 7, "0000-00-00", 0, "" ]
+                ]
+            },
+            {
+                "param": [ "table11" ],
+                "rows": [
+                    [ "P20231001", 2, "2023-10-01", 0, "" ],
+                    [ "P20231101", 3, "2023-11-01", 0, "" ],
+                    [ "P20231201", 4, "2023-12-01", 0, "" ],
+                    [ "P20240101", 5, "2024-01-01", 0, "" ],
+                    [ "P20240201", 6, "2024-02-01", 0, "" ],
+                    [ "PMAXVALUE", 7, "0000-00-00", 0, "" ]
+                ]
+            }
+        ]
+    }
+}

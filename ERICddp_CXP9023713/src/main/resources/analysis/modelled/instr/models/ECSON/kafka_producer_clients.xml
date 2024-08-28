@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" namespace="prometheus@kafka_producer_clients">
+
+  <table name="kafka_producer_clients">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="clientid" reftable="kafka_client_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>clientid</multi>
+
+    <metricgroup name="^kafka_producer:(\S*)$">
+      <metric source="kafka_producer_producer_metrics_record_error_total" target="errorTotal" delta="true" filteridle="true"/>
+      <metric source="kafka_producer_producer_metrics_request_latency_max" target="lantancyMax"/>
+      <property name="clientid" xsi:type="multilabelproperty" label="client_id" index="1"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

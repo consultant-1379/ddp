@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="bis_report_refresh_time">
+    <reference table="sites" condition="bis_report_refresh_time.siteid = sites.id"/>
+    <reference table="bis_prompt_info" condition="bis_report_refresh_time.cuid = bis_prompt_info.cuid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+
+  <where>sites.name = '%site%' AND bis_report_refresh_time.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <groupby>
+    <column db="bis_prompt_info.cuid"/>
+  </groupby>
+  <order columnid="duration" direction="DESC"/>
+
+  <column db="bis_report_refresh_time.reportName" label="Report Name"/>
+  <column db="MAX(bis_report_refresh_time.startTime)" label="Refresh Time"/>
+  <column db="ROUND(bis_report_refresh_time.duration/1000,2)" label="Duration (Sec)" id="duration"/>
+  <column db="bis_prompt_info.noOfPrompt" label="Prompt Details"/>
+  <column db="bis_report_refresh_time.cuid" label="Cuid"/>
+</modelledtable>

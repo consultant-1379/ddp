@@ -1,0 +1,8 @@
+#!/usr/bin/env perl
+
+@fileStats = stat $ARGV[0];
+$fileCTime = $fileStats[9];
+$currentTime = time;
+
+print $currentTime - $fileCTime, "\n";
+

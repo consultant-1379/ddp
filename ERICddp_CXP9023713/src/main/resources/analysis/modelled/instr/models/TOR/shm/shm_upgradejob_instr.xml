@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="shmcoreservice"/>
+      <service name="consshm"/>
+  </services>
+
+  <table name="shm_upgradejob_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.shm.es.instrumentation.impl.cppinventorysynchservice:type=UpgradeJobInstrumentationBean$">
+      <metric source="dusGen2UpgradeJobAverage" target="dusGen2UpgradeJobAverage"/>
+      <metric source="dusGen2UpgradeJobSuccessRate" target="dusGen2UpgradeJobSuccessRate"/>
+      <metric source="erbsUpgradeJobAverage" target="erbsUpgradeJobAverage"/>
+      <metric source="erbsUpgradeJobSuccessRate" target="erbsUpgradeJobSuccessRate"/>
+      <metric source="sgsnUpgradeJobAverage" target="sgsnUpgradeJobAverage"/>
+      <metric source="sgsnUpgradeJobSuccessRate" target="sgsnUpgradeJobSuccessRate"/>
+      <metric source="upgradeJobAverage" target="upgradeJobAverage"/>
+      <metric source="upgradeJobSuccessRate" target="upgradeJobSuccessRate"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

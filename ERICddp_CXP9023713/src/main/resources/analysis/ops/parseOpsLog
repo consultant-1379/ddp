@@ -1,0 +1,137 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+use Carp;
+
+# use StatsDB;
+# use DBI;
+
+our $DEBUG = 0;
+
+our %monthMap = 
+    (
+     January   => 1,
+     February  => 2,
+     March     => 3,
+     April     => 4,
+     May       => 5,
+     June      => 6,
+     July      => 7,
+     August    => 8,
+     September => 9,
+     October   => 10,
+     November  => 11,
+     December  => 12
+    );
+
+main();
+
+sub main
+{
+    my ($log,$site,$date,$table);
+    my $result = GetOptions(
+	"log=s"   => \$log,
+	"site=s"  => \$site,
+	"date=s"  => \$date,
+	"debug=s" => \$DEBUG
+    );			    
+    ($result == 1) or die "Invalid args";
+
+    readLog($log);
+}
+
+sub readLog
+{
+    my ($log) = @_;
+
+    my @allSession = ();
+    my %activeSession = ();
+
+    open LOG, $log or die "Cannot open $log";
+    while ( my $line = <LOG> )
+    {
+	if ( $DEBUG > 9 ) { print "readLog: line=$line"; }
+
+	if ( $line =~ /^[S|s]ession:\s+(\d+) : (.*)/ )
+	{
+	    my ($sessionId,$msg) = ($1,$2);
+	    if ( $DEBUG > 7 ) { print "readLog: sessionId=$sessionId msg=$msg\n"; }
+
+	    if ( $msg =~ /^Started : \S+ (\S+)\s+(\d+), (\d+)\s+([\d:]+) (\S+)/ )
+	    {
+		my ($monthName,$day,$year,$time,$amPm) = ($1,$2,$3,$4,$5);
+
+		if ( exists $activeSession{$sessionId} )
+		{
+		    print "WARN: Incomplete session $sessionId\n";
+		    delete $activeSession{$sessionId};
+		}
+
+		if ( $DEBUG > 5 ) { print "readLog: New session $sessionId\n"; }
+
+		my $r_Session = {
+		    'id'     => $sessionId,
+		    'start'  => parseTime($monthName,$day,$year,$time,$amPm),
+		    'state'  => []
+		};
+
+		push @allSession, $r_Session;
+		$activeSession{$sessionId} = $r_Session;
+	    }
+	    else
+	    {
+		if ( exists $activeSession{$sessionId} )
+		{
+		    if ( $msg =~ /^File: (.*) : Date/ )
+		    {
+			$activeSession{$sessionId}->{'file'} = $1;
+			if ( $DEBUG > 6 ) { print "readLog: file=$activeSession{$sessionId}->{'file'}\n"; }
+		    }
+		    elsif ( $msg =~ /^newState: State = (\S+) : Date: \S+ (\S+)\s+(\d+), (\d+)\s+([\d:]+) (\S+)/ )
+		    {
+			my ($state,$monthName,$day,$year,$time,$amPm) = ($1,$2,$3,$4,$5,$6);
+			if ( $DEBUG > 6 ) { print "readLog: newState=$state\n"; }
+			my $r_stateTran = {
+			    'state' => $state,
+			    'time'  => parseTime($monthName,$day,$year,$time,$amPm)
+			};
+			push @{$activeSession{$sessionId}->{'state'}}, $r_stateTran;
+		    }
+		    elsif ( $msg =~ /^Ended : \S+ (\S+)\s+(\d+), (\d+)\s+([\d:]+) (\S+)/ )
+		    {
+			if ( $DEBUG > 5 ) { print "readLog: End session $sessionId\n"; }
+
+			$activeSession{$sessionId}->{'end'} = parseTime($1,$2,$3,$4,$5);			
+			delete $activeSession{$sessionId};
+		    }
+		}
+	    }
+	}
+    }
+    close LOG;
+
+    if ( $DEBUG > 4 ) { print Dumper("readLog: allSession", \@allSession ); }
+
+    return @allSession;
+}
+
+sub parseTime
+{
+    my ($monthName,$day,$year,$time,$amPm) = @_;
+    my ($hour,$min,$sec) = $time =~ /(\d+):(\d+):(\d+)/;
+
+    exists $monthMap{$monthName} or confess "ERROR: Could not parse monthName $monthName";
+    
+    my $month = $monthMap{$monthName};
+    
+    if ( $amPm eq "PM" ) 
+    {
+	$hour += 12;
+    }
+
+    return sprintf( "%04d-%02d-%02d:%02d:%02d:%02d", $year, $month, $day, $hour, $min, $sec);
+}

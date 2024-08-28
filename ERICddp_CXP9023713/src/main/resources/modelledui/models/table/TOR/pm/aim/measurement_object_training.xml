@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_measurement_training">
+    <reference table="sites" condition="enm_aim_measurement_training.siteid = sites.id"/>
+    <reference table="ne_types" condition="enm_aim_measurement_training.netypeid = ne_types.id"/>
+    <reference table="mo_names" condition="enm_aim_measurement_training.motypeid = mo_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="maxtime"/>
+  <where>sites.name = '%site%' AND enm_aim_measurement_training.time = '%maxtime%' AND enm_aim_measurement_training.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="ne_types.name"/>
+    <column db="mo_names.name"/>
+  </groupby>
+
+  <column db="CONCAT(ne_types.name,'@',mo_names.name)" label="id" visible="false" id="name"/>
+  <column db="ne_types.name" label="Node Type"/>
+  <column db="mo_names.name" label="Measurement Object"/>
+  <column db="enm_aim_measurement_training.measurementObjectsTraining" label="Training Percentage"/>
+  <column db="enm_aim_measurement_training.measurementObjectsCount" label="Total"/>
+
+  <ctxmenu keycol="name" targettype="url" multiselect="false">
+    <item id="measurementGraph" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

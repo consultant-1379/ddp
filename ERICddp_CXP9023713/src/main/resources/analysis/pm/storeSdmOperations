@@ -1,0 +1,147 @@
+#!/usr/bin/env perl
+# DESCRIPTION: parser for SDM operations log files,
+# as described in 38/159 41-FCP 103 6749 Rev. A
+# Work Item 1.4.
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+
+use Time::Local;
+use Date::Parse;
+use File::Basename;
+
+our $DEBUG = 0;
+our ($site, $siteId);
+our $date;
+our $dbh;
+our $objMap;
+
+sub main() {
+    my $dir;
+    my $result = GetOptions (
+        "dir=s" => \$dir,
+        "debug=s" => \$DEBUG,
+        "site=s" => \$site
+    );
+    ($result == 1) or die "Invalid arguments";
+    $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+    $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 2 ) { print "main: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    if (! defined($dir)) {
+        print "Error: you must supply a directory!\n";
+        exit(1);
+    }
+    opendir(DATADIR, $dir) or die "Invalid directory: " . $dir . "\n";
+    my @files = grep { $_ ne '.' and $_ ne '..' } readdir DATADIR;
+    if ($DEBUG > 5) { print "Processing files from " . $dir . "\n"; }
+    my %fileinfo = ();
+    my @objs;
+    foreach my $file (@files) {
+        $fileinfo{$file} = parseFileName($file);
+        push(@objs, $fileinfo{$file}{obj});
+    }
+    $objMap = getIdMap($dbh, "sdm_objects", "id", "name", \@objs);
+    foreach my $file (@files) {
+        parseData($dir . "/" . $file);
+    }
+}
+
+sub parseData() {
+    my $file = shift;
+    my $fattrs = parseFileName($file);
+    if ($fattrs->{valid} == 1) {
+        if ($DEBUG > 2) { print "Got object " . $fattrs->{obj} . " ; operation " . $fattrs->{oper} . "\n"; }
+        open DATA, $file or die "Could not open data file $file: $!";
+        if ($fattrs->{oper} eq "LOAD") {
+            my $sql = "INSERT INTO sdm_load (siteid,objectid,sample_time,num_nodes,duration) VALUES ";
+            # Store each time sample start and end time
+            my %tsamples = ();
+            while ( my $line = <DATA> ) {
+                if ($line =~ /^$fattrs->{obj},/) {
+                    my @params = split ", ", $line;
+                    if ($DEBUG > 9) {
+                        print "LOAD: Got obj " . $params[0] . " ; NE " . $params[1] .
+                            " ; time sample " . $params[2] . " ; stime " . $params[3] .
+                            " ; ftime " . $params[4] . "\n";
+                    }
+                    my $sample = str2time($params[2]);
+                    my $start = str2time($params[3]);
+                    my $finish = str2time($params[4]);
+                    if (! exists($tsamples{$sample})) {
+                        $tsamples{$sample} = ();
+                        $tsamples{$sample}{start} = $start;
+                        $tsamples{$sample}{finish} = $finish;
+                        $tsamples{$sample}{numnodes} = 1;
+                    } else {
+                        $tsamples{$sample}{finish} = $finish;
+                        $tsamples{$sample}{numnodes}++;
+                    }
+                }
+            }
+            foreach my $s (sort keys %tsamples) {
+                # The issue here is that should some data be parsed for a
+                # sample time from yesterday, the UPDATE will effectively reduce the duration
+                # for that sample time to the duration of the values seen in today's logs.
+                # The only sensible alternative is to store each sample and
+                # calculate the duration at the presentation layer. The IP author
+                # assures me that out-of-sync data will be non-existent, and
+                # the granularity of the data (per-minute times) means its all
+                # pretty innacurate anyway.
+                my $inssql = $sql . " (" . $siteId . "," . $objMap->{$fattrs->{obj}} .
+                    ",FROM_UNIXTIME(" . $s . ")," . $tsamples{$s}{numnodes} . "," .
+                    ($tsamples{$s}{finish} - $tsamples{$s}{start}) . ")" .
+                    " ON DUPLICATE KEY UPDATE duration = " . ($tsamples{$s}{finish} - $tsamples{$s}{start});
+                dbDo($dbh,$inssql) or print "Failed to insert data";
+            }
+        } elsif ($fattrs->{oper} eq "DELETE") {
+            my $sql = "INSERT INTO sdm_delete (siteid,objectid,start_time,duration) VALUES ";
+            while ( my $line = <DATA> ) {
+                if ($line =~ /^$fattrs->{obj},/) {
+                    my @params = split ", ", $line;
+                    if ($DEBUG > 9) {
+                        print "DELETE: Got obj " . $params[0] . " ; NE " . $params[1] .
+                           " ; time sample " . $params[2] . " ; stime " . $params[3] .
+                           " ; ftime " . $params[4] . "\n";
+                    }
+                    my $start = str2time($params[3]);
+                    my $finish = str2time($params[4]);
+                    my $inssql = $sql .
+                        "(" . $siteId . "," . $objMap->{$fattrs->{obj}} .
+                        ",FROM_UNIXTIME(" . $start . ")," . ($finish - $start) . ")" .
+                        " ON DUPLICATE KEY UPDATE duration = " . ($finish - $start);
+                    dbDo($dbh,$inssql) or print "Failed to insert data";
+                }
+            }
+             
+        }
+    } else {
+        print "Invalid SDM Data file: " . $file . "\n";
+    }
+}
+
+sub parseFileName() {
+    my $file = shift;
+    $file = basename($file);
+    # Ignore the date / time in the file name
+    my ($obj,$oper) = $file =~ /^(.*)_(LOAD|DELETE)_Time.*txt$/;
+    # limit the object name to 20 chars, as per the DB schema
+    $obj = substr($obj, 0, 20);
+    my %fattrs = ();
+    $fattrs{valid} = 0;
+    if (defined($obj) && defined($oper)) {
+        $fattrs{valid} = 1;
+        $fattrs{obj} = $obj;
+        $fattrs{oper} = $oper;
+    }
+    return \%fattrs;
+}
+
+main;

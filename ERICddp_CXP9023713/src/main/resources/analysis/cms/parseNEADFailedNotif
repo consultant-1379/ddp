@@ -1,0 +1,181 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+
+# Parameter defaults
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main
+{
+    my ($logFile,$site,$dashDate);
+
+    my $result = GetOptions(
+        "logfile=s"  => \$logFile,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+        );
+
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    # Validate the parameters passed
+    if ( ! $logFile ) {
+        printUsageAndExit("No System Log specified");
+    }
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        printUsageAndExit("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Get the siteid 
+    my $siteid;
+    if (defined($site)) {
+        my $dbh = connect_db();
+        $siteid = getSiteId($dbh,$site);
+
+        if ( $siteid == -1 ) {
+            die ("ERROR: site " . $site . " does not exist in DDP. The site needs to be added to DDP before its data can be uploaded - exiting now...\n");
+        }
+    } else {
+        printUsageAndExit("ERROR: No site provided");
+    }
+
+    # Declare a hash to hold the data for storage
+    my %data;
+
+    # Parse the command log file, and retrieve the required data
+    readCIFLog($logFile, $sqlDate, $siteid, \%data);
+}
+
+sub readCIFLog() {
+    my ($logFile, $sqlDate, $siteid, $r_data, $r_dbFieldOrder) = @_;
+
+    # Database connection, counting and id map variables
+    my $dbh = connect_db();
+    my $cnt = 0;
+
+    ##################################################################################
+    #
+    # IWD: LMI-11:2049
+    #
+    # Poll through the CIF log file (probably lvlog.log) and lift the data required:
+    # - All cms_nead_seg records containing the string "Failed to introduce notifications from"
+    # - Retrieve the nrOfNotifications and the nrOfNotificationsUncommitted values
+    # - Sum these two metrics
+    # - Store in the nead_failed_notif table
+    #
+    ##################################################################################
+    open READCIFLOG, "$logFile" or die "Could not open System Log File";
+    FILEPARSE: while ( my $line = <READCIFLOG> ) {
+        if ( $DEBUG > 7 ) { print "readCIFLog: line=$line"; }
+        chomp $line;
+        # Only parse data for the date passed
+        if ( $line !~ m/^$sqlDate /) {
+            next;
+        } elsif ($line =~ m/^(\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\.\d+) ERROR \"cms_nead_seg\" \S+ \"\S*\" \"\" \"\" \"COM.ERICSSON.NMS.UMTS.RANOS.FWK.CDLIB.RANOS_CMS_ERRORS_BASE\" MAJOR \"\" \"\" \"Failed to introduce notifications from\s+.*\s+nrOfNotifications\s*=\s*(\d+)\s*,\s+nrOfNotificationsUncommitted\s*=\s*(\d+).*$/) {
+            my ($timestamp, $numNotif, $numFailedNotif) = ($1, $2, $3);
+            $timestamp =~ s/\./:/;
+
+            if (defined($r_data->{$timestamp}->{'time_stamp'})) {
+                $r_data->{$timestamp}->{'num_notif'}+= $numNotif;
+                $r_data->{$timestamp}->{'num_failed_notif'}+= $numFailedNotif;
+            } else {
+                $r_data->{$timestamp}->{'time_stamp'} = $timestamp;
+                $r_data->{$timestamp}->{'num_notif'} = $numNotif;
+                $r_data->{$timestamp}->{'num_failed_notif'} = $numFailedNotif;
+            }
+        
+            # Increment our record counter
+            $cnt++;
+        }
+
+        next FILEPARSE;
+    } # end of FILEPARSE
+
+    close(READCIFLOG);
+
+    # If we have no data, exit now
+    if ($cnt == 0) {
+        print "INFO: No data to store - exiting now.\n";
+        exit 0;
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper($r_data); }
+
+    # Build up the bulk insert file for each table and write the data to statsdb
+    writeBcpFiles($sqlDate, $siteid, $r_data);
+
+    return 0;
+}
+
+sub writeBcpFiles() {
+    my ($sqlDate, $siteid, $r_dataForStorage) = @_;
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/nead_failed_notif." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    # Poll through the fields and build up the BULK INSERT records. Comma separation
+    foreach my $timestamp (sort(keys(%$r_dataForStorage))) {
+        my $record = $r_dataForStorage->{$timestamp}->{'time_stamp'} . "," . $siteid . "," . $r_dataForStorage->{$timestamp}->{'num_notif'} . "," . $r_dataForStorage->{$timestamp}->{'num_failed_notif'} . "\n";
+
+        if ($DEBUG > 4) { print $record; }
+
+        # Write the record to the file
+        print BULK_INSERT $record;
+    }
+    close BULK_INSERT;
+
+    # Run the bulk insert
+    storeDataset($sqlDate, $siteid, 'nead_failed_notif', $bcpFile);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $table, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM " . $table . " WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','");
+    $dbh->disconnect;
+
+    return 0;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseNEADFailedNotif --logfile lvlog.log --site sitename --date yy-mm-dd \n";
+    
+    exit 1;
+}

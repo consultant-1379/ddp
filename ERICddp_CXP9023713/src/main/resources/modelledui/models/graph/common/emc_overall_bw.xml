@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" type="sb" timespan="day">
+  <title value="Bandwidth (MB/s)"/>
+  <queries>
+    <query timecol="time" multiseries="CONCAT('Block SP ', emc_sp_stats.sp)">
+      <dbtables main="emc_sp_stats"/>
+      <param name="sysid"/>
+      <where>sysid = %d</where>
+      <column db="readbw+writebw" label="blkbw"/>
+    </query>
+    <query timecol="time" multiseries="CONCAT('File ', emc_filesystem.name)">
+      <dbtables main="emc_filesystem_stats">
+        <reference table="emc_filesystem" condition="emc_filesystem_stats.fsid = emc_filesystem.id"/>
+      </dbtables>
+      <param name="sysid"/>
+      <where>emc_filesystem_stats.sysid = %d AND emc_filesystem.name IN ('SP A', 'SP B')</where>
+      <column db="(readkb+writekb)/1024" label="fsbw"/>
+    </query>
+  </queries>
+  <size width="960" height="240"/>
+</modelledgraph>

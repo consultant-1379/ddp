@@ -1,0 +1,122 @@
+#!/usr/bin/perl
+#####################################################################################################
+#  Description --------- parseTransportIMSCoreNodeDetails ----------------------------------------
+#  This script parses the faulty hardware log file(transport_ims_core_node_info.txt)
+#  generated on ENIQ STATS server and stores data to DB
+#  @author - Sunil Yadav (xsunyad)
+#  usage parseTransportIMSCoreNodeDetails --logfile ${LOG_FILE} --site ${SITE} --date ${DATE}
+######################################################################################################
+
+use Data::Dumper;
+use DBI;
+use Getopt::Long;
+use StatsDB;
+use StatsTime;
+use strict;
+use warnings;
+
+our $DEBUG = 0;
+our $dbh;
+our $siteId;
+our $date;
+our $nodeInfoTable="eniq_transport_ims_core_node_details";
+
+sub main {
+    my ($nodeInfoLogFile, $site);
+    my $result = GetOptions(
+        "logfile=s" => \$nodeInfoLogFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    ( -r $nodeInfoLogFile ) or die "Cannot read log file $nodeInfoLogFile";
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG >= 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my $r_parsedNodeDetails = parseNodeInfoLog($nodeInfoLogFile);
+    my $bcpFile = createBcpFile($r_parsedNodeDetails);
+    removeOldData();
+    loadDb($bcpFile);
+    if($DEBUG > 1) {
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$startTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseNodeInfoLog($) {
+    my $logFile = shift;
+    my($technology, $nodeType, $nodeTypeCount);
+    my @r_arrayOfHash = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    while (my $line = <FILE>) {
+        if ($DEBUG > 2) {
+            print "Logfile:$logFile\nLine being parsed:$line";
+        }
+        chomp($line);
+        if($line =~ /^Technology:(\w+)$/) {
+            $technology = $1;
+        } elsif($line =~ /^NodeType:(.*)$/) {
+            $nodeType = $1;
+        } elsif($line =~ /^;(\d+);$/) {
+            $nodeTypeCount = $1;
+        } elsif($line =~ /affected/) {
+            if($nodeTypeCount > 0) {
+                my %r_hashOfElements = (
+                    technology => "$technology",
+                    nodeType => "$nodeType",
+                    nodeTypeCount => "$nodeTypeCount"
+                );
+                push (@r_arrayOfHash, \%r_hashOfElements);
+            }
+        }
+    }
+    close FILE;
+    if ($DEBUG > 3) {
+        print Dumper ("Parsed Data", \@r_arrayOfHash);
+    }
+    return (\@r_arrayOfHash);
+}
+
+sub createBcpFile($) {
+    my $parseNodeData = shift;
+    my $bcpFile = getBcpFileName("transport_ims_core_node");
+    open BCP, ">$bcpFile" or die "Cannot open BCP File $bcpFile";
+    foreach my $hashOfElements (@$parseNodeData) {
+        $hashOfElements->{'nodeType'} =~ s/[^a-zA-Z0-9-]+/ /g;
+        printf BCP "%s|%d|%s|%s|%d\n",
+            $date,
+            $siteId,
+            $hashOfElements->{'technology'},
+            $hashOfElements->{'nodeType'},
+            $hashOfElements->{'nodeTypeCount'};
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $nodeInfoTable WHERE siteid = $siteId AND date = '$date'";
+    if ($DEBUG > 4) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($) {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $nodeInfoTable FIELDS TERMINATED BY \'|\'";
+    if ($DEBUG > 5) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

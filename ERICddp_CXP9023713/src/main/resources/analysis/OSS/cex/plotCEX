@@ -1,0 +1,125 @@
+#!/bin/bash
+
+DATA_DIR=$1
+DASH_DATE=$2
+OUTPUT_DIR=$3
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd ../.. ; pwd`
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ ! -r ${DATA_DIR}/instr.cfg ] || [ ! -r ${DATA_DIR}/instr.txt ] ; then 
+   exit 0
+fi
+
+grep ActiveMQ-cexbroker ${DATA_DIR}/instr.cfg > /dev/null
+if [ $? -ne 0 ] ; then
+   exit 0
+fi
+
+if [ ! -d ${OUTPUT_DIR}/cex ] ; then
+   mkdir ${OUTPUT_DIR}/cex
+fi
+
+#TemporaryQueues.length,Topics.length,TotalConsumerCount,TotalDequeueCount,TotalEnqueueCount,TotalMessageCount
+
+grep ActiveMQ-cexbroker ${DATA_DIR}/instr.txt | grep -v ERROR > ${TMP_DIR}/amq-broker.txt 
+NUM_LINES=`wc -l ${TMP_DIR}/amq-broker.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -gt 0 ] ; then
+    ${ANALYSIS_BIN}/common/deltaInstr --in ${TMP_DIR}/amq-broker.txt --out ${TMP_DIR}/amq-broker.txt.delta --cols 6 7
+
+    cat > ${TMP_DIR}/plotcex.cmd <<EOF
+set xdata time
+set timefmt "%H:%M"
+set xrange [ "00:00:00":"23:59:59" ]
+set format x "%H:%M"
+set terminal jpeg
+set size 1,0.5
+
+EOF
+
+    INDEX=4
+    for NAME in TemporaryQueues Topics TotalConsumerCount TotalDequeueCount TotalEnqueueCount TotalMessageCount ; do
+	cat >> ${TMP_DIR}/plotcex.cmd <<EOF
+set output "${OUTPUT_DIR}/cex/amq-cexbroker_${NAME}.jpg"
+set title "${NAME}"
+plot "${TMP_DIR}/amq-broker.txt.delta" using 2:${INDEX} notitle with lines
+EOF
+	INDEX=`expr ${INDEX} + 1`
+    done
+
+    gnuplot ${TMP_DIR}/plotcex.cmd
+fi
+
+cat > ${TMP_DIR}/plotcex.cmd <<EOF
+set xdata time
+set timefmt "%H:%M"
+set xrange [ "00:00:00":"23:59:59" ]
+set format x "%H:%M"
+set terminal jpeg
+set size 1,0.5
+
+EOF
+
+grep CEX-memory ${DATA_DIR}/instr.txt | grep -v ERROR | awk '{print $2, $4}' | sed -e 's/ committed=/ /' -e 's/,init=.*,used=/ /' | awk '{print $1, ($2 / (1024*1024)), ($3 / (1024*1024))}' > ${TMP_DIR}/cex-mem.txt 
+NUM_LINES=`wc -l ${TMP_DIR}/cex-mem.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -gt 0 ] ; then
+    cat >> ${TMP_DIR}/plotcex.cmd <<EOF
+set output "${OUTPUT_DIR}/cex/cex-heap.jpg"
+set title "Heap (MB)"
+plot "${TMP_DIR}/cex-mem.txt" using 1:2 title 'Committed' with lines, "${TMP_DIR}/cex-mem.txt" using 1:3 title 'Used' with lines
+EOF
+else
+    echo "WARN: No data for CEX-memory"
+fi
+
+grep CEX-thread ${DATA_DIR}/instr.txt | grep -v ERROR | awk '{print $2, $4}' > ${TMP_DIR}/cex-thr.txt 
+NUM_LINES=`wc -l ${TMP_DIR}/cex-thr.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -gt 0 ] ; then
+    cat >> ${TMP_DIR}/plotcex.cmd <<EOF
+set output "${OUTPUT_DIR}/cex/cex-thr.jpg"
+set title "Threads"
+plot "${TMP_DIR}/cex-thr.txt" using 1:2 notitle with lines
+EOF
+else 
+    echo "WARN: No data for cex-thr"
+fi
+
+grep CEX-tasks ${DATA_DIR}/instr.txt | grep -v ERROR | awk '{print $2, $4,$5,$6}' > ${TMP_DIR}/cex-tasks.txt 
+NUM_LINES=`wc -l ${TMP_DIR}/cex-tasks.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -gt 0 ] ; then
+    INDEX=2
+    for NAME in RequestedTasks RunningTasks FinishedTasks ; do
+	cat >> ${TMP_DIR}/plotcex.cmd <<EOF
+set output "${OUTPUT_DIR}/cex/cex_${NAME}.jpg"
+set title "${NAME}"
+plot "${TMP_DIR}/cex-tasks.txt" using 1:${INDEX} notitle with lines
+EOF
+	INDEX=`expr ${INDEX} + 1`
+    done
+else
+    echo "WARN: No data for cex-tasks"
+fi
+
+grep CEX-domain ${DATA_DIR}/instr.txt | grep -v ERROR | awk '{print $2, $4,$5,$6}' > ${TMP_DIR}/cex-domain.txt 
+NUM_LINES=`wc -l ${TMP_DIR}/cex-domain.txt | awk '{print $1}'`
+if [ ${NUM_LINES} -gt 0 ] ; then
+    ${ANALYSIS_BIN}/common/deltaInstr --in ${TMP_DIR}/cex-domain.txt  --out ${TMP_DIR}/cex-domain.txt.delta --cols 1
+    
+    INDEX=2
+    for NAME in ReceivedEvents CreatedObjects DeletedObjects ; do
+	cat >> ${TMP_DIR}/plotcex.cmd <<EOF
+set output "${OUTPUT_DIR}/cex/cex_domain_${NAME}.jpg"
+set title "${NAME}"
+plot "${TMP_DIR}/cex-domain.txt.delta" using 1:${INDEX} notitle with lines
+EOF
+	INDEX=`expr ${INDEX} + 1`
+    done
+else
+    echo "WARN: No data for cex-domain"
+fi
+
+gnuplot ${TMP_DIR}/plotcex.cmd

@@ -1,0 +1,122 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use alarmConsts;;
+
+our @printFieldOrder = (  "c", "h", "f", "i", "g", "type", "d", "j", "k", "l", "o", "m" );
+our @addTextFields = ( "admissionCause", "congestionCause", "DN1", "DN2", "externalAlarm", "faultyUniSaalRef", "nbapCause" );
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($alarmListFile,$alarmTableFile);
+    my $result = GetOptions(
+			    "input=s"    => \$alarmListFile,
+			    "output=s" => \$alarmTableFile,
+			    "debug=s"       => \$DEBUG
+			);
+    ($result == 1) or die("Invalid args");
+
+    my $r_alarmList = readAlarmList($alarmListFile);
+    printAlarmTable($r_alarmList,$alarmTableFile);
+}
+
+sub readAlarmList
+{
+    my ($alarmListFile) = @_;
+
+    my @alarms = ();
+    open ALARM_LIST, $alarmListFile or die "Cannot open $alarmListFile";
+     while ( my $line = <ALARM_LIST> )
+     {
+        if ( $DEBUG > 9 ) { print "readAlarmList: line=$line"; }
+
+ 	if ( $line =~ /^ 1f1 (\S+) x[1-5]$/ )
+ 	{
+ 	    my $r_Alarm = {
+ 		'type' => $1
+ 	    };
+
+	    my $endOfAlarm = 0;
+	    while ( !$endOfAlarm && ($line = <ALARM_LIST>) )
+	    {    
+                 if ( $DEBUG > 9 ) { print "readAlarmList: line=$line"; }
+		 if ( $line =~ /^\s*$/ )
+		 {
+		     $endOfAlarm = 1;
+		 }
+		 else
+		 {
+		     my ($name,$value) = $line =~ /^\s+([A-Za-z]+)=(.*)/;
+                     $value =~ s/^\"?(.*?)\"?$/\1/;
+                     if ( $DEBUG > 8 ) { print "readAlarmList name=$name, value=$value\n"; }
+		     $r_Alarm->{$name} = $value;
+		 }
+	     }
+
+	    foreach my $addTextField ( @addTextFields )
+	    {
+		if ( exists $r_Alarm->{$addTextField} )
+		{
+		    $r_Alarm->{"j"} .= "," . $addTextField . "=" . $r_Alarm->{$addTextField};
+		}
+	    }
+	    
+ 	    push @alarms, $r_Alarm;
+ 	}
+     }  
+     close ALARM_LIST;
+
+    if ( $DEBUG > 5 ) { print Dumper("readAlarmList: alarms", \@alarms); }
+
+    return \@alarms;
+}
+
+sub printAlarmTable
+{
+    my ($r_alarmList, $alarmTableFile) = @_;
+
+    open ALARM_TABLE, ">$alarmTableFile" or die "Cannot open $alarmTableFile";
+    # Print Table Header
+    print ALARM_TABLE " <tr> ";
+    foreach my $name ( @printFieldOrder )
+    {    
+	my $alarmFieldName = $name;
+	if ( exists $alarmConsts::alarmFieldName{$name} )
+	{
+	    $alarmFieldName = $alarmConsts::alarmFieldName{$name};
+	}
+	print ALARM_TABLE "<td><b>", $alarmFieldName, "</b></td> ";
+    }
+    print ALARM_TABLE "</tr>\n";
+
+    # Print Alarms
+    foreach my $r_Alarm ( @{$r_alarmList} )
+    {
+	print ALARM_TABLE " <tr> ";
+	foreach my $name ( @printFieldOrder )
+	{
+	    my $value = $r_Alarm->{$name};
+	    if ( exists $alarmConsts::alarmEnumTable{$name}->{$value} )
+	    {
+		$value = $alarmConsts::alarmEnumTable{$name}->{$value};
+	    }
+	    elsif ( $name eq 'j' )
+	    {
+		if ( $value =~ /\\n/ )
+		{
+		    $value =~ s/\\n/<br>/g;
+		    $value = "<pre>" . $value . "</pre>\n";
+		}
+	    }
+	    print ALARM_TABLE "<td>", $value, "</td> ";
+	}
+	print ALARM_TABLE " </tr>\n";
+    }
+
+    close ALARM_TABLE;
+}

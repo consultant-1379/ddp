@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@generic_jmx_stats">
+
+  <table name="generic_jmx_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>nameid</multi>
+    <metricgroup name="ds_jvm_memory:(\S*)">
+      <metric source="ds_jvm_memory_heap_reserved_bytes" target="hp_committed" scale="1048576"/>
+      <metric source="ds_jvm_memory_heap_used_bytes" target="hp_used" scale="1048576"/>
+      <metric source="ds_jvm_memory_non_heap_reserved_bytes" target="nh_committed" scale="1048576"/>
+      <metric source="ds_jvm_memory_non_heap_used_bytes" target="nh_used" scale="1048576"/>
+      <metric source="ds_jvm_threads_count" target="threadcount"/>
+      <property name="nameid"  xsi:type="multilabelproperty" label="service" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="ds_jvm_garbage_collector:(\S*)">
+      <metric source="ds_jvm_garbage_collector_par_new_time_seconds" target="gc_youngtime" delta="true" scale="0.001"/>
+      <metric source="ds_jvm_garbage_collector_par_new_count" target="gc_youngcount" delta="true"/>
+      <metric source="ds_jvm_garbage_collector_g1_young_generation_time_seconds" target="gc_youngtime" delta="true" scale="0.001"/>
+      <metric source="ds_jvm_garbage_collector_g1_young_generation_count" target="gc_youngcount" delta="true"/>
+      <metric source="ds_jvm_garbage_collector_g1_old_generation_time_seconds" target="gc_oldtime" delta="true" scale="0.001"/>
+      <metric source="ds_jvm_garbage_collector_g1_old_generation_count" target="gc_oldcount" delta="true"/>
+      <property name="nameid"  xsi:type="multilabelproperty" label="service" index="1"/>
+    </metricgroup>
+    <metricgroup name="ds_jvm_garbage_collector_concurrent:(\S*)">
+      <metric source="ds_jvm_garbage_collector_concurrent_mark_sweep_time_seconds" target="gc_oldtime" delta="true" scale="0.001"/>
+      <metric source="ds_jvm_garbage_collector_concurrent_mark_sweep_count" target="gc_oldcount" delta="true"/>
+      <property name="nameid"  xsi:type="multilabelproperty" label="service" index="1"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+ ylabel="MB/Sec"
+>
+<title value="Backup/Restore Jobs Grouped By Policy"/>
+ <queries>
+  <query timecol="endTime" multiseries="ombs_policies.name">
+   <dbtables main="ombs_activity_monitor">
+    <reference table="sites" condition="ombs_activity_monitor.siteid = sites.id"/>
+    <reference table="ombs_policies" condition="ombs_activity_monitor.policyName = ombs_policies.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="throughPut" label="Throughput"/>
+  </query>
+ </queries>
+ <size width="1200" height="400"/>
+</modelledgraph>

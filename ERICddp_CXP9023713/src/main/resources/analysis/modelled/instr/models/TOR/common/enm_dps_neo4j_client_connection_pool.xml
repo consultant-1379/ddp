@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+" sampleinterval="900">
+  <table name="enm_dps_neo4j_client_connection_pool">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.datalayer.dps.neo4j.jca.instrumentation:type=Neo4jClientConnectionPool">
+      <metric source="AcquiredCount" target="acquiredCount" delta="true" filteridle="true"/>
+      <metric source="AcquiringCount" target="acquiringCount" filteridle="true"/>
+      <metric source="ClosedCount" target="closedCount" delta="true" filteridle="true"/>
+      <metric source="CreatedCount" target="createdCount" delta="true" filteridle="true"/>
+      <metric source="FailedToCreateCount" target="failedToCreateCount" delta="true" filteridle="true"/>
+      <metric source="IdleCount" target="idleCount" filteridle="true"/>
+      <metric source="InUseCount" target="inUseCount" filteridle="true"/>
+      <metric source="TimedOutToAcquireCount" target="timedOutToAcquireCount" delta="true" filteridle="true"/>
+      <metric source="TotalAcquisitionTime" target="totalAcquisitionTime" delta="true" filteridle="true"/>
+      <metric source="TotalConnectionTime" target="totalConnectionTime" delta="true" filteridle="true"/>
+      <metric source="TotalInUseCount" target="totalInUseCount" delta="true" filteridle="true"/>
+      <metric source="TotalInUseTime" target="totalInUseTime" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

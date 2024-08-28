@@ -1,0 +1,24 @@
+{
+    "tables": [
+        { "table": "enm_cm_syncs" },
+        { "table": "enm_ne" },
+        { "table": "sites" },
+        { "table": "servers" },
+        { "table": "enm_ecim_syncs" },
+        { "table": "cm_export" },
+        { "table": "cm_import" },
+        { "table": "enm_mscmip_syncs_stats" },
+        { "table": "enm_minilink_cmsync" },
+        { "table": "enm_shmcoreserv_details_logs" },
+        { "table": "tor_ver" },
+        { "table": "tor_ver_names" },
+        { "table": "operators" },
+        { "table": "enm_profilelog_utilversion" },
+        { "table": "pm_errors" }
+    ],
+    "email": [
+        "conor.murphy@ericsson.com",
+        "pearce.byrne-colgan@ericsson.com"
+    ]
+}
+

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="nginx_requests">
+    <reference table="sites" condition="nginx_requests.siteid = sites.id"/>
+    <reference table="k8s_pod_app_names" condition="nginx_requests.appid = k8s_pod_app_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND nginx_requests.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="k8s_pod_app_names.name"/>
+    <column db="nginx_requests.statusCode"/>
+  </groupby>
+
+  <column db="CONCAT(k8s_pod_app_names.id,'@',nginx_requests.statusCode)" label="Instance" id="id" visible="false"/>
+  <column db="k8s_pod_app_names.name" label="App Name"/>
+  <column db="statusCode" label="Status Code"/>
+  <column db="SUM(numRequests)" label="Requests"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="true">
+    <item id="appname" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

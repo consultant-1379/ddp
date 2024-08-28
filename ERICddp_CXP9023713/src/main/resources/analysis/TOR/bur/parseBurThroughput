@@ -1,0 +1,239 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseBurThroughput
+# Author  : Maheedhar Reddy Rachamalla (xmahrac)
+# Purpose : The purpose of this script is to parse the throughput details of all the backups (BUR)
+#           for the given day and store them under database.
+# Usage   : ${ANALYSIS_BIN}/TOR/bur/parseBurThroughput --throughput_file ${BACKUP_THROUGHPUT_FILE} --server ${HOSTNAME} --site ${SITE} --date ${SQL_DATE}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use DateTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+
+# The 'start_time' and 'end_time' under the throughput file are reported in the format of
+# 'hh:mm:ss' without any date. The below subroutine will tag the given 'start_time' or
+# 'end_time' with its date and return the complete timestamp i.e., 'YYYY-MM-DD hh:mm:ss'
+sub getFullDateTime($$$$) {
+    my ( $time, $reportEndTime, $backupDate, $reportEndDate ) = @_;
+
+    my $dateTime = $reportEndDate . ' ' . $time;;
+    if ( $backupDate ne $reportEndDate ) {
+        my ( $thh, $tmm, $tss ) = $time =~ /^(\d{2}):(\d{2}):(\d{2})$/;
+        my $timeSecs = ($thh * 3600) + ($tmm * 60) + $tss;
+
+        my ( $rhh, $rmm, $rss ) = $reportEndTime =~ /^(\d{2}):(\d{2}):(\d{2})$/;
+        my $reportEndTimeSecs = ($rhh * 3600) + ($rmm * 60) + $rss;
+
+        # Make sure that the backup event really spanned across the midnight and rule out
+        # any DST changes
+        if ( $timeSecs > $reportEndTimeSecs && ($timeSecs - $reportEndTimeSecs) > 3600 ) {
+            my ( $yyyy, $mm, $dd ) = $reportEndDate =~ /^(\d{4})-(\d{2})-(\d{2})$/;
+
+            my $reportEndDateDt = DateTime->new(
+                year  => $yyyy,
+                month => $mm,
+                day   => $dd,
+            );
+
+            my $previousDateDt = $reportEndDateDt->subtract(days => 1);
+            $dateTime = $previousDateDt->ymd() . ' ' . $time;
+        }
+    }
+
+    return $dateTime;
+}
+
+sub parseThroughputData($$) {
+    my ( $throughputFile, $date ) = @_;
+
+    my $throughputJson = '';
+    open(IF1, $throughputFile) or die "Cannot open $throughputFile";
+    while (<IF1>) {
+        $throughputJson .= $_;
+    }
+
+    my $throughputRef = decode_json($throughputJson);
+    if ( $DEBUG > 9 ) { print Dumper("parseThroughputData: Decoded Throughput JSON ", $throughputRef); }
+
+    my $backupDate = '';
+    my $backupKeyword = '';
+    if ( exists $throughputRef->{'keyword'} ) {
+        $backupKeyword = $throughputRef->{'keyword'};
+    }
+
+    if ( $backupKeyword =~ /^.*_(\d{4})(\d{2})(\d{2}).*$/ ) {
+        $backupDate = $1 . '-' . $2 . '-' . $3;
+    }
+    else {
+        die "Exiting as the script is unable to get the backup date from the backup keyword";
+    }
+    if ( $DEBUG > 5 ) { print "parseThroughputData: backupKeyword = $backupKeyword , backupDate = $backupDate\n"; }
+
+    my $reportEndTime = '';
+    my $reportEndDate = '';
+    if ( exists $throughputRef->{'date'} ) {
+        my ( $yyyymmdd, $hhmmss ) = $throughputRef->{'date'} =~ /^(\d{4}-\d{2}-\d{2}).*(\d{2}:\d{2}:\d{2})/;
+        $reportEndTime = $hhmmss;
+        $reportEndDate = $yyyymmdd;
+    }
+    else {
+        $reportEndTime = $date . ' 23:59:59';
+    }
+    if ( $DEBUG > 5 ) { print "parseThroughputData: reportEndTime = $reportEndTime\n"; }
+
+    my @throughputStats = ();
+    if ( exists $throughputRef->{'fss'} ) {
+        foreach my $fsThroughputStats ( @{$throughputRef->{'fss'}} ) {
+            my %thruputStats = (
+                'start_time'           => '\N',
+                'end_time'             => '\N',
+                'throughput'           => '\N',
+                'backup_mount_point'   => '',
+                'filesystem'           => '',
+                'filesystem_used_size' => '\N',
+                'filesystem_size'      => '\N'
+            );
+
+            if ( exists $fsThroughputStats->{'start_time'} && $fsThroughputStats->{'start_time'} =~ /(\d{2}:\d{2}:\d{2})/ ) {
+                $thruputStats{'start_time'} = getFullDateTime($1, $reportEndTime, $backupDate, $reportEndDate);
+            }
+
+            if ( exists $fsThroughputStats->{'end_time'} && $fsThroughputStats->{'end_time'} =~ /(\d{2}:\d{2}:\d{2})/ ) {
+                $thruputStats{'end_time'} = getFullDateTime($1, $reportEndTime, $backupDate, $reportEndDate);
+            }
+
+            if ( exists $fsThroughputStats->{'throughput'} ) {
+                $thruputStats{'throughput'} = $fsThroughputStats->{'throughput'};
+            }
+
+            if ( exists $fsThroughputStats->{'backup_mount_point'} ) {
+                $thruputStats{'backup_mount_point'} = $fsThroughputStats->{'backup_mount_point'};
+            }
+
+            if ( exists $fsThroughputStats->{'filesystem'} ) {
+                $thruputStats{'filesystem'} = $fsThroughputStats->{'filesystem'};
+            }
+
+            if ( exists $fsThroughputStats->{'filesystem_used_size'} ) {
+                $thruputStats{'filesystem_used_size'} = $fsThroughputStats->{'filesystem_used_size'};
+            }
+
+            if ( exists $fsThroughputStats->{'filesystem_size'} ) {
+                $thruputStats{'filesystem_size'} = $fsThroughputStats->{'filesystem_size'};
+            }
+
+            push(@throughputStats, \%thruputStats);
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseThroughputData: throughputStats ", \@throughputStats); }
+
+    return (\@throughputStats, $backupKeyword, $backupDate);
+}
+
+
+# Store the throughput data under the database
+sub storeThroughputData($$$$$) {
+    my ( $throughputStats, $backupKeyword, $backupDate, $site, $server ) = @_;
+
+    if ( scalar @{$throughputStats} == 0 ) {
+        return;
+    }
+
+    # Establish DB connection
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    # Get the site ID
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    # Get server ID map
+    my $serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId);
+    if ( $DEBUG > 9 ) { print Dumper("storeThroughputData: serverIdMap ", $serverIdMap); }
+
+    # Get ID maps for backup keyword, mountpoints and filesystems
+    my @backupKeywords = ($backupKeyword);
+    my @backupMountpoints = ();
+    my @backupFilesystems = ();
+    foreach my $fsThroughputStats (@{$throughputStats}) {
+        push(@backupMountpoints, $fsThroughputStats->{'backup_mount_point'});
+        push(@backupFilesystems, $fsThroughputStats->{'filesystem'});
+    }
+    my $keywordIdMap = getIdMap($dbh, 'enm_bur_backup_keywords', 'id', 'backup_keyword', \@backupKeywords);
+    my $mountpointIdMap = getIdMap($dbh, 'enm_bur_backup_mount_points', 'id', 'backup_mount_point', \@backupMountpoints);
+    my $filesystemIdMap = getIdMap($dbh, 'enm_bur_filesystems', 'id', 'fs_name', \@backupFilesystems);
+
+    if ( $DEBUG > 9 ) { print Dumper("storeThroughputData: keywordIdMap ", $keywordIdMap); }
+    if ( $DEBUG > 9 ) { print Dumper("storeThroughputData: mountpointIdMap ", $mountpointIdMap); }
+    if ( $DEBUG > 9 ) { print Dumper("storeThroughputData: filesystemIdMap ", $filesystemIdMap); }
+
+    # Write the throughput stats to 'enm_bur_backup_throughput_stats.bcp' file
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFile = "$tmpDir/enm_bur_backup_throughput_stats.bcp";
+    open (BCP, "> $bcpFile");
+
+    foreach my $fsThroughputStats (@{$throughputStats}) {
+        print BCP "$siteId\t$backupDate\t" . $keywordIdMap->{$backupKeyword} . "\t" .
+                  $serverIdMap->{$server} . "\t" . $fsThroughputStats->{'start_time'} . "\t" .
+                  $fsThroughputStats->{'end_time'} . "\t" . $fsThroughputStats->{'throughput'} . "\t" .
+                  $mountpointIdMap->{$fsThroughputStats->{'backup_mount_point'}} . "\t" .
+                  $filesystemIdMap->{$fsThroughputStats->{'filesystem'}} . "\t" .
+                  $fsThroughputStats->{'filesystem_used_size'} . "\t" .
+                  $fsThroughputStats->{'filesystem_size'} . "\n"
+    }
+    close BCP;
+
+    # Delete the old throughput stats from 'enm_bur_backup_throughput_stats' table for
+    # the given site, date and backup
+    dbDo( $dbh, sprintf("DELETE FROM enm_bur_backup_throughput_stats WHERE siteid = %d AND date = '%s' AND backup_keyword_id = %d
+                        AND serverid = %d", $siteId, $backupDate, $keywordIdMap->{$backupKeyword}, $serverIdMap->{$server}) )
+        or die "Failed to remove old data from 'enm_bur_backup_throughput_stats' table";
+
+    # Populate the 'enm_bur_backup_throughput_stats' table with the new throughput stats
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE enm_bur_backup_throughput_stats" )
+        or die "Failed to load new data from '$bcpFile' file to 'enm_bur_backup_throughput_stats' table";
+
+    $dbh->disconnect();
+    unlink($bcpFile);
+}
+
+
+sub main {
+    my $site;
+    my $date;
+    my $server;
+    my $throughputFile;
+
+    my $result = GetOptions (
+                             "site=s"            => \$site,
+                             "date=s"            => \$date,
+                             "server=s"          => \$server,
+                             "throughput_file=s" => \$throughputFile,
+                             "debug=s"           => \$DEBUG
+                             );
+    die "Invalid args"  if ( $result != 1 );
+
+    if ( -r $throughputFile ) {
+        my ( $throughputStats, $backupKeyword, $backupDate ) = parseThroughputData($throughputFile, $date);
+        storeThroughputData($throughputStats, $backupKeyword, $backupDate, $site, $server);
+    }
+    else {
+        if ( $DEBUG > 2 ) { print "main: No $throughputFile file exists\n"; }
+    }
+}
+
+main();

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_trs_relreq"/>
+
+  <services>
+      <service name="cmutilities"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <events>
+      <!-- Relationship_Request {"Nodes_Types":"RadioNode = 20 5GRadioNode = 8 ERB
+S = 10 ","Request_ID":"svc-2-cmutilities_6b6fa899-ffaf-4602-8cec-37f522102aa5","Application_ID":"network-viewer-logical","Relation_Types":["X2_eNB-gNB"],"Resp
+onse_Time":15632,"POIDs_Count":38,"_Thread":"ajp-executor-threads - 12","Relations_Found":"X2_eNB-gNB = 7 "} -->
+      <event name="Relationship_Request">
+        <metric source="POIDs_Count" target="n_poid"/>
+        <metric source="Response_Time" target="t_response"/>
+        <metric source="Relation_Types" target="reltypes" convert="tostring"/>
+        <metric source="Nodes_Types" target="nodetypes"/>
+        <metric source="Application_ID" target="app"/>
+        <metric source="Relations_Found" target="relfound"/>
+      </event>
+
+  </events>
+</modelledevents>
+

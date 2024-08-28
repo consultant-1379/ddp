@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+  forcelegend="true"
+  ylabel="milliSec"
+>
+  <title value="Batch Duration(msec)"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_asr_batch">
+        <reference table="sites" condition="enm_asr_batch.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="batchProcTime" label="Duration"/>
+      <column db="schDelay" label="Delay"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

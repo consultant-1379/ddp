@@ -1,0 +1,56 @@
+<?xml version='1.0'?>
+<report>
+  <ruleinst>
+    <rulename>cpuHealth</rulename>
+    <threshold name='avgcpu' value="70"/>
+    <threshold name='maxcpu' value="99" warn="98"/>
+    <threshold name='avgiowait' value="25"/>
+    <threshold name='maxiowait' value="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuLoad</rulename>
+    <parameter name='MAX_CPU' value="90"/>
+    <parameter name='COUNT_PER_INTERVAL' value="5"/>
+    <threshold name='intervalCount' value="10" warn="3"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>diskPerformance</rulename>
+    <threshold name='maxbusy' value="100" warn="95"/>
+    <threshold name='avgbusy' value="85" warn="40"/>
+    <threshold name='avgserv' value="15" warn="5"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>diskUsageSustained</rulename>
+    <parameter name='BUSY' value="80"/>
+    <parameter name='COUNT' value="5"/>
+    <threshold name='intervalCount' value="16" warn="4"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>diskServiceTimeSustained</rulename>
+    <parameter name='AVSERV' value="5"/>
+    <parameter name='COUNT' value="5"/>
+    <parameter name='BLKS' value="100"/>
+    <threshold name='intervalCount' value="16" warn="4"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>nicInterfaceUsagePhyiscal</rulename>
+    <ruledef>nicInterfaceUsage</ruledef>
+    <desc>NIC Interface Usage Physical Hosts</desc>
+    <filter operation="and">
+      <condition name="servertype" value="OTHER" type="like"/>
+    </filter>
+    <threshold name='inavg' value="600" warn="500"/>
+    <threshold name='outavg' value="600" warn="500"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>containerLivenessReadiness</rulename>
+    <threshold name='severityLevel' value="2" warn="1"/>
+  </ruleinst>
+
+</report>

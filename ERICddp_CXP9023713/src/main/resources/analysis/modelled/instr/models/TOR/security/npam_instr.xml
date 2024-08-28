@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="securityservice"/>
+    <service name="security"/>
+    <service name="userandsecurity"/>
+  </services>
+
+  <table name="enm_npam_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.security.npam.ejb.instrumentation.npamservice:type=InstrumentationBean$">
+      <metric source="enableRemoteManagementEventsReceived" target="enableRemoteManagementEventsReceived" delta="true" filteridle="true"/>
+      <metric source="disableRemoteManagementEventsReceived" target="disableRemoteManagementEventsReceived" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

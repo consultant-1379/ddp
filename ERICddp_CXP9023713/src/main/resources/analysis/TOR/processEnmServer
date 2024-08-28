@@ -1,0 +1,202 @@
+#!/bin/bash
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+while getopts s:d:i:o:t:u:r: OPT ; do
+    case $OPT in
+        s) SITE="${OPTARG}" ;;
+        d) DASH_DATE="${OPTARG}" ;;
+        i) DATADIR="${OPTARG}" ;;
+        o) ANALYSIS_OUTPUT="${OPTARG}" ;;
+        t) ANALYSIS_TYPE="${OPTARG}" ;;
+        u) UTC_OFFSET="${OPTARG}" ;;
+        r) SERVER="${OPTARG}" ;;
+    esac
+done
+
+if [ -z "${TMP_DIR}" ] ; then
+    export TMP_DIR=/data/tmp
+fi
+
+if [ -z "${INCR_DIR}" ] ; then
+    export INCR_DIR=${TMP_DIR}/incr
+fi
+
+# Created deciated directories for each server (to allow us run in parallel)
+# We're going to change TMP_DIR so save the location of the vm_svc.out file first
+VM_SVC_FILE=${TMP_DIR}/vm_svc.out
+export TMP_DIR=${TMP_DIR}/${SERVER}
+if [ ! -d ${TMP_DIR} ] ; then
+    mkdir ${TMP_DIR}
+    # Make sure MySQL can read from the TMP_DIR
+    chmod 777 ${TMP_DIR}
+fi
+export INCR_DIR=${INCR_DIR}/${SERVER}
+if [ ! -d ${INCR_DIR} ] ; then
+    mkdir ${INCR_DIR}
+fi
+
+DATE=$(echo "${DASH_DATE}" | sed 's/-//g')
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+
+# If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+REMOTEHOSTNAME=$(echo ${SERVER} | sed 's/_TOR$//')
+HOST_DIR=${DATADIR}/tor_servers/${SERVER}/${DATE}
+MATCHED_TYPE=OTHER
+if [ -d ${HOST_DIR} ] ; then
+    # process this server
+    if [ -f ${HOST_DIR}/TOR/tor_server_type ] ; then
+        TYPE=$(cat ${HOST_DIR}/TOR/tor_server_type)
+        case ${TYPE} in
+            #"management_server") MATCHED_TYPE="TOR_MANAGEMENT_SERVER" ;;
+            "service_controller") MATCHED_TYPE="TOR_SERVICE_CONTROLLER" ;;
+            "payload") MATCHED_TYPE="TOR_PAYLOAD" ;;
+            "tor") MATCHED_TYPE="TOR" ;;
+            "monitoring") MATCHED_TYPE="MONITORING" ;;
+        "virtual_machine") MATCHED_TYPE="ENM_VM" ;;
+            ENM_*) MATCHED_TYPE="${TYPE}" ;;
+        esac
+    fi
+fi
+
+SVC_NAME=$(cat ${VM_SVC_FILE} | awk -v srv="${REMOTEHOSTNAME}" '{ if ($1 == srv) { print $2 } }')
+log "Service ${SVC_NAME}"
+
+TYPE=${MATCHED_TYPE}
+log "Analysing ${SERVER} - type ${TYPE}"
+NFSD_ARG=""
+if [ "${SVC_NAME}" = "nfs" ] ; then
+    NFSD_ARG="-n"
+fi
+run ${ANALYSIS_BIN}/server/analyseServer -i ${HOST_DIR}/server -o ${ANALYSIS_OUTPUT}/servers \
+    -s ${SITE} -d ${SQL_DATE} -t ${TYPE} -a ${DATADIR} -m ${ANALYSIS_TYPE} ${NFSD_ARG}
+
+
+if [ -d ${HOST_DIR}/instr ] && [ -s ${HOST_DIR}/instr.txt ] ; then
+    SERVICE_ARG=""
+    #
+    # phyiscal hosts can have multiple services, so only set the
+    # service arg if we're in a VM and have a value for SVC_NAME
+    #
+    if [ "${TYPE}" = "ENM_VM" ] && [ ! -z "${SVC_NAME}" ] ; then
+        JBOSS_SG=""
+        if [ -s ${HOST_DIR}/TOR/jboss_sg.txt ] ; then
+            JBOSS_SG=$(cat ${HOST_DIR}/TOR/jboss_sg.txt)
+        fi
+        # In some cases (xSmall), there may be multiple SG RPMs
+        SERVICE_ARG=""
+        for ONE in ${SVC_NAME} ; do
+            # We want to make sure that the SG that
+            # owns the standalone-enm.xml is first in the list
+            # of services
+            if [ "${ONE}" = "${JBOSS_SG}" ] ; then
+                SERVICE_ARG="--service ${ONE} ${SERVICE_ARG}"
+            else
+                SERVICE_ARG="${SERVICE_ARG} --service ${ONE}"
+            fi
+        done
+    fi
+
+    run ${ANALYSIS_BIN}/modelled/instr/parseModeledInstr --model ${ANALYSIS_BIN}/modelled/instr/models \
+        --cfg ${HOST_DIR}/instr --data ${HOST_DIR}/instr.txt --incr ${INCR_DIR}/parseModeledInstr \
+        --site ${SITE} --server ${REMOTEHOSTNAME} ${SERVICE_ARG} --date ${SQL_DATE}
+fi
+
+if [ -f ${HOST_DIR}/TOR/pmstreaming/metrics.csv ] ; then
+    log "Streaming metrics"
+    run ${ANALYSIS_BIN}/TOR/streaming/parseMetricsCsv --file ${HOST_DIR}/TOR/pmstreaming/metrics.csv --site ${SITE} --host ${REMOTEHOSTNAME} --date ${DASH_DATE} --incr ${INCR_DIR}/streaming.${REMOTEHOSTNAME}
+fi
+
+if [ -d ${HOST_DIR}/plugin_data/CSLFileOutputAdaptor ] ; then
+    log "Analysing CSL data"
+    CSL_FILES=$(find ${HOST_DIR}/plugin_data/CSLFileOutputAdaptor/ -type f -name 'FOA_*.log')
+    for file in $CSL_FILES ; do
+        run ${ANALYSIS_BIN}/TOR/csl/parseCslInstr --logfile ${file} --schema ${ANALYSIS_BIN}/TOR/Schema/cslSchema.xml --site ${SITE} --server ${REMOTEHOSTNAME} --date ${SQL_DATE}
+    done
+fi
+
+for STATS in elasticsearch eshistory ; do
+    if [ -r ${HOST_DIR}/TOR/${STATS}.stats ] ; then
+        run ${ANALYSIS_BIN}/TOR/elasticsearch/parseStats --site ${SITE} --log ${HOST_DIR}/TOR/${STATS}.stats --type ${STATS}
+    fi
+done
+
+if [ "${ANALYSIS_TYPE}" = "FULL" ] ; then
+     if [ -r ${HOST_DIR}/TOR/solr_cores_status.xml ] && [ "${SVC_NAME}" = "solr" ] ; then
+        run ${ANALYSIS_BIN}/TOR/common/parseSolrCoresStatus --data ${HOST_DIR}/TOR/solr_cores_status.xml --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    if [ -r ${HOST_DIR}/TOR/jgroup_udp.stats ] ; then
+        log "JGroups UDP Stats"
+        run ${ANALYSIS_BIN}/TOR/cluster/parseJGroupStats --udplog ${HOST_DIR}/TOR/jgroup_udp.stats --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Old location for postgres stats, has been moved to clustered_data dir
+    if [ -r ${HOST_DIR}/TOR/postgres.pg_stat_database ] ; then
+        log "Postgres Stats"
+        run ${ANALYSIS_BIN}/TOR/postgres/parseStats --dir ${HOST_DIR}/TOR --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    POSTGRES_INPUT_DIR=${DATADIR}/TOR/clustered_data/postgres
+    if [ "${MATCHED_TYPE}" = "MONITORING" ] && [ -s ${POSTGRES_INPUT_DIR}/esmon_postgres.pg_stat_database ] ; then
+        log "Esmon Postgres Stats"
+        run ${ANALYSIS_BIN}/TOR/postgres/parseStats --dbfileinput ${POSTGRES_INPUT_DIR}/esmon_postgres.pg_stat_database --site ${SITE} --date ${SQL_DATE} --server ${REMOTEHOSTNAME}
+    fi
+
+    if [ -d ${HOST_DIR}/TOR/lvs ] && [ -r ${DATADIR}/TOR/global.properties ] ; then
+        log "LVS Stats"
+        run ${ANALYSIS_BIN}/TOR/common/parseLVS --dir ${HOST_DIR}/TOR/lvs --props ${DATADIR}/TOR/global.properties --server ${REMOTEHOSTNAME} --site ${SITE}
+    fi
+
+    if [ -s ${HOST_DIR}/TOR/sut.log ] ; then
+        log "Parsing sut.logs for ${REMOTEHOSTNAME}"
+        run ${ANALYSIS_BIN}/TOR/parseSutLogs --logFile ${HOST_DIR}/TOR/sut.log --server ${REMOTEHOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    if [ -r ${HOST_DIR}/TOR/OpenDJLDAPMonitor.log ] ; then
+        log "OpenDJ Stats"
+        run ${ANALYSIS_BIN}/openldap/parseOpenDJLDAPMonitorInfo --monfile ${HOST_DIR}/TOR/OpenDJLDAPMonitor.log --server ${REMOTEHOSTNAME} --site ${SITE} --date ${DASH_DATE}
+    fi
+
+    if [ -r ${HOST_DIR}/TOR/sessions_hostname.log ] ; then
+        log "Amos Sessions for ${REMOTEHOSTNAME}"
+        run ${ANALYSIS_BIN}/TOR/amos/parseSessionsLogs --sessions ${HOST_DIR}/TOR/sessions_hostname.log --server ${REMOTEHOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Process Backup (BUR) data
+    BACKUP_THROUGHPUT_FILE="${HOST_DIR}/bur/measurement_backup_FilesystemThroughput.data"
+    if [ -r ${BACKUP_THROUGHPUT_FILE} ] ; then
+        log "Parsing throughput details for ${REMOTEHOSTNAME}"
+        run ${ANALYSIS_BIN}/TOR/bur/parseBurThroughput --throughput_file ${BACKUP_THROUGHPUT_FILE}  --server ${REMOTEHOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Process Restore (BUR) data
+    RESTORE_THROUGHPUT_FILE="${HOST_DIR}/bur/measurement_restore_FilesystemThroughput.data"
+    if [ -r ${RESTORE_THROUGHPUT_FILE} ] ; then
+        log "Parsing throughput details for ${REMOTEHOSTNAME}"
+        run ${ANALYSIS_BIN}/TOR/bur/parseRestoreThroughput --throughput_file ${RESTORE_THROUGHPUT_FILE}  --server ${REMOTEHOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Process JBOSS subsystem logging levels
+    SUBSYS_LOGGING_LEVEL_FILE="${HOST_DIR}/TOR/jboss/logging_standalone.properties"
+    if [ -r "${SUBSYS_LOGGING_LEVEL_FILE}" ] ; then
+        run ${ANALYSIS_BIN}/TOR/common/parseJbossLoggingLevels --logfile ${SUBSYS_LOGGING_LEVEL_FILE} --site ${SITE} --server ${REMOTEHOSTNAME}
+    fi
+
+    SMRS_SFTP_LOG=${HOST_DIR}/TOR/smrs/sftpps.log
+    if [ -s ${SMRS_SFTP_LOG} ] ; then
+        run ${ANALYSIS_BIN}/TOR/smrsserv/parseSmrsLog --sftp_file ${SMRS_SFTP_LOG} --server ${REMOTEHOSTNAME} --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    # Handle where on of the VMs (e.g. the vms in VIO) collected the ilo logs
+    if [ -d ${HOST_DIR}/ilo ] && [ ! -d ${DATADIR}/ilo ] ; then
+        mv ${HOST_DIR}/ilo ${DATADIR}
+    fi
+
+fi

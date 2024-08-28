@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="asrlforwarderdef"/>
+    <service name="esnforwarderdecodeddef"/>
+  </services>
+
+  <table name="enm_str_fwd">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="jvmid" reftable="enm_str_jvm_names" refnamecol="jvm_name"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.fwdr\d*:name=StreamingOutputAdapter@eventsReceived$">
+      <metric source="Count" target="eventsOut" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^(%1%)-com.ericsson.component.aia.services.eps.core.statistics.fwdr\d*:name=GenericEventListener@eventsReceived$">
+      <metric source="Count" target="eventsIn" delta="true" filteridle="true"/>
+      <property name="jvmid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.fwdr:name=StreamingOutputAdapter@eventsReceived_ASRN$">
+      <metric source="Count" target="eventsOut_asrn" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.fwdr:name=GenericEventListener@eventsReceived_ASRN$">
+      <metric source="Count" target="eventsIn_asrn" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>
+

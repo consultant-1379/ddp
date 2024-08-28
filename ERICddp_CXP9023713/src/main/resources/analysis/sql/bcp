@@ -1,0 +1,26 @@
+#!/bin/sh
+
+if [ -z "${STATS_DB}" ] ; then
+    STATS_DB=statsdb
+fi
+
+if [ -x /opt/mysql/mysql/bin/mysqlimport ] ; then
+    MYSQLIMPORT=/opt/mysql/mysql/bin/mysqlimport
+elif [ -x /usr/bin/mysqlimport ] ; then
+    MYSQLIMPORT=/usr/bin/mysqlimport
+fi
+
+FILE=$1
+
+SOCK=""
+if [ -r /tmp/prochost.sock ] ; then
+    SOCK="-S /tmp/prochost.sock"
+fi
+
+if [ -r /opt/mysql/mysql/bin/mysql_config_editor ] ; then
+    PASSWORD_OPT=""
+else
+    PASSWORD_OPT="--password=_sadm"
+fi
+
+${MYSQLIMPORT} ${SOCK} --fields-terminated-by=, --user=statsadm ${PASSWORD_OPT} ${STATS_DB} ${FILE}

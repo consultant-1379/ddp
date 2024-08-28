@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmsnmp_nodestatus">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="mssnmpfm"/>
+  </services>
+<!--NodeStatusChange {"PrevStatus":"UNKNOWN","NodeIpAddress":"10.138.10.105","Node":"LTE17dg2ERBS00009","HbEventSent":false,"NodeEngineId":"800000c1010a8a0a69","NewStatus":"IN_SERVICE","SyncReqSent":false,"_Thread":"Camel (camel-1) thread #1 - JmsConsumer[NetworkElementFmNotifications_1]"}-->
+  <events>
+      <event name="NodeStatusChange">
+        <metric source="host" target="serverid"/>
+        <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+        <metric source="NodeEngineId" target="nodeEngineId"/>
+        <metric source="PrevStatus" target="prevStatus"/>
+        <metric source="NewStatus" target="newStatus"/>
+        <metric source="HbEventSent" target="hbEventSent"/>
+        <metric source="SyncReqSent" target="syncReqSent"/>
+      </event>
+  </events>
+</modelledevents>

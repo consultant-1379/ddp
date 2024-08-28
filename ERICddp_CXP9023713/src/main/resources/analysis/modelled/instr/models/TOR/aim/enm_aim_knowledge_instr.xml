@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="imknowledgebaseservice"/>
+  </services>
+
+  <table name="enm_aim_knowledge_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.knowledgebase.instrumentation.incident-management-knowledge-base-service:type=KnowledgeBaseInstrumentationBean$">
+          <metric source="totalCombinedDimensionKeysCreated" target="totalCombinedDimensionKeysCreated" delta="true" filteridle="true"/>
+          <metric source="totalElementsReceivedToProcess" target="totalElementsReceivedToProcess" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.knowledgebase.instrumentation.incident-management-knowledge-base-service:type=KnowledgeBaseCacheInstrumentationBean$">
+          <metric source="singleDimensionKeysSize" target="singleDimensionKeysSize"/>
+          <metric source="combinedDimensionKeysSize" target="combinedDimensionKeysSize"/>
+          <metric source="totalCombinedDimensionKeysRemovedFromMemory" target="totalCombinedDimensionKeysRemovedFromMemory" delta="true" filteridle="true"/>
+          <metric source="totalEvictedKeysFromSingleDimensionKeys" target="totalEvictedKeysFromSingleDimensionKeys" delta="true" filteridle="true"/>
+          <metric source="totalTimeReadingCombinedDimensionKeys" target="totalTimeReadingCombinedDimensionKeys" delta="true" filteridle="true"/>
+          <metric source="totalTimeReadingSingleDimensionKeys" target="totalTimeReadingSingleDimensionKeys" delta="true" filteridle="true"/>
+          <metric source="totalTimeSavingCombinedDimensionKeys" target="totalTimeSavingCombinedDimensionKeys" delta="true" filteridle="true"/>
+          <metric source="totalTimeSavingSingleDimensionKeys" target="totalTimeSavingSingleDimensionKeys" delta="true" filteridle="true"/>
+          <metric source="totalCallsToStorageWhenCacheIsUsed" target="totalCallsToStorageWhenCacheIsUsed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.knowledgebase.instrumentation.incident-management-knowledge-base-service:type=KnowledgeBaseCacheServiceInstrumentationBean$">
+          <metric source="totalRequestsToGetCombinedDimensionKeysInBatch" target="totalRequestsToGetCombinedDimensionKeysInBatch" delta="true" filteridle="true"/>
+          <metric source="totalTimeToGetSingleDimensionKeysInBatch" target="totalTimeToGetSingleDimensionKeysInBatch" delta="true" filteridle="true"/>
+          <metric source="totalRequestToGetOneCombinedDimensionKey" target="totalRequestToGetOneCombinedDimensionKey" delta="true" filteridle="true"/>
+          <metric source="totalRequestsToGetSingleDimensionKeysInBatch" target="totalRequestsToGetSingleDimensionKeysInBatch" delta="true" filteridle="true"/>
+          <metric source="totalRequestToGetOneSingleDimensionKey" target="totalRequestToGetOneSingleDimensionKey" delta="true" filteridle="true"/>
+          <metric source="totalTimeToGetCombinedDimensionKeysInBatch" target="totalTimeToGetCombinedDimensionKeysInBatch" delta="true" filteridle="true"/>
+          <metric source="totalTimeToGetOneCombinedDimensionKey" target="totalTimeToGetOneCombinedDimensionKey" delta="true" filteridle="true"/>
+          <metric source="totalTimeToGetOneSingleDimensionKey" target="totalTimeToGetOneSingleDimensionKey" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

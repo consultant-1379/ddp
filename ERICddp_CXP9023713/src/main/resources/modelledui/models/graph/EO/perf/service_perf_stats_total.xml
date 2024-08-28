@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+>
+ <title value="Total Duration (msec)"/>
+ <queries>
+  <query timecol="time" multiseries="eo_perf_service_names.name">
+  <dbtables main="eo_perf_service_stats">
+   <reference table="sites" condition="eo_perf_service_stats.siteid = sites.id"/>
+   <reference table="eo_perf_service_names" condition="eo_perf_service_stats.serviceid = eo_perf_service_names.id"/>
+  </dbtables>
+
+   <param name="site"/>
+   <param name="serviceids"/>
+   <where>sites.name = '%s' AND eo_perf_service_names.id IN ( %s )</where>
+   <column db="eo_perf_service_stats.total" label="Total Duration (msec)"/>
+  </query>
+ </queries>
+ <size width="600" height="240"/>
+</modelledgraph>

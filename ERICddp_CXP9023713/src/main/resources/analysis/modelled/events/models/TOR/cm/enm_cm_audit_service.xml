@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cm_audit_service">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="cellserv"/>
+  </services>
+
+  <events>
+    <!--CM_AUDIT.CELL_CONSISTENCY {\"Status\":\"EXECUTED\",\"NumberCellsAudited\":150,\"NumberCorrectiveOperations\":8339,\"ExecutionTime\":434828,\"_Thread\":\"Batch Thread - 6\",\"JobId\":148}"-->
+    <event name="CM_AUDIT.CELL_CONSISTENCY">
+      <metric source="host" target="serverid"/>
+      <metric source="Status" target="status"/>
+      <metric source="JobId" target="jobId"/>
+      <metric source="NumberCellsAudited" target="numberCellsAudited"/>
+      <metric source="NumberCorrectiveOperations" target="numberCorrectiveOperations"/>
+      <metric source="ExecutionTime" target="duration"/>
+    </event>
+  </events>
+</modelledevents>

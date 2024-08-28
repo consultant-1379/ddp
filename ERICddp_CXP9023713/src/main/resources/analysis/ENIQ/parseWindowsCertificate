@@ -1,0 +1,113 @@
+#!/usr/bin/perl
+
+###################################################################################################################################################
+# Description ---------   parseWindowsCertificate --------------------
+# This script parses the Certificate information of BIS/Netan/OCS and stores data to DB for DDP
+# @author - SUNIL YADAV (xsunyad)
+# usage parseWindowsCertificate --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+
+###############################################################
+# Globals
+###############################################################
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dbh, $site, $siteId, $server, $serverId, $logFile, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my ($r_certificateParsedData, $r_certificateNameList, $r_certificatePurposeList) = parseData($logFile);
+    my $certificateNameIdMap = getIdMap($dbh, "eniq_windows_certi_name_id_mapping", "id", "certificateName", $r_certificateNameList);
+    my $certificatePurposeIdMap = getIdMap($dbh, "eniq_windows_certi_purpose_id_mapping", "id", "certificatePurpose", $r_certificatePurposeList);
+    my $table = "eniq_windows_certificate_details";
+    my $bcpFile = createBcpFile($r_certificateParsedData, $certificateNameIdMap, $certificatePurposeIdMap, $siteId, $serverId, $date);
+    removeOldData($table, $dbh, $siteId, $serverId, $date);
+    loadDb($bcpFile, $table, $dbh);
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($logFile) = @_;
+    my @r_certificateArrayData = ();
+    my @certificateNameList = ();
+    my @certificatePurposeList = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( my ($certificateName, $purpose, $expiryDate, $expiryInDays) = $line =~ /^.*::(.*)::(.*)::(.*)::(\d+)$/ ) {
+            my ($d, $m, $y) = $expiryDate =~ /(\d+)\/(\d+)\/(\d+)/;
+            my $sqlExpirydate = "$y-$m-$d";
+            my %r_certificateData = (
+                certificateName => "$certificateName",
+                purpose => "$purpose",
+                expiryDate => "$sqlExpirydate",
+                expiryInDays => "$expiryInDays"
+            );
+            push (@r_certificateArrayData, \%r_certificateData);
+            push (@certificateNameList, $certificateName);
+            push (@certificatePurposeList, $purpose);
+        }
+    }
+    close FILE;
+    return (\@r_certificateArrayData, \@certificateNameList, \@certificatePurposeList);
+}
+
+sub createBcpFile($$$$$$) {
+    my ($parsed_data, $certificateNameIdMap, $certificatePurposeIdMap, $siteId, $serverId, $date) = @_;
+    my $windowsCertificateBcpFile = getBcpFileName("windows_certificate_details");
+    open BCP, ">$windowsCertificateBcpFile" or die "Cannot open BCPFile $windowsCertificateBcpFile";
+    foreach my $data_element ( @$parsed_data ) {
+        printf BCP "%s|%d|%d|%d|%d|%s|%d\n",
+            $date,
+            $siteId,
+            $serverId,
+            $certificateNameIdMap->{$data_element->{'certificateName'}},
+            $certificatePurposeIdMap->{$data_element->{'purpose'}},
+            $data_element->{expiryDate},
+            $data_element->{expiryInDays};
+    }
+    if ($DEBUG > 1) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $windowsCertificateBcpFile");
+    }
+    close BCP;
+    return $windowsCertificateBcpFile;
+}
+
+sub removeOldData($$$$$) {
+    my ($table, $dbh, $siteId, $serverId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND date = '$date' ";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($bcpFile, $table, $dbh) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

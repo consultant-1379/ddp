@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="CPU"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+  <dbtables main="k8s_container_cadvisor">
+   <reference table="sites" condition="k8s_container_cadvisor.siteid = sites.id"/>
+   <reference table="servers" condition="k8s_container_cadvisor.serverid = servers.id"/>
+  </dbtables>
+
+   <param name="site"/>
+   <param name="cid"/>
+   <where>sites.name = '%s' AND k8s_container_cadvisor.containerid = %d</where>
+   <column db="k8s_container_cadvisor.cpu_user+k8s_container_cadvisor.cpu_sys" label="CPU"/>
+  </query>
+ </queries>
+ <size width="600" height="240"/>
+</modelledgraph>

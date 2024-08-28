@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_mscmce_notification">
+    <reference table="sites" condition="enm_mscmce_notification.siteid = sites.id"/>
+    <reference table="servers" condition="enm_mscmce_notification.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_mscmce_notification.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.id"/>
+  </groupby>
+
+  <column db="IFNULL(servers.hostname, 'Totals')" label="Instance"/>
+  <column db="SUM(enm_mscmce_notification.receivedNotificationsCount)" label="Received"/>
+  <column db="SUM(enm_mscmce_notification.processedNotificationsCount)" label="Processed"/>
+  <column db="SUM(enm_mscmce_notification.discardedNotificationsCount)" label="Discarded"/>
+</modelledtable>

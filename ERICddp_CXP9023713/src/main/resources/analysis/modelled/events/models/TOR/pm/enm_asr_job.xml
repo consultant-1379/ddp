@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_asr_job" timecol="time"/>
+
+  <services>
+    <service name="sparkworkerdef"/>
+  </services>
+
+  <events>
+    <event name="ASR.SPARK_JOB">
+      <metric source="iec" target="inputEventCount"/>
+      <metric source="fe" target="filteredEvents"/>
+      <metric source="cr" target="completeRecords"/>
+      <metric source="sr" target="suspectRecords"/>
+      <metric source="s1_longTaskDur" target="readlongTaskDuration"/>
+      <metric source="krt" target="kafkaReadTime"/>
+      <metric source="s1_numTasks" target="readNumTasks"/>
+      <metric source="krtMax" target="kafkaReadTimeMax"/>
+      <metric source="iecMax" target="inputEventsMax"/>
+      <metric source="feMax" target="filteredEventsMax"/>
+      <metric source="s2_longTaskDur" target="writelongTaskDuration"/>
+      <metric source="s2_numTasks" target="writeNumTasks"/>
+      <metric source="crMax" target="completeRecordsMax"/>
+      <metric source="ets" target="endTriggeredSessions"/>
+      <metric source="etsMax" target="endTriggeredSessionsMax"/>
+      <metric source="iss" target="inactiveSuspectSession"/>
+      <metric source="issMax" target="inactiveSuspectSessionMax"/>
+      <metric source="owt" target="kafkaWriteTime"/>
+      <metric source="owtMax" target="kafkaWriteTimeMax"/>
+      <metric source="mws" target="mapStateTime"/>
+      <metric source="mwsMax" target="mapStateTimeMax"/>
+      <metric source="jobType" target="jobType"/>
+    </event>
+    <event name="ASRN.SPARK_JOB">
+      <metric source="iec" target="inputEventCount"/>
+      <metric source="fe" target="filteredEvents"/>
+      <metric source="cr" target="completeRecords"/>
+      <metric source="sr" target="suspectRecords"/>
+      <metric source="s1_longTaskDur" target="readlongTaskDuration"/>
+      <metric source="krt" target="kafkaReadTime"/>
+      <metric source="s1_numTasks" target="readNumTasks"/>
+      <metric source="krtMax" target="kafkaReadTimeMax"/>
+      <metric source="iecMax" target="inputEventsMax"/>
+      <metric source="feMax" target="filteredEventsMax"/>
+      <metric source="s2_longTaskDur" target="writelongTaskDuration"/>
+      <metric source="s2_numTasks" target="writeNumTasks"/>
+      <metric source="crMax" target="completeRecordsMax"/>
+      <metric source="ets" target="endTriggeredSessions"/>
+      <metric source="etsMax" target="endTriggeredSessionsMax"/>
+      <metric source="iss" target="inactiveSuspectSession"/>
+      <metric source="issMax" target="inactiveSuspectSessionMax"/>
+      <metric source="owt" target="kafkaWriteTime"/>
+      <metric source="owtMax" target="kafkaWriteTimeMax"/>
+      <metric source="mws" target="mapStateTime"/>
+      <metric source="mwsMax" target="mapStateTimeMax"/>
+      <property name="jobType" xsi:type="fixedproperty" value="ASRN"/>
+    </event>
+    <event name="ASR.ASRN_SPARK_JOB">
+      <metric source="iec" target="inputEventCount"/>
+      <metric source="fe" target="filteredEvents"/>
+      <metric source="cr" target="completeRecords"/>
+      <metric source="sr" target="suspectRecords"/>
+      <metric source="s1_longTaskDur" target="readlongTaskDuration"/>
+      <metric source="krt" target="kafkaReadTime"/>
+      <metric source="s1_numTasks" target="readNumTasks"/>
+      <metric source="krtMax" target="kafkaReadTimeMax"/>
+      <metric source="iecMax" target="inputEventsMax"/>
+      <metric source="feMax" target="filteredEventsMax"/>
+      <metric source="s2_longTaskDur" target="writelongTaskDuration"/>
+      <metric source="s2_numTasks" target="writeNumTasks"/>
+      <metric source="crMax" target="completeRecordsMax"/>
+      <metric source="ets" target="endTriggeredSessions"/>
+      <metric source="etsMax" target="endTriggeredSessionsMax"/>
+      <metric source="iss" target="inactiveSuspectSession"/>
+      <metric source="issMax" target="inactiveSuspectSessionMax"/>
+      <metric source="owt" target="kafkaWriteTime"/>
+      <metric source="owtMax" target="kafkaWriteTimeMax"/>
+      <metric source="mws" target="mapStateTime"/>
+      <metric source="mwsMax" target="mapStateTimeMax"/>
+      <property name="jobType" xsi:type="fixedproperty" value="ASRN"/>
+    </event>
+  </events>
+</modelledevents>

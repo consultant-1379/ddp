@@ -1,0 +1,235 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+
+our $DEBUG=0;
+
+our $NOT_STARTED = 0;
+our $STARTED = 1;
+
+
+
+sub writeThreadInfo($$) {
+    my ( $r_exports, $tableDir ) = @_;
+
+    for my $r_export ( @{$r_exports} )
+    {
+	my ($hour,$min) = $r_export->{'start'} =~ /^\d{4,4}-\d{2,2}-\d{2,2} (\d{2,2}):(\d{2,2})/;
+	my $start = ($hour * 3600) + ($min * 60);
+
+	my %tiByTime = ();
+	foreach my $r_ti ( @{$r_export->{'ti'}} )
+	{
+	    my ($cshour,$csmin,$cssec) = $r_ti->{'cs_start'} =~ /^(\d{2,2}):(\d{2,2}):(\d{2,2})$/;
+	    my $csstart = ($cshour * 3600) + ($csmin * 60) + ($cssec);
+	    if ( $csstart < $start )
+	    {
+		# Assume midnight crossed
+		$csstart += (24 * 60 * 60);
+	    }
+
+	    if  ( ! exists $tiByTime{$csstart} )
+	    {
+		$tiByTime{$csstart} = [];
+	    }
+	    push @{$tiByTime{$csstart}}, $r_ti;
+	}
+	
+
+	my $startTime = $r_export->{'start'};
+	$startTime =~ s/ //g;
+	my $tableFile = $tableDir . "/ti_" . $startTime . ".html";
+
+	open TABLE, ">$tableFile" or die "ERROR: Cannot open $tableFile";
+	print TABLE "<table border=1> <tr><th>CS Export Start</th> <th>CS Export End</th> <th>Post Processing Start</th> <th>Post Processing End</th> <th>Node Type</th> <th>Num Nodes</th> <th>Num MO</th> </tr>\n";
+
+	foreach my $csstart ( sort { $a <=> $b } keys %tiByTime )
+	{
+	    foreach my $r_ti ( @{$tiByTime{$csstart}} )
+	    {
+		printf TABLE " <tr> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> <td>%d</td> <td>%s</td> </tr>\n",
+		$r_ti->{'cs_start'}, $r_ti->{'cs_end'}, $r_ti->{'pp_start'}, $r_ti->{'pp_end'}, 
+		$r_ti->{'nodetype'}, $r_ti->{'numnodes'}, $r_ti->{'nummo'};
+	    }
+	}
+	print TABLE "</table>\n";
+	close TABLE;
+    }
+}
+
+
+sub readPerfData($$) {
+    my ( $perfDataFile, $r_exports ) = @_;
+
+    open PERF_DATA, $perfDataFile or die "Cannot open $perfDataFile";
+    
+    my $r_ThreadInfo;
+
+    my $lastTimeSec = -1;
+    my $state = $NOT_STARTED;
+    while ( my $line = <PERF_DATA> ) {
+	if ( $DEBUG > 9 ) { print "readPerfData: $line"; }
+
+	chop $line;
+	my @fields = split /@/, $line;
+
+	if ( $fields[0] eq "TI" ) {
+	    if ( ! defined $r_ThreadInfo ) {
+		$r_ThreadInfo = [];
+	    }
+
+	    my $r_Ti = {
+		'cs_start' => $fields[1],
+		'cs_end' => $fields[2],
+		'pp_start' => $fields[3],
+		'pp_end' => $fields[4],
+		'numnodes' => $fields[5],
+		'nummo' => $fields[6],
+		'nodetype' => $fields[7],
+		'file' => $fields[8]
+	    };
+	    push @{$r_ThreadInfo}, $r_Ti;
+	} elsif ( $fields[0] eq "START" ) {
+
+	    # This means the last export stopped without an END message
+	    if ($state == $STARTED) {
+		$r_exports->[$#{$r_exports}]->{'endtime'} = $lastTimeSec;
+		$r_exports->[$#{$r_exports}]->{'error'} = "Unknown";
+		$state = $NOT_STARTED;
+	    }
+	    
+	    
+	    # START@2005-02-02T00:00:04Z@ /var/opt/ericsson/nms_umts_wran_bcg/files/export/UTRAN_TOPOLOGY.xml@SubNetwork=ONRM_RootMo_R
+	    # START@2012-11-07T18:36:19Z@ /var/opt/ericsson/nms_umts_wran_bcg/files/export/Wran_network.xml. Activity ID: 164690. User: nmsadm. Scope: 3. Level: 0@SubNetwork=ONRM_RootMo_R
+	    my ( $year, $month, $day, $hour, $min, $sec ) = $fields[1] =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})T(\d{2,2}):(\d{2,2}):(\d{2,2})/;
+	    my $file = $fields[2];
+	    if ( $fields[2] =~ /\S+\/(\S+)\. Activity ID/ ) {
+		$file = $1;
+	    }
+	    if ( $DEBUG > 5 ) { print "readPerfData: file=$file\n"; }
+
+	    my $r_Export = {
+		'start' => (sprintf "%04d-%02d-%02d %02d:%02d:%02d", $year, $month, $day, $hour, $min, $sec),
+		'file'  => $file,
+		'root'  => $fields[3],
+		'basetime' => timelocal($sec, $min, $hour, $day, $month - 1, $year - 1900)
+	    };
+
+	    if ( defined $r_ThreadInfo ) {
+		$r_Export->{'ti'} = $r_ThreadInfo;
+		undef $r_ThreadInfo;
+	    }
+
+	    push @{$r_exports}, $r_Export;
+	    
+	    $lastTimeSec = ($hour * 3600) + ($min * 60) + $sec;
+	    
+	    $state = $STARTED;
+	} elsif ( ($state == $STARTED) && ($fields[0] eq "END") ) {
+	    my ($hour,$min,$sec) = split /:/, $fields[1];
+	    my $timeInSec = ($hour * 3600) + ($min * 60) + $sec;
+	    if ( $timeInSec < $lastTimeSec ) {
+		if ( $DEBUG > 5 ) { print "readPerfData: crossed midnight timeInSec=$timeInSec lastTimeSec=$lastTimeSec\n"; }
+		$timeInSec += (24 * 60 * 60);
+	    }
+	    
+	    $r_exports->[$#{$r_exports}]->{'endtime'} = $timeInSec;
+	    $r_exports->[$#{$r_exports}]->{'result'} = $fields[2];
+	    if ( $fields[2] == 1 ) {
+		$r_exports->[$#{$r_exports}]->{'mocount'} = $fields[3];
+	    } else {
+		$r_exports->[$#{$r_exports}]->{'error'} = $fields[3];
+	    }
+	    
+	    $state = $NOT_STARTED;
+	}
+    }
+    close PERF_DATA;
+
+    if ( $DEBUG > 4 ) { print Dumper("exports", $r_exports); }
+}
+	
+sub storeStats($$) {
+    my ( $site, $r_exports ) = @_;
+
+    my $minTime = timelocal( 0, 0, 0, 1, 1, 130 );
+    my $maxTime = -1;
+    foreach my $r_Export ( @{$r_exports} ) {
+	my $startTime = parseTime($r_Export->{'start'},$StatsTime::TIME_SQL);
+	if ( $minTime > $startTime ) {
+	    $minTime = $startTime;
+	}
+	if ( $maxTime < $startTime ) {
+	    $maxTime = $startTime;
+	}
+    }
+    
+    if ( $DEBUG > 3 ) { 
+	print "storeStats: minStart=" . formatTime($minTime, $StatsTime::TIME_SQL) . 
+	    ", maxStart=" . formatTime($minTime, $StatsTime::TIME_SQL) . "\n"; 
+    }
+    
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    
+    dbDo($dbh, sprintf("DELETE FROM export WHERE siteid = %d AND start BETWEEN '%s' AND '%s'",
+		       $siteId, formatTime($minTime,$StatsTime::TIME_SQL), formatTime($minTime,$StatsTime::TIME_SQL)))
+	or die "Failed to delete old data";
+
+    foreach my $r_Export ( @{$r_exports} )
+    {
+	my $endTime = undef;
+	if ( exists $r_Export->{'endtime'} ) {
+	    my @baseFields = localtime($r_Export->{'basetime'});
+	    my $baseMidNight  = timelocal( 0, 0, 0, $baseFields[3], $baseFields[4], $baseFields[5] );
+	    my $endTimeInSec = ($r_Export->{'endtime'}) + $baseMidNight;
+	    $endTime = formatTime($endTimeInSec,$StatsTime::TIME_SQL);
+	}
+
+	my $numMo = 0;
+	if ( exists $r_Export->{'mocount'} ) {
+            $numMo = $r_Export->{'mocount'};
+        }
+
+        dbDo($dbh, sprintf("INSERT INTO export (siteid,start,end,root,file,numMo,error) VALUES ( %d, '%s', %s, \'%s', \'%s', %d, %s )",
+                           $siteId, $r_Export->{'start'}, $dbh->quote($endTime),
+                           $r_Export->{'root'}, $r_Export->{'file'}, $numMo, 
+			   $dbh->quote($r_Export->{'error'}) )
+	    ) or die "Failed to insert data";
+    }
+
+    $dbh->disconnect;
+}
+
+sub main()
+{
+    my ($perfDataFile,$tableDir,$site,$date);
+    my $result = GetOptions("perfdata=s"  => \$perfDataFile,
+			    'tabledir=s' => \$tableDir,
+			    "site=s" => \$site,
+			    "debug=n" => \$DEBUG,
+	);
+
+    my @exports = ();
+    readPerfData( $perfDataFile, \@exports );
+
+    if ( $site ) {
+	storeStats( $site, \@exports );
+    }
+
+    if ( $tableDir ) {
+	writeThreadInfo(\@exports, $tableDir);
+    }
+}
+
+main();

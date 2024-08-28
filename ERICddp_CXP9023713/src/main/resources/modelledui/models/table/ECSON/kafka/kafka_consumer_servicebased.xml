@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="kafka_consumer">
+    <reference table="sites" condition="kafka_consumer.siteid = sites.id"/>
+    <reference table="servers" condition="kafka_consumer.serverid  = servers.id"/>
+    <reference table="kafka_topic_names" condition="kafka_consumer.topicid  = kafka_topic_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverids"/>
+  <where>sites.name = '%site%' AND kafka_consumer.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND kafka_consumer.serverid IN ( %serverids% )</where>
+
+  <groupby>
+    <column db="kafka_topic_names.name"/>
+  </groupby>
+
+  <column db="kafka_consumer.topicid" label="TopicId" id="topicid" visible="false"/>
+  <column db="kafka_topic_names.name" label="Topic Name"/>
+  <column db="SUM(kafka_consumer.records_consumed)" label="Total Consumed Messages"/>
+  <column db="IFNULL(SUM(kafka_consumer.fetch_size), 0)" label="Total Fetch Size"/>
+
+  <ctxmenu keycol="topicid" targettype="url" multiselect="true">
+    <item id="kconsumer" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

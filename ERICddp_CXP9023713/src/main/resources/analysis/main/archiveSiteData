@@ -1,0 +1,271 @@
+#!/bin/bash
+
+usage() {
+    echo "usage: $0 -c <config file> [-D]"
+}
+
+fail() {
+    echo "$(date "+%Y-%m-%d %H:%M:%S") ERROR: $*"
+    usage
+    exit 1
+}
+
+warn() {
+    echo "$(date "+%Y-%m-%d %H:%M:%S") WARN:  $*"
+}
+
+info() {
+    echo "$(date "+%Y-%m-%d %H:%M:%S") INFO:  $*"
+}
+
+debug() {
+    if [ ! -z "$DEBUG" ] ; then
+        echo "DEBUG: $*"
+    fi
+}
+
+getOlderThen() {
+    local DIRECTORY=$1
+    local DATE=$2
+
+    local SCRIPT=$(mktemp)
+    cat > ${SCRIPT} <<EOF
+use strict;
+use warnings;
+
+my \$date = "$DATE";
+my (\$year,\$month,\$day) = \$date =~ /^(\d{4})-(\d{2})-(\d{2})/;
+my \$dateAsNum = (\$year * 10000) + (\$month * 100) + \$day;
+#print "dateAsNum=\$dateAsNum\n";
+while ( my \$line = <STDIN> ) {
+   if ( \$line =~ /^(\d{2})(\d{2})(\d{2})/ ) {
+       my \$num = ((2000+\$3) * 10000) + (\$2 * 100) + \$1;
+       #print "num=\$num \$3 \$2 \$1 line=\$line";
+       if ( \$num < \$dateAsNum ) {
+           print \$line;
+       }
+   }
+}
+EOF
+    ls -tr ${DIRECTORY} | perl ${SCRIPT}
+    /bin/rm ${SCRIPT}
+}
+
+processSite() {
+    local DSTDIR=$1
+    local OSS_SITE=$2
+    local LIVE_KEEP_DATE="$3"
+    local ARCHIVE_KEEP_DATE="$4"
+
+    OSS=$(echo ${OSS_SITE} | awk -F\/ '{print $1}')
+    SITE=$(echo ${OSS_SITE} | awk -F\/ '{print $2}')
+
+    local ARCHIVE_KEEP_NUM=0
+    if [ ! -z "${ARCHIVE_KEEP_DATE}" ] ; then
+        ARCHIVE_KEEP_NUM=$(date -d ${ARCHIVE_KEEP_DATE} +%s)
+    fi
+
+    local SITE_HAS_DIRS=0
+    for DIR in analysis data ; do
+        DIR_TO_PROCESS_LIST=$(getOlderThen ${DATA_DIR}/${OSS_SITE}/${DIR} ${LIVE_KEEP_DATE})
+        for DIR_TO_PROCESS in ${DIR_TO_PROCESS_LIST} ; do
+            SITE_HAS_DIRS=1
+            local MOVE_DIR=1
+            # Now decide what we need to do with the directory
+            if ! echo ${DIR_TO_PROCESS} | grep -q "^[0-3][0-9][0-1][0-9][0-9][0-9]$" ; then
+                # Remove if it's a non-date directory
+                MOVE_DIR=0
+            elif [ -z "${ARCHIVE_KEEP_DATE}" ] ; then
+                MOVE_DIR=0
+            else
+                local DIR_DATE=$(echo ${DIR_TO_PROCESS} | sed 's/\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)\([0-9]\{2,2\}\)/20\3-\2-\1/g')
+                local DIR_NUM=$(date -d ${DIR_DATE} +%s)
+                if [ ${DIR_NUM} -le ${ARCHIVE_KEEP_NUM} ] ; then
+                    MOVE_DIR=0
+                fi
+            fi
+
+            if [ ${MOVE_DIR} -eq 1 ] ; then
+                YEAR=$(echo ${DIR_TO_PROCESS} | sed 's/[0-9][0-9][0-9][0-9]\([0-9][0-9]\)/\1/')
+                ARCHIVE_DIR=${DSTDIR}/20${YEAR}/${OSS_SITE}/${DIR}
+                if [ ! -d ${ARCHIVE_DIR} ] ; then
+                    mkdir -p ${ARCHIVE_DIR}
+                    if [ $? -ne 0 ] ; then
+                        warn "Failed to create ${ARCHIVE_DIR}"
+                        return
+                    fi
+                fi
+
+                info "Archiving ${DATA_DIR}/${OSS_SITE}/${DIR}/${DIR_TO_PROCESS} to ${ARCHIVE_DIR}/${DIR_TO_PROCESS}.tar.gz"
+                tar --create --gzip --file  ${ARCHIVE_DIR}/${DIR_TO_PROCESS}.tar.gz --directory ${DATA_DIR}/${OSS_SITE}/${DIR} ${DIR_TO_PROCESS}
+                if [ $? -ne 0 ] ; then
+                    warn "Non-zero tar result"
+                    return
+                fi
+            else
+                info "Removing ${DATA_DIR}/${OSS_SITE}/${DIR}/${DIR_TO_PROCESS}"
+            fi
+
+            rm -rf ${DATA_DIR}/${OSS_SITE}/${DIR}/${DIR_TO_PROCESS}
+            if [ $? -ne 0 ] ; then
+                warn "Non-zero rm result"
+            fi
+        done
+    done
+
+    # Now we need to look at the archive and remove any files older then MONTHS_TO_ARCHIVE
+    if [ ! -z "${ARCHIVE_KEEP_DATE}" ] && [ -d "${DSTDIR}" ] ; then
+        for YEAR in $(ls ${DSTDIR}) ; do
+            SITE_YEAR_ARCHIVE_DIR=${DSTDIR}/${YEAR}/${OSS_SITE}
+            if [ -d ${SITE_YEAR_ARCHIVE_DIR} ] ; then
+                for DIR in analysis data ; do
+                    if [ -d ${SITE_YEAR_ARCHIVE_DIR}/${DIR} ] ; then
+                        DIR_TO_PROCESS_LIST=$(getOlderThen ${SITE_YEAR_ARCHIVE_DIR}/${DIR} ${ARCHIVE_KEEP_DATE})
+                        for DIR_TO_PROCESS in ${DIR_TO_PROCESS_LIST} ; do
+                            SITE_HAS_DIRS=1
+                            info "Removing ${SITE_YEAR_ARCHIVE_DIR}/${DIR}/${DIR_TO_PROCESS}"
+                            rm -rf ${SITE_YEAR_ARCHIVE_DIR}/${DIR}/${DIR_TO_PROCESS}
+                        done
+                        DIRECTORY_CONTENT=$(ls ${SITE_YEAR_ARCHIVE_DIR}/${DIR})
+                        if [ -z "${DIRECTORY_CONTENT}" ] ; then
+                            info "Removing ${SITE_YEAR_ARCHIVE_DIR}/${DIR}"
+                            rmdir ${SITE_YEAR_ARCHIVE_DIR}/${DIR}
+                        fi
+                    fi
+                done
+                DIRECTORY_CONTENT=$(ls ${SITE_YEAR_ARCHIVE_DIR})
+                if [ -z "${DIRECTORY_CONTENT}" ] ; then
+                    info "Removing ${SITE_YEAR_ARCHIVE_DIR}"
+                    rmdir ${SITE_YEAR_ARCHIVE_DIR}
+                fi
+            fi
+        done
+    fi
+}
+
+while getopts c:d:s:l:a:D opt ; do
+    case ${opt} in
+        c)
+            CONFIG=${OPTARG}
+            ;;
+        d)
+            DSTDIR=${OPTARG}
+            ;;
+        s)
+            OSS_SITE=${OPTARG}
+            ;;
+        l)
+            LIVE_KEEP_DATE="${OPTARG}"
+            ;;
+        a)
+            ARCHIVE_KEEP_DATE="${OPTARG}"
+            ;;
+        D)
+            DEBUG=true
+            ;;
+    esac
+done
+
+if [ -z "${CONFIG}" ] ; then
+    fail "no config provided"
+fi
+
+. ${CONFIG}
+
+if [ -z "${DSTDIR}" ] ; then
+    if [ -z "${ARCHIVE_DIR}" ] ; then
+        fail "no destination directory provided"
+    fi
+
+    DSTDIR=$(dirname ${ARCHIVE_DIR})
+    DSTDIR=${DSTDIR}/archive
+
+    # Assume we're archiving (moving the files to DSTDIR), alternative is to simply remove
+    # If 'MONTHS_TO_ARCHIVE' is set to and zero or DAYS_TO_ARCHIVE is set and zero
+    # Then we're not archiving
+    ARCHIVING_ACTIVE=1
+    if [ ! -z "${MONTHS_TO_ARCHIVE}" ] && [ ${MONTHS_TO_ARCHIVE} -eq 0 ] ; then
+        ARCHIVING_ACTIVE=0
+    elif [ ! -z "${DAYS_TO_ARCHIVE}" ] && [ ${DAYS_TO_ARCHIVE} -eq 0 ] ; then
+        ARCHIVING_ACTIVE=0
+    fi
+
+    # If we're archiving, then we have to validate that DSTDIR exists
+    if  [ ${ARCHIVING_ACTIVE} -eq 1 ] && [ ! -d ${DSTDIR} ] ; then
+        fail "no destination directory exists: ${DSTDIR}"
+    fi
+fi
+
+
+if [ -z "${OSS_SITE}" ] ; then
+    info "Start"
+    # Get the start of the current month
+    START_OF_CURRENT_MONTH=$(date "+%Y-%m-01")
+
+    if [ -z "${LIVE_KEEP_DATE}" ] ; then
+        if [ ! -z "${DAYS_TO_KEEP}" ] ; then
+            LIVE_KEEP_DATE=$(date --date "${DAYS_TO_KEEP} days ago" "+%Y-%m-%d")
+        else
+            NMONTHS=3
+            if [ ! -z "${MONTHS_TO_KEEP}" ] ; then
+                NMONTHS=$MONTHS_TO_KEEP
+            fi
+            LIVE_KEEP_DATE=$(date -d "${START_OF_CURRENT_MONTH} -${NMONTHS} month" "+%Y-%m-%d")
+        fi
+    fi
+
+    ARCHIVE_KEEP_DATE=""
+    if [ ! -z "${MONTHS_TO_ARCHIVE}" ] && [ ${MONTHS_TO_ARCHIVE} -gt 0 ] ; then
+        MONTHS=$(expr $MONTHS_TO_KEEP + $MONTHS_TO_ARCHIVE)
+        ARCHIVE_KEEP_DATE=$(date -d "${START_OF_CURRENT_MONTH} -${MONTHS} month" "+%Y-%m-%d")
+    elif [ ! -z "${DAYS_TO_ARCHIVE}" ] ; then
+        DAYS=$(expr $DAYS_TO_KEEP + $DAYS_TO_ARCHIVE)
+        ARCHIVE_KEEP_DATE=$(date --date "${DAYS} days ago" "+%Y-%m-%d")
+    fi
+
+    info "LIVE_KEEP_DATE=$LIVE_KEEP_DATE ARCHIVE_KEEP_DATE=$ARCHIVE_KEEP_DATE"
+
+    # Get the names of all the sites available under data directory
+    SITE_LIST=()
+    for OSS in oss eniq tor ddp serviceon navigator eo ecson generic ; do
+        if [ -d ${DATA_DIR}/${OSS} ] ; then
+            SITES=$(cd ${DATA_DIR}/${OSS} ; ls)
+            for SITE in ${SITES} ; do
+                SITE_LIST+=($OSS/$SITE)
+            done
+        fi
+    done
+
+    # Archive the data by invoking this script for each site with its
+    # corresponding input arguments
+    for OSS_SITE in "${SITE_LIST[@]}" ; do
+        $0 -c ${CONFIG} -d ${DSTDIR} -s ${OSS_SITE} -l "${LIVE_KEEP_DATE}" -a "${ARCHIVE_KEEP_DATE}"
+        if [ $? -ne 0 ] ; then
+           exit
+        fi
+    done
+
+    if [ -d ${DSTDIR} ] ; then
+        # Now check for any empty site type / year directories and remove them
+        for YEAR in $(ls ${DSTDIR}) ; do
+            YEAR_DIRECTORY_CONTENT=$(ls ${DSTDIR}/${YEAR})
+            for SITE_TYPE_DIR in ${YEAR_DIRECTORY_CONTENT} ; do
+                SITE_TYPE_DIRECTORY_CONTENT=$(ls ${DSTDIR}/${YEAR}/${SITE_TYPE_DIR})
+                if [ -z "${SITE_TYPE_DIRECTORY_CONTENT}" ] ; then
+                    info "Removing ${DSTDIR}/${YEAR}/${SITE_TYPE_DIR}"
+                    rmdir ${DSTDIR}/${YEAR}/${SITE_TYPE_DIR}
+                fi
+            done
+
+            YEAR_DIRECTORY_CONTENT=$(ls ${DSTDIR}/${YEAR})
+            if [ -z "${YEAR_DIRECTORY_CONTENT}" ] ; then
+                info "Removing ${DSTDIR}/${YEAR}"
+                rmdir ${DSTDIR}/${YEAR}
+            fi
+        done
+    fi
+    info "End"
+else
+    processSite ${DSTDIR} ${OSS_SITE} "${LIVE_KEEP_DATE}" "${ARCHIVE_KEEP_DATE}"
+fi
+

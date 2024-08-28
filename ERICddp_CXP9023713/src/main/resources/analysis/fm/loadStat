@@ -1,0 +1,37 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($site,$date,$duration);
+    my $result = GetOptions("site=s"  => \$site,
+			    "date=s"  => \$date,
+			    "duration=s" => \$duration
+			    );
+    ($result == 1) or die "Invalid args"; 
+
+    my @dateFields = split /-/, $date;
+    $date = "20" . $dateFields[2] . "-" . $dateFields[1] . "-" . $dateFields[0];
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+
+    # Remove any existing row
+    $dbh->do("DELETE FROM getalarmlist WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    $dbh->do("INSERT INTO getalarmlist (siteid,date,duration) values( $siteId, \'" . $date . "\', $duration)");
+
+    $dbh->disconnect;
+}
+
+

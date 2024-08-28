@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+  useragg="true"
+  forcelegend="true"
+  ylabel="%"
+>
+  <title value="CPU Load"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="hires_server_stat">
+        <reference table="sites" condition="hires_server_stat.siteid = sites.id"/>
+        <reference table="servers" condition="hires_server_stat.serverid = servers.id"/>
+        <reference table="enm_servicegroup_instances" condition="enm_servicegroup_instances.serverid = servers.id"/>
+        <reference table="enm_servicegroup_names" condition="enm_servicegroup_instances.serviceid = enm_servicegroup_names.id AND enm_servicegroup_names.name = 'sparkworkerdef'"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="iowait+sys+user+IFNULL('steal',0)" label="CPU Load"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

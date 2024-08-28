@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_mscmce_instr">
+      <reference table="sites" condition="enm_mscmce_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_mscmce_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="softwareSyncInvocationsForYang" type="tsc" ylabel="Count">
+      <title value="Software Sync Invocations"/>
+      <column db="yangNumberOfSoftwareSyncInvocations" label="Software Sync Invocations"/>
+    </graph>
+    <graph name="notificationsReceivedCount" type="tsc" ylabel="Count">
+      <title value="Received"/>
+      <column db="yangNotificationsReceivedCount" label="Received"/>
+    </graph>
+    <graph name="notificationsProcessedCount" type="tsc" ylabel="Count">
+      <title value="Processed"/>
+      <column db="yangNotificationsProcessedCount" label="Processed"/>
+    </graph>
+    <graph name="notificationsDiscardedCount" type="tsc" ylabel="Count">
+      <title value="Discarded"/>
+      <column db="yangNotificationsDiscardedCount" label="Discarded"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="notification">
+      <member>softwareSyncInvocationsForYang</member>
+      <member>notificationsReceivedCount</member>
+      <member>notificationsProcessedCount</member>
+      <member>notificationsDiscardedCount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

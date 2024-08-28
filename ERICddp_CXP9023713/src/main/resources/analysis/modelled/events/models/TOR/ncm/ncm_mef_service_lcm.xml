@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_mef_service_lcm">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="ncmComplianceID" reftable="enm_ncmcompliance"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <events>
+    <!--NCM_AGENT.MEF_SERVICE_LCM {\"duration\":738,\"jobId\":57,\"node\":\"ML-6691-81\",\"affectedEntity\":\"crossConnection\",\"ncmCompliance\":\"SUCCESS\",\"_Thread\":\"default-threads -29\",\"ncmNodeId\":7,\"operation\":\"delete\",\"status\":\"SUCCESS\",\"info\":\"VlanId= 77\"}"-->
+    <event name="NCM_AGENT.MEF_SERVICE_LCM">
+      <metric source="host" target="serverid"/>
+      <metric source="jobId" target="jobId"/>
+      <metric source="node" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="ncmNodeId" target="ncmNodeId"/>
+      <metric source="operation" target="operation"/>
+      <metric source="affectedEntity" target="affectedEntity"/>
+      <metric source="duration" target="duration"/>
+      <metric source="status" target="status"/>
+      <metric source="ncmCompliance" target="ncmComplianceID" filtervalue="^[a-zA-Z_]+$"/>
+      <metric source="info" target="info"/>
+    </event>
+  </events>
+</modelledevents>

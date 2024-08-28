@@ -1,0 +1,244 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use StatsTime;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use JSON;
+
+our $DEBUG = 0;
+
+sub parseFile($) {
+    my ($file) = @_;
+
+    open INPUT, $file or die "Cannot open $file";
+    my $r_result = undef;
+    while ( my $line = <INPUT> ) {
+	if ( $line =~ /^    "result" => "(.*)"$/ ) {
+	    my $resultContext = $1;
+	    $resultContext =~ s/\\"/"/g;
+	    if ( $DEBUG > 8 ) { print "parseFile: resultContext=$resultContext\n"; }
+	    
+	    my $jsonStr = '{"results": ' .$resultContext . "}";
+	    $r_result = decode_json($jsonStr);
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 7 ) { print Dumper("parseFile: file=$file r_result",$r_result); }
+    return $r_result;
+}
+
+sub linkData($$$) {
+    my ($r_connections,$r_producers,$r_consumers) = @_;
+
+    my %clients = ();
+    foreach my $r_connection ( @{$r_connections->{'results'}} ) {
+	my ($ip,$port) = $r_connection->{'clientAddress'}  =~ /^\/([\d\.]+):(\d+)$/;
+	$clients{$r_connection->{'connectionID'}} = {
+	    'ip' => $ip,
+	    'port' => $port,
+	    'creationTime' => $r_connection->{'creationTime'}
+	};
+    }
+    
+    my %destinations = ();
+    foreach my $r_consumer ( @{$r_consumers->{'results'}} ) {
+	my $r_dest = $destinations{$r_consumer->{'destinationName'}};
+	if ( ! defined $r_dest ) {
+	    $r_dest = {
+		'type' => $r_consumer->{'destinationType'},
+		'cons' => [],
+		'prod' => []
+	    };
+	    $destinations{$r_consumer->{'destinationName'}} = $r_dest;
+	}
+	my $filter = '';
+	if ( exists $r_consumer->{'filter'} ) {
+	    $filter = $r_consumer->{'filter'};
+	}
+	my $r_client = $clients{$r_consumer->{'connectionID'}};	
+	push @{$r_dest->{'cons'}}, {
+	    'client' => $r_client,
+	    'filter' => $filter,
+	    'durable' => $r_consumer->{'durable'},	    
+	    'creationTime' => $r_consumer->{'creationTime'},
+	    'sessionID' => $r_consumer->{'sessionID'},
+	    'connectionID' => $r_consumer->{'connectionID'}
+	};
+    }
+
+    foreach my $r_producer ( @{$r_producers->{'results'}} ) {
+	my ($type,$destinationName) = $r_producer->{'destination'} =~ /^jms\.([^\.]+)\.(\S+)/;
+	my $r_dest = $destinations{$destinationName};
+	if ( ! defined $r_dest ) {
+	    $r_dest = {
+		'type' => $type,
+		'cons' => [],
+		'prod' => []
+	    };
+	    $destinations{$destinationName} = $r_dest;
+	}
+	    
+	my $r_client = $clients{$r_producer->{'connectionID'}};	
+	push @{$r_dest->{'prod'}}, {
+	    'client' => $r_client,
+	    'msgSent' => $r_producer->{'msgSent'},
+	    'sessionID' => $r_producer->{'sessionID'},
+	    'connectionID' => $r_producer->{'connectionID'}
+	}
+    }
+    
+    if ( $DEBUG > 4 ) {
+	print Dumper("linkData: clients", \%clients);
+	print Dumper("linkData: destinations", \%destinations);
+    }
+
+    return ( \%clients, \%destinations );
+}
+
+sub readIpMap($) {
+    my ($ipMapFile) = @_;
+
+    my $dumperOutput;
+    do {
+	local $/ = undef;
+	open my $fh, "<", $ipMapFile
+	    or die "could not open $ipMapFile";
+	$dumperOutput = <$fh>;
+	close $fh;
+    };
+
+    if ( $DEBUG > 8 ) { print "readIpMap: dumperOutput=$dumperOutput\n"; }
+
+    my $VAR1 = undef;
+    eval($dumperOutput);
+    if ( $DEBUG > 7 ) { print Dumper("readIpMap: VAR", $VAR1); }
+
+    return $VAR1;
+}
+
+sub getDateTime($$) {
+    my ($time,$tzOffsetMs) = @_;
+    return formatTime( ($time - $tzOffsetMs)/1000, $StatsTime::TIME_SQL);
+}
+
+sub writeOutput($$$$$) {
+    my ($jsonOutput,$tzOffsetMs,$r_clients,$r_dest,$r_ipMap) = @_;
+
+    my %connectionPerClient = ();
+    while ( my ($connectionId,$r_connection) = each %{$r_clients} ) {
+	my $clientHost = $r_connection->{'ip'};
+	if ( exists $r_ipMap->{$clientHost} ) {
+	    $clientHost = $r_ipMap->{$clientHost};
+	}
+	my $r_clientConnections = $connectionPerClient{$clientHost};
+	if ( ! defined $r_clientConnections ) {
+	    $r_clientConnections = [];
+	    $connectionPerClient{$clientHost} = $r_clientConnections;
+	}
+
+	
+	push @{$r_clientConnections}, { 'port' => $r_connection->{'port'},
+					'ctime' => getDateTime($r_connection->{'creationTime'}, $tzOffsetMs),
+					'id' => $connectionId };
+    }
+    if ( $DEBUG > 3 ) { print Dumper("writeOutput: connectionPerClient", \%connectionPerClient); }
+
+    my %destOutput = ();
+    while ( my ($destination,$r_destination) = each %{$r_dest} ) {
+	my %consumerGrps = ();
+	foreach my $r_consumer ( @{$r_destination->{'cons'}} ) {
+	    my $clientHost = $r_consumer->{'client'}->{'ip'};
+	    if ( exists $r_ipMap->{$clientHost} ) {
+		$clientHost = $r_ipMap->{$clientHost};
+	    }
+	    my $key = $clientHost . $r_consumer->{'durable'} . $r_consumer->{'filter'};
+	    my $r_consumerGrp = $consumerGrps{$key};
+	    if ( ! defined $r_consumerGrp ) {
+		$r_consumerGrp = {
+		    'client' => $clientHost,
+		    'durable' => $r_consumer->{'durable'},
+		    'filter' => $r_consumer->{'filter'},
+		    'count' => 0,
+		    'consumers' => []
+		};
+		$consumerGrps{$key} = $r_consumerGrp;
+	    }
+	    $r_consumerGrp->{'count'}++;
+	    push @{$r_consumerGrp->{'consumers'}}, {
+		'ctime' => getDateTime($r_consumer->{'creationTime'}, $tzOffsetMs),
+		'sessionid' => $r_consumer->{'sessionID'},
+		'connectionid' => $r_consumer->{'connectionID'}
+	    }	      
+	}
+
+	my %producerGrps = ();
+	foreach my $r_producer ( @{$r_destination->{'prod'}} ) {
+	    my $clientHost = $r_producer->{'client'}->{'ip'};
+	    if ( exists $r_ipMap->{$clientHost} ) {
+		$clientHost = $r_ipMap->{$clientHost};
+	    }
+	    my $r_producerGrp = $producerGrps{$clientHost};
+	    if ( ! defined $r_producerGrp ) {
+		$r_producerGrp = {
+		    'client' => $clientHost,
+		    'producers' => []
+		};
+		$producerGrps{$clientHost} = $r_producerGrp;
+	    }
+	    
+	    push @{$r_producerGrp->{'producers'}}, {
+		'msgsent' => $r_producer->{'msgSent'},
+		'sessionid' => $r_producer->{'sessionID'},
+		'connectionid' => $r_producer->{'connectionID'}		
+	    };
+	}
+
+	my @consumerGrpsArr = values %consumerGrps;
+	my @producerGrpsArr = values %producerGrps;    
+	$destOutput{$r_destination->{'type'}}->{$destination} =  {
+	    'consumers' => \@consumerGrpsArr,
+	    'producers' => \@producerGrpsArr
+	};
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("writeOutput: destOutput", \%destOutput); }
+
+    open OUTPUT, ">$jsonOutput" or die "Cannot open $jsonOutput";
+    print OUTPUT encode_json({ 'clients' => \%connectionPerClient, 'destinations' => \%destOutput});
+    close OUTPUT;    
+}
+
+    
+sub main() {
+    my ($jmsdir,$jsonOutputFile,$ipMapFile,$tzOffset);
+    my $result = GetOptions("jmsdir=s" => \$jmsdir,
+			    "output=s" => \$jsonOutputFile,
+			    "ipmap=s" => \$ipMapFile,
+			    "utcoff=s" => \$tzOffset,
+                            "debug=s" => \$DEBUG
+        );
+    ( $result == 1 ) or die "Invalid args";
+
+    my $r_connections = parseFile($jmsdir . "/list-connections-as-json");    
+    my $r_producers = parseFile($jmsdir . "/list-producers-info-as-json");
+    my $r_consumers = parseFile($jmsdir . "/list-all-consumers-as-json");
+
+    my ($r_clients,$r_dest) = linkData($r_connections,$r_producers,$r_consumers);
+
+    my $timeOffsetMs = 0;
+    if ( $tzOffset =~ /^([+-])(\d{2}):(\d{2})/ ) {
+        $timeOffsetMs = "$1" . ( ($2 * 3600 * 1000) + ($3 * 60 * 1000) );
+    }
+
+    my $r_ipMap = readIpMap($ipMapFile);
+    
+    writeOutput($jsonOutputFile,$timeOffsetMs,$r_clients,$r_dest,$r_ipMap);
+}
+
+main();

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="ms"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Parallel User Sessions (%s)">
+    <param name="hostname"/>
+  </title>
+
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_cm_energy_flow_tasks">
+        <reference table="sites" condition="enm_cm_energy_flow_tasks.siteid = sites.id"/>
+        <reference table="servers" condition="enm_cm_energy_flow_tasks.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serverid"/>
+      <param name="type"/>
+      <where>sites.name = '%s' AND servers.id = '%s' AND task = '%s'</where>
+      <column db="totalTimeTaken" label="Parallel User Sessions"/>
+    </query>
+  </queries>
+
+  <size width="800" height="400"/>
+</modelledgraph>

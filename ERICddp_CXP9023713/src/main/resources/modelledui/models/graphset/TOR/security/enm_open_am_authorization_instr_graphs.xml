@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_open_am_authorization">
+      <reference table="sites" condition="enm_open_am_authorization.siteid = sites.id"/>
+      <reference table="servers" condition="enm_open_am_authorization.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="amAuthorizationPolicySetEvaluateActionCount" type="sb" ylabel="count" xlabel="time">
+      <title value="Allowed Authorization request count"/>
+      <column db="amAuthorizationPolicySetEvaluateActionCount" label="Allowed Authorization request count"/>
+    </graph>
+    <graph name="deniedAuthorizationRequestCount" type="sb" ylabel="count" xlabel="time">
+      <title value="Denied Authorization request count"/>
+      <column id="Denied"  db="IF(enm_open_am_authorization.amAuthorizationPolicySetEvaluateCount &lt; enm_open_am_authorization.amAuthorizationPolicySetEvaluateActionCount, 0, enm_open_am_authorization.amAuthorizationPolicySetEvaluateCount - enm_open_am_authorization.amAuthorizationPolicySetEvaluateActionCount)" label="Denied Authorization request count"/>
+    </graph>
+    <graph name="totalAuthorizationResponseRate" type="sb" ylabel="Rate (operations/sec)" xlabel="Time" forcelegend="true">
+      <title value="Authorization response rate"/>
+      <column db="amAuthorizationPolicySetEvaluateCount / amAuthorizationPolicySetEvaluateSecondsTotal" label="Authorization response rate"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>amAuthorizationPolicySetEvaluateActionCount</member>
+      <member>deniedAuthorizationRequestCount</member>
+      <member>totalAuthorizationResponseRate</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

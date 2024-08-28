@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="node_exporter">
+
+  <table name="test"/>
+
+  <metricgroups>
+    <metricgroup name="cpu">
+      <metric source="user" target="user" delta="true" rate="true" scale="0.01"/>
+      <metric source="system" target="sys" delta="true" rate="true" scale="0.01"/>
+    </metricgroup>
+
+    <metricgroup name="memory">
+      <metric source="node_memory_MemFree_bytes" target="freeram" scale="1048576"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

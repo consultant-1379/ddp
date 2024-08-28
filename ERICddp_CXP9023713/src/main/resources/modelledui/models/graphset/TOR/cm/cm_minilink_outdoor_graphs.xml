@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_cmwriter_minilink_outdoor">
+      <reference table="sites" condition="enm_cmwriter_minilink_outdoor.siteid = sites.id"/>
+      <reference table="servers" condition="enm_cmwriter_minilink_outdoor.serverid = servers.id"/>
+    </dbtables>
+
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="create_success" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Successful Create Operations"/>
+      <column db="numberOfSuccessCreateOperations" label="Number of Successful Action Operations"/>
+    </graph>
+
+    <graph name="create_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed Create Operations"/>
+      <column db="numberOfFailedCreateOperations" label="Number of Failed Action Operations"/>
+    </graph>
+
+    <graph name="create_success_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Successful Create Operations"/>
+      <column db="successfullCreateOperationsDuration" label="Duration of Successful Action Operations"/>
+    </graph>
+
+    <graph name="create_failure_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Failed Create Operations"/>
+      <column db="failedCreateOperationsDuration" label="Duration of Failed Action Operations"/>
+    </graph>
+
+    <graph name="modify_success" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Successful Modify Operations"/>
+      <column db="numberOfSuccessModifyOperations" label="Number of Successful Modify Operations"/>
+    </graph>
+
+    <graph name="modify_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed Modify Operations"/>
+      <column db="numberOfFailedModifyOperations" label="Number of Failed Modify Operations"/>
+    </graph>
+
+    <graph name="modify_success_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Successful Modify Operations"/>
+      <column db="successfullModifyOperationsDuration" label="Duration of Successful Modify Operations"/>
+    </graph>
+
+    <graph name="modify_failure_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Failed Modify Operations"/>
+      <column db="failedModifyOperationsDuration" label="Duration of Failed Modify Operations"/>
+    </graph>
+
+    <graph name="delete_success" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Successful Delete Operations"/>
+      <column db="numberOfSuccessDeleteOperations" label="Number of Successful Modify Operations"/>
+    </graph>
+
+    <graph name="delete_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed Delete Operations"/>
+      <column db="numberOfFailedDeleteOperations" label="Number of Failed Modify Operations"/>
+    </graph>
+
+    <graph name="delete_success_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Successful Delete Operations"/>
+      <column db="successfullDeleteOperationsDuration" label="Duration of Successful Modify Operations"/>
+    </graph>
+
+    <graph name="delete_failure_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Failed Delete Operations"/>
+      <column db="failedDeleteOperationsDuration" label="Duration of Failed Modify Operations"/>
+    </graph>
+
+    <graph name="action_success" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Successful Action Operations"/>
+      <column db="numberOfSuccessActionOperations" label="Number of Successful Action Operations"/>
+    </graph>
+
+    <graph name="action_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed Action Operations"/>
+      <column db="numberOfFailedActionOperations" label="Number of Failed Action Operations"/>
+    </graph>
+
+    <graph name="action_success_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Successful Action Operations"/>
+      <column db="successfullActionOperationsDuration" label="Duration of Successful Action Operations"/>
+    </graph>
+
+    <graph name="action_failure_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Failed Action Operations"/>
+      <column db="failedActionOperationsDuration" label="Duration of Failed Action Operations"/>
+    </graph>
+
+    <graph name="read_success" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Successful Read Operations"/>
+      <column db="numberOfSuccessReadOperations" label="Number of Successful Read Operations"/>
+    </graph>
+
+    <graph name="read_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed Read Operations"/>
+      <column db="numberOfFailedReadOperations" label="Number of Failed Read Operations"/>
+    </graph>
+
+    <graph name="read_success_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Successful Read Operations"/>
+      <column db="successfullReadOperationsDuration" label="Duration of Successful Read Operations"/>
+    </graph>
+
+    <graph name="read_failure_duration" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="Duration of Failed Read Operations"/>
+      <column db="failedReadOperationsDuration" label="Duration of Failed Read Operations"/>
+    </graph>
+
+    <graph name="snmp_request" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of SNMP Operation Requests"/>
+      <column db="numberOfSnmpOperationRequests" label="Number of SNMP Operation Requests"/>
+    </graph>
+
+    <graph name="snmp_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed SNMP Operations"/>
+      <column db="numberOfFailedSnmpOperations" label="Number of Failed SNMP Operations"/>
+    </graph>
+
+    <graph name="snmp_construction_time" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="SNMP Operation Construction Time"/>
+      <column db="snmpOperationConstructionTime" label="SNMP Operation Construction Time"/>
+    </graph>
+
+    <graph name="snmp_success_response" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="SNMP Operation Success Response Time"/>
+      <column db="snmpOperationSuccessResponseTime" label="SNMP Operation Success Response Time"/>
+    </graph>
+
+    <graph name="snmp_failure_response" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="SNMP Operation Failure Response Time"/>
+      <column db="snmpOperationFailureResponseTime" label="SNMP Operation Failure Response Time"/>
+    </graph>
+
+    <graph name="cli_request" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of CLI Operation Requests"/>
+      <column db="numberOfCliOperationRequests" label="Number of CLI Operation Requests"/>
+    </graph>
+
+    <graph name="cli_failure" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Failed CLI  Operations"/>
+      <column db="numberOfFailedCliOperations" label="Number of Failed CLI Operations"/>
+    </graph>
+
+    <graph name="cli_construction_time" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="CLI Operation Construction Time"/>
+      <column db="cliOperationConstructionTime" label="CLI Operation Construction Time"/>
+    </graph>
+
+    <graph name="cli_success_response" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="CLI Operation Success Response Time"/>
+      <column db="cliOperationSuccessResponseTime" label="CLI Operation Success Response Time"/>
+    </graph>
+
+    <graph name="cli_failure_response" type="sb" ylabel="Millisec" forcelegend="true">
+      <title value="CLI Operation Failure Response Time"/>
+      <column db="cliOperationFailureResponseTime" label="CLI Operation Failure Response Time"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="Create">
+      <member>create_success</member>
+      <member>create_failure</member>
+      <member>create_success_duration</member>
+      <member>create_failure_duration</member>
+    </group>
+    <group name="Modify">
+      <member>modify_success</member>
+      <member>modify_failure</member>
+      <member>modify_success_duration</member>
+      <member>modify_failure_duration</member>
+    </group>
+    <group name="Delete">
+      <member>delete_success</member>
+      <member>delete_failure</member>
+      <member>delete_success_duration</member>
+      <member>delete_failure_duration</member>
+    </group>
+    <group name="Action">
+      <member>action_success</member>
+      <member>action_failure</member>
+      <member>action_success_duration</member>
+      <member>action_failure_duration</member>
+    </group>
+    <group name="Read">
+      <member>read_success</member>
+      <member>read_failure</member>
+      <member>read_success_duration</member>
+      <member>read_failure_duration</member>
+    </group>
+    <group name="snmp">
+      <member>snmp_request</member>
+      <member>snmp_failure</member>
+      <member>snmp_construction_time</member>
+      <member>snmp_success_response</member>
+      <member>snmp_failure_response</member>
+    </group>
+    <group name="cli">
+      <member>cli_request</member>
+      <member>cli_failure</member>
+      <member>cli_construction_time</member>
+      <member>cli_success_response</member>
+      <member>cli_failure_response</member>
+    </group>
+  </groups>
+</modelledgraphset>

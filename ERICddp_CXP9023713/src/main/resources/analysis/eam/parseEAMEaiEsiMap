@@ -1,0 +1,185 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($file,$dashDate);
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "file=s" => \$file,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    # Validate the parameters passed
+    if ( ! $file ) {
+        printUsageAndExit("No feed file specified");
+    }
+    if ( ! $site ) {
+        printUsageAndExit("No site specified");
+    }
+    if ( ! $dashDate ) {
+        printUsageAndExit("No date specified");
+    }
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Parse the file
+    if ($DEBUG > 4) { print "Feed file: " . $file . "\n"; }
+
+    if (-e $file) {
+        processData($file, $sqlDate, $siteid, \%dataForStorage);
+    } else {
+        print "WARNING: No eai_esi_map data file - expected file " . $file . " does not exist.\n";
+    }
+
+    return 0;
+}
+
+sub processData() {
+    my ($file , $sqlDate, $siteid, $r_dataForStorage) = @_;
+    my $dbh = connect_db();
+    my @NEs;
+    my @initiators;
+    my @initiatorTypes;
+    my %datasetForStorage;
+    my $neName;
+    my $cnt = 0;
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+
+        if ($line =~ /^\s*$/ || $line =~ /^\\_PATH/) {
+            next LINE;
+        } else {
+            if ($line =~ /^name \=/) {
+                $neName = (split(/ \= /, $line))[1];
+
+                # Strip if any ',' & string after ',' of $neName
+                $neName =~ s/,.*//;
+
+                if ($neName eq '') {
+                    undef($neName);
+                } else {
+                    $r_dataForStorage->{$neName}->{'ne_name'} = $neName;
+                    push(@NEs, $neName);
+                    $cnt++;
+                }
+                next LINE;
+            } elsif ($line =~ /^cr_daemon \=/) {
+                my $initiator = (split(/ \= /, $line))[1];
+                if (!defined($initiator)) {
+                    $r_dataForStorage->{$neName}->{'initiator'} = 'unknown';
+                    push(@initiators, 'unknown');
+                    $r_dataForStorage->{$neName}->{'initiator_type'} = 'unknown';
+                    push(@initiatorTypes, 'unknown');
+                    next LINE;
+                } else {
+                    $r_dataForStorage->{$neName}->{'initiator'} = $initiator;
+                    push(@initiators, $r_dataForStorage->{$neName}->{'initiator'});
+
+                    # Now get the initiator type which is the first few characters before the "_ac_in" in upper case.
+                    my ($initType) = $r_dataForStorage->{$neName}->{'initiator'} =~ /^(\S+)_ac_in$/;
+                    if (!defined($initType)) {
+                        $r_dataForStorage->{$neName}->{'initiator_type'} = 'unknown';
+                    } else {
+                        $r_dataForStorage->{$neName}->{'initiator_type'} = uc($initType);
+                    }
+                    push(@initiatorTypes, $r_dataForStorage->{$neName}->{'initiator_type'});
+                    next LINE;
+                }
+            } elsif ($line =~ /^telnet_mts \=/) {
+                # We're onto the next record, so reset the NE name
+                undef($neName);
+                next LINE;
+            } else {
+                next LINE;
+            }
+        }
+    }
+    close(DATA);
+
+    # Now get the ids for the data values for storage
+    my $r_nes = getIdMap($dbh, "eam_ne_names", "id", "name", \@NEs);
+    my $r_initiators = getIdMap($dbh, "eam_initiator_responders", "id", "name", \@initiators);
+    my $r_initiatorTypes = getIdMap($dbh, "eam_initiator_responder_types", "id", "name", \@initiatorTypes);
+
+    if ($DEBUG > 7) { print Dumper $r_dataForStorage; }
+
+    # If there is data to store, store it
+    if ($cnt > 0) {
+        storeDataset($sqlDate, $siteid, $r_dataForStorage, $r_nes, $r_initiators, $r_initiatorTypes);
+    }
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $r_datasetForStorage, $r_nes, $r_initiators, $r_initiatorTypes, $r_cnt) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM eai_esi_map_detail WHERE date = '" . $sqlDate . "' AND siteid = " . $siteid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data eai_esi_map_detail for rerun with statement " . $rerunDelete . "\n";
+
+    # Build up the INSERT statement
+    my $sqlInsert = "INSERT INTO eai_esi_map_detail (date, siteid, eam_neid, initiatorid, initiatortypeid) VALUES ";
+
+    foreach my $ne (sort(keys(%$r_datasetForStorage))) {
+        $sqlInsert .= "('" . $sqlDate . "'," . $siteid . "," . $r_nes->{$r_datasetForStorage->{$ne}->{'ne_name'}} . "," . $r_initiators->{$r_datasetForStorage->{$ne}->{'initiator'}} . "," . $r_initiatorTypes->{$r_datasetForStorage->{$ne}->{'initiator_type'}} . "),";
+    }
+    # Get rid of the last comma
+    $sqlInsert =~ s/\,$//;
+
+    if ($DEBUG > 4) { print "INSERT SQL: " . $sqlInsert . "\n"; }
+
+    # Run the INSERT into the table
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into eai_esi_map_detail with statement " . $sqlInsert . "\n";
+    $dbh->disconnect;
+
+    return 0;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseEAMEaiEsiMap --file <file> --site <sitename> --date dd-mm-yy \n";
+
+    exit 1;
+}
+

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_f5_virtual_states">
+    <reference table="sites" condition="eo_f5_virtual_states.siteid = sites.id"/>
+    <reference table="f5_virtual_names" condition="eo_f5_virtual_states.virtServId = f5_virtual_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_f5_virtual_states.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+  <column db="f5_virtual_names.name"/>
+  </groupby>
+
+  <column db="eo_f5_virtual_states.virtServId" label="virtServId" id="virtServId" visible="false"/>
+  <column db="max(DATE_FORMAT(eo_f5_virtual_states.time,'%H:%i:%s'))" label="Time"/>
+  <column db="f5_virtual_names.name" label="Virtual Server"/>
+  <column db="CASE WHEN state = '1' THEN 'UP'
+                   WHEN state = '-1' THEN 'UNCHECKED'
+                   ELSE 'DOWN' END" label="State"/>
+
+  <ctxmenu keycol="virtServId" targettype="url" multiselect="true">
+   <item id="virtualstates" label="Plot for last month"/>
+   <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

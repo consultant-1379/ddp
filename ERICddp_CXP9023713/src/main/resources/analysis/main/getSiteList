@@ -1,0 +1,26 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+[ -z "${ADMINDB}" ] && ADMINDB="ddpadmin"
+if [ -z "${STATS_DB}" ] ; then
+    STATS_DB=statsdb
+fi
+
+ACTIVE_ONLY=0
+while getopts a opt ; do
+    case ${opt} in
+        a) ACTIVE_ONLY=1 ;;
+    esac
+done
+
+AND_ACTIVE_ONLY_=""
+if [ ${ACTIVE_ONLY} -eq 1 ] ; then
+    AND_ACTIVE_ONLY="AND (sites.site_status IS NULL OR sites.site_status != 'inactive')"
+fi
+
+${ANALYSIS_BIN}/sql/runSql <<EOF | awk '{print $1 ":" $2 ":" $3 ":" $4}'
+SELECT sites.id, sites.name, sites.site_type, ${ADMINDB}.ftpusers.homedir from sites, ${ADMINDB}.ftpusers where sites.id = ${ADMINDB}.ftpusers.siteid AND sites.site_type != "" ${AND_ACTIVE_ONLY}
+EOF
+

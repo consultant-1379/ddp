@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+  forcelegend="true"
+  ylabel="millisec"
+>
+  <title value="Map With State Time"/>
+  <queries>
+    <query timecol="time" >
+      <dbtables main="enm_str_asrl_spark">
+        <reference table="sites" condition="enm_str_asrl_spark.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="proc_mapWithStateTime_avg" label="Task Average"/>
+      <column db="proc_mapWithStateTime_max" label="Task Max"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

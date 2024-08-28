@@ -1,0 +1,36 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main {
+	my ($table, $site, $names, $DEBUG);
+	my $result = GetOptions(
+		"table=s" => \$table,
+		"site=s" => \$site,
+		"names=s" => \$names,
+		"debug=s" => \$DEBUG
+	);
+	($result == 1) or die "Invalid args";
+	if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+	my $dbh = connect_db();
+	my $siteId = getSiteId($dbh,$site);
+	if ( $siteId == -1 ) {
+		print "ERROR: Could not find siteid for $site\n";
+		exit 1;
+	}
+	my @nameList = split(/,/, $names);
+	my $idMap = getIdMap($dbh, $table, "id", "name", \@nameList );
+
+	if ( $DEBUG > 3 ) {
+		print Dumper("storeNames: " . $names, $idMap);
+	}
+}

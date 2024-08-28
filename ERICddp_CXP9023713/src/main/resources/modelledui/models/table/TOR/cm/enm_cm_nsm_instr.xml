@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_nsm_instr">
+    <reference table="sites" condition="enm_nsm_instr.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_nsm_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="SUM(totalCmNodeHeartbeatSupervisionEventsReceived)" label="Total CmNodeHeartbeatSupervision Events"/>
+  <column db="SUM(totalFailedSyncsCountEventsReceived)" label="Total FailedSyncsCount Events"/>
+  <column db="SUM(totalCmNodeSyncMonitorFeatureEventsReceived)" label="Total Feature Change Events"/>
+  <column db="SUM(totalNoOfCmSyncFailuresBeforeAlarmEventsReceived)" label="Total Threshold Change Events"/>
+  <column db="SUM(totalCmUnsyncedAlarmsRaised)" label="Total Alarms Raised"/>
+  <column db="SUM(totalCmUnsyncedAlarmsCleared)" label="Total Alarms Cleared"/>
+
+</modelledtable>

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="generator" content=
+"HTML Tidy for HTML5 for Linux version 5.6.0">
+<title></title>
+</head>
+<body>
+<h1>Frequently Asked Questions about DDC & DDP</h1>
+<br>
+<h2>1. What is DDP?</h2>
+DDP (Diagnostic Data Processing/Presentation) comprises the
+processing engine and front end for presentation of data collected
+by DDC.<br>
+<span style="color: rgb(51,51,51);">Webinar<span>&nbsp;<a class=
+"external-link" href="https://play.ericsson.net/media/t/1_yxpnchss"
+rel="nofollow">here</a>,&nbsp;</span></span>g<span style=
+"letter-spacing: 0.0px;">eneral PPT <a class="external-link" href=
+"https://ericsson-my.sharepoint.com/:p:/p/michael_finan/EfIbuHLkYzFBvR1Wn3MkTXQBX6jZL3KuKCIRHapOi_mXPg?e=HICqpd"
+rel="nofollow">here</a>&nbsp;</span><span style=
+"letter-spacing: 0.0px;">for internal discussions and main page for
+all things DDP is <a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com//pages/viewpage.action?pageId=122570826"
+rel="nofollow">here</a>.</span><br>
+<h2>2. What is DDC?</h2>
+DDC (Diagnostic Data Collection) is a package delivered as part of
+the OSS-RC, ENIQ, ENM (all variants) , EO-CM, OMBS and EC-SON
+products. Basic installations are also available for some other
+products.
+<h2>3. Why is my site not showing on the main index page?</h2>
+There are two reasons why a site is not listed on the main index
+page:<br>
+1. A site only listed when once data has been loaded to it.<br>
+2 Only active sites are listed by default. This can be changed
+using the "customize View" option on the top left corner of the DDP
+index page.
+<h2>4. How can I get a site removed from DDP?</h2>
+Sites in DDP are never deleted. Instead they are set "inactive" and
+data is aged out over time. To get a site changed to inactive,
+mail&nbsp;<a class="external-link" href=
+"mailto:PDLDDPCSAD@pdl.internal.ericsson.com" rel=
+"nofollow">PDLDDPCSAD@pdl.internal.ericsson.com</a>&nbsp;or create
+a TORF&nbsp;Jira on team SMART.&nbsp;To only see active sites,
+click "Customise View" in the DDP index page and select "Active
+Only" in the "Site Active " option.
+<h2>5. How long is the DDP data retained for?</h2>
+Each DDP server has its own retention limits and these can be seen
+on the "Check DDP Status" link at the bottom of each DDP page
+e.g.&nbsp;<a class="external-link" href=
+"https://ddp.athtem.eei.ericsson.se/adminui/service.php" rel=
+"nofollow">DDP</a> and <a class="external-link" href=
+"https://ddp2.athtem.eei.ericsson.se/adminui/service.php" rel=
+"nofollow">DDP2</a>.
+<h2>6. Where do I get ADC support</h2>
+<span style="color: rgb(51,51,51);">In Outlook, click on IT Service
+Desk&nbsp;button<span style=
+"color: rgb(51,51,51);text-decoration: none;">&nbsp;and then IT
+Service Desk which opens an email template to create support
+ticket.</span></span>
+<p style="text-align: left;"><span style=
+"color: rgb(51,51,51);text-decoration: none;">In the Subject field
+start with “ADC: “ in order for the ticket to be routed to ADC L2
+support queue.Fill in sections 1, 2, 3, 7 of the email
+template.</span></p>
+<h2>7. What is the preferred browser for viewing DDP?</h2>
+Mozilla Firefox.
+<h2>8. How do I get a customer site added to DDP?</h2>
+Navigate to the <a class="external-link" href=
+"https://pdu-oss-tools3.seli.wh.rnd.internal.ericsson.com/ddp-account-request"
+rel="nofollow">Customer Support DDP Account Request page</a> and
+fill in the form.<br>
+Someone will process the form and you will get a site name, sftp
+username and sftp password unique to your site.<br>
+Also see this <a class="external-link" href=
+"https://erilink.ericsson.se/eridoc/erl/objectId/09004cff8ca7ce65?docno=&amp;action=current&amp;format=msw8"
+rel="nofollow">document</a>.<br>
+<strong>Note:</strong> Sites will only appear on the main DDP page
+when data is loaded to it.
+<h2>9. Why is my file not in the processing queue?</h2>
+Once a DDC file is loaded, it will be queued for processing. The
+queue is ordered based on the DDC file date i.e.
+DDC_Data_&lt;ddmmyy&gt;.tar.gz (not upload date), with the most
+recent DDC file date taking priority.<br>
+If DDC files for the same site on the same day are loaded within 30
+minutes of each other, the processing of the second file will be
+delayed to reduce the load on DDP.
+<h2>10. What clients should I use to upload the DDC files?</h2>
+OpenSSH_7.2, WinSCP_release_5.17.6 or FileZilla_3.41.2
+<h2>11. What causes an error of the form 'ERROR: ddp.txt content, .
+does not match SFTP account name , file will not be processed' for
+my data zip file?</h2>
+Ensure that the file&nbsp; <em><strong>ddp.txt</strong></em>
+&nbsp;contains the SFTP account name , with no white space or
+newlines. This file must exist in one of the following directories,
+depending on the system:<br>
+<div class="table-wrap">
+<table class="wrapped fixed-table confluenceTable">
+<colgroup>
+<col style="width: 343.0px;">
+<col style="width: 438.0px;">
+<col style="width: 664.0px;"></colgroup>
+<tbody>
+<tr>
+<td colspan="1" class="confluenceTd"><strong>SYSTEM</strong></td>
+<td colspan="1" class="confluenceTd"><strong>PATH</strong></td>
+<td colspan="1" class="confluenceTd">
+<strong>Exceptions</strong></td>
+</tr>
+<tr>
+<td colspan="1" class="confluenceTd">ENM</td>
+<td colspan="1" class="confluenceTd">
+<code>/var/ericsson/ddc_data/config (NFS share)</code></td>
+<td colspan="1" class="confluenceTd"></td>
+</tr>
+<tr>
+<td colspan="1" class="confluenceTd">EO</td>
+<td colspan="1" class="confluenceTd">
+<pre>/var/log/ddc_data/config <code>(NFS share)</code></pre></td>
+<td colspan="1" class="confluenceTd"></td>
+</tr>
+<tr>
+<td class="confluenceTd">OSS Compact</td>
+<td class="confluenceTd">
+<code>/var/opt/ericsson/ddc_data/config</code></td>
+<td colspan="1" class="confluenceTd"></td>
+</tr>
+<tr>
+<td class="confluenceTd">OSS on<em>&nbsp;</em>x86 Blades (<em>DDC
+Version R2AK or greater</em>)</td>
+<td class="confluenceTd">
+<code>/var/ericsson/ddc_data/config</code></td>
+<td colspan="1" class="confluenceTd">If environment file (
+/ericsson/config/environ ) exists and contains either "test" or
+"basic" (Compact OSS)then we don't have a NAS and so we use
+<em>/var/opt/ericsson/ddc_data/config</em></td>
+</tr>
+<tr>
+<td colspan="1" class="confluenceTd">
+<p class="_mce_tagged_br">ENIQ</p>
+</td>
+<td colspan="1" class="confluenceTd">
+<code>/eniq/log/ddc_data/config/</code></td>
+<td colspan="1" class="confluenceTd"></td>
+</tr>
+<tr>
+<td class="confluenceTd">OMBS</td>
+<td class="confluenceTd">/var/log/ddc_data/config</td>
+<td colspan="1" class="confluenceTd"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<br>
+<div class="table-wrap">
+<table class="wrapped confluenceTable">
+<colgroup>
+<col></colgroup>
+<tbody>
+<tr>
+<th colspan="1" class="confluenceTh">To fix data already uploaded,
+perform the following to locally stored data in the uploaded
+folder:</th>
+</tr>
+<tr>
+<td colspan="1" class="confluenceTd"><strong>1. Un-compress the
+file</strong></td>
+</tr>
+<tr>
+<td class="confluenceTd"><span style=
+"color: rgb(165,42,42);"><span style=
+"color: rgb(0,0,205);">&nbsp;</span><span style=
+"color: rgb(0,0,205);">&nbsp;</span></span>gzip -dc
+/eniq/log/ddc_data/&lt;DDC_server_folder&gt;/DDC_Data_&lt;ddmmyy&gt;.tar.gz
+| tar xvf -<span style="color: rgb(165,42,42);"><span style=
+"color: rgb(0,0,205);">&nbsp;</span></span></td>
+</tr>
+<tr>
+<td class="confluenceTd"><strong>2. Create/Update
+ddp.txt</strong></td>
+</tr>
+<tr>
+<td class="confluenceTd">echo '&lt;sftp_username&gt;' &gt;
+&lt;ddmmyy&gt;/ddp.txt<br>
+<strong>Note:</strong> This is the SFTP username given when the DDP
+site was created and there should be no newlines or carriage
+returns etc. at the end of the string.</td>
+</tr>
+<tr>
+<td class="confluenceTd"><strong>3. Tar and Compress the
+file</strong></td>
+</tr>
+<tr>
+<td class="confluenceTd">&nbsp;tar cvf - &lt;ddmmyy&gt; | gzip -c
+&gt; DDC_Data_&lt;ddmmyy&gt;.tar.gz</td>
+</tr>
+<tr>
+<td class="confluenceTd"><strong>4. Remove un-compressed
+folder</strong></td>
+</tr>
+<tr>
+<td colspan="1" class="confluenceTd">rm -r &lt;ddmmyy&gt;<br>
+<strong>Note:</strong> If using OSS version below 11.0, replace
+DDC_Data_&lt;ddmmyy&gt;.tar.gz with
+OSS_Data_&lt;ddmmyy&gt;.tar.gz</td>
+</tr>
+<tr>
+<td colspan="1" class="confluenceTd"><strong>5. ENM on or after
+1.70.26</strong>In ENM 1.70.26 or after a script is provided to
+update ddp.txt. <strong>Note:</strong> The full path to the DDC
+file must be provided and the backup file maually deleted
+afterwards.<br>
+Usage: /opt/ericsson/ERICddc/bin/updateDDP &lt;full path to DDC file&gt; &lt;SFTP username&gt;:e.g./opt/ericsson/ERICddc/bin/updateDDP /var/ericsson/ddc_data/ieatlms4926_TOR/uploaded/DDC_Data_190419.tar.gz lmi_ENM423</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2>12. Once a file is sent across to DDP for processing, how long
+will it be before my data is available?</h2>
+Assuming all is in order with the data file, then this depends on
+the traffic and the files from other sites in the queue at the
+time.<br>
+During the normal daily running, outside of maintenance periods,
+between 30-45 minutes, possibly about an hour in rare
+circumstances.
+<h2>13. How can I check the progress of my data processing?</h2>
+Navigate to the DDP Status page. A link to this page appears at the
+bottom of all DDP pages.
+<h2>14. How do I check if the DDP service is running?</h2>
+Navigate to the DDP Status page. A link to this page appears at the
+bottom of all DDP pages.
+<h2>15. How do I upload my compressed data from a command line
+interface (CLI)?</h2>
+Once the data is compressed to a .tar.gz file, use the File
+Transfer Protocol (SFTP) to upload it to the DDP server.<br>
+Also see this <a class="external-link" href=
+"https://erilink.ericsson.se/eridoc/erl/objectId/09004cff8ca7ce65?docno=&amp;action=current&amp;format=msw8"
+rel="nofollow">document</a>.
+<h2>16. How do I get access for DDP?</h2>
+<div class="WordSection1">Use your Ericsson signum and LAN password
+to login.<br>
+DDP has access control so that&nbsp;<span style=
+"color: rgb(51,51,51);">only those who need to see the data should
+have access to the data.<span>&nbsp;See</span></span>&nbsp;<a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com//display/SMA/DDP+Access+Control"
+rel="nofollow">here</a> for more information.
+<h2>17. Where is the data stored once it is uploaded?</h2>
+The data is stored in Ireland.
+<h2>18. How do I get the customer's DDC files uploaded
+automatically?</h2>
+Use an Ericsson service called ADC. More information can be found
+<a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com/display/SMA/ADC+Setup"
+rel="nofollow">here</a>.
+<h2>19. What is happening when DDP maintenance is running as per
+the status page?</h2>
+DDP maintenance executes every night&nbsp; at 0100.<br>
+During maintenance DDC files can still be uploaded, but will not be
+processed until the maintenance is complete.<br>
+In exceptional cases if maintenance is still running at 0600 it is
+requested to gracefully stop.<br>
+Typical maintenance tasks are:<br>
+<ul>
+<li>Update the help bubbles and FAQ</li>
+<li>Compress large files</li>
+<li>Delete temporary files</li>
+<li>Remap IDs from lookup tables e.g. proc ID when a better match
+is available for the process string.</li>
+</ul>
+<h2>20. How do I get support for DDP problems?</h2>
+First check the confluence guide&nbsp;<a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com/display/SMA/Checking+why+Data+is+not+on+DDP+page"
+rel="nofollow">here</a>&nbsp;and only if the solution is not
+identified there, clone <a class="external-link" href=
+"https://jira-oss.seli.wh.rnd.internal.ericsson.com/browse/TORF-491166"
+rel="nofollow">TORF-491166</a> for support.
+<h2>21. Where can I find out more general information about DDC and
+DDP?</h2>
+</div>
+This page&nbsp;<a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com//pages/viewpage.action?pageId=122570826#ForCUs"
+rel="nofollow">here</a> has more general information about DDC and
+DDP.
+<h2>22. Where can I find out more information about access control
+and DDP?</h2>
+This page&nbsp;<a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com/display/SMA/DDP+Access+Control"
+rel="nofollow">here</a> has more information about access control.
+<h2>23. Where can I find out more information about DDC/DDP privacy
+and security?</h2>
+This page&nbsp;<a href=
+"https://confluence-oss.seli.wh.rnd.internal.ericsson.com//pages/viewpage.action?pageId=122570826#PrivacyandSecurity"
+rel="nofollow">here</a> has more info about DDC/DDP privacy and
+security.
+<h2>24. Where can I find information about DDP that can use in a
+customer discussion?</h2>
+This PPT <a class="external-link" href=
+"https://ericsson-my.sharepoint.com/:p:/p/michael_finan/EcWV4JaDcjNMkLJzh1TkUZUBBRypu-D8BKfKa4J-filYDg?e=wYjiCy"
+rel="nofollow">here</a> has info about DDC/DDP which can be used
+for customer discussions.
+<h2>25. What can I do about "Problem processing data" errors on the
+DDP UI</h2>
+If the error says "Failed to decompress" then on the local laptop
+in powershell use "Get-FileHash Algorithm MD5
+DDC_Data_ddmmyy.tar.gz" and check with "md5sum
+DDC_Data_ddmmyy.tar.gz" on the ENM deployment.
+</body>
+</html>

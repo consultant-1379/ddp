@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_cm_topology_model">
+
+  <table name="ecson_cm_topology_model">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <services>
+    <service name="eric-cm-topology-model-sn"/>
+  </services>
+
+  <metricgroups>
+
+    <metricgroup name="eric-cm-topology-model-sn">
+      <metric source="metrics_logical_hierarchy_post_processing_time_count" target="cm_logical_process_time_count" delta="true"/>
+      <metric source="metrics_logical_hierarchy_post_requests_count" target="cm_logical_request_count" delta="true"/>
+      <metric source="metrics_change_elements_post_total_count" target="cm_change_total_count" delta="true"/>
+      <metric source="metrics_proposed_changes_post_total_count" target="cm_proposed_change_total_count" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>
+

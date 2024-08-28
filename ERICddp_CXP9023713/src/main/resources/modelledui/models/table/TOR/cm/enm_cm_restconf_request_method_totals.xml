@@ -1,0 +1,18 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_restconf_nbi">
+    <reference table="sites" condition="enm_cm_restconf_nbi.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_restconf_nbi.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_restconf_nbi.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="enm_cm_restconf_nbi.reqMethod"/>
+  </groupby>
+
+  <column db="reqMethod" label="Request Method"/>
+  <column db="IFNULL(COUNT(CASE WHEN resStatus = 'SUCCESS' THEN resStatus ELSE NULL END),0)" label="Total Success"/>
+  <column db="IFNULL(COUNT(CASE WHEN resStatus = 'FAILURE' THEN resStatus ELSE NULL END),0)" label="Total Failure"/>
+</modelledtable>

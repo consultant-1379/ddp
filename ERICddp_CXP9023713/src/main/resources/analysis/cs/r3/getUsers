@@ -1,0 +1,292 @@
+#!/usr/bin/env perl 
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsCommon;
+use strict;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub processDB {
+    my ($db,$r_pidToName,$r_sockByPid,$r_countsPerDB) = @_;
+
+    my $obeProcName = "obe " . $db;
+    my $obePid = undef;
+    foreach my $pid ( keys %{$r_pidToName} ) {
+	my $name = $r_pidToName->{$pid};
+	if ( $DEBUG > 4 ) { print "main: checking $name\n"; }
+	if ( $name eq $obeProcName ) {
+	    if ( $DEBUG > 3 ) { print "main: matched $pid\n"; }
+	    $obePid = $pid;
+	    last; 
+	}
+    }
+    if ( ! defined $obePid ) { print "ERROR: Could not be obe PID for $db\n"; exit 1; }
+
+    my $r_obeSocks = delete $r_sockByPid->{$obePid};
+    if ( $DEBUG > 4 ) { print Dumper("main obeSocks", $r_obeSocks); }
+    
+    my $obePort;
+    my %obeAddr = ();
+    foreach my $addr ( keys %{$r_obeSocks} ) {
+	if ( $r_obeSocks->{$addr} eq "LISTEN" ) { 
+	    $obePort = $addr;
+	    $obePort =~ s/^[^:+]://;
+	    if ( $DEBUG > 4 ) { print "processDB: obePort=$obePort addr=$addr\n"; }
+	} elsif ( $r_obeSocks->{$addr} eq "ESTABLISHED" ) {
+	    my ($local_addr,$local_port,$remote_addr,$remote_port) = $addr =~ /^([\d\.]+):(\d+)->([\d\.]+):(\d+)/;
+	    $obeAddr{$local_addr . ":" . $local_port}++;
+	}
+    }
+    if ( ! $obePort ) { print "ERROR: Could not find LISTEN for process $obePid\n";  exit 1; }
+    
+    foreach my $pid ( keys %{$r_sockByPid} ) {
+	my $count = 0;
+	foreach my $addr ( keys %{$r_sockByPid->{$pid}} ) {
+	    if ( $r_sockByPid->{$pid}->{$addr} eq "ESTABLISHED" ) {
+		my ($local_addr,$local_port,$remote_addr,$remote_port) = $addr =~ /^([\d\.]+):(\d+)->([\d\.]+):(\d+)/;
+		if ( exists $obeAddr{$remote_addr . ":" . $remote_port} ) {
+		    if ( $DEBUG > 4 ) { print "main: pid=$pid matched connection to obe addr $addr\n"; }
+		    $count++;
+		}
+	    }
+	}
+
+	if ( $count > 0 ) {
+	    if ( exists $r_pidToName->{$pid} ) { 
+		$r_countsPerDB->{$db}->{$r_pidToName->{$pid}} = $count;
+	    }
+	}
+    }
+}
+
+sub main
+{
+    my @dbList = ();
+    my ($lsOf,$jpsFile,$site,$date);
+    my $result = GetOptions(
+        "lsof=s"  => \$lsOf,
+        "jps=s" => \$jpsFile,
+	"db=s" => \@dbList,
+	"site=s" => \$site,
+	"date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+    ($result == 1) or die "Invalid args"; 
+
+    my $r_pidToName = parseJps($jpsFile);    
+    my $r_sockByPid = parseLsOf($lsOf);
+    
+    my %countsPerBD = ();
+    foreach my $db ( @dbList ) {
+	processDB($db,$r_pidToName,$r_sockByPid,\%countsPerBD);
+    }
+
+    if ( (defined $site) && (defined $date) ) {
+	store($site,$date,\%countsPerBD);
+    }
+
+}
+
+sub store {
+    my ($site,$date,$r_countsPerDB) = @_;
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+    
+    my @dbList = keys %{$r_countsPerDB};
+    my $r_vdbIdMap = getIdMap($dbh, "vdb_names", "id", "name", \@dbList);
+
+    my %allProcHash = ();
+    foreach my $db ( @dbList ) {
+	my $r_counts = $r_countsPerDB->{$db};
+	my @procNameList = keys %{$r_counts};
+	foreach my $procName ( @procNameList ) {
+	    $allProcHash{$procName}++;
+	}
+    }
+    my @allProcList = keys %allProcHash;
+    my $r_procIdMap = getIdMap($dbh, "process_names", "id", "name", \@allProcList );
+
+    foreach my $db ( @dbList ) {
+	my $vdbId = $r_vdbIdMap->{$db};
+	my $r_counts = $r_countsPerDB->{$db};
+	if ( $DEBUG > 3 ) { print Dumper("storeCs: processing $db r_counts", $r_counts); }
+
+	my @procNameList = keys %{$r_counts};
+
+	dbDo($dbh, "DELETE FROM vdb_connections WHERE siteid = $siteId AND vdbid = $vdbId AND date = '$date'") 
+	    or die "Failed to delete old data";
+	foreach my $procName ( @procNameList ) {
+	    dbDo($dbh, sprintf("INSERT INTO vdb_connections (date,siteid,vdbid,procid,count) VALUES ('%s',%d,%d,%d,%d)",
+			       $date,$siteId,$vdbId,$r_procIdMap->{$procName},$r_counts->{$procName}))
+		or die "Failed to insert data";
+	}
+    }    
+}
+
+sub parseJps
+{
+    my ($inFile, $r_pidToName) = @_;
+
+    open INPUT, $inFile or die "Failed to open $inFile";
+
+    my %MAPPED_PROC_NAMES = ();
+    my $r_pidToName;
+    while ( my $line = <INPUT> )
+    {           
+	# Protect against corrupt files, e.g.
+	#  7757  4-09:13       06  0.0      50    30     79     3^@^@^@...
+	if ( length($line) > 2048 ) {
+	    print "WARN: Invalid line $. in $inFile\n";
+	    next;
+	}
+
+        if ( $DEBUG > 9 ) { print "parseJps: $line"; }
+
+        my ( $pid, $longName );
+	if ( $line =~ /^-+$/ ) {
+	    $r_pidToName = {};
+	} elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+[-\d]+\s+\d+\s+\d+\s+\d+\s+\d+\s+(.*)$/ ) {
+            $pid = $1; $longName = $2;
+        }
+        elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+[-\d]+\s+\d+\s+\d+\s+(.*)$/ )
+        {
+            $pid = $1; $longName = $2;
+        }
+        elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+\d+\s+\d+\s+(.*)/ )
+        {
+            $pid = $1; $longName = $2;
+
+        }
+        elsif ( $line =~ /^\s*(\d+)\s+\S+\s+\S+\s+\S+\s+\d+\s+\d+\s+\d+\s+(.*)/ )
+        {
+            $pid = $1; $longName = $2;
+        }
+
+        if ( defined $longName ) {
+            my $shortName = $MAPPED_PROC_NAMES{$longName};
+            if ( ! defined $shortName )
+            {
+                $shortName = jpsShortName($longName);
+                $MAPPED_PROC_NAMES{$longName} = $shortName;
+            }
+            $r_pidToName->{$pid} = $shortName;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseJps r_pidToName", $r_pidToName); }
+    return $r_pidToName;
+}
+    
+
+sub parseLsOf
+{
+#             a    file access mode
+#             c    process command name (all characters from proc or
+#                  user structure)
+#             C    file structure share count
+#             d    file\u2019s device character code
+#             D    file\u2019s major/minor device number (0x<hexadecimal>)
+#             f    file descriptor
+#             F    file structure address (0x<hexadecimal>)
+#             G    file flaGs (0x<hexadecimal>; names if +fg follows)
+#             i    file\u2019s inode number
+#             k    link count
+#             l    file\u2019s lock status
+#             L    process login name
+#             m    marker between repeated output
+#             n    file name, comment, Internet address
+#             N    node identifier (ox<hexadecimal>
+#             o    file\u2019s offset (decimal)
+#             p    process ID (always selected)
+#             g    process group ID
+#             P    protocol name
+#             r    raw device number (0x<hexadecimal>)
+#             R    parent process ID
+#             s    file\u2019s size (decimal)
+#             S    file\u2019s stream identification
+#             t    file\u2019s type
+#             T    TCP/TPI information, identified by prefixes (the
+#                  \u2018=\u2019 is part of the prefix):
+#                      QR=<read queue size>
+#                      QS=<send queue size>
+#                      SO=<socket options and values> (not all dialects)
+#                      SS=<socket states> (not all dialects)
+#                      ST=<connection state>
+#                      TF=<TCP flags and values> (not all dialects)
+#                      WR=<window read size>  (not all dialects)
+#                      WW=<window write size>  (not all dialects)
+#                  (TCP/TPI information isn\u2019t reported for all supported
+#                    UNIX dialects. The -h or -? help output for the
+#                    -T option will show what TCP/TPI reporting can be
+#                    requested.)
+#             u    process user ID
+#             z    Solaris 10 and higher zone name
+#             0    use NUL field terminator character in place of NL
+#             1-9  dialect-specific field identifiers (The output
+#                  of -F? identifies the information to be found
+#                  in dialect-specific fields.)
+    my ($inFile, $r_portMap) = @_;
+    
+    open INPUT, $inFile or die "Failed to open $inFile";
+    my $r_currPid;
+    my $tcpFd = 0;
+    my $addr;
+    my $r_sockMap = {};
+    while ( my $line = <INPUT> )
+    {
+        if ( $DEBUG > 9 ) { print "parseLsOf: line = $line"; }
+        if ( $line =~ /^p(\d+)$/ )
+        {
+	    my $pid = $1;
+	    $r_currPid = {};
+	    $r_sockMap->{$pid} = $r_currPid;
+            if ( $DEBUG > 5 ) { print "parseLsOf: found process $pid\n"; }
+
+            $addr = undef;
+        }
+        elsif ( $line =~ /^P(.*)$/ )
+        {
+            my $proto = $1;
+            if ( $proto eq "TCP" )
+            {
+                if ( $DEBUG > 5 ) { print "parseLsOf: found protcol TCP\n"; }
+                $tcpFd = 1;
+                $addr = undef;
+            }
+            else
+            {
+                $tcpFd = 0;
+            }
+        }
+        elsif ( $tcpFd && ($line =~ /^n(\S+)$/) )
+        {
+            $addr = $1;
+            if ( $DEBUG > 5 ) { print "parseLsOf: found addr $addr\n"; }
+        }
+        elsif ( $tcpFd && (defined $addr) && ($line =~ /^TST=(.*)/) )
+        {
+            my $state = $1;
+            if ( $DEBUG > 5 ) { print "parseLsOf: found state $state\n"; }	    
+	    $r_currPid->{$addr} = $state;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseLsOf r_sockMap", $r_sockMap); }
+
+    return $r_sockMap;
+}

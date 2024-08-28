@@ -1,0 +1,42 @@
+#!/bin/bash
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+DATA_DIR=$1
+OUTPUT_DIR=$2
+DASH_DATE=$3
+SITE=$4
+
+EXPORT_PERF=${DATA_DIR}/OSS/exportperf.txt
+EVENT_FILE=${DATA_DIR}/OSS/all.events
+EXPORT_LOG_DIR=${DATA_DIR}/OSS/bcg/export
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ ! -d ${OUTPUT_DIR}/export ]; then
+    mkdir ${OUTPUT_DIR}/export
+fi
+
+HAS_LOG_DIR=0
+NUM_TI_FILES=0
+
+# If have the raw errInfoLog files then use them
+if [ -d ${EXPORT_LOG_DIR} ] ; then
+    HAS_LOG_DIR=1
+    
+    ${ANALYSIS_BIN}/export/parseExports \
+	--dir ${EXPORT_LOG_DIR} \
+	--site ${SITE} \
+	--tabledir ${OUTPUT_DIR}/export
+elif [ -r ${EXPORT_PERF} ] ; then
+    ${ANALYSIS_BIN}/export/parseNewExportPerf --perfdata ${EXPORT_PERF} \
+        --site ${SITE} \
+        --tabledir ${OUTPUT_DIR}/export
+fi
+
+INSTR_FILE=${DATA_DIR}/instr.txt
+${ANALYSIS_BIN}/server/plotHeap ${INSTR_FILE} wran_bcg ${DASH_DATE} ${OUTPUT_DIR}/export/mem.jpg
+

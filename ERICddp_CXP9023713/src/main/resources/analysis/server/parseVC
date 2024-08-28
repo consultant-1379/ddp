@@ -1,0 +1,229 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use Instr;
+
+our $DEBUG = 0;
+
+sub parseSysName($) {
+    my ($file) = @_;
+
+    my $sysName = undef;
+    open INPUT, $file or die "Failed to open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /STRING: (\S+)/ ) {
+            $sysName = $1;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print "parseSysName: sysName=$sysName\n"; }
+
+    return $sysName;
+}
+
+sub parseIfName($) {
+    my ($file) = @_;
+
+    my %nameMap = ();
+    open INPUT, $file or die "Failed to open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^IF-MIB::ifName\.(\d+) = STRING: (\S+)/ ) {
+            my ($index,$name) = ($1,$2);
+            $nameMap{$index} = $name;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseIfName: nameMap",\%nameMap); }
+
+    return \%nameMap;
+}
+
+sub parseIfSpeed($) {
+    my ($file) = @_;
+
+    my %speedMap = ();
+    open INPUT, $file or die "Failed to open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^IF-MIB::ifHighSpeed\.(\d+) = Gauge32: (\d+)/ ) {
+            my ($index,$speed) = ($1,$2);
+            $speedMap{$index} = $speed;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseIfSpeed: speedMap",\%speedMap); }
+
+    return \%speedMap;
+}
+
+sub parseIfTable($) {
+    my ($file) = @_;
+
+    my %statsMap = ();
+    open INPUT, $file or die "Failed to open $file";
+    my $timestamp = undef;
+    my $time = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^(\d{6,6}):(\d{2,2}:\d{2,2})$/ ) {
+            $time = parseTime( $1 . ":" . $2, $StatsTime::TIME_DDMMYY_HM);
+            $timestamp = formatTime( $time, $StatsTime::TIME_SQL );
+        } else {
+            chop $line;
+            my @fields = split("@",$line);
+            #ifIndex@ifDescr@ifType@ifMtu@ifSpeed@ifPhysAddress@ifAdminStatus@ifOperStatus@ifLastChange@ifInOctets@ifInUcastPkts@ifInNUcastPkts@ifInDiscards@ifInErrors@ifInUnknownProtos@ifOutOctets@ifOutUcastPkts@ifOutNUcastPkts@ifOutDiscards@ifOutErrors@ifOutQLen@ifSpecific
+
+            #ifName@ifInMulticastPkts@ifInBroadcastPkts@ifOutMulticastPkts@ifOutBroadcastPkts@ifHCInOctets@ifHCInUcastPkts@ifHCInMulticastPkts@ifHCInBroadcastPkts@ifHCOutOctets@ifHCOutUcastPkts@ifHCOutMulticastPkts@ifHCOutBroadcastPkts@ifLinkUpDownTrapEnable@ifHighSpeed@ifPromiscuousMode@ifConnectorPresent@ifAlias@ifCounterDiscontinuityTime
+            if ( $fields[0] =~ /^X\d{1,1}$/ ) {
+                my $ifName = $fields[0];
+                if ( ! exists $statsMap{$ifName} ) {
+                    $statsMap{$ifName} = [];
+                }
+                my %sample = (
+                    'timestamp' => $timestamp,
+                    'time' => $time,
+                    'ifInOctets' => $fields[5],
+                    'ifOutOctets' => $fields[9],
+                    'ifOutMulticastPkts' => $fields[3],
+                    'ifOutBroadcastPkts' => $fields[4]
+                    );
+                push @{$statsMap{$ifName}}, \%sample;
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseIfTable: statsMap",\%statsMap); }
+
+    return \%statsMap;
+}
+
+sub processIfStats($) {
+    my ($r_ifStats) = @_;
+
+    my %outStats = ();
+    while ( my ($ifIndex,$r_samples) = each %{$r_ifStats} ) {
+        deltaSamples($r_samples, [ 'ifInOctets', 'ifOutOctets', 'ifOutMulticastPkts', 'ifOutBroadcastPkts' ] );
+        shift @{$r_samples};
+        $r_samples = instrRateSamples($r_samples, [ 'ifInOctets', 'ifOutOctets', 'ifOutMulticastPkts', 'ifOutBroadcastPkts' ] );
+        my $sum = 0;
+        for ( my $index = 0; $index < $#{$r_samples}; $index++ ) {
+            $sum += $r_samples->[$index]->{'ifInOctets'} + $r_samples->[$index]->{'ifOutOctets'};
+        }
+        if ( $sum > 0 ) {
+            $outStats{$ifIndex} = $r_samples;
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("processIfStats: outStats", \%outStats); }
+    return \%outStats;
+}
+
+sub storeStats($$) {
+    my($site,$r_data) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1) or die "Failed to get siteid for $site";
+
+    while ( my ($sysName,$r_sysInfo) = each %{$r_data} ) {
+        my $serverId = createServer($dbh, $siteId, $sysName);
+        my @nicNames = sort keys %{$r_sysInfo->{'stats'}};
+        my $r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name", \@nicNames, $serverId, "serverid" );
+        my @nicIds = ();
+        foreach my $nicName ( @nicNames ) {
+            push @nicIds, $r_nicMap->{$nicName};
+        }
+
+        my $from = undef;
+        my $to = undef;
+
+        while ( my ($nicName,$r_samples) = each %{$r_sysInfo->{'stats'}} ) {
+            if ( ! defined $from || $from > parseTime($r_samples->[0]->{'timestamp'}, $StatsTime::TIME_SQL) ) {
+                $from = parseTime($r_samples->[0]->{'timestamp'}, $StatsTime::TIME_SQL);
+            }
+            if ( ! defined $to || $to < parseTime($r_samples->[$#{$r_samples}]->{'timestamp'}, $StatsTime::TIME_SQL) ) {
+                $to = parseTime($r_samples->[$#{$r_samples}]->{'timestamp'}, $StatsTime::TIME_SQL);
+            }
+        }
+
+        dbDo($dbh, sprintf("DELETE FROM nic_stat WHERE serverId = %d AND time BETWEEN '%s' AND '%s'",
+                           $serverId, formatTime($from,$StatsTime::TIME_SQL),formatTime($to,$StatsTime::TIME_SQL))
+            ) or die "Failed to remove old stats";
+
+        while ( my ($nicName,$r_samples) = each %{$r_sysInfo->{'stats'}} ) {
+            my $nicId = $r_nicMap->{$nicName};
+            if ( $DEBUG ) { print "$sysName, $nicName\n"; }
+            foreach my $r_sample ( @{$r_samples} ) {
+                dbDo($dbh, sprintf("INSERT INTO nic_stat (siteid,serverid,nicid,time,ibytes_per_sec,obytes_per_sec) VALUES (%d,%d,%d,'%s',%d,%d)",
+                                   $siteId,$serverId,$nicId,$r_sample->{'timestamp'},$r_sample->{'ifInOctets'},$r_sample->{'ifOutOctets'})
+                    ) or die "Failed to insert row";
+                if ( $DEBUG ) { printf "%s %.1f %.1f\n", $r_sample->{'timestamp'}, $r_sample->{'ifOutMulticastPkts'}, $r_sample->{'ifOutBroadcastPkts'}; }
+            }
+        }
+
+        my $fromStr = formatTime($from,$StatsTime::TIME_SQL);
+        my ($fromDate) = $fromStr =~ /^(\S+)/;
+        dbDo($dbh,sprintf("DELETE FROM virtualconnect WHERE siteid = %d AND date = '%s' AND serverid = %d",
+                          $siteId, $fromDate,$serverId))
+            or die "Failed to remove old row";
+        dbDo($dbh,sprintf("INSERT INTO virtualconnect (siteid,date,serverid) VALUES (%d,'%s',%d)",
+                          $siteId, $fromDate,$serverId))
+            or die "Failed to insert row";
+    }
+}
+
+
+
+
+sub main() {
+    my ($dataDir,$site,$server,$props);
+    my $result = GetOptions(
+        "dir=s" => \$dataDir,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my @sysNameFiles = ();
+    opendir(my $dh, $dataDir) || die "can't opendir dir: $!";
+    while ( my $file = readdir($dh) ) {
+        if ( $file =~ /^sysName/ ) {
+            push @sysNameFiles, $file;
+        }
+    }
+    closedir $dh;
+    if ( $DEBUG > 3 ) { print Dumper("main: sysNameFiles", \@sysNameFiles); }
+
+
+    my %stats = ();
+    foreach my $file ( @sysNameFiles ) {
+        my ($ip) = $file =~ /^sysName\.(.*)/;
+        my $sysName = parseSysName($dataDir . "/" . $file);
+        if ( defined $sysName ) {
+            my $r_ifStats = parseIfTable($dataDir . "/ifXTable." . $ip);
+            $stats{$sysName} = {
+                'ip' => $ip,
+                'stats' => processIfStats($r_ifStats)
+            };
+        }
+    }
+
+    my @sysNames = keys %stats;
+    if ( $#sysNames > -1 ) {
+        storeStats($site,\%stats);
+    }
+}
+
+main();

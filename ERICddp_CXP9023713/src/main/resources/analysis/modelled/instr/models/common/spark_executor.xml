@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@spark_executor">
+
+  <table name="spark_executor">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="spark_executor">
+      <metric source="spark_executor_shuffletotalbytesread" target="shuftotalmbread" delta="true" scale="1048576"/>
+      <metric source="spark_executor_shuffleremotebytesread" target="shufremotembread" delta="true" scale="1048576"/>
+      <metric source="spark_executor_shufflebyteswritten" target="shufmbwritten" delta="true" scale="1048576"/>
+      <metric source="spark_executor_shufflerecordsread" target="shufrecordsread" delta="true"/>
+      <metric source="spark_executor_shufflerecordswritten" target="shufrecordswritten" delta="true"/>
+      <metric source="spark_executor_shufflefetchwaittime" target="shuffetchtime" delta="true"/>
+      <metric source="spark_executor_shufflewritetime" target="shufwritetime" delta="true"/>
+      <metric source="spark_executor_threadpool_activetasks" target="tpactivetasks"/>
+      <metric source="spark_executor_threadpool_completetasks" target="tpcompletetasks" delta="true"/>
+      <metric source="spark_executor_shufflelocalbytesread" target="shuflocalmbread" delta="true" scale="1048576"/>
+      <metric source="spark_executor_shufflelocalblocksfetched" target="shuflocalblocksfetched" delta="true"/>
+      <metric source="spark_executor_shuffleremoteblocksfetched" target="shufremoteblocksfetched" delta="true"/>
+      <metric source="spark_executor_shuffleremotebytesreadtodisk" target="shufremotembreadtodisk" delta="true" scale="1048576"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

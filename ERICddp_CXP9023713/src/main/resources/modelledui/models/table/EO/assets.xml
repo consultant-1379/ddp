@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="eo_assets">
+  <reference table="sites" condition="eo_assets.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND eo_assets.date = '%date%'</where>
+
+ <order columnid="numassets" direction="DESC"/>
+
+ <column db="eo_assets.type" label="Type" id="type"/>
+ <column db="eo_assets.count" label="Count" id="numassets"/>
+
+ <ctxmenu keycol="type" targettype="modelledgraph" multiselect="true">
+  <item id="EO/assets" label="Plot for last month"/>
+ </ctxmenu>
+</modelledtable>

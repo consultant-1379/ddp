@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ namespace="^cadvisor_pod$">
+
+  <table name="k8s_pod_cadvisor">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="appid" reftable="k8s_pod_app_names"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="POD">
+      <!-- delta is done in parseInstrDump for pod level metrics for cpu metrics -->
+      <metric source="container_cpu_user_seconds_total" target="cpu_user" filteridle="true"/>
+      <metric source="container_cpu_system_seconds_total" target="cpu_sys" filteridle="true"/>
+      <metric source="container_cpu_cfs_throttled_seconds_total" target="cpu_throttled" filteridle="true"/>
+
+      <metric source="container_memory_working_set_bytes" target="mem_mb" scale="1048576"/>
+      <metric source="container_memory_cache" target="mem_cache" scale="1048576"/>
+
+      <metric source="container_network_receive_bytes_total" target="net_rx_mb" scale="1048576" delta="true"/>
+      <metric source="container_network_transmit_bytes_total" target="net_tx_mb" filteridle="true" scale="1048576" delta="true"/>
+      <metric source="container_network_receive_packets_total" target="net_rx_kpkts" scale="1000" delta="true"/>
+      <metric source="container_network_transmit_packets_total" target="net_tx_kpkts" scale="1000" delta="true"/>
+
+      <metric source="container_network_receive_errors_total" target="net_rx_err" delta="true"/>
+      <metric source="container_network_transmit_errors_total" target="net_tx_err" delta="true"/>
+      <metric source="container_network_receive_packets_dropped_total" target="net_rx_drop" delta="true"/>
+      <metric source="container_network_transmit_packets_dropped_total" target="net_tx_drop" delta="true"/>
+    <!--
+      <metric source="container_fs_sectors_writes_total" target="disk_write_mb" scale="2048"/>
+      <metric source="container_fs_sectors_read_total" target="disk_read_mb" scale="2048"/>
+    -->
+      <property name="appid" xsi:type="fixedproperty" value="_servicegroup"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,127 @@
+#!/bin/bash
+
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 date site statsroot"
+    exit 1
+fi
+
+log() {
+    MSG=$1
+        SCRIPT=`basename $0`
+        echo $1 | awk -f ${ANALYSIS_BIN}/main/outputProcessing.awk scriptname="$SCRIPT" sitename="$SITE" tardate="$DATE" format="$LOG_LINE_FORMAT"
+}
+
+run() {
+        SCRIPTNAME=`basename $1`
+        COMMAND=""
+        #Quickest way to quote everything to ensure vars like "hello world" get passed down as one
+        while [ -n "$1" ]
+        do
+                COMMAND="${COMMAND} \"$1\""
+                shift
+        done
+        [ ! -z "$DEBUG" ] && echo "Executing $COMMAND"
+         {
+         eval $COMMAND
+         } 2>&1 | awk -f ${ANALYSIS_BIN}/main/outputProcessing.awk scriptname="$SCRIPTNAME" sitename="$SITE" tardate="$DATE" format="$LOG_LINE_FORMAT"
+}
+
+SITE=$2
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+DASH_DATE=${1}
+DATE=`echo ${1} | sed 's/-//g'`
+
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+
+#If the log format has not been declared above me, assume default
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="TSts"
+# for a description of log line formats, see comments in outputProcessing.awk
+
+log "Start DDP"
+STATS_ROOT=$3
+ANALYSIS_OUTPUT=${STATS_ROOT}/${SITE}/analysis/${DATE}
+DATADIR=${STATS_ROOT}/${SITE}/data/${DATE}
+
+ANALYSIS_TYPE=$4
+if [ "${ANALYSIS_TYPE}" != "FULL" ] ; then
+    echo "INFO: Ignoring ANALYSIS_TYPE=${ANALYSIS_TYPE}"
+    exit 0
+fi
+
+if [ -d ${DATADIR}/plugin_data/DDP ] ; then
+    DDP_DIR=${DATADIR}/plugin_data/DDP
+else
+    DDP_DIR=${DATADIR}/DDP
+fi
+
+if [ -s ${DDP_DIR}/perf.log ] ; then
+   log "Page Execution"
+   ${ANALYSIS_BIN}/DDP/parsePerfLog --perf ${DDP_DIR}/perf.log
+fi
+
+for DB in statsdb ddpadmin ; do
+  if [ -s ${DDP_DIR}/${DB}.txt ] ; then
+    log "${DB} Table sizes"
+    ${ANALYSIS_BIN}/DDP/parseStatsDB --data ${DDP_DIR}/${DB}.txt --date ${SQL_DATE} --type "${DB}"
+  fi
+done
+
+if [ -s ${DDP_DIR}/id_tables.txt ] ; then
+   log "ID Tables"
+   ${ANALYSIS_BIN}/DDP/parseIdTables --data ${DDP_DIR}/id_tables.txt --date ${SQL_DATE}
+fi
+
+if [ -s ${DDP_DIR}/mysql-extended-status.txt ] ; then
+    log "MySQL stats"
+    ${ANALYSIS_BIN}/DDP/parseMysqlExtendedStatus --data ${DDP_DIR}/mysql-extended-status.txt
+fi
+
+log "Script Execution"
+${ANALYSIS_BIN}/DDP/parseExecutionLog --dir ${DDP_DIR} --incr ${INCR_DIR}/exec.incr --date ${SQL_DATE}
+
+if [ -s ${DDP_DIR}/mysql-slowquerylog.txt ] ; then
+    ANALYSIS_MYSQL=${ANALYSIS_OUTPUT}/mysql
+    if [ ! -d ${ANALYSIS_MYSQL}  ] ; then
+        mkdir ${ANALYSIS_MYSQL};
+    fi
+    ${ANALYSIS_BIN}/DDP/parseSlowQueryLog --input ${DDP_DIR}/mysql-slowquerylog.txt --date ${SQL_DATE} --outdir ${ANALYSIS_MYSQL}
+fi
+
+REPL_FILE_LIST=$(find ${DDP_DIR} -name 'repl_*.txt')
+for REPL_FILE in ${REPL_FILE_LIST} ; do
+    REPLICA=$(basename ${REPL_FILE} | sed -e 's/^repl_//' -e 's/.txt$//')
+    cat ${REPL_FILE} | awk -v replica="$REPLICA" '{printf "%s\t%s\t%d\n", $1, replica, $2}' >> ${TMP_DIR}/repl.txt
+done
+if [ -s ${TMP_DIR}/repl.txt ] ; then
+    sed -i 's/^\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/20\3-\2-\1/g' ${TMP_DIR}/repl.txt
+    cat >> ${TMP_DIR}/repl.sql <<EOF
+use ddpadmin;
+DELETE FROM repl_delay WHERE time BETWEEN "${SQL_DATE} 00:00:00" AND "${SQL_DATE} 23:59:59";
+LOAD DATA LOCAL INFILE '${TMP_DIR}/repl.txt' INTO TABLE repl_delay (time,replica,delay);
+EOF
+    ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/repl.sql
+fi
+
+CERT_LIST=$(find ${DDP_DIR} -name '*.cer')
+if [ ! -z "${CERT_LIST}" ] ; then
+    cat > ${TMP_DIR}/certs.sql <<EOF
+use ddpadmin;
+TRUNCATE TABLE ddp_certs;
+EOF
+    for CERT in ${CERT_LIST} ; do
+        NOT_AFTER=$(openssl x509 -in ${CERT} -text | grep 'Not After :' | sed 's/.*Not After ://')
+        NOT_AFTER_DATE=$(date "+%Y-%m-%d" --date "${NOT_AFTER}")
+        TYPE=$(basename ${CERT} .cer)
+        echo "INSERT INTO ddp_certs (type, notafter) VALUES('${TYPE}', '${NOT_AFTER_DATE}');" >> ${TMP_DIR}/certs.sql
+    done
+    ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/certs.sql
+fi
+
+chmod 755 ${DDP_DIR}
+find ${DDP_DIR} -type f -exec chmod 644 {} \;
+
+log "End DDP"

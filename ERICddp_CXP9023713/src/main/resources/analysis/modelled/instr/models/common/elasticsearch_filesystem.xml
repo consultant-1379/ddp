@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@elasticsearch_filesystem"
+    sampleinterval="900">
+
+  <table name="elasticsearch_filesystem">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+  <metricgroups>
+    <multi>servicetype</multi>
+    <metricgroup name="data_available_bytes:(\S+)">
+      <metric source="elasticsearch_filesystem_data_available_bytes" target="fsAvailableMBytes" scale="1048576">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="data_free_bytes:(\S+)">
+      <metric source="elasticsearch_filesystem_data_free_bytes" target="fsFreeMBytes" scale="1048576">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

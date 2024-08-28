@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_pmic_notification">
+      <reference table="sites" condition="enm_pmic_notification.siteid = sites.id"/>
+      <reference table="servers" condition="enm_pmic_notification.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="totalNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total Notification Count"/>
+      <column db="totalNotificationCount" label="Total Notification Count"/>
+    </graph>
+    <graph name="lteNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total LTE Notification Count"/>
+      <column db="lteNotificationCount" label="Total LTE Notification Count"/>
+    </graph>
+    <graph name="mixedModeNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total Mixed Mode Notification Count"/>
+      <column db="mixedModeNotificationCount" label="Total Mixed Mode Notification Count"/>
+    </graph>
+    <graph name="nrNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total NR Notification Count"/>
+      <column db="nrNotificationCount" label="Total NR Notification Count"/>
+    </graph>
+    <graph name="successfulNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total Successful Notification Count"/>
+      <column db="successfulNotificationCount" label="Total Successful Notification Count"/>
+    </graph>
+    <graph name="failedNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total Failed Notification Count"/>
+      <column db="failedNotificationCount" label="Total Failed Notification Count"/>
+    </graph>
+    <graph name="invalidNotificationCount" type="tsc" ylabel="Count">
+      <title value="Total Invalid Notification Count"/>
+      <column db="invalidNotificationCount" label="Total Invalid Notification Count"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="pmic">
+      <member>totalNotificationCount</member>
+      <member>lteNotificationCount</member>
+      <member>mixedModeNotificationCount</member>
+      <member>nrNotificationCount</member>
+      <member>successfulNotificationCount</member>
+      <member>failedNotificationCount</member>
+      <member>invalidNotificationCount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

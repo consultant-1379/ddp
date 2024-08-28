@@ -1,0 +1,183 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use DBI;
+
+use StatsDB;
+use StatsCommon;
+
+our $DEBUG=0;
+
+main();
+
+exit 0;
+
+sub main
+{
+    my ($logFile,$logFileType,$site,$dashDate);
+    my $result = GetOptions(
+			    "logfile=s"  => \$logFile,
+			    "logfiletype=s"  => \$logFileType,
+			    "site=s" => \$site,
+			    "date=s" => \$dashDate,
+			    "debug=s" => \$DEBUG,
+			    );       
+    ($result == 1) or die "Invalid args"; 
+    setStatsDB_Debug($DEBUG);
+    setStatsCommon_Debug($DEBUG);
+
+    # Validate the site
+    if ( !$site ) {
+        die "ERROR: No site specified.";
+    }
+    # Validate the log file
+    if ( !$logFile ){
+        die "ERROR: No log file specified.";
+    }
+    # Validate the log file type
+    if ( !$logFileType || ($logFileType ne "lvlog" && $logFileType ne "cmdlog")) {
+        die "ERROR: No valid log file type specified - should be 'lvlog' or 'cmdlog'.";
+    }
+
+    # YY-MM-DD date format - will use some others further down
+    if ( !$dashDate || ($dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/) ) {
+        die ("ERROR: No valid date specified - should be in DD-MM-YY format.");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Get the siteid
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+
+    #
+    # We hit the LV log and parse it, if available, otherwise the cmd log.
+    #
+    my $r_commands = parseLog($logFile, $logFileType, $sqlDate);
+    my $cnt = scalar(keys(%$r_commands));
+
+    if ( $DEBUG > 4 ) { print($cnt . " records to store... \n"); }
+
+    # If we have data, store it
+    if ($cnt > 0) {
+        writeBcpFile($sqlDate, $siteid, $r_commands);
+    }
+}
+
+sub parseLog
+{
+    my ($logFile, $logFileType, $sqlDate) = @_;
+
+    my %commands = ();
+    open READ_LOG, $logFile or die "Cannot open event log $logFile";
+    PARSE_RECORD: while ( my $line = <READ_LOG> ) {
+        my ( $time, $command, $nooftimes );
+
+        $nooftimes = 1;
+        if ($logFileType eq "lvlog") {
+            ###
+            # TDDDCDDP-137: CIF/LV logging have changed without informing us, and we now have three variations, e.g.:
+            #  2012-01-03 15:10.42 COMMAND "" AMOS "eagnbur" "lt" "" "" NULL "" "" "lt 1 times    READ"
+            #  2012-07-09 13:53.46 COMMAND "AMOS" AMOS "eagnbur" "pr" "" "" NULL "" "Success" "pr was executed on 10.26.141.19 (RNC14). Result=OK"
+            #  2012-08-28 13:27.58 COMMAND "AMOS"   "eagnbur" "User" "" "" NULL "" "Success" "User eagnbur has permission read,telnet,write"
+            ### 
+            if ($line =~ /^([0-9]{4}\-[0-9]{2}\-[0-9]{2} [0-9]{2}\:[0-9]{2}.[0-9]{2}) COMMAND \"[^\"]*\" AMOS.*\s+\"([^\"|^\s]+).*\s+(\d{1})\s+time/) {
+                ($time, $command, $nooftimes) = ($1, $2, $3);
+            } elsif ($line =~ /^([0-9]{4}\-[0-9]{2}\-[0-9]{2} [0-9]{2}\:[0-9]{2}.[0-9]{2}) COMMAND \"AMOS\".*\s+\"([^\"|^\s]+).*\s+(\d{1})\s+time/) {
+                ($time, $command, $nooftimes) = ($1, $2, $3);
+            } elsif ($line =~ /^([0-9]{4}\-[0-9]{2}\-[0-9]{2} [0-9]{2}\:[0-9]{2}.[0-9]{2}) COMMAND \"AMOS\".*\s+\"([^\"|^\s]+)\s+/) {
+                ($time, $command, $nooftimes) = ($1, $2, 1);
+            } elsif ($line =~ /^([0-9]{4}\-[0-9]{2}\-[0-9]{2} [0-9]{2}\:[0-9]{2}.[0-9]{2}) COMMAND \"[^\"]*\" AMOS.*\s+\"([^\"|^\s]+)\s+/) {
+                ($time, $command, $nooftimes) = ($1, $2, 1);
+            }
+        } elsif ($logFileType eq "cmdlog") {
+             ($time, $command) = $line =~ /^(\S+ \S+) AMOS \"[^\"]*\" \"([^\"]+)\"/;
+        }
+
+        # EEICMUY: Need to strip off all command args 
+        if ( $command =~ /^(\S+)\s+/ ) {
+            $command, $nooftimes = $1, 1;
+        }
+
+        if ( $DEBUG > 5 ) { print "parseCommands: time=$time command=$command\n"; }
+
+        if ( $command eq 'User' || $command eq 'Abnormal' ) { 
+            next PARSE_RECORD;
+        }
+
+
+        # Take records for the date passed
+        if ( $time =~ m/$sqlDate/ ) {
+            if ($commands{$command}) {
+                $commands{$command} = $commands{$command} + $nooftimes;
+            } else {
+                $commands{$command} = $nooftimes;
+            }
+        } else {
+            next PARSE_RECORD;
+        }
+    }
+    close READ_LOG;
+
+    if ( $DEBUG > 4 ) { print Dumper("parseCommands: commands", %commands ); }
+    return \%commands;
+}
+
+sub writeBcpFile() {
+    my ($sqlDate, $siteid, $r_commands) = @_;
+
+    # Get the command ids
+    my $dbh = connect_db();
+    my $r_commandsMap = getIdMap($dbh, "amos_command_names", "id", "name", [keys(%$r_commands)]);
+
+    # initialise the BCP file
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/amos_commands." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $command (sort(keys(%$r_commands))) {
+        my $record = $sqlDate . "|" . $siteid . "|" . $r_commandsMap->{$command} . "|" . $r_commands->{$command} . "\n";
+
+        if ($DEBUG > 4) { print $record; }
+
+        # Write the record to the file, eliminating records with no metrics
+        print BULK_INSERT $record;
+    }
+
+    close BULK_INSERT;
+
+    # Run the bulk insert
+    storeDataset($sqlDate, $siteid, $bcpFile);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM amos_commands WHERE date = '" . $sqlDate . "' AND siteid = " . $siteid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from amos_commands for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE amos_commands FIELDS TERMINATED BY '|'");
+    $dbh->disconnect;
+
+    return 0;
+}
+

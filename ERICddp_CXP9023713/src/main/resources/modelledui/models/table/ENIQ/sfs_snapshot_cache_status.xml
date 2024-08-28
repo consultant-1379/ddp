@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_sfs_snap_cache_status">
+    <reference table="sites" condition="eniq_sfs_snap_cache_status.siteId = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_sfs_snap_cache_status.date = '%date%'</where>
+  <column db="eniq_sfs_snap_cache_status.cacheName" label="Cache Name"/>
+  <column db="eniq_sfs_snap_cache_status.totalCache" label="Total Cache"/>
+  <column db="eniq_sfs_snap_cache_status.usedCache" label="Used Cache"/>
+  <column db="eniq_sfs_snap_cache_status.usedCachePercent" label="Used Cache %"/>
+  <column db="eniq_sfs_snap_cache_status.availableCache" label="Available Cache"/>
+  <column db="eniq_sfs_snap_cache_status.availableCachePercent" label="Available Cache %"/>
+  <column db="eniq_sfs_snap_cache_status.sdcnt" label="SDCNT"/>
+
+</modelledtable>

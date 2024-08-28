@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Checkpoints Buffers"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="postgres_checkpoints_bufferwrites">
+    <reference table="sites" condition="postgres_checkpoints_bufferwrites.siteid = sites.id"/>
+    <reference table="servers" condition="postgres_checkpoints_bufferwrites.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="serverid"/>
+   <where> sites.name = '%s' AND postgres_checkpoints_bufferwrites.serverid= '%s' </where>
+   <column db="postgres_checkpoints_bufferwrites.checkpointsBuffer" label="Checkpoints Buffers"/>
+  </query>
+ </queries>
+ <size width="600" height="400"/>
+</modelledgraph>

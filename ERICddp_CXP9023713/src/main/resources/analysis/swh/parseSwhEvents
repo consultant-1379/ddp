@@ -1,0 +1,337 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($eventsFile,$resultDir,$site,$date);
+    my $result = GetOptions(
+			    "events=s" => \$eventsFile,
+			    "resultdir=s" => \$resultDir,
+			    "site=s" => \$site,
+			    "date=s" => \$date,
+			    "debug=s" => \$DEBUG	
+			    );	
+    if ( $result == 0 )
+    {
+	exit 1;
+    }
+	
+    my $r_Data = parseEvents($eventsFile);
+
+    my $r_totals = getTotals($r_Data);
+    
+    if ( $site )
+    {
+	storeTotals($r_totals,$site,$date);
+    }
+    elsif ( $resultDir )
+    {
+	printResults($resultDir,$r_Data);
+    }
+}
+
+sub getTotals
+{
+    my ($r_Data) = @_;
+
+    my %totals = ();
+    foreach my $activityId ( keys %{$r_Data} )
+    {
+	my $r_ActData = $r_Data->{$activityId};
+
+	if ( $DEBUG > 5 ) { print Dumper("getTotals: activity $activityId", $r_ActData); }
+
+	$totals{$r_ActData->{'type'}}->{'actCount'}++;
+	if ( $r_ActData->{'status'} eq 'COMPLETED' || $r_ActData->{'status'} eq 'TERMINATED' )
+	{
+	    $totals{$r_ActData->{'type'}}->{'actSuccess'}++;
+	}
+	elsif ( $r_ActData->{'status'} eq 'FAILED' )
+	{
+	    $totals{$r_ActData->{'type'}}->{'actFail'}++;
+	}
+	elsif ( $r_ActData->{'status'} eq 'INDETERMINATE' )
+	{
+	    $totals{$r_ActData->{'type'}}->{'actInd'}++;
+	}
+	else 
+	{
+	    print "Incompete activity $activityId $r_ActData->{'lastEventTime'}\n";
+	}
+	
+	my $r_NeList = $r_ActData->{'nedata'};
+	$totals{$r_ActData->{'type'}}->{'nodesCount'} += $#{$r_NeList} + 1;
+	for my $r_NeData ( @{$r_NeList} )
+	{
+	    if ( ($r_NeData->{'state'} eq 'COMPLETED') || 
+		 ($r_NeData->{'state'} eq 'AWAITING_CONFIRM' && $r_ActData->{'type'} eq 'UPGRADE') ||
+		 ($r_NeData->{'state'} eq 'CONFIRMED' && $r_ActData->{'type'} eq 'CONFIRM') )
+	    {
+		$totals{$r_ActData->{'type'}}->{'nodesSuccess'}++;
+	    }
+	    elsif ( $r_NeData->{'state'} eq "FAILED" )
+	    {
+		$totals{$r_ActData->{'type'}}->{'nodesFail'}++;
+
+		my $failReason = $r_NeData->{'reason'};
+		$failReason =~ s/actionId = \d+/actionId = \[ACTIONID\]/;
+		if ( $failReason =~ /mclib\.dts/ )
+		{
+		    if ( $DEBUG > 2 ) { print "getTotals: processing dts error $failReason\n"; }
+
+		    $failReason =~ s/localHandler=\S+/localHandler=\[LOCALHANDLER\]/;
+		    $failReason =~ s/remoteHandler=\S+/remoteHandler=\[REMOTEHANDLER\]/;
+		    $failReason =~ s/end-point=\S+/end-point=\[ENDPOINT\]/;
+		    $failReason =~ s/username=\S+/username=\[USERNAME\]/;
+		    $failReason =~ s/password=\S+/password=\[PASSWORD\]/;
+		    $failReason =~ s/User name=\S+/User name=\[USERNAME\]/;
+		    $failReason =~ s/End-point=\S+/End-point=\[ENDPOINT\]/;
+		    $failReason =~ s/identifier=\S+/identifier=\[IDENTIFIER\]/;
+
+		    
+		    $failReason =~ s/reason :list\(\) of context: \S+ containing: \[[^\]]*\] .*/reason :list\(\) of context:\[CONTEXT\] containing: \[CONTENTS\] \[FAILED\]/s;
+		}
+
+		$failReason =~ s/^ \?//;
+		$failReason =~ s/Request for \S+ already/Request for \[NE_IPADDRESS\]/;
+		$failReason =~ s/^deletePreventingCV \S+ is/deletePreventingCV \[CV_ID\] is/;
+		$failReason =~ s/UpgradePackage = \S+/UpgradePackage = \[UP_PKG\]/;
+		$failReason =~ s/for fd: \d+$/for fd: \[FD\]/;
+		$failReason =~ s/The transaction \d+ has terminated/The transaction \[TX_ID\] has terminated/;
+
+		if ( $DEBUG > 1 ) { print "getTotals: updated reason to \"$failReason\"\n"; }
+		$totals{$r_ActData->{'type'}}->{'nodesFailReason'}->{$failReason}++;
+	    }
+	    else
+	    {
+		$totals{$r_ActData->{'type'}}->{'nodesInd'}++;
+	    }
+	}
+
+	if ( $DEBUG > 5 ) { print Dumper("getTotals: totals for type", $totals{$r_ActData->{'type'}}); }
+    }
+
+	if ( $DEBUG > 5 ) { print Dumper("getTotals: totals", \%totals); }
+
+    return \%totals;
+}
+
+sub storeTotals
+{
+    my ($r_totals,$site,$date) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    # Remove any existing row
+    $dbh->do("DELETE FROM swh_activities WHERE siteid = $siteId AND date = \'" . $date . "\'");
+    $dbh->do("DELETE FROM swh_nefailures WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my %neFailureReasons = ();
+    foreach my $swhType ( keys %{$r_totals} )
+    {
+	foreach my $reason ( keys %{$r_totals->{$swhType}->{'nodesFailReason'}} )
+	{
+	    $neFailureReasons{$reason}++;
+	}
+    }
+    my @neFailureReasonsList = keys %neFailureReasons;
+    my $r_reasonIdMap = getIdMap($dbh, "swh_failreason", "id", "name", \@neFailureReasonsList);
+       
+    foreach my $swhType ( keys %{$r_totals} )
+    {
+	my $sql = sprintf("INSERT INTO swh_activities (date,siteid,type,total,success,failed,indeterminate,netotal,nesuccess,nefailed,neindeterminate) VALUES (\'%s\', %d, \'%s\', %d, %d, %d, %d, %d, %d, %d, %d)",
+			  $date, $siteId , $swhType,
+			  $r_totals->{$swhType}->{'actCount'}, $r_totals->{$swhType}->{'actSuccess'}, $r_totals->{$swhType}->{'actFail'}, $r_totals->{$swhType}->{'actInd'},
+			  $r_totals->{$swhType}->{'nodesCount'}, $r_totals->{$swhType}->{'nodesSuccess'}, $r_totals->{$swhType}->{'nodesFail'}, $r_totals->{$swhType}->{'nodesInd'}
+			  );
+	
+	if ( $DEBUG > 2 ) { print "storeTotals: $sql\n"; }
+	$dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+
+	foreach my $reason ( keys %{$r_totals->{$swhType}->{'nodesFailReason'}} )
+	{
+	    if ( $DEBUG > 2 ) { print "storeTotals: swhType=$swhType reason=$reason reasonId=$r_reasonIdMap->{$reason}\n"; }
+	    my $sql = sprintf("INSERT INTO swh_nefailures (date,siteid,acttype,failreason,count) VALUES (\'%s\', %d, \'%s\', %d, %d)",
+			      $date, $siteId , $swhType,
+			      $r_reasonIdMap->{$reason}, $r_totals->{$swhType}->{'nodesFailReason'}->{$reason});
+	    if ( $DEBUG > 2 ) { print "storeTotals: sql=$sql\n"; }
+	    $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+	}
+    }
+
+    $dbh->disconnect;
+}
+    
+sub printResults
+{
+    my ($resultDir,$r_totals) = @_;
+
+    
+    #
+    # Table with
+    #  TASK TotalActivities ActiviesSuccess ActiviesFailed ActiviesInd TotalsNodes NodesSuccess NodesFail
+    #
+    open TABLE, ">$resultDir/totalsByType.html" or die "Cannot write to $resultDir/totalsByType.html";
+    foreach my $swhType ( keys %{$r_totals} )
+    {
+	printf TABLE "<tr> <td>%s</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>",
+	$swhType, 
+	$r_totals->{$swhType}->{'actCount'}, $r_totals->{$swhType}->{'actSuccess'}, $r_totals->{$swhType}->{'actFail'}, $r_totals->{$swhType}->{'actInd'},
+	$r_totals->{$swhType}->{'nodesCount'}, $r_totals->{$swhType}->{'nodesSuccess'}, $r_totals->{$swhType}->{'nodesFail'};
+
+	foreach my $failReason ( keys %{$r_totals->{$swhType}->{'nodesFailReason'}} )
+	{
+	    printf TABLE "<p>%s(%d)</p>", $failReason, $r_totals->{$swhType}->{'nodesFailReason'}->{$failReason};
+	}
+	printf TABLE "</td> </tr>\n";
+    }
+    close TABLE;
+}
+	
+sub parseEvents
+{
+    my ($eventsFile) = @_;
+
+    my %eventData = ();
+    
+    open EVENTS, $eventsFile or die "Cannot open eventsFile $eventsFile";
+    while ( my $line = <EVENTS> )
+    {
+	if ( $DEBUG > 9 ) { print "parseEvents: first while line = $line"; }
+
+	#20-06-05:01:13:54.863   SWH     update  240579
+	if ( $line =~ /^(\S+)\s+SWH\s+(\S+)\s+(\d+)/ )
+	{		
+	    my ($timestamp,$eventType,$activityId) = ( $1, $2, $3 );
+	    if ( $eventType eq "ne_activity" )
+	    {
+		my @neData = ();
+		while ( ($line = <EVENTS>) && ($line !~ /^\s*$/) )
+		{
+		    if ( $DEBUG > 9 ) { print "parseEvents: neData while line = $line"; }
+		    # JR9950_RX8204 STARTED "Starting" ""
+		    my ($ne,$neState,$progress,$progressHeader) = $line =~
+			/^\s+(\S+)\s+(\S+)\s+\"([^\"]+)\"\s+\"([^\"]*)\"/;
+		    my $r_NeData = {
+			'name'           => $ne,
+			'state'          => $neState,
+			'progress'       => $progress,
+			'progressHeader' => $progressHeader
+			};
+
+		    if ( $neState eq "FAILED" )
+		    {
+			my ($reason) = $line =~ /FLAT_EXCEPTION \"(.*)\"$/;
+			if ( $reason =~ /ProcessingFailure: reason = (\S+)/ )
+			{
+			    $reason = $1;
+			}
+			$r_NeData->{'reason'} = $reason;
+		    }
+
+		    if ( $DEBUG > 8 ) { print Dumper("parseEvents: neData", $r_NeData); }
+		    push @neData, $r_NeData;		    
+		}
+
+		if ( $DEBUG > 5 ) { print "parseEvents: lockState for activityId $activityId is $eventData{$activityId}->{'lockState'} at $timestamp\n"; }
+
+		if ( $eventData{$activityId}->{'lockState'} == 2 )
+		{
+		    if ( $DEBUG > 0 ) { print "parseEvents: disgarding ne_activity for locked activity $activityId $timestamp\n"; }
+		}
+		elsif ( $eventData{$activityId}->{'lockState'} == 1 )
+		{
+		    $eventData{$activityId}->{'lockState'} = 2;
+
+		    if ( ($eventData{$activityId}->{'status'} eq 'COMPLETED' || $eventData{$activityId}->{'status'} eq 'FAILED' || $eventData{$activityId}->{'status'} eq 'TERMINATED') 
+			 && $eventData{$activityId}->{'type'} eq 'UPGRADE' )
+		    {
+			# Check that the ne_activity has been updated by the operator imediately starting a confirm
+			foreach my $r_NeData ( @neData )
+			{
+			    if ( $r_NeData->{'state'} eq 'CONFIRMED' )
+			    {
+				if ( $DEBUG > 1 ) { print "parseEvents: reseting neState for $r_NeData->{'name'} for $activityId at $timestamp\n"; }
+				$r_NeData->{'state'} = 'AWAITING_CONFIRM';
+			    }
+			}
+		    }
+
+		    $eventData{$activityId}->{'nedata'} = \@neData;
+		}
+		else
+		{
+		    $eventData{$activityId}->{'nedata'} = \@neData;
+		}
+
+	    }
+	    elsif ( $eventType eq "update" )
+	    {		    
+	        #type:      BACKUP
+		#progress:  0
+		#status:    STARTED
+		$line = <EVENTS>; my ($activityType) = $line =~ /^\s+type:\s+(\S+)/;
+		$line = <EVENTS>; my ($activityProgress) = $line =~ /^\s+progress:\s+(\S+)/;
+		$line = <EVENTS>; my ($activityStatus) = $line =~ /^\s+status:\s+(\S+)/;
+
+
+		if ( ! exists $eventData{$activityId} )
+		{
+		    if ( $activityStatus ne 'SCHEDULED' )
+		    {
+			print "$timestamp Missing creation event for $activityId\n";
+		    }
+		}
+
+		if ( $eventData{$activityId}->{'lockState'} == 2 )
+		{
+		    if ( $DEBUG > 0 ) { print "parseEvents: disgarding update for locked activity $activityId $timestamp\n"; }
+		}
+		else
+		{
+		    $eventData{$activityId}->{'lastEventTime'} = $timestamp;
+		    $eventData{$activityId}->{'type'} = $activityType;
+		    $eventData{$activityId}->{'progress'} = $activityProgress;
+		    $eventData{$activityId}->{'status'} = $activityStatus;
+		    
+		    if ( $activityStatus eq "STARTED" )
+		    {
+			$eventData{$activityId}->{'startTime'} = $timestamp;
+		    }
+		    elsif ( $activityStatus eq "COMPLETED" || $activityStatus eq "FAILED" || $activityStatus eq "TERMINATED" )
+		    {
+			$eventData{$activityId}->{'endTime'} = $timestamp;
+			$eventData{$activityId}->{'lockState'} = 1;
+			if ( $DEBUG > 1 ) { print "parseEvents: locking activityId $activityId at $timestamp\n"; }
+		    }
+		    elsif ( $activityStatus ne 'SCHEDULED' )
+		    {
+			if ( $DEBUG ) { print "parseEvents: activityStatus=$activityStatus activityId=$activityId timestamp=$timestamp\n"; }
+		    }
+		}
+	    }
+	}
+    }
+
+    close EVENTS;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseEvents: eventData", \%eventData); }
+
+    return \%eventData;
+}
+
+		
+
+
+    

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <services>
+      <service name="comecimpolicy"/>
+      <service name="conscommonmed"/>
+      <service name="medcore"/>
+  </services>
+
+  <table name="enm_cm_supervision">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cm.router.policy.instrumentation.APG-CM-ROUTER-POLICY:type=DefaultSupervisionInstrumentation$">
+      <metric source="activeCmRouterPolicy" target="NONE" store="false" filtervalue="true"/>
+      <metric source="numberOfSuccessfulSubscriptions" target="subscribed"/>
+      <metric source="numberOfSupervisedNodes" target="supervised"/>
+      <metric source="numberOfSynchronizedNodes" target="synced"/>
+      <property name="type" xsi:type="fixedproperty" value="APG"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

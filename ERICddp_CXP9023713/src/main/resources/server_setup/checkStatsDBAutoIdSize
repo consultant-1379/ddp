@@ -1,0 +1,241 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## Script  : checkStatsDBAutoIdSize
+## Author  : Rory Kelly(erorkel)
+## Purpose : This script checks Statsdb to see if any auto_increment int columns in the database have reached or are near their size limits
+## Usage   : checkStatsDBAutoIdSize --threshold $PERCENTAGE --outfile $FILE_NAME [--date ${SQL_DATE} --user ${USER}]
+##         : Note - The options mentioned inside the brackets (eg: '--date') are optional
+##====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use lib "/data/ddp/current/analysis/common";
+use POSIX qw/strftime/;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main() {
+    my($date,$threshold,$outfile,$user);
+    my $result = GetOptions(
+        "date=s" => \$date,
+        "threshold=s" => \$threshold,
+        "outfile=s" => \$outfile,
+        "user=s" => \$user,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    my $startTime = time();
+    my $defaultThreshold = 100;
+    if ( not defined($threshold) ) {
+        $threshold = $defaultThreshold;
+    }
+    elsif ( $threshold > 100 ) {
+        print "'threshold' value is a percentage and should not exceed 100. Setting 'threshold' to $defaultThreshold.";
+        $threshold = $defaultThreshold;
+    }
+    elsif ( $threshold < 0 ) {
+        print "'threshold cannot be negative'. Setting 'threshold' to $defaultThreshold.";
+        $threshold = $defaultThreshold;
+    }
+
+    if ( ! defined $date ) {
+        $date = '';
+    }
+
+    if ( ! defined $user ) {
+        $user = '';
+    }
+
+    open my $fileHandle, ">>$outfile" or die "Cannot open $outfile";
+    print $fileHandle getCurrentTime() . " : $user : Started checking for auto-increment IDs larger than $threshold% of their column datatype size.\n";
+
+    # Get a list of all tables in the dataabse
+    my $r_tableList = getAutoIDTableList();
+
+    # Find out which of those tables are over their limits
+    my $runTime = 0;
+    my $r_overLimitTableList = getOverLimitTableList($date,$r_tableList,$threshold);
+    $runTime = writeResults($fileHandle,$r_overLimitTableList,$date,$startTime,$threshold,$user);
+
+    print $fileHandle getCurrentTime() . " : $user : Finished checking auto-increment IDs in $runTime seconds.\n";
+    close $fileHandle;
+}
+
+sub getCurrentTime() {
+    return strftime('%F %T', localtime);
+}
+
+# Returns an array containing the names of tables containing auto increment ids in the current databse
+sub getAutoIDTableList() {
+    my $dbh = connect_db();
+    my $sth = $dbh->prepare("SELECT DISTINCT table_name FROM information_schema.columns WHERE EXTRA = 'auto_increment' AND table_schema = (SELECT DATABASE());");
+    my $r_tableList = $dbh->selectcol_arrayref($sth);
+    $dbh->disconnect();
+
+    return $r_tableList;
+}
+
+sub getThresholdNumber($$) {
+    my ($inNumber,$threshold) = @_;
+    my $adjustedNumber = int(($inNumber / 100) * $threshold);
+    return $adjustedNumber;
+}
+
+# Generates a query to find all numeric and date columns in a given table as well as the 'extra' field which can be used to identify autoids
+sub getTableInfoQuery($) {
+    my ($threshold) = @_;
+    # Datatype size limits. The hard coded numbers are the mysql datatype maximum sizes
+    my $tinyIntUnsignedMax = getThresholdNumber(255, $threshold);
+    my $tinyIntMax = getThresholdNumber(127, $threshold);
+    my $smallIntUnsignedMax = getThresholdNumber(65535, $threshold);
+    my $smallIntMax = getThresholdNumber(32767, $threshold);
+    my $mediumIntUnsignedMax = getThresholdNumber(16777215, $threshold);
+    my $mediumIntMax = getThresholdNumber(8388607, $threshold);
+    my $intUnsignedMax = getThresholdNumber(4294967295, $threshold);
+    my $intMax = getThresholdNumber(2147483647, $threshold);
+    my $bigIntUnsignedMax = getThresholdNumber(18446744073709551615, $threshold);
+    my $bigIntMax = getThresholdNumber(9223372036854775807, $threshold);
+
+    # First we generate a query to find all number and date columns in the table
+    # We also get the limits based on the number type
+    my $tableInfoQuery = "
+SELECT
+  column_name,
+  CASE
+    WHEN column_type like 'tinyint%unsigned' THEN $tinyIntUnsignedMax
+    WHEN column_type like 'tinyint' THEN $tinyIntMax
+    WHEN column_type like 'smallint%unsigned' THEN $smallIntUnsignedMax
+    WHEN column_type like 'smallint%' THEN $smallIntMax
+    WHEN column_type like 'mediumint%unsigned' THEN $mediumIntUnsignedMax
+    WHEN column_type like 'mediumint%' THEN $mediumIntMax
+    WHEN column_type like 'int%unsigned' THEN $intUnsignedMax
+    WHEN column_type like 'int%' THEN $intMax
+    WHEN column_type like 'bigint%unsigned' THEN $bigIntUnsignedMax
+    WHEN column_type like 'bigint%' THEN $bigIntMax
+    WHEN column_type like 'datetime%' THEN  'datetime'
+    WHEN column_type like 'date%' THEN 'date'
+    ELSE NULL
+  END AS column_limit,
+  extra
+FROM information_schema.columns
+WHERE TABLE_NAME = ?;
+";
+    return $tableInfoQuery;
+}
+
+sub getLineBeginning($) {
+    my ($currentEntry) = @_;
+    my $lineBeginning = "\n  OR ";
+    #If it's the first date to be added don't have OR at the start of the line and we need an open parenthesis
+    if ( $currentEntry eq '' ){
+        $lineBeginning = "(\n  ";
+    }
+    return $lineBeginning;
+}
+
+# Returns an array containing the names of all tables which have values which are over the limit
+sub getOverLimitTableList($$$) {
+    my($date, $r_tableList, $threshold) = @_;
+    my @tableList = @{$r_tableList};
+    my @overLimitTableList = ();
+
+    my $dbh = connect_db();
+
+    my $tableInfoQuery = getTableInfoQuery($threshold);
+
+    foreach my $tableName ( @tableList ) {
+        my $tableInfoSth = $dbh->prepare($tableInfoQuery);
+        $tableInfoSth->execute($tableName);
+
+        # Next we generate the query to find if any values are over their limits in the table
+        if ($DEBUG > 3) { print "Genertaing int limit check query for: $tableName\n"; }
+        my $checkQuerySelect = "SELECT '$tableName' as table_name\n";
+        my $checkQueryFrom = "FROM $tableName\n";
+        my $checkQueryWhere = "";
+        my $checkQueryLimit = "\nLIMIT 1";
+
+        my $whereNumbers = "";
+        my $whereDates = "";
+        # The where clause needs to be built up in this loop, a line will be added for each number and date
+        while (my $row = $tableInfoSth->fetchrow_hashref) {
+            # Only check rows which have a column_limit
+            if ( defined($row->{column_limit}) ) {
+                if ( $row->{column_limit} eq 'date' && $date =~ /^\d{4}-\d{2}-\d{2}$/ ) {
+                    my $lineBeginning = getLineBeginning($whereDates);
+                    $whereDates = "${whereDates}${lineBeginning}$row->{column_name} = '$date'";
+                }
+                elsif ( $row->{column_limit} eq 'datetime' && $date =~ /^\d{4}-\d{2}-\d{2}$/ ) {
+                    my $lineBeginning = getLineBeginning($whereDates);
+                    $whereDates = "${whereDates}${lineBeginning}$row->{column_name} BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+                }
+                # Only check numbers which have an extra field of 'auto_increment'. (This means they have an auto id)
+                elsif ( $row->{extra} eq 'auto_increment' ) {
+                    my $lineBeginning = getLineBeginning($whereNumbers);
+                    $whereNumbers = "${whereNumbers}${lineBeginning}$row->{column_name} >= $row->{column_limit}";
+                }
+            }
+        }
+        # We will only finish generating and performing the query if we have any auto increment int columns to check
+        if ( !($whereNumbers eq '') ) {
+            $checkQueryWhere = "WHERE${whereNumbers}\n)";
+            if ( !($whereDates eq '') ) {
+                $checkQueryWhere = "$checkQueryWhere\nAND${whereDates}\n)";
+            }
+            my $checkQuery = "${checkQuerySelect}${checkQueryFrom}${checkQueryWhere}${checkQueryLimit}";
+            if ( $DEBUG > 8 ) { print "$checkQuery\n"; }
+
+            my $tableLimitCheckSth = $dbh->prepare($checkQuery);
+            my ($limitCheckResult) = $dbh->selectrow_array($tableLimitCheckSth);
+            # If the query found any ints over the limit it returns the name of the table, otherwise it returns nothing
+            if ( defined($limitCheckResult) ) {
+                if ( $DEBUG > 5) { print "int over limit in table: $limitCheckResult\n"; }
+                push (@overLimitTableList, $limitCheckResult);
+            }
+        }
+        ### Below is an example of a query generated from the code above: ###
+        #
+        # SELECT 'system_startstop' as table_name
+        # FROM system_startstop
+        # WHERE(
+        #   id >= 16777215
+        #   OR siteid >= 65535
+        # )
+        # AND(
+        #   begintime BETWEEN '2016-07-14 00:00:00' AND '2016-07-14 23:59:59'
+        #   OR endtime BETWEEN '2016-07-14 00:00:00' AND '2016-07-14 23:59:59'
+        # )
+        # LIMIT 1
+        ####
+    }
+
+    $dbh->disconnect();
+    return \@overLimitTableList;
+}
+
+sub writeResults($$$$$$) {
+    my ($fileHandle,$r_overLimitTableList,$date,$startTime,$threshold,$user) = @_;
+
+    if ( scalar @{$r_overLimitTableList} > 0 ) {
+        print $fileHandle getCurrentTime() . " : $user : The following database tables contain auto increment IDs larger than $threshold% of their column datatype size:\n";
+    }
+    else {
+        print $fileHandle getCurrentTime() . " : $user : No database tables have been found to contain auto increment IDs larger than $threshold% of their column datatype size\n";
+    }
+
+    foreach my $tableName (@{$r_overLimitTableList}) {
+        print $fileHandle "\t$tableName\n";
+    }
+
+    my $endTime = time();
+    my $runTime = $endTime - $startTime;
+    return $runTime;
+}
+
+main();

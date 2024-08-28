@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Number of Success"
+>
+  <presetagg type="COUNT" interval="Hourly"/>
+  <title value="Success"/>
+  <queries>
+    <query timecol="time" multiseries="netanserver_auditlog_details.analysis_name">
+      <dbtables main="netanserver_auditlog_details">
+        <reference table="sites" condition="netanserver_auditlog_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="serviceId"/>
+      <where>sites.name = '%s' AND netanserver_auditlog_details.operation_name = 'Initiate Open Analysis' AND netanserver_auditlog_details.status = 'Success' AND serviceId = '%s'</where>
+      <column db="*" label="Success Count"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

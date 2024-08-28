@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="enm_pm_orphan_file_del_stats.type">
+    <dbtables main="enm_pm_orphan_file_del_stats">
+      <reference table="sites" condition="enm_pm_orphan_file_del_stats.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="type"/>
+    <param name="filter"/>
+    <where>sites.name = '%s' AND enm_pm_orphan_file_del_stats.type = '%s' AND enm_pm_orphan_file_del_stats.filter = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="timeToDelete" type="tsc" ylabel="Time(ms)" forcelegend="true">
+      <title value="Time Taken To Delete"/>
+      <column db="timeToDelete" label="Time Taken To Delete"/>
+    </graph>
+    <graph name="deletedFiles" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Deleted Files count"/>
+      <column db="deletedFiles" label="Deleted Files count"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="all">
+      <member>deletedFiles</member>
+      <member>timeToDelete</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

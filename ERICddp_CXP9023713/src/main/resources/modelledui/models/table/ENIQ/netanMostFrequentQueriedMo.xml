@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pme_details">
+    <reference table="sites" condition="eniq_netan_pme_details.siteid = sites.id"/>
+    <reference table="eniq_aggregated_counter_table_name_id_mapping" condition="eniq_aggregated_counter_table_name_id_mapping.id = eniq_netan_pme_details.tableId"/>
+    <reference table="eniq_netan_pme_query_category_id_mapping_details" condition="eniq_netan_pme_query_category_id_mapping_details.id = eniq_netan_pme_details.queryCategoryId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND queryCategory IN ('FetchInformation', 'ShowReport') AND eniq_aggregated_counter_table_name_id_mapping.tableName IS NOT NULL AND eniq_aggregated_counter_table_name_id_mapping.tableName != ' ' AND tableId IN (SELECT distinct tableId FROM eniq_netan_pme_details WHERE sites.name = '%site%' AND time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' GROUP BY fetchId, queryId) AND time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+  <groupby>
+    <column db="eniq_aggregated_counter_table_name_id_mapping.tableName"/>
+  </groupby>
+  <order columnid="numberOfTimes" direction="DESC"/>
+
+  <column db="eniq_aggregated_counter_table_name_id_mapping.tableName" label="Table Name"/>
+  <column db="COUNT(*)" label="Number of Times Accessed" id="numberOfTimes"/>
+
+</modelledtable>

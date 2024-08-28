@@ -1,0 +1,143 @@
+#!/usr/bin/env perl
+#=====================================================================
+# Script  : parseRALogs
+# Author  : vyshnavi (znarvys)
+# Purpose : The purpose of this script is to parse pkira security logs(cmserv elasticsearch)
+#           and stores them under enm_ra_cdps_logs,enm_ra_tdps_logs table
+# Usage   : ${ANALYSIS_BIN}/TOR/security/parseRALogs --logdir /data/tmp/incr/${SITE}/${DATE}/logs
+#            --site ${SITE} --date ${SQL_DATE}
+#=====================================================================
+
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use EnmServiceGroup;
+
+use StatsDB;
+use DBI;
+
+
+my $DEBUG;
+sub main() {
+    my($logDir, $date , $site);
+    my $result = GetOptions(
+        "logDir=s" => \$logDir,
+        "site=s" => \$site,
+        "date=s"  => \$date,
+        "debug=s" => \$DEBUG,
+    );
+
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+    my $r_serverMap = enmGetServiceGroupInstances($site,$date,"security");
+    my @fileDataset = ();
+    foreach my $server ( keys %{$r_serverMap} ) {
+        my $logFilePath = $logDir . "/JBOSS/" .$server;
+        if ( $DEBUG > 2 ) { print "main: Checking for $logFilePath\n"; }
+        if ( -r $logFilePath ) {
+            push @fileDataset, $logFilePath;
+        }
+    }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site" . $dbh->errstr;
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", \@fileDataset); }
+    my($pkiraServCdpsDetails,$pkiraServTdpsDetails) = parsepkiRaLogs(\@fileDataset,$siteId,$dbh);
+    if (scalar(keys %{$pkiraServCdpsDetails}) > 0 ) {
+    storepkiRALogs($pkiraServCdpsDetails,$dbh,$date,"enm_ra_cdps_logs");
+    }
+    if (scalar(keys %{$pkiraServTdpsDetails}) > 0 )
+    {
+        storepkiRALogs($pkiraServTdpsDetails,$siteId,$dbh,$date,"enm_ra_tdps_logs");
+    }
+
+
+    $dbh->disconnect();
+}
+
+sub parsepkiRaLogs() {
+    my ($fileDataPath,$siteid,$dbh) = @_;
+    my(%pkiRATdps_Details,%pkiRACdps_Details) = ();
+    foreach my $file (@{$fileDataPath}) {
+
+    $file =~ /.*JBOSS\/(.*)/;
+    my $server=$1;
+
+    my $serverid = getServerId( $dbh, $siteid, $server );
+
+        open (LOG,$file) or die "Failed to open the file $file: $!";
+        while (my $logLine = <LOG>) {
+            if ($DEBUG > 9) { print "parseLogs: Logline=$logLine"; }
+
+            if( $logLine =~ /(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}).*PKI_CDPS.*OperationType=(\w+),\s*IssuerName=(\w+),\s*SerialNumber=(\w+),\s*TimeStamp=(.*)/ )
+            {
+                $pkiRACdps_Details{$5}{'Date'} = $1 . " " . $2;
+                $pkiRACdps_Details{$5}{'serverid'} = $serverid;
+                $pkiRACdps_Details{$5}{'OperationType'} = $3;
+                $pkiRACdps_Details{$5}{'IssuerName'} = $4;
+                $pkiRACdps_Details{$5}{'SerialNumber'} = $5;
+                $pkiRACdps_Details{$5}{'TimeStamp'}=$6;
+             }
+
+
+            if($logLine =~ /(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}).*\@(.*)\@JBOSS.*TDPS_SERVICE.*OperationType=(\w+),\s*CertificateStatus=(\w+),\s*IssuerName=(\w+),\s*SerialNumber=(\w+),\s*TimeStamp=(.*)/) {
+                $pkiRATdps_Details{$6}{'Date'} = $1 . " " . $2;
+                $pkiRATdps_Details{$6}{'serverid'} = $serverid;
+                $pkiRATdps_Details{$6}{'OperationType'} = $4;
+                $pkiRATdps_Details{$6}{'CertificateStatus'} = $5;
+                $pkiRATdps_Details{$6}{'IssuerName'} = $6;
+                $pkiRATdps_Details{$6}{'SerialNumber'}=$7;
+                my $tstamp = $8;
+                $tstamp =~ s/^\s+|\s+$//g;
+                $pkiRATdps_Details{$6}{'TimeStamp'}=$tstamp;
+            }
+        }
+   }
+   return(\%pkiRACdps_Details,\%pkiRATdps_Details);
+}
+
+
+sub storepkiRALogs(){
+
+    my($rAServDetails,$siteId,$dbh,$date,$tmp_string)=@_;
+    my $tmpDir = '/data/tmp';
+
+    if(scalar(keys %{$rAServDetails}) > 0) {
+        my $bcpLogs= "$tmpDir/pkiraserv_log.bcp";
+        open (BCPACTV, ">$bcpLogs") or die "Failed to open $bcpLogs";
+        if($tmp_string =~ /cdps/)
+        {
+        foreach my $key (keys %{$rAServDetails}) {
+
+            print BCPACTV "$rAServDetails->{$key}->{'Date'}\t$rAServDetails->{$key}->{'serverid'}\t$siteId\t$rAServDetails->{$key}->{'IssuerName'}\t$rAServDetails-->{$key}->{'SerialNumber'}\t$rAServDetails-->{$key}->{'TimeStamp'}\n";
+
+        }
+        }
+        if($tmp_string =~ /tdps/)
+        {
+
+            foreach my $key (keys %{$rAServDetails}) {
+                        print BCPACTV "$rAServDetails->{$key}->{'Date'}\t$rAServDetails->{$key}->{'serverid'}\t$siteId\t$rAServDetails->{$key}->{'OperationType'}\t$rAServDetails->{$key}->{'CertificateStatus'}\t$rAServDetails->{$key}->{'IssuerName'}\t$rAServDetails->{$key}->{'SerialNumber'}\t$rAServDetails->{$key}->{'TimeStamp'}\n";
+
+            }
+
+
+        }
+        close BCPACTV;
+
+        dbDo( $dbh, "DELETE FROM $tmp_string  WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'" )
+                 or die "Failed to delete from $tmp_string";
+
+        dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpLogs' INTO TABLE $tmp_string" )
+                 or die "Failed to load new data from '$bcpLogs' file to $tmp_string table";
+
+        unlink($bcpLogs);
+    }
+
+
+}
+main()

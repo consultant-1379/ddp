@@ -1,0 +1,18 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_pmic_notification">
+    <reference table="sites" condition="enm_pmic_notification.siteid = sites.id"/>
+    <reference table="servers" condition="enm_pmic_notification.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_pmic_notification.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="SUM(failedNotificationCount)" label="Total Failed Notification Count"/>
+  <column db="SUM(invalidNotificationCount)" label="Total Invalid Notification Count"/>
+  <column db="SUM(lteNotificationCount)" label="Total LTE Notification Count"/>
+  <column db="SUM(mixedModeNotificationCount)" label="Total Mixed Mode Notification Count"/>
+  <column db="SUM(nrNotificationCount)" label="Total NR Notification Count"/>
+  <column db="SUM(successfulNotificationCount)" label="Total Successful Notification Count"/>
+  <column db="SUM(totalNotificationCount)" label="Total Notification Count"/>
+</modelledtable>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Succeeded Change"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="ecson_cm_change_mediation">
+    <reference table="sites" condition="ecson_cm_change_mediation.siteid = sites.id"/>
+    <reference table="servers" condition="ecson_cm_change_mediation.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_cm_change_mediation.succeededChange" label="Succeeded Change"/>
+  </query>
+ </queries>
+ <size width="800" height="400"/>
+</modelledgraph>

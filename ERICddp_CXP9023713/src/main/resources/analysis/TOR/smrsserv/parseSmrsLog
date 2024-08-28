@@ -1,0 +1,114 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseSmrsLog
+# Author  : Srinivas Mantina (xsrmant)
+# Purpose : The purpose of this script is to parse the smrs logs under smrsserv service group
+#           for the given day and store them in database.
+# Usage   : ${ANALYSIS_BIN}/TOR/smrsserv/parseSmrsLog --sftp_file ${SMRS_LOG_FILE} --server ${REMOTEHOSTNAME} --site ${SITE} --date ${SQL_DATE}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use DateTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseSftpLog($$) {
+    my ( $sftpFile, $date ) = @_;
+    open(INPUT, $sftpFile) or die "Cannot open $sftpFile";
+
+    my ( $time, $count, %r_logStats );
+
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /\d{6}:(\d{2}:\d{2})/ ) {
+            $time = $date . " " .$1 . ":00";
+        }
+        elsif ( $line =~ /Total = (\d*)/ ) {
+            $count = $1;
+            $r_logStats{$time} = $count;
+        }
+    }
+    return %r_logStats;
+}
+
+sub storeSftpLog($$$$) {
+    my ( $sftpLogStats, $date, $site, $server ) = @_;
+    if ( scalar keys %{$sftpLogStats} eq 0 ) {
+        return;
+    }
+
+    # Establish DB connection
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    # Get the site ID
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    # Get server ID map
+    my $serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId);
+    if ( $DEBUG > 9 ) { print Dumper("storeSftpLog: serverIdMap ", $serverIdMap); }
+
+    # Write the sftp log stats to 'enm_smrs_log_stats.bcp' file
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $bcpFile = "$tmpDir/enm_smrs_log_stats.bcp";
+    open (BCP, "> $bcpFile");
+
+    while( my($time,$count) = each %{$sftpLogStats}) {
+        print BCP $siteId . "\t" .
+                  $serverIdMap->{$server} . "\t" .
+                  $time . "\t" .
+                  $count. "\n"
+    }
+    close BCP;
+
+    # Delete the old smrs log stats from 'enm_smrs_log_stats' table for
+    # the given site, date and server
+    dbDo( $dbh, sprintf("DELETE FROM enm_smrs_log_stats WHERE siteid = %d AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59' AND serverid = %d", $siteId, $serverIdMap->{$server}) )
+                        or die "Failed to remove old data from 'enm_smrs_log_stats' table";
+
+    #Populate the 'enm_smrs_log_stats' table with the new smrs log stats
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE enm_smrs_log_stats" )
+                or die "Failed to load new data from '$bcpFile' file to 'enm_smrs_log_stats' table";
+    $dbh->disconnect();
+    unlink($bcpFile);
+
+}
+
+sub main {
+    my $site;
+    my $date;
+    my $server;
+    my $sftpFile;
+
+    my $result = GetOptions (
+                             "site=s"            => \$site,
+                             "date=s"            => \$date,
+                             "server=s"          => \$server,
+                             "sftp_file=s"       => \$sftpFile,
+                             "debug=s"           => \$DEBUG
+                            );
+    die "Invalid args"  if ( $result != 1 );
+
+    if ( -r $sftpFile ) {
+        my %sftpLogStats = parseSftpLog ($sftpFile, $date);
+        storeSftpLog(\%sftpLogStats, $date, $site, $server);
+    }
+    else {
+        if ( $DEBUG > 2 ) { print "main: No $sftpFile file exists\n"; }
+    }
+}
+
+main();
+

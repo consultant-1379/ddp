@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_pm_events_adjacency_pipeline">
+
+  <table name="ecson_pm_events_adjacency_pipeline">
+    <keycol name="eventtypeid" reftable="ecson_pm_eventtypes"/>
+  </table>
+
+  <metricgroups>
+    <multi>eventtypeid</multi>
+
+    <metricgroup name="^adjacency_pipeline:(\S+)">
+      <metric source="number_of_events_in_adjacency_pipeline" target="events" delta="true"/>
+      <property name="eventtypeid" xsi:type="multilabelproperty" label="event_type" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

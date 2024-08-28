@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <table name="enm_ncmagent_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.dps.monitor.ncm-agent:type=NcmAgentNotificationMBean$">
+      <metric source="addNodeReceivedEvents" target="addNodeReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="addNodeSentEvents" target="addNodeSentEvents" delta="true" filteridle="true"/>
+      <metric source="deleteNodeReceivedEvents" target="deleteNodeReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="deleteNodeSentEvents" target="deleteNodeSentEvents" delta="true" filteridle="true"/>
+      <metric source="nodeDisalignSentEvents" target="nodeDisalignSentEvents" delta="true" filteridle="true"/>
+      <metric source="unrmReceivedEvents" target="unrmReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="unrmEventsProcessingDuration" target="unrmEventsProcessingDuration"/>
+      <metric source="addLinkReceivedEvents" target="addLinkReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="addLinkSentEvents" target="addLinkSentEvents" delta="true" filteridle="true"/>
+      <metric source="deleteLinkReceivedEvents" target="deleteLinkReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="deleteLinkSentEvents" target="deleteLinkSentEvents" delta="true" filteridle="true"/>
+      <metric source="updateLinkReceivedEvents" target="updateLinkReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="updateLinkSentEvents" target="updateLinkSentEvents" delta="true" filteridle="true"/>
+      <metric source="receivedEvents" target="receivedEvents" delta="true" filteridle="true"/>
+      <metric source="sentEvents" target="sentEvents" delta="true" filteridle="true"/>
+      <metric source="dpsEventsDelay" target="dpsEventsDelay"/>
+      <metric source="discardedEventsDueToQueueFull" target="discardedEventsDueToQueueFull" delta="true" filteridle="true"/>
+      <metric source="queueFullEvents" target="queueFullEvents" delta="true" filteridle="true"/>
+      <metric source="extraEventManagerInvocation" target="extraEventManagerInvocation" delta="true" filteridle="true"/>
+      <metric source="eventsNotSentSinceAgentNotConnected" target="eventsNotSentSinceAgentNotConnected"/>
+      <metric source="eventsNotSent" target="eventsNotSent" delta="true" filteridle="true"/>
+      <metric source="eventsDiscardedSinceAlreadyManaged" target="eventsDiscardedSinceAlreadyManaged" delta="true" filteridle="true"/>
+      <metric source="agentDisalignGeneratedEvents" target="agentDisalignGeneratedEvents" delta="true" filteridle="true"/>
+      <metric source="agentDisalignProcessedEvents" target="agentDisalignProcessedEvents" delta="true" filteridle="true"/>
+      <metric source="realignEmRequests" target="realignEmRequests" delta="true" filteridle="true"/>
+      <metric source="realignEmRequestFailures" target="realignEmRequestFailures" delta="true" filteridle="true"/>
+      <metric source="realignNodesRequests" target="realignNodesRequests" delta="true" filteridle="true"/>
+      <metric source="realignNodesRequestFailures" target="realignNodesRequestFailures" delta="true" filteridle="true"/>
+      <metric source="cmSyncResumedReceivedEvents" target="cmSyncResumedReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="nodeLinkUpSentEvents" target="nodeLinkUpSentEvents" delta="true" filteridle="true"/>
+      <metric source="lostCmSyncReceivedEvents" target="lostCmSyncReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="nodeLinkDownSentEvents" target="nodeLinkDownSentEvents" delta="true" filteridle="true"/>
+      <metric source="managementStopReceivedEvents" target="managementStopReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="managementStopSentEvents" target="managementStopSentEvents" delta="true" filteridle="true"/>
+      <metric source="managementStartReceivedEvents" target="managementStartReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="managementStartSentEvents" target="managementStartSentEvents" delta="true" filteridle="true"/>
+      <metric source="nodeChangedReceivedEvents" target="nodeChangedReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="r6kReceivedEvents" target="r6kReceivedEvents" delta="true" filteridle="true"/>
+      <metric source="r6kEventsProcessingDuration" target="r6kEventsProcessingDuration"/>
+      <metric source="processDpsEventManagerQueueEventsSkippedDueToOverload" target="processDpsEventManagerQueueEventsSkippedDueToOverload" delta="true" filteridle="true"/>
+      <metric source="tcimNodeChangedReceivedEvents" target="tcimNodeChangedReceivedEvents" delta="true" filteridle="true"/>
+
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=MefServiceDiscoveryMBean$">
+      <metric source="nodesListRealignments" target="nodesListRealignments" delta="true" filteridle="true"/>
+      <metric source="nodesListRealignmentsSuccess" target="nodesListRealignmentsSuccess" delta="true" filteridle="true"/>
+      <metric source="nodesListRealignmentsFailed" target="nodesListRealignmentsFailed" delta="true" filteridle="true"/>
+      <metric source="nodesListRealignmentsSuccessDuration" target="nodesListRealignmentsSuccessDuration"/>
+      <metric source="nodesListRealignmentsFailedDuration" target="nodesListRealignmentsFailedDuration"/>
+      <metric source="nodeRealignmentsStart" target="nodeRealignmentsStart" delta="true" filteridle="true"/>
+      <metric source="nodeRealignmentsEnd" target="nodeRealignmentsEnd" delta="true" filteridle="true"/>
+      <metric source="nodeRealignmentsFailed" target="nodeRealignmentsFailed" delta="true" filteridle="true"/>
+      <metric source="nodeRealignmentsSuccessDuration" target="nodeRealignmentsSuccessDuration"/>
+      <metric source="nodeRealignmentsFailedDuration" target="nodeRealignmentsFailedDuration"/>
+      <metric source="getMessages" target="getMessages" delta="true" filteridle="true"/>
+      <metric source="linksRealignments" target="linksRealignments" delta="true" filteridle="true"/>
+      <metric source="linksRealignmentsSuccess" target="linksRealignmentsSuccess" delta="true" filteridle="true"/>
+      <metric source="linksRealignmentsFailed" target="linksRealignmentsFailed" delta="true" filteridle="true"/>
+      <metric source="linksRealignmentsSuccessDuration" target="linksRealignmentsSuccessDuration"/>
+      <metric source="linksRealignmentsFailedDuration" target="linksRealignmentsFailedDuration"/>
+      <metric source="fullRealignments" target="fullRealignments" delta="true" filteridle="true"/>
+      <metric source="fullRealignmentsSuccess" target="fullRealignmentsSuccess" delta="true" filteridle="true"/>
+      <metric source="fullRealignmentsFailed" target="fullRealignmentsFailed" delta="true" filteridle="true"/>
+      <metric source="fullRealignmentsSuccessDuration" target="fullRealignmentsSuccessDuration"/>
+      <metric source="fullRealignmentsFailedDuration" target="fullRealignmentsFailedDuration"/>
+      <metric source="validRealignedLinks" target="validRealignedLinks" delta="true" filteridle="true"/>
+      <metric source="invalidRealignedLinks" target="invalidRealignedLinks" delta="true" filteridle="true"/>
+      <metric source="linksDiscoveredAtNodeRealignment" target="linksDiscoveredAtNodeRealignment" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=NcmAgentMBean$">
+      <metric source="sessionsOpened" target="sessionsOpened" delta="true" filteridle="true"/>
+      <metric source="sessionsClosed" target="sessionsClosed" delta="true" filteridle="true"/>
+      <metric source="sessionsPingFailed" target="sessionsPingFailed" delta="true" filteridle="true"/>
+      <metric source="sessionsHearthbeatFailed" target="sessionsHearthbeatFailed" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=NcmAgentNodeCliMbean$">
+      <metric source="executedCommands" target="executedCommands" delta="true" filteridle="true"/>
+      <metric source="failedCommands" target="failedCommands" delta="true" filteridle="true"/>
+      <metric source="openSessionFailures" target="openSessionFailures" delta="true" filteridle="true"/>
+      <metric source="openedSessions" target="openedSessions" delta="true" filteridle="true"/>
+      <metric source="closedSessions" target="closedSessions" delta="true" filteridle="true"/>
+      <metric source="closeSessionFailures" target="closeSessionFailures" delta="true" filteridle="true"/>
+      <metric source="skippedCommands" target="skippedCommands" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

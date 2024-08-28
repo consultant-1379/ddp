@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_npam_job_details">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="securityservice"/>
+    <service name="security"/>
+    <service name="networksecurity"/>
+    <service name="consaccessauth"/>
+  </services>
+
+  <events>
+    <event name="NPAM.MainJobComplete">
+      <metric source="host" target="serverid"/>
+      <metric source="JobType" target="jobType"/>
+      <metric source="DurationOfJob" target="durationOfJob"/>
+      <metric source="NumberOfNetworkElements" target="numberOfNetworkElements"/>
+      <metric source="NumberOfNeJobFailed" target="numberOfNeJobFailed"/>
+      <metric source="NeJobRate" target="neJobRate"/>
+      <metric source="Result" target="result"/>
+      <metric source="Status" target="status"/>
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="kpiserv_reststatistics_instr">
+      <reference table="sites" condition="kpiserv_reststatistics_instr.siteid = sites.id"/>
+      <reference table="servers" condition="kpiserv_reststatistics_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="getfetchKpiValuesexecutionTimeTotalMillis" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getfetchKpiValuesexecutionTimeTotalMillis" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getfetchKpiValuesmethodInvocations" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getfetchKpiValuesmethodInvocations" label="methodInvocations"/>
+    </graph>
+    <graph name="getfetchHistoricalKpiValuesexecutionTimeTotalMillis" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getfetchHistoricalKpiValuesexecutionTimeTotalMillis" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getfetchHistoricalKpiValuesmethodInvocations" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getfetchHistoricalKpiValuesmethodInvocations" label="methodInvocations"/>
+    </graph>
+    <graph name="getActivationStatusresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getActivationStatusresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getActivationStatustotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getActivationStatustotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getKpiInstanceCapabilitiesresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getKpiInstanceCapabilitiesresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getKpiInstanceCapabilitiestotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getKpiInstanceCapabilitiestotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getActivateOrDeactivateKpiresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getActivateOrDeactivateKpiresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getActivateOrDeactivateKpitotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getActivateOrDeactivateKpitotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getDeleteKpiresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getDeleteKpiresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getDeleteKpitotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getDeleteKpitotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getListKpiresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getListKpiresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getListKpitotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getListKpitotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getCreateKpiresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getCreateKpiresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getCreateKpitotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getCreateKpitotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getReadKpiDefinitionresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getReadKpiDefinitionresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getReadKpiDefinitiontotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getReadKpiDefinitiontotalRequestReceived" label="methodInvocations"/>
+    </graph>
+    <graph name="getUpdateKpiresponseTime" type="tsc" forcelegend="true">
+      <title value="averageExecutionTime(ms)"/>
+      <column db="getUpdateKpiresponseTime" label="averageExecutionTime(ms)"/>
+    </graph>
+    <graph name="getUpdateKpitotalRequestReceived" type="tsc" forcelegend="true">
+      <title value="methodInvocations"/>
+      <column db="getUpdateKpitotalRequestReceived" label="methodInvocations"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="fetchkpi">
+      <member>getfetchKpiValuesexecutionTimeTotalMillis</member>
+      <member>getfetchKpiValuesmethodInvocations</member>
+    </group>
+    <group name="Historicalkpi">
+      <member>getfetchHistoricalKpiValuesexecutionTimeTotalMillis</member>
+      <member>getfetchHistoricalKpiValuesmethodInvocations</member>
+    </group>
+    <group name="activation">
+      <member>getActivationStatusresponseTime</member>
+      <member>getActivationStatustotalRequestReceived</member>
+    </group>
+    <group name="capabilities">
+      <member>getKpiInstanceCapabilitiesresponseTime</member>
+      <member>getKpiInstanceCapabilitiestotalRequestReceived</member>
+    </group>
+    <group name="kpi">
+      <member>getActivateOrDeactivateKpiresponseTime</member>
+      <member>getActivateOrDeactivateKpitotalRequestReceived</member>
+    </group>
+    <group name="delete">
+      <member>getDeleteKpiresponseTime</member>
+      <member>getDeleteKpitotalRequestReceived</member>
+    </group>
+    <group name="list">
+      <member>getListKpiresponseTime</member>
+      <member>getListKpitotalRequestReceived</member>
+    </group>
+    <group name="create">
+      <member>getCreateKpiresponseTime</member>
+      <member>getCreateKpitotalRequestReceived</member>
+    </group>
+    <group name="read">
+      <member>getReadKpiDefinitionresponseTime</member>
+      <member>getReadKpiDefinitiontotalRequestReceived</member>
+    </group>
+    <group name="update">
+      <member>getUpdateKpiresponseTime</member>
+      <member>getUpdateKpitotalRequestReceived</member>
+    </group>
+  </groups>
+</modelledgraphset>

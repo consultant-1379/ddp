@@ -1,0 +1,185 @@
+#!/usr/bin/env perl 
+
+use Getopt::Long;
+use Data::Dumper;
+use Time::Local;
+use strict;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jun => 6,
+     Jul => 7,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+our $DEBUG = 0;
+my ($logFile,$scannerListFile,$outputFile,$tableFile);
+my $result = GetOptions(
+			"log=s"  => \$logFile,
+			"scannerlist=s" => \$scannerListFile,
+			"data=s" => \$outputFile,
+			"table=s" => \$tableFile,
+			"debug"  => \$DEBUG
+			);
+
+($result == 1) or printUsageAndExit("Invalid args");
+$logFile or printUsageAndExit("No log specified");
+( -r $logFile ) or printUsageAndExit("$logFile cannot be read");
+
+our $EOF = -1;
+
+open LOG, "$logFile" or die "Cannot open $logFile";
+my $state = $0;
+my $line = "";
+my @loadedCounts = ();
+my @rncNotLoaded = ();
+
+while ( $state != $EOF )
+{
+    while ( ($state != $EOF) && ($line !~ /^ TIME/) )
+    {
+	if ( ! ($line = <LOG>) )
+	{
+	    $state = $EOF;
+	}
+    }
+
+    my ($time);
+    if ( $state != $EOF )
+    {
+	$time = parseTime($line);
+
+	my $r_TimeSample = {
+	    'time' => $time
+	};
+
+	$line = <LOG>;
+	parseCountLine( $line, $r_TimeSample );
+
+	# Skip the list of RNCs not collected
+	my $processingMissedNodes = 1;
+	my $r_Missed = {
+	    'time' => $time,
+	    'nodes' => []
+	    };
+	while ( $processingMissedNodes  )
+	{
+	    $line = <LOG>;
+	    if ( $line =~ /^SubNetwork/ )
+	    {
+		$_ = $line;
+		my ($node) = /,SubNetwork=([^,]+)/;
+		if ( $node )
+		{
+
+		    if ( $DEBUG ) { print "$node $line" };
+
+		    push @{$r_Missed->{'nodes'}}, $node;
+		}
+	    }
+	    else
+	    {
+		$processingMissedNodes = 0;
+	    }
+
+	    if ( $DEBUG ) { print "$processingMissedNodes $line"; }
+	}
+	if ( $#{$r_Missed->{'nodes'}} >= 0 )
+	{
+	    
+	    push @rncNotLoaded, $r_Missed;
+	}
+
+
+	parseCountLine( $line, $r_TimeSample );
+
+	push @loadedCounts, $r_TimeSample;
+    }
+}
+close LOG;
+
+if ( $DEBUG ) { print Dumper( \@rncNotLoaded, undef ); }
+
+open OUTPUT, ">$outputFile" or die "Could not open $outputFile";
+foreach my $r_TimeSample ( @loadedCounts )
+{
+    my @timeFields = localtime($r_TimeSample->{'time'});
+    printf OUTPUT "%02d-%02d-%02d:%02d:%02d", $timeFields[3], $timeFields[4] + 1, $timeFields[5] - 100, $timeFields[2], $timeFields[1];
+    foreach my $nodeType ( sort keys %{$r_TimeSample->{'nodetype'}} )
+    {
+	printf OUTPUT " %d", $r_TimeSample->{'nodetype'}->{$nodeType};
+    }
+    print OUTPUT "\n";
+}
+close OUTPUT;
+
+if ( $tableFile )
+{
+    open TABLE, ">$tableFile" or die "Could not open table $tableFile";
+    foreach my $r_Missed ( @rncNotLoaded )
+    {
+	if ( $DEBUG ) { print Dumper( $r_Missed, undef ); }
+
+	my @timeFields = localtime($r_Missed->{'time'});
+	for my $node ( @{$r_Missed->{'nodes'}} )
+	{
+	    printf TABLE "<tr> <td>%02d-%02d-%02d:%02d:%02d<\/td> <td>%s<\/td> <\/tr>\n", 
+	    $timeFields[3], $timeFields[4] + 1, $timeFields[5] - 100, $timeFields[2], $timeFields[1],
+	    $node;
+	}
+    }
+    close TABLE;
+}
+	    
+
+
+
+sub printUsageAndExit
+{
+    my ($errMsg) = @_;
+    print "Error: $errMsg\n";
+    print "Usage: parseRsdLoaded --log logFile\n";
+    exit(1);
+}
+
+sub parseTime
+{
+    my ($timeline) = @_;
+
+    $_ = $timeline;
+    my ($month,$day,$year,$hour,$min,$ampm) = 
+	/^ TIME\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+):(\d+)(\S{2,2})/;
+
+    if ( $DEBUG ) { print "$timeline $month,$day,$year,$hour,$min,$ampm\n"; }
+
+    $month = $monthMap{$month};
+    if ( ($ampm eq "PM") && ($hour != 12) )
+    {
+	$hour += 12;
+    }
+    elsif ( ($ampm eq "AM") && ($hour == 12) )
+    {
+	$hour = 0;
+    }
+    
+    my $time = timelocal(0,$min, $hour, $day, $month - 1, $year);
+    return $time;
+}
+
+sub parseCountLine
+{
+    my ($countLine,$r_TimeSample) = @_;
+
+    $_ = $countLine;
+    my ($nodeType,$count) = /^ (\S+)\s+(\d+)/;
+    $r_TimeSample->{'nodetype'}->{$nodeType} = $count;
+}

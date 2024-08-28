@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_agg_fail_counter_date">
+    <reference table="sites" condition="eniq_agg_fail_counter_date.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_agg_fail_counter_date.date = '%date%' </where>
+
+  <column db="eniq_agg_fail_counter_date.failedDate" label="Failed Date"/>
+</modelledtable>

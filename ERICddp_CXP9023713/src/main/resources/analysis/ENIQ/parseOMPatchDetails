@@ -1,0 +1,192 @@
+#!/usr/bin/perl
+###############################################################################################################################
+# Description ---------   parseOMPatchDetails -------------------------------
+# This script parses the OM and patch media logs and stores data to Db
+# @author - Sunil Yadav (xsunyad)
+# usage ${ANALYSIS_BIN}/parseOMPatchDetails --dir ${DIR} --site {SITE} --date {SQL_DATE}
+###############################################################################################################################
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dir, $site, $date);
+    my $result = GetOptions (
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    parseData($dbh, $dir, $siteId, $date);
+    $dbh->disconnect;
+}
+
+sub parseData($$$$) {
+    my ($dbh, $dir, $siteId, $date) = @_;
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    closedir DIR;
+    if ( $DEBUG > 1 ) {
+        print Dumper("Files to be parsed", @files);
+    }
+    my $table;
+    my $bcpFile;
+    foreach my $file (@files) {
+        next if $file =~ /^\.|history/;
+        if ( $file =~ /eniq_om_status/ ) {
+            $bcpFile = parseOmMediaLog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_om_media_table_info";
+        } elsif ( $file =~ /eniq_patch_status/ ) {
+            $bcpFile = parsePatchMediaLog($dbh, $dir, $file, $siteId, $date);
+            $table = "eniq_patch_media_table_info";
+        } else {
+            return;
+        }
+        removeOldData($dbh, $table, $siteId, $date);
+        loadDb($dbh, $bcpFile, $table);
+    }
+}
+
+sub parseOmMediaLog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+    my @omMediaStatusList = ();
+    my @omMediaReleaseList = ();
+    my @omMediaArrayData = ();
+
+    my $bcpFile = getBcpFileName("om_media_info");
+    my ($omMediaStatusIdMap, $omMediaReleaseIdMap, $mediaStatus, $release, $installTime);
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( $line =~ /ENIQ_OM_MEDIA_STATUS\s+-\s+(.*)/ ) {
+            $mediaStatus = $1;
+        } elsif ( $line =~ /SPRINT\s+-\s+(.*)/ ) {
+            my $sprint = $1;
+            if ( $sprint =~ /(\d+.\d+).\d+.(\w+)/ ) {
+                $release = $1." ".$2;
+            } elsif ( $sprint =~ /(\d+.\d+).\d+/ ) {
+                $release = $1;
+            }
+        } elsif ( $line =~ /INST_DATE\s+(\d+)-(\d+)-(\d+)_(\d+)-(\d+)-(\d+)/ ) {
+            $installTime = $3."-".$2."-".$1." ".$4.":".$5.":".$6
+        }
+    }
+
+    my %omMediaHashData = (
+        mediaStatus => "$mediaStatus",
+        release => "$release",
+        installTime => "$installTime"
+    );
+    push (@omMediaArrayData, \%omMediaHashData);
+    push (@omMediaStatusList, $mediaStatus);
+    push (@omMediaReleaseList, $release);
+
+    $omMediaStatusIdMap = getIdMap($dbh, "eniq_om_patch_media_status_id_mapping", "id", "status", \@omMediaStatusList);
+    $omMediaReleaseIdMap = getIdMap($dbh, "eniq_om_patch_release_id_mapping", "id", "releaseName", \@omMediaReleaseList);
+
+    foreach my $data_element ( @omMediaArrayData ) {
+        printf BCP "%s|%d|%d|%d|%s\n",
+        $date,
+        $siteId,
+        $omMediaStatusIdMap->{$omMediaStatusList[0]},
+        $omMediaReleaseIdMap->{$omMediaReleaseList[0]},
+        $data_element->{installTime};
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePatchMediaLog($$$$$) {
+    my ($dbh, $dir, $file, $siteId, $date) = @_;
+    my @patchMediaStatusList = ();
+    my @patchMediaReleaseList = ();
+    my @patchMediaUsedList = ();
+    my @patchMediaArrayData = ();
+
+    my $bcpFile = getBcpFileName("patch_media_info");
+    my ($patchMediaStatusIdMap, $patchMediaUsedIdMap, $patchMediaReleaseIdMap, $mediaStatus, $mediaUsed, $release, $installTime);
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( $line =~ /ENIQ_PATCH_UPDATE_MEDIA_STATUS\s+-\s+(.*)/ ) {
+            $mediaStatus = $1;
+            $mediaStatus =~ s/\s+/ /g;
+        } elsif ( $line =~ /OM_MEDIA_USED_FOR_PATCHUPDATE\s+-\s+(.*)/ ) {
+            $mediaUsed = $1;
+        } elsif ( $line =~ /PATCH_OM_SPRINT\s+-\s+(.*)/ ) {
+            my $sprint = $1;
+            if ( $sprint =~ /(\d+.\d+).\d+.(\w+)/ ) {
+                $release = $1." ".$2;
+            } elsif ( $sprint =~ /(\d+.\d+).\d+/ ) {
+                $release = $1;
+            }
+        } elsif ( $line =~ /INST_DATE\s+(\d+)-(\d+)-(\d+)_(\d+)-(\d+)-(\d+)/ ) {
+            $installTime = $3."-".$2."-".$1." ".$4.":".$5.":".$6
+        }
+    }
+
+    my %patchMediaHashData = (
+        mediaStatus => "$mediaStatus",
+        mediaUsed => "$mediaUsed",
+        release => "$release",
+        installTime => "$installTime"
+    );
+    push (@patchMediaArrayData, \%patchMediaHashData);
+    push (@patchMediaStatusList, $mediaStatus);
+    push (@patchMediaUsedList, $mediaUsed);
+    push (@patchMediaReleaseList, $release);
+
+    $patchMediaStatusIdMap = getIdMap($dbh, "eniq_om_patch_media_status_id_mapping", "id", "status", \@patchMediaStatusList);
+    $patchMediaUsedIdMap = getIdMap($dbh, "eniq_patch_update_id_mapping", "id", "patch", \@patchMediaUsedList);
+    $patchMediaReleaseIdMap = getIdMap($dbh, "eniq_om_patch_release_id_mapping", "id", "releaseName", \@patchMediaReleaseList);
+
+    foreach my $data_element ( @patchMediaArrayData ) {
+        printf BCP "%s|%d|%d|%d|%d|%s\n",
+        $date,
+        $siteId,
+        $patchMediaStatusIdMap->{$patchMediaStatusList[0]},
+        $patchMediaUsedIdMap->{$patchMediaUsedList[0]},
+        $patchMediaReleaseIdMap->{$patchMediaReleaseList[0]},
+        $data_element->{installTime};
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub removeOldData($$$$) {
+    my ($dbh, $table, $siteId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 3 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

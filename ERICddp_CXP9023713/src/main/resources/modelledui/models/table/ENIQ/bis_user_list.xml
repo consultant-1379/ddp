@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="bis_users_list">
+    <reference table="sites" condition="bis_users_list.siteid = sites.id"/>
+    <reference table="eniq_bis_netan_user_type_id_mapping" condition="eniq_bis_netan_user_type_id_mapping.id = bis_users_list.userTypeId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND bis_users_list.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <groupby rollup="false">
+    <column db="substring_index(userType, '_', 2)"/>
+  </groupby>
+
+  <column db="substring_index(userType, '_', 2)" label="User Type"/>
+  <column db="count(DISTINCT userTypeId)" label="Count"/>
+</modelledtable>

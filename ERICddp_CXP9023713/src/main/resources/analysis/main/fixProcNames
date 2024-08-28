@@ -1,0 +1,57 @@
+#!/bin/bash
+
+if [ "$1" = "start" ] ; then
+    if [ -r /tmp/fixproc.running ] ; then
+	echo "ERROR: Seems to be already running"
+	exit 1
+    fi
+
+    echo $$ > /tmp/fixproc.running
+    rm -f /tmp/fixproc.exit > /dev/null 2>&1
+
+    # Offline DDPD
+    /usr/sbin/svcadm disable ddpd
+    ONLINE=1
+    while [ $ONLINE -eq 1 ] ; do
+	sleep 5
+	/usr/bin/svcs ddpd | egrep '^disabled' > /dev/null
+	if [ $? -eq 0 ] ; then
+	    ONLINE=0
+	fi
+    done
+
+    mysql -vvv -u root statsdb <<EOF
+ALTER TABLE crontabs ADD INDEX fixProcNameIdx( process_name_id );
+EOF
+
+    ANALYSIS_ROOT=`dirname $0`
+    ANALYSIS_ROOT=`cd ${ANALYSIS_ROOT} ; cd .. ; pwd`
+
+    export PERL5OPT="-I${ANALYSIS_ROOT}/common"
+    perl -F ${ANALYSIS_ROOT}/server/parseJps --fixnames fix --exit /tmp/fixproc.exit
+    RESULT=$?
+
+    mysql -vvv -u root statsdb <<EOF
+ALTER TABLE crontabs DROP INDEX fixProcNameIdx;
+EOF
+
+    rm /tmp/fixproc.running
+
+    if [ ${RESULT} -eq 0 ] || [ ${RESULT} -eq 1 ] ; then
+	/usr/sbin/svcadm enable ddpd
+    else
+	echo "ERROR: parseJps did not exit correctly, leaving ddpd offline"
+    fi
+    date
+elif [ "$1" = "stop" ] ; then
+    if [ -r /tmp/fixproc.running ] ; then
+	touch /tmp/fixproc.exit
+	
+	while [ -r /tmp/fixproc.running ] ; do
+	    sleep 1
+	done
+    fi
+fi
+
+	
+

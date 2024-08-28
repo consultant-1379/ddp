@@ -1,0 +1,169 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+
+sub main {
+    my @instrCfgs = ();
+    my ($instrData,$cfgDir);
+    my $result = GetOptions(
+        "cfg=s" => \@instrCfgs,
+	"dir=s" => \$cfgDir,
+        "data=s" => \$instrData,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    setInstr_Debug($DEBUG);
+    setStatsDB_Debug($DEBUG);
+    
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    if ( defined $cfgDir ) { 
+	opendir(DIR, $cfgDir) || die "can't opendir $cfgDir: $!";
+	my @allFiles = readdir(DIR);
+	closedir DIR;
+	foreach my $file ( @allFiles ) {
+	    if ( $file =~ /^cslib_/ ) {
+		push @instrCfgs, $cfgDir . "/" . $file;
+	    }
+	}
+
+	if ( $DEBUG > 0 ) { print Dumper("main: instrCfgs", \@instrCfgs); }
+    }
+	
+    my %allProfiles = ();
+    foreach my $instrCfg ( @instrCfgs ) {
+	my $r_cfg = parseConfig($instrCfg);
+	if ( $DEBUG > 2 ) { print Dumper("main: r_cfg", $r_cfg); }
+	foreach my $profileName ( sort keys %{$r_cfg} ) {
+	    if ( $profileName =~ /-cslib-profile$/ ) {
+		$allProfiles{$profileName} = $r_cfg->{$profileName};
+	    }
+	}
+    }
+    if ($DEBUG > 2) { print Dumper("main allProfiles", \%allProfiles); }
+
+    my $r_data = parseDataForCfg(\%allProfiles, $instrData, 0);
+
+    if ($DEBUG > 9) { print Dumper("main r_data", $r_data); }
+    
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my $doLoad = 1;
+
+    # store keys as JMX names
+    my @names = keys(%{$r_data});
+    my $idMap = getIdMap($dbh, "jmx_names", "id", "name", \@names );
+
+    foreach my $dataType ( "VDB", "ConfigHome" ) {
+        my $tableName;
+	my @metricCols = ();
+	my @deltaCounters = ();
+
+	if ( $dataType eq "VDB" ) {
+            $tableName = "cslib_vdb_stats";
+	    @metricCols = (  "PmClosedDuringTx","PmCreated", "PmIdleInPool", "PmOpen", 
+			     "TxCommitted", "TxRolledBack", "TxStarted", "TotalOpenedConnections"); 
+	    @deltaCounters = ("PmClosedDuringTx", "PmCreated", "TxCommitted", "TxRolledBack", "TxStarted" );
+	} else {
+            $tableName = "cslib_confighome_stats";
+	    @metricCols = ( "ConfigurationManagerCount", "PersistenceManagerCount", "OngoingCsTransactionCount" );
+        }
+
+	my $dataTypeMinTime = undef
+	my $dataTypeMaxTime = undef;
+
+	my @nameIds = ();
+	#
+	# For all the metrics for this dataType in the bcp file
+	#
+	my $bcpFile = $tmpDir . "/cslib_stats." . $tableName . ".bcp";
+	open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+	foreach my $name (@names) {
+	    if ( $DEBUG > 3 ) { print "main: name=$name\n"; }
+	
+	    if ( $name !~ /-$dataType$/ ) {
+		next;
+	    }
+
+	    my $r_metrics = $r_data->{$name};
+	    my $nameId = $idMap->{$name};
+	    push @nameIds, $nameId;
+
+	    if ( $DEBUG > 4 ) { print Dumper("main: metricCols, deltaCounters", \@metricCols, \@deltaCounters); }
+	    my %deltaHash = ();
+	    foreach my $deltaCounter ( @deltaCounters ) {
+		$deltaHash{$deltaCounter} = 1;
+	    }
+
+	    my $thisMinTime = instr2unixTime($r_metrics->[0]->{'timestamp'});
+	    if ( (! defined $dataTypeMinTime) || ($thisMinTime < $dataTypeMinTime) ) {
+		$dataTypeMinTime = $thisMinTime;
+	    }	    
+	    my $thisMaxTime = instr2unixTime($r_metrics->[$#{$r_metrics}]->{'timestamp'});
+	    if ( (! defined $dataTypeMaxTime) || ($thisMaxTime > $dataTypeMaxTime) ) {
+		$dataTypeMaxTime = $thisMaxTime;
+	    }
+
+	    my $r_prevSample = undef;
+	    foreach my $r_sample (@{$r_metrics}) {
+		if ( $DEBUG > 7 ) { print Dumper("main: r_sample", $r_sample); }
+		my $row = instr2mysqlTime($r_sample->{'timestamp'}) . "\t" . $siteId . "\t" . $nameId;
+		foreach my $colName (@metricCols) {
+		    my $value = '\N';
+		    if ( defined $r_sample->{$colName} ) {
+			# Is it a delta counter
+			if ( exists $deltaHash{$colName} ) {
+			    if ( defined $r_prevSample ) {
+				if ( $r_sample->{$colName} >= $r_prevSample->{$colName} ) {
+				    $value = $r_sample->{$colName} - $r_prevSample->{$colName};
+				} else {
+				    $value = $r_sample->{$colName};
+				}
+			    }
+			} else {
+			    $value = $r_sample->{$colName};
+			}
+		    }
+		    if ( $DEBUG > 8 ) { print "main: colName=$colName value=$value\n"; }
+		    $row .= "\t" . $value;
+		}
+		printf BULK_INSERT "%s\n", $row;
+		$r_prevSample = $r_sample;
+	    }       
+	}
+	close BULK_INSERT;
+	
+	
+	if (defined $dataTypeMinTime && defined $dataTypeMaxTime) {
+	    dbDo($dbh,sprintf("DELETE FROM %s WHERE siteid = %d AND nameid IN (%s) AND time BETWEEN '%s' AND '%s'",
+			      $tableName, $siteId, 
+			      join(",", @nameIds),
+			      formatTime( $dataTypeMinTime, $StatsTime::TIME_SQL ),
+			      formatTime( $dataTypeMaxTime, $StatsTime::TIME_SQL )))
+		or die "Failed to remove old data";
+	    
+	    dbDo($dbh,sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE %s (time,siteid,nameid,%s)", 
+			      $bcpFile, $tableName, join(",", @metricCols)))
+		or die "Failed to load new stats";
+	}
+    }
+
+    $dbh->disconnect;
+}
+
+main;

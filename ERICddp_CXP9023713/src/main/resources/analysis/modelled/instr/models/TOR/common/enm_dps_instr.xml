@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <table name="enm_dps_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.datalayer.dps.bucket.instrumentation.data-persistence-service-runtime:type=DpsInstrumentedBean">
+      <metric source="addAssocCount" target="n_addAssoc" delta="true" filteridle="true"/>
+      <metric source="changelogQueriesWithRestrictionsCount" target="n_changelogQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="changelogQueriesWithoutRestrictionsCount" target="n_changelogQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="containmentQueriesWithRestrictionsCount" target="n_containmentQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="containmentQueriesWithoutRestrictionsCount" target="n_containmentQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="createMoCount" target="n_createMo" delta="true" filteridle="true"/>
+      <metric source="createPoCount" target="n_createPo" delta="true" filteridle="true"/>
+      <metric source="deleteMoCount" target="n_deleteMo" delta="true" filteridle="true"/>
+      <metric source="deletePoCount" target="n_deletePo" delta="true" filteridle="true"/>
+      <metric source="findMoCount" target="n_findMo" delta="true" filteridle="true"/>
+      <metric source="findPoCount" target="n_findPo" delta="true" filteridle="true"/>
+      <metric source="groupQueriesWithRestrictionsCount" target="n_groupQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="groupQueriesWithoutRestrictionsCount" target="n_groupQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnChangelogQueriesWithRestrictionsCount" target="n_projectionsOnChangelogQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnChangelogQueriesWithoutRestrictionsCount" target="n_projectionsOnChangelogQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnContainmentQueriesWithRestrictionsCount" target="n_projectionsOnContainmentQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnContainmentQueriesWithoutRestrictionsCount" target="n_projectionsOnContainmentQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnGroupQueriesWithRestrictionsCount" target="n_projectionsOnGroupQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnGroupQueriesWithoutRestrictionsCount" target="n_projectionsOnGroupQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnTypeContainmentQueriesWithRestrictionsCount" target="n_projectionsOnTypeContainmentQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnTypeContainmentQueriesWithoutRestrictionsCount" target="n_projectionsOnTypeContainmentQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnTypeQueriesWithRestrictionsCount" target="n_projectionsOnTypeQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="projectionsOnTypeQueriesWithoutRestrictionsCount" target="n_projectionsOnTypeQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="queriesCountCount" target="n_queriesCount" delta="true" filteridle="true"/>
+      <metric source="removeAssocCount" target="n_removeAssoc" delta="true" filteridle="true"/>
+      <metric source="setAttrCount" target="n_setAttribute" delta="true" filteridle="true"/>
+      <metric source="transactionsWithEventsActive" target="n_transactionsWithEventsActive"/>
+      <metric source="typeContainmentQueriesWithRestrictionsCount" target="n_typeContainmentQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="typeContainmentQueriesWithoutRestrictionsCount" target="n_typeContainmentQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="typeQueriesWithRestrictionsCount" target="n_typeQueriesWithRestrictions" delta="true" filteridle="true"/>
+      <metric source="typeQueriesWithoutRestrictionsCount" target="n_typeQueriesWithoutRestrictions" delta="true" filteridle="true"/>
+      <metric source="findMoExecutionTime" target="t_findMo" delta="true"/>
+      <metric source="findPoExecutionTime" target="t_findPo" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.datalayer.dps.neo4j.query.instrumentation.data-persistence-service-neo4j-runtime:type=QueryOptimizationInstrumentationBean">
+      <metric source="descendantsAtMixedLevelsOptimizationCount" target="n_qOptDescendantsAtMixedLevels" delta="true" filteridle="true"/>
+      <metric source="descendantsAtOneLevelOptimizationCount" target="n_qOptDescendantsAtOneLevel" delta="true" filteridle="true"/>
+      <metric source="directPathExpressionOptimizationCount" target="n_qOptDirectPathExpression" delta="true" filteridle="true"/>
+      <metric source="noOptimizationCount" target="n_qOptNone" delta="true" filteridle="true"/>
+      <metric source="pathsWithRecursionOptimizationCount" target="n_qOptPathsWithRecursion" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

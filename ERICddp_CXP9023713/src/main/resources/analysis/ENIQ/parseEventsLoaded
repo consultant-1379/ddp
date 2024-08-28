@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseDataFile($) {
+    my ($dataFile) = @_;
+    my ($time,$table,$rows);
+    my @results = ();
+    open IN, $dataFile or die "Cannot open $dataFile";
+    while ( my $line = <IN> ) {
+        if ( $DEBUG > 9 ) { print "parseDataFile line=$line"; }
+        if ( $line =~ /^\S+ (\d{2,2}:\d{2,2}):\d{2,2} .*Loader\.Loader_(\S+)\.\d+\.EventLoader : Set loaded in total (\d+)/ ) {
+            ($time,$table,$rows) = ($1,$2,$3);
+            if ( $rows > 0 ) {
+                push @results, { 'time' => $time, 'table' => $table, 'rows' => $rows };
+            }
+        }elsif ($line =~ /^\S+ (\d{2,2}:\d{2,2}):\d{2,2} .*Loader\.Loader_(EVENT_E_LTE_TRAC_PAGING_SUC)\.\d+\.TimeBasePartitionLoader : Set loaded in total (\d+)/) {
+            ($time,$table,$rows) = ($1,$2,$3);
+            if ( $rows > 0 ) {
+                push @results, { 'time' => $time, 'table' => $table, 'rows' => $rows };
+            }
+        }
+    }
+    close IN;
+    if ( $DEBUG > 3 ) { print Dumper("parseDataFile results", \@results); }
+    return \@results;
+}
+
+sub storeData($$$) {
+    my ($r_data,$site,$date) = @_;
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ( $siteId > -1 ) or die "ERROR: Cannot find siteid for $site";
+    my $r_tableMap = getIdMap($dbh,"eniq_events_table_names", "id", "name", [] );
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $fileName = $tmpDir . "/events_loaded.bcp";
+    open BCP, ">$fileName" or die "Cannot open $fileName";
+    foreach my $r_load ( @{$r_data} ) {
+        my $tableId = $r_tableMap->{$r_load->{'table'}};
+        if ( ! defined $tableId ) {
+            $r_tableMap = getIdMap($dbh,"eniq_events_table_names", "id", "name", [$r_load->{'table'}] );
+            $tableId = $r_tableMap->{$r_load->{'table'}};
+        }
+        printf BCP "%s\t%d\t%d\t%d\n", $date . " " . $r_load->{'time'}, $siteId, $tableId, $r_load->{'rows'};
+    }
+    close BCP;
+
+    dbDo($dbh, "DELETE FROM eniq_events_loaded WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'") or die "Failed to delete old data";
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$fileName' INTO TABLE eniq_events_loaded") or die "Failed to load data";
+    unlink($fileName);
+    $dbh->disconnect;
+}
+
+
+sub main {
+    my ($date,$dataFile,$site,$date);
+    my $result = GetOptions (
+        "data=s" => \$dataFile,
+        "date=s" => \$date,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_data = parseDataFile($dataFile);
+    if ( $#{$r_data} > -1 ) {
+        storeData($r_data,$site,$date);
+    }
+}
+
+main();

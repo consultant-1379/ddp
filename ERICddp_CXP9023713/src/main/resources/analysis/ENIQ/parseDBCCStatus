@@ -1,0 +1,83 @@
+#!/usr/bin/perl
+#===============================================================================================================================
+# Script  : parseDBCCStatus
+# Author  : Sunil Yadav (xsunyad)
+# Purpose : The purpose of this script is to parse dbcheck.env file which contains information
+#           about last run status of db allocation, verify tables and iqmsg check
+# Usage   : ${ANALYSIS_BIN}/ENIQ/parseDBCCStatus --logfile ${logFile} --site ${SITE} --date ${SQL_DATE}
+#===============================================================================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($logFile, $site, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    my $bcpFIle = parseData($logFile, $siteId, $date);
+    my $table = "eniq_dbcc_status";
+    removeOldData($dbh, $table, $date, $siteId);
+    loadDb($dbh, $bcpFIle, $table);
+    $dbh->disconnect;
+}
+
+sub parseData($$$) {
+    my ($logFile, $siteId, $date) = @_;
+    my ($lastDBCheckTime, $dbAllocationState, $verifyTablesState, $iqmsgCheckState);
+
+    open LOG, $logFile or die "Cannot open $logFile";
+    while ( my $line = <LOG> ) {
+        chomp($line);
+        if ( $line =~ /.*LASTDBCHECK='(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).\d+'/ ) {
+            $lastDBCheckTime = $1;
+        } elsif ( $line =~ /^db_allocation_LASTRUN_STATE=(\w+)$/ ) {
+            $dbAllocationState = $1;
+        } elsif ( $line =~ /^verify_tables_LASTRUN_STATE=(\w+)$/ ) {
+            $verifyTablesState = $1;
+        } elsif ( $line =~ /^iqmsg_check_LASTRUN_STATE=(\w+)$/ ) {
+            $iqmsgCheckState = $1;
+        }
+    }
+    close LOG;
+    my $bcpFile = getBcpFileName("dbcc_status_info");
+    open BCP, ">$bcpFile" or die "Cannot open BCP File $bcpFile";
+    printf BCP "%s|%d|%s|%s|%s|%s\n",
+        $date,
+        $siteId,
+        $lastDBCheckTime,
+        $dbAllocationState,
+        $verifyTablesState,
+        $iqmsgCheckState;
+
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData($$$$) {
+    my ($dbh, $table, $date, $siteId) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date'";
+    if ( $DEBUG > 1 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY '|'";
+    if ( $DEBUG > 2 ) { print "SQL query for inserting data: $insertSql \n" };
+    dbDo($dbh, $insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

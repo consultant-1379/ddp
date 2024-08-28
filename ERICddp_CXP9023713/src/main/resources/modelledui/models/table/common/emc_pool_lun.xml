@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="emc_pool_lun">
+    <reference table="emc_lun" condition="emc_pool_lun.lunid = emc_lun.id"/>
+  </dbtables>
+
+  <param name="sysid"/>
+  <param name="poolid"/>
+  <param name="date"/>
+  <where>emc_pool_lun.sysid = %sysid% AND emc_pool_lun.poolid = %poolid% AND emc_pool_lun.filedate = '%date%'</where>
+
+  <order columnid="allocated" direction="DESC"/>
+
+  <column db="emc_pool_lun.lunid" label="lunid" id="lunid" visible="false"/>
+  <column db="emc_lun.name" label="Name"/>
+  <column db="sizeAllocatedGB" label="Allocated(GB)" id="allocated"/>
+  <column db="snapsSizeAllocatedGB" label="Snap Allocated(GB)"/>
+  <column db="metadataSizeAllocatedGB" label="Metadata Allocated (GB)"/>
+  <column db="snapCount" label="Snap Count"/>
+  <column db="dataReductionRatio" label="Data Reduction Ratio"/>
+
+  <ctxmenu keycol="lunid" targettype="modelledgraphset" multiselect="true">
+    <item id="allocated@common/emc_pool_lun" label="Plot Allocated"/>
+    <item id="snap@common/emc_pool_lun" label="Plot Snap Allocated"/>
+    <item id="metadata@common/emc_pool_lun" label="Plot Meta Data Allocated"/>
+    <item id="datareductionratio@common/emc_pool_lun" label="Plot Data Reduction Ratio"/>
+  </ctxmenu>
+
+</modelledtable>

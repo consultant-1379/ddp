@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="ebsstream"/>
+  </services>
+
+  <table name="enm_ebsl_inst_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="epsid" reftable="enm_ebsm_epsid" refnamecol="EpsIdText"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^(%1%)-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.output.adapter.FlsOutputAdapter.Number_Of_Counters_Produced$">
+      <metric source="Count" target="countersProduced" delta="true" filteridle="true"/>
+      <property name="epsid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.output.adapter.FlsOutputAdapter.Number_Of_Files_Written$">
+      <metric source="Count" target="numOfFilesWritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.output.adapter.FlsOutputAdapter.Number_Of_Files_Rewritten$">
+        <metric source="Count" target="numOfFilesReWritten" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^(%1%)-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Number_Of_NR_Counters_Produced$">
+        <metric source="Count" target="countersProducedNR" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Number_Of_NR_Files_Written$">
+        <metric source="Count" target="numOfFilesWrittenNR" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Number_Of_NR_Files_Rewritten$">
+        <metric source="Count" target="numOfFilesReWrittenNR" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Number_Of_NR_Counters_Dropped$">
+      <metric source="Count" target="numberOfNRcountersDropped" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Number_Of_LTE_Counters_Dropped$">
+      <metric source="Count" target="numberOfLTEcountersDropped" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_Counters_Dropped_Due_To_Missing_Parameter$">
+      <metric source="Count" target="numberOfNRcountersDroppedDueToMissingParameter" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Index_Size_Of_Nr_Uplink_Throughput_Counters$">
+      <metric source="Count" target="indexSizeOfNRUplinkThroughputCounters" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Index_Size_Of_Nr_Downlink_Voice_Throughput_Counters$">
+      <metric source="Count" target="indexSizeOfNRDownlinkVoiceThroughputCounters" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Index_Size_Of_Nr_Downlink_Non_Voice_Throughput_Counters$">
+      <metric source="Count" target="indexSizeOfNRDownlinkNonVoiceThroughputCounters" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=com.ericsson.oss.mediation.pm.ebs.ebsm.stream.metrics.handler.StreamMetricsOutputHandler.Number_Of_Suspect_Cells_Per_Rop$">
+      <metric source="Count" target="numberOfSuspectCellsPerRop" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>
+

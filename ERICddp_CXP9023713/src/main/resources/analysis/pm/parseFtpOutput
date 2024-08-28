@@ -1,0 +1,1043 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsCommon;
+use StatsTime;
+
+use Time::Local;
+use POSIX qw(strftime);
+
+our $DEBUG=0;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+    );
+
+our $PREDEFINED_STATS  = 1;
+our $USERDEFINED_STATS = 2;
+our $PREDEFINED_GPEH = 5;
+
+our %scannerTypeMap = 
+(
+ 1 => 'PREDEFINED_STATS',
+ 2 => 'USERDEFINED_STATS',
+ 3 => 'PREDEFINED_UETR',
+ 4 => 'PREDEFINED_CTR',
+ 5 => 'PREDEFINED_GPEH',
+ 6 => 'PREDEFINED_CELLTRACE',
+ 7 => 'PREDEFINED_UETRACE',
+);
+
+our %fileType =
+(
+ 'PREDEFINED_STATS'     => 'STATS',
+ 'USERDEFINED_STATS'    => 'STATS',
+ 'PREDEFINED_CTR'       => 'CTR',
+ 'PREDEFINED_UETR'      => 'UETR',
+ 'PREDEFINED_GPEH'      => 'GPEH',
+ 'PREDEFINED_CELLTRACE' => 'CELLTRACE',
+ 'PREDEFINED_UETRACE'   => 'UETRACE'
+);
+
+our %PRIORITIES = (
+    '0'  => { 'label' => '15MIN', 'period' => 900,  'delay' => 300 },
+    '1'  => { 'label' => '1MIN',  'period' => 60,   'delay' => 60 },
+    '5'  => { 'label' => '5MIN',  'period' => 300,  'delay' => 60 },
+    '60' => { 'label' => '60MIN', 'period' => 3600, 'delay' => 300 }
+    );
+           
+    
+    
+
+our $r_neTypeMap;
+our $midNight;
+
+our $DELAY_BEFORE_ROP = 300;
+
+sub sqlTime($) {
+    my ($time) = @_;
+
+    #my @fields = localtime(int ( ($time/1000) + 0.5 ));
+    my @fields = gmtime(int ( ($time/1000) + 0.5 ));
+    #print Dumper($time, \@fields);
+    return strftime("%Y-%m-%d %H:%M:%S", @fields );
+}
+
+sub getCollPeriodStart($$) {
+    my ($time, $period) = @_;
+
+    my $result;
+    if ( $period == 60 ) {
+        $result = $time - ($time % 60000);
+    } elsif ( ($period == 900) || ($period == 3600) ) {
+        # First Collection Period is 00:05
+        my $baseTime = ($midNight * 1000) + ($DELAY_BEFORE_ROP * 1000);
+        if ( $time < $baseTime ) {
+            $baseTime -= (24 * 60 * 60 * 1000);
+        }
+        my $ropIndex =  int ( ($time - $baseTime) / ($period * 1000) );
+        $result = $baseTime + ($ropIndex * $period * 1000);
+    } elsif ( $period == 300 ) {
+        # First Collection Period is 00:01
+        my $baseTime = ($midNight * 1000) + (1 * 60 * 1000);
+        if ( $time < $baseTime ) {
+            $baseTime -= (24 * 60 * 60 * 1000);
+        }
+        my $ropIndex =  int ( ($time - $baseTime) / ($period * 1000) );
+        $result = $baseTime + ($ropIndex * $period * 1000);
+    } else {
+        die "Cannot handle period $period\n";
+    }
+
+    if ( $DEBUG > 8 ) { printf "getCollPeriodStart time=%lu (%s) period=$period result=%lu (%s)\n", $time, sqlTime($time), $result, sqlTime($result); } 
+    return $result;
+}
+
+sub lateCheck($$$) {
+    my ($r_Txfr,$targetRopEndTime,$r_stats) = @_;
+    
+    if ( exists $r_Txfr->{'rop'} ) {    
+        if ( $DEBUG > 8 ) { printf "lateCheck: orgRop=%s targetRopEndTime=%s\n",
+                            sqlTime($r_Txfr->{'rop'}), sqlTime($targetRopEndTime); }
+
+        if ( $r_Txfr->{'rop'} != $targetRopEndTime ) {
+            if ( $DEBUG > 5 ) { 
+                print "lateCheck: txfr late file rop time=$r_Txfr->{'rop'} (" . 
+                    sqlTime($r_Txfr->{'rop'}) . ", thisRopTimeUTC=$targetRopEndTime (" .
+                    sqlTime($targetRopEndTime) . ")\n"; }
+            $r_stats->{'latefiles'}++
+        }
+    }
+}
+
+sub initFileTypeStats() {
+    return {
+        'endTime' => 0,
+        'files' => 0,
+        'bytesTransferred' => 0,
+        'endTime' => 0,
+        'collbuckets' => [ 0, 0, 0, 0, 0 ],
+        'latefiles' => 0
+    };
+}
+
+sub statsCheck($$$$) {
+    my ($r_record, $r_Txfr,$from,$to) = @_;
+    my $priority = $r_Txfr->{'priority'};
+    my $r_tbc = $r_record->{'tbc'};
+
+    if ( ! defined $r_tbc ) {
+        if ( $DEBUG > 3 ) { print "statsCheck: initialise r_rops for " . $r_Txfr->{'fdn'} . "\n"; }
+        $r_tbc = { 'available' => 0, 'collected' => 0, 'rops' => {} };
+        my $firstRop = ($from - $PRIORITIES{$priority}->{'period'})* 1000; 
+        my $toMS = getCollPeriodStart($to*1000, 900) - ($PRIORITIES{$priority}->{'delay'} * 1000);
+        my $periodMS = $PRIORITIES{$priority}->{'period'} * 1000;
+        if ( $DEBUG > 8 ) { printf("statsCheck: firstRop=%s to=%s periodMS=%d\n",
+                                   sqlTime($firstRop),sqlTime($toMS),$periodMS); }
+        for ( my $ropTime = $firstRop;  $ropTime < $toMS; $ropTime += $periodMS ) {                 
+            $r_tbc->{'rops'}->{$ropTime} = 1;
+            $r_tbc->{'available'}++;
+        }
+        $r_record->{'tbc'} = $r_tbc;
+    }
+
+    my $match = delete $r_tbc->{'rops'}->{$r_Txfr->{'rop'}};
+
+    if ( defined $match ) {
+        $r_tbc->{'collected'} = $r_tbc->{'available'};
+    } else {
+        $r_tbc->{'collected'}--;
+        if ((! defined $match) && $DEBUG > 1 ) { print Dumper( "statsCheck: no match for rop " . sqlTime($r_Txfr->{'rop'}), $r_Txfr); }
+    }
+}
+
+sub throughPut($$) {
+    my ($r_Txfr,$r_stats) = @_;
+    
+    my $endTime = $r_Txfr->{'startTime'};
+
+    if ( exists $r_Txfr->{'duration'} ) {
+        $r_stats->{'duration'} += $r_Txfr->{'duration'};                
+        $endTime += $r_Txfr->{'duration'};
+        
+        my $throughput = int ( (($r_Txfr->{'bytesTransferred'} * 1000) / 
+                                $r_Txfr->{'duration'}) + 0.5);
+        if ( ( ! defined $r_stats->{'minthroughput'} ) || 
+             ( $throughput < $r_stats->{'minthroughput'} ) ) {
+            if ( $DEBUG > 6 ) { print "throughPut: minthroughput=$throughput\n"; }
+            $r_stats->{'minthroughput'} = $throughput;
+        }
+    }   
+
+    if ( $DEBUG > 8 ) { print "throughPut: endTime=$endTime (" . sqlTime($endTime) .")\n"; }
+    return $endTime;
+}
+
+sub extractRopStats($$$) {    
+    my ($r_allTxfr,$sqlDate,$listTime) = @_;
+
+    #
+    # Turns out that the transfer are not in exact time sequnce so we need to iterate
+    # through them to find the first and last
+    #
+    my $from = ($midNight + (2 * 24 * 60 * 60)) * 1000;
+    my $to = -1;
+    foreach my $r_Txfr ( @{$r_allTxfr} ) {
+        my $endTime = $r_Txfr->{'startTime'} + $r_Txfr->{'duration'};
+        if ( $endTime < $from ) {
+            $from = $endTime;
+        }
+        if ( $endTime > $to ) {
+            $to = $endTime;
+        }
+    }
+    if ( $DEBUG > 3 ) { printf "extractRopStats: from=%s to=%s listTime=%s\n",
+                        sqlTime($from),sqlTime($to),sqlTime($listTime*1000); }
+
+    if ( ($listTime * 1000) > $to ) {
+        $to = $listTime * 1000;
+    }
+    
+    #
+    # First we need to pre-create the Collection Cycle stats. There is a problem in the ftpOutput 
+    # file can contain
+    # entries for the "next" Collection Cycle, 
+    # e.g. for File Creation Date: Sun Jul 15 23:50:57 IST 2012
+    # Collection Cycle is 23:35->23:50 but the file includes 
+    # ..RNC80|5|false|206|206|1342392657185|1342392657235||1342392540000|1 
+    # which ends collection at 23:50:57 which is outside the Collection Cycle
+    #
+    my %ccArray = ();
+    my %ccMap = ();
+    foreach my $priority ( keys %PRIORITIES ) {
+        $ccArray{$priority} = [];
+        $ccMap{$priority} = {};
+        my $fromCC = getCollPeriodStart($from, $PRIORITIES{$priority}->{'period'});
+        my $toCC = getCollPeriodStart($to, $PRIORITIES{$priority}->{'period'});
+
+        if ( $DEBUG > 3 ) { printf "extractRopStats: priority=$priority fromCC=%s toCC=%s\n",
+                            sqlTime($fromCC),sqlTime($toCC); }
+        
+        for ( my $startTime = $fromCC; $startTime <= $toCC; $startTime += ($PRIORITIES{$priority}->{'period'} * 1000) ) {                 
+            # targetROP is the node "ROP" time
+            # e.g. for A20131022.0730+0100-0745+0100 then targetROP = 20131022.0745 and
+            # at we expect to be collecting this during the PMS Collection Cycle starting at 20131022.0750
+            my $r_currCC = { 
+                'period' => $PRIORITIES{$priority}->{'period'},
+                'startTime' => $startTime,
+                'targetROP' => $startTime - ( $PRIORITIES{$priority}->{'delay'} * 1000),
+                'type' => {} 
+            };
+            push @{$ccArray{$priority}}, $r_currCC;
+            $ccMap{$priority}->{$r_currCC->{'startTime'}} = $r_currCC;
+        }
+    }
+    
+    my %activePriorities = ();
+    foreach my $r_Txfr ( @{$r_allTxfr} ) {
+        if ( $DEBUG > 9 ) { print "\n\n"; print Dumper("extractRopStats: r_Txfr", $r_Txfr); } 
+        
+        my $nodeType = getNodeType($r_Txfr->{'fdn'});
+        my $fileType = $fileType{$scannerTypeMap{$r_Txfr->{'scannerType'}}};
+        my $txEndTime = $r_Txfr->{'startTime'} + $r_Txfr->{'duration'};
+        if ( $DEBUG > 8 ) { print "extractRopStats: nodeType=$nodeType fileType=$fileType priority=" . 
+                                $r_Txfr->{'priority'} . ", txEndTime=" . sqlTime($txEndTime) . "\n"; }
+        $activePriorities{$r_Txfr->{'priority'}} = 1;
+
+        my $period = $PRIORITIES{$r_Txfr->{'priority'}}->{'period'};
+        my $r_ccStat = $ccMap{$r_Txfr->{'priority'}}->{getCollPeriodStart($txEndTime, $period)};
+        (defined $r_ccStat ) or die "Could not get ropStat, priority=" .  $r_Txfr->{'priority'} . 
+            ", txEndTime=" . $txEndTime . "(" . sqlTime($txEndTime) . ") " .
+            "ropStart=" . getCollPeriodStart($txEndTime, $period) . "(" . sqlTime(getCollPeriodStart($txEndTime, $period)) . ")\n" .
+            Dumper($r_Txfr) . "\n";        
+        if ( $DEBUG > 9 ) { print Dumper("extractRopStats: ropStat startTime=" . sqlTime($r_ccStat->{'startTime'}), $r_ccStat ); }        
+
+        my $r_stats = $r_ccStat->{'type'}->{$nodeType}->{$fileType};
+        if ( ! defined $r_stats ) {
+            $r_stats = initFileTypeStats();
+            $r_ccStat->{'type'}->{$nodeType}->{$fileType} = $r_stats;
+        }
+        if ( $DEBUG > 9 ) { print Dumper("extractRopStats: r_stats", $r_stats ); }
+        
+        $r_stats->{'files'}++;
+        $r_stats->{'bytesTransferred'} += $r_Txfr->{'bytesTransferred'};
+        
+        # Perform throughPut calculation (if we have the duration)
+        my $endTime = throughPut($r_Txfr,$r_stats);
+        if ( ! defined $endTime ) {
+            print Dumper("endTime undefined", $r_stats);
+        } else {
+            if ( $endTime > $r_stats->{'endTime'} ) {
+		if ( $DEBUG > 8 ) { print "extractRopStats: update endTime ropStat startTime=" . sqlTime($r_ccStat->{'startTime'}) . " endTime=$endTime\n"; }
+                $r_stats->{'endTime'} = $endTime;
+            }
+        }
+        
+        # collection buckets count the number of files collected between various times
+        # i.e. 0-3 mins, 4-6mins, etc.
+        my $oneFifthPeriod = int ( $r_ccStat->{'period'} / 5 );
+        my $collectionBucketIndex =
+            int ( ($endTime - $r_ccStat->{'startTime'}) / ($oneFifthPeriod * 1000) );
+        if ( $DEBUG > 7 ) { print "extractRopStats: collectionBucketIndex=$collectionBucketIndex\n"; }
+        ($collectionBucketIndex >= 0 && $collectionBucketIndex <= 4) 
+            or die "Invalid collectionBucketIndex=$collectionBucketIndex endTime=" . sqlTime($endTime) .
+            "rop startTime=" . sqlTime($r_ccStat->{'startTime'}) . "\n" . Dumper($r_Txfr);
+        
+        $r_stats->{'collbuckets'}->[$collectionBucketIndex]++;
+        
+        # Check if file was collected outside it's normall ROP
+        lateCheck($r_Txfr,$r_ccStat->{'targetROP'},$r_stats);
+        
+        if ( $DEBUG > 8 ) { print Dumper("extractRopStats: r_stats", $r_stats ); }
+    }
+    
+    foreach my $priority ( keys %PRIORITIES ) { 
+        if ( ! exists $activePriorities{$priority} ) {
+            delete $ccArray{$priority};
+        }
+    }
+
+    return \%ccArray;
+}
+
+sub extractNodeStats($$$$) {   
+    my ($r_allTxfr,$sqlDate,$r_statsNodes,$listTime) = @_;
+
+    my ($year,$month,$day) = $sqlDate =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})/;
+    my $midNight = timegm(0,0,0,$day,$month-1,$year-1900);
+    my $minTime = $midNight - 900;
+    my %statsByNode = ();
+    foreach my $r_Txfr ( @{$r_allTxfr} ) {
+        if ( $DEBUG > 8 ) { print "extractNodeStats: txfr startTime=" . sqlTime($r_Txfr->{'startTime'}) . "\n"; }
+
+        # As we are counting the data for a node for the specifed 
+        # date, only process rops that are in the specifed
+        # date, note. The ROP that starts collecting as 23:50 yesterday is considered
+        # as part of today as it finishes today at 00:05
+        if ( ($r_Txfr->{'startTime'}/1000)  < $minTime ) {
+            if ( $DEBUG > 0 ) { print "extractNodeStats: outside date window txfr startTime=" . sqlTime($r_Txfr->{'startTime'}) . "\n"; }
+            next;
+        }
+
+        my $fdn = $r_Txfr->{'fdn'};
+        my $scannerType = $r_Txfr->{'scannerType'};
+        my $thisFileType = $fileType{$scannerTypeMap{$scannerType}};
+        my $priority = $r_Txfr->{'priority'};
+        my $startTime = $r_Txfr->{'startTime'};
+
+        my $r_record = $statsByNode{$fdn}->{$thisFileType}->{$priority}->{$startTime};
+        if ( ! $r_record ) {
+            $r_record = {};
+            $statsByNode{$fdn}->{$thisFileType}->{$priority}->{$startTime} = $r_record;
+        }
+        
+        $r_record->{'files'}++;
+        $r_record->{'bytesTransferred'} += $r_Txfr->{'bytesTransferred'};
+        
+        if ( exists $r_Txfr->{'duration'} ) {
+            my $throughput = int ( (($r_Txfr->{'bytesTransferred'} * 1000) / 
+                                    $r_Txfr->{'duration'}) + 0.5);
+            $r_record->{'duration'} += $r_Txfr->{'duration'};                           
+            if ( ( ! defined $r_record->{'minthroughput'} ) || 
+                 ( $throughput < $r_record->{'minthroughput'} ) ) {
+                if ( $DEBUG > 5 ) { print "extractNodeStats: minthroughput for fdn=$throughput fdn=$fdn time=" . sqlTime($r_Txfr->{'startTime'}) . "\n"; }
+                $r_record->{'minthroughput'} = $throughput;
+            }
+        }       
+        
+        # 
+        # Handle case where we are getting stats files from a node
+        # but for some reason we didn't see it in the scanner list file
+        #
+        if ( ($scannerType == $PREDEFINED_STATS || $scannerType == $USERDEFINED_STATS) ) {
+            $r_statsNodes->{$fdn}++;
+            statsCheck($r_record,$r_Txfr,$midNight,$listTime);
+        }
+        
+        if ( $DEBUG > 8 ) { print Dumper("extractNodeStats: fdn=$fdn record:", $statsByNode{$fdn}); }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("extractNodeStats: statsByNode", \%statsByNode); }
+    return \%statsByNode;
+}
+
+sub storeConnectByTime($$$$) {
+    my ($dbh,$siteId,$tmpDir,$r_connStats) = @_;
+
+    my %colMap = (
+        'tssGetAcc' => 'getacc',
+        'tssGetPw'  => 'getpw',
+        'nodeConn'  => 'conn',
+        'nodeAuth'  => 'auth'
+        );
+    my @dbCols = keys %colMap;
+    my @times = sort {$a <=> $b} keys %{$r_connStats->{'time'}};
+    my $bcpFileCBT = $tmpDir . "/pms_connectbytime.bcp";
+    open BCP, ">$bcpFileCBT" or die "Cannot open $bcpFileCBT";
+    foreach my $time ( @times ) {
+        my $r_connStat = $r_connStats->{'time'}->{$time};
+        if ( $DEBUG > 7 ) { print Dumper("storeStats: r_connStat", $r_connStat); }
+        my $count = $r_connStat->{'count'};         
+        my @row = ( formatTime( $time, $StatsTime::TIME_SQL ), $siteId, $count );           
+        foreach my $dbCol ( @dbCols ) {
+            my $fieldName = $colMap{$dbCol};
+            if ( $DEBUG > 7 ) { print "storeStats: dbCol=$dbCol fieldName=$fieldName\n"; }
+            my $avg = int( $r_connStat->{$fieldName}->{'total'} / $count );
+            push @row, $avg;
+            push @row, $r_connStat->{$fieldName}->{'max'};
+        }
+        print BCP join("\t",@row), "\n";
+    }
+    close BCP;
+
+    if ( $#times > 0 ) {
+	dbDo($dbh,sprintf("DELETE FROM pms_connectbytime WHERE siteid = %d AND time BETWEEN '%s' AND '%s'",
+			  $siteId, formatTime( $times[0], $StatsTime::TIME_SQL ), 
+                          formatTime( $times[$#times], $StatsTime::TIME_SQL ) ))
+            or die "Failed to delete existing data in pms_connectbytime";
+        my @loadCols = ( 'time', 'siteid', 'numConn' );
+        foreach my $dbCol ( @dbCols ) {
+            push @loadCols, $dbCol . "Avg";
+            push @loadCols, $dbCol . "Max";
+        }
+        dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFileCBT\' INTO TABLE pms_connectbytime (" . join(",",@loadCols) . ")")
+            or die "Failed to load data into pms_connectbytime";
+    }
+}
+
+sub storeConnectByNode($$$$$$) {
+    my ($dbh,$siteId,$tmpDir,$sqlDate,$r_neIdMap,$r_connStats) = @_;
+
+    my $bcpFile = $tmpDir . "/pms_connectbynode.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open $bcpFile";
+
+    my %colMap = (
+        'nodeConn'  => 'conn',
+        'nodeAuth'  => 'auth'
+        );
+    my @dbCols = keys %colMap;
+
+    foreach my $fdn ( keys %{$r_connStats->{'node'}} ) {
+        my $shortName = getShortNode($fdn);     
+        my $neId = $r_neIdMap->{$shortName};
+        if ( defined $neId ) {
+            
+            my $r_connStat = $r_connStats->{'node'}->{$fdn};
+            if ( $DEBUG > 7 ) { print Dumper("storeConnectByNode: r_connStat", $r_connStat); }
+            my $count = $r_connStat->{'count'};     
+            my @row = ( $sqlDate, $siteId, $neId );         
+            foreach my $dbCol ( @dbCols ) {
+                my $fieldName = $colMap{$dbCol};
+                if ( $DEBUG > 7 ) { print "storeConnectByNode: dbCol=$dbCol fieldName=$fieldName\n"; }
+                my $avg = int( $r_connStat->{$fieldName}->{'total'} / $count );
+                push @row, $avg;
+                push @row, $r_connStat->{$fieldName}->{'max'};
+            }
+            print BCP join("\t",@row), "\n";
+        } else { 
+            print "WARN: Could not get neId for $fdn\n";
+        }
+    }
+    close BCP;
+    
+    dbDo($dbh,sprintf("DELETE FROM pms_connectbynode WHERE siteid = %d AND date = '%s'",
+                      $siteId, $sqlDate) )
+        or die "Failed to delete existing data in pms_connectbynode";
+    my @loadCols = ( 'date', 'siteid', 'neid' );
+    foreach my $dbCol ( @dbCols ) {
+        push @loadCols, $dbCol . "Avg";
+        push @loadCols, $dbCol . "Max";
+    }
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE pms_connectbynode (" . join(",",@loadCols) . ")")
+        or die "Failed to load data into pms_connectbynode";
+}
+
+            
+sub storeStats($$$$$) {
+    my ($r_statsByRop, $r_statsByNode, $r_connStats, $site,$sqlDate) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_neIdMap = loadNeMap($dbh,$siteId);
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    if ( defined $r_connStats ) {
+        storeConnectByTime($dbh,$siteId,$tmpDir,$r_connStats);
+        storeConnectByNode($dbh,$siteId,$tmpDir,$sqlDate,$r_neIdMap,$r_connStats);
+    }
+
+    #
+    # pms_filetransfer_rop 
+    #
+    # All the node types must already be defined (when the nodes where loaded in storeMeList)
+    # So we just need to the get the map from the db
+    my $r_nodeTypeMap = getIdMap($dbh,"ne_types", "id", "name", [] );    
+    foreach my $priority ( keys %PRIORITIES ) {
+        if ( ! exists $r_statsByRop->{$priority} ) {
+            print "INFO: No ROP data for $priority\n";
+            next;
+        }
+        my $r_ropArr = $r_statsByRop->{$priority};
+
+        my $firstRopTime = sqlTime($r_ropArr->[0]->{'startTime'});
+        my $lastRopTime = sqlTime($r_ropArr->[$#{$r_ropArr}]->{'startTime'});
+        my $period = $PRIORITIES{$priority}->{'label'};
+        dbDo($dbh,"DELETE FROM pms_filetransfer_rop WHERE siteid = $siteId AND time BETWEEN '$firstRopTime' AND '$lastRopTime' AND period = '$period'");    
+        foreach my $r_rop ( @{$r_ropArr} ) {
+            foreach my $nodeType ( keys %{$r_rop->{'type'}} ) {
+                foreach my $fileType ( keys %{$r_rop->{'type'}->{$nodeType}} ) {
+                    my $r_stats = $r_rop->{'type'}->{$nodeType}->{$fileType};
+                    
+                    my $avgthroughput = 0;
+                    my $minthroughput = 0;
+                    if ( defined $r_stats->{'duration'} ) {
+                        $avgthroughput = int ( (($r_stats->{'bytesTransferred'} * 1000 ) / 
+                                                $r_stats->{'duration'}) + 0.5 );
+                        $minthroughput = $r_stats->{'minthroughput'};
+                    }
+                    my $totalkB = int ( ($r_stats->{'bytesTransferred'} / 1024 ) + 0.5 );
+                    
+                    my $lateFiles = "NULL";
+                    if ( exists $r_stats->{'latefiles'} ) {
+                        $lateFiles = sprintf("%d", $r_stats->{'latefiles'});
+                    }
+                    my $expectedFiles = "NULL";
+                    if ( exists $r_stats->{'expectedfiles'} ) {
+                        $expectedFiles = sprintf("%d", $r_stats->{'expectedfiles'});
+                    }
+                    
+                    dbDo($dbh,
+                         sprintf("INSERT INTO pms_filetransfer_rop (time,siteid,period,netypeid,totalkb,avgthroughput,minthroughput,filetype,lasttime,numfiles,filesoutsiderop,collectedb0,collectedb1,collectedb2,collectedb3,collectedb4) VALUES (%s,%d,%s,%d,%d,%d,%d,%s,%s,%d,%d,%s)",
+                                 $dbh->quote(sqlTime($r_rop->{'startTime'})),
+                                 $siteId,
+                                 $dbh->quote($period),
+                                 $r_nodeTypeMap->{$nodeType},
+                                 $totalkB,
+                                 $avgthroughput,
+                                 $minthroughput,
+                                 $dbh->quote($fileType),
+                                 $dbh->quote(sqlTime($r_stats->{'endTime'})),
+                                 $r_stats->{'files'},
+                                 $lateFiles,
+                                 join(",", @{$r_stats->{'collbuckets'}})
+                         )) 
+                        or die "Insert failed for rop " . sqlTime($r_rop->{'startTime'}) . " $nodeType $fileType";
+                }
+            }
+        }
+    }
+    
+    # Disable loading for pms_filetransfer_node OSS-176210
+    #
+    # pms_filetransfer_node
+    #
+    # my $bcpFile = $tmpDir . "/pms_filetransfer_node.bcp";
+    # open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    # foreach my $fdn ( keys %{$r_statsByNode} ) {        
+    #     my $shortName = getShortNode($fdn);     
+    #     if ( exists $r_neIdMap->{$shortName} ) {
+    #         foreach my $fileType ( keys %{$r_statsByNode->{$fdn}} ) {
+    #             foreach my $priority ( keys %{$r_statsByNode->{$fdn}->{$fileType}} ) {
+    #                 foreach my $startTime ( keys %{$r_statsByNode->{$fdn}->{$fileType}->{$priority}} ) {
+    #                     my $r_record = $r_statsByNode->{$fdn}->{$fileType}->{$priority}->{$startTime};
+    #                     if ( $DEBUG > 8 ) { print Dumper("storeStats: r_record", $r_record); }
+    #                     my $avgthroughput = 0;
+    #                     if ( $r_record->{'duration'} > 0 ) {
+    #                         $avgthroughput = int ( (($r_record->{'bytesTransferred'} * 1000 ) /
+    #                                                 $r_record->{'duration'}) + 0.5 );
+    #                     }
+    #                     my $totalkB = int ( ($r_record->{'bytesTransferred'} / 1024 ) + 0.5 );
+    #                     my $availMiss = '\N' . "\t" . '\N';
+    #                     if ( exists $r_record->{'tbc'} ) {
+    #                         my $missing = $r_record->{'tbc'}->{'available'} -
+    #                             $r_record->{'tbc'}->{'collected'};
+    #                         $availMiss = sprintf("%d\t%d",
+    #                                              $r_record->{'tbc'}->{'available'},
+    #                                              $missing);
+    #                     }
+    #                     printf BULK_INSERT "%s\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%s\n",
+    #                     $sqlDate,
+    #                     $siteId,
+    #                     $r_neIdMap->{$shortName},
+    #                     $fileType,
+    #                     $PRIORITIES{$priority}->{'label'},
+    #                     $totalkB,
+    #                     $avgthroughput,
+    #                     $r_record->{'minthroughput'},
+    #                     $r_record->{'files'},
+    #                     $availMiss;
+    #                 }
+    #             }
+    #         }
+    #     } else {
+    #         print "WARN: No entry for $shortName in ne type\n;";
+    #     }
+    # }
+    # close BULK_INSERT;
+
+    # dbDo($dbh,"DELETE FROM pms_filetransfer_node WHERE siteid = $siteId AND date = " . $dbh->quote($sqlDate))
+    #     or die "Failed to delete existing data in pms_filetransfer_node";
+    # dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE pms_filetransfer_node")
+    #     or die "Failed to load data into pms_filetransfer_node";
+
+            
+    $dbh->disconnect();
+}
+
+sub parseNodeFtpDataLogs($$) {
+    my ($fthDir,$tzOffsetHours) = @_;
+
+    my $timeOffsetMs = $tzOffsetHours * 3600 * 1000;
+
+    opendir (my $dh, $fthDir) or die "Cannot open $fthDir";
+    my @nodeFtpDataLogs = grep { /^nodeFtpdata/ } readdir($dh);
+    closedir($dh);
+
+    my $invalidLineCount = 0;
+    my %statsByNode = ();
+    foreach my $nodeFtpDataLog ( @nodeFtpDataLogs ) {
+        open LOG, $fthDir . "/" . $nodeFtpDataLog or die "Cannot open $nodeFtpDataLog";
+        while ( my $line = <LOG> ) {
+            if ( $DEBUG > 9 ) { print "parseNodeFtpDataLogs: line=$line"};
+
+            if ( $line =~ /^SubNetwork/ ) {
+                chop $line;
+                my @fields = split(/\|/,$line);
+                if ( $DEBUG > 8 ) { print Dumper("parseNodeFtpDataLogs: fields", \@fields); };
+                
+                if ( $#fields != 7 ) {
+                    if ( $DEBUG > 0 ) {  print "parseNodeFtpDataLogs: Invalid line $line\n"; }
+                    $invalidLineCount++;
+                    if ( $invalidLineCount > 0 ) {
+                        print "WARN: Looks like nodeFtpData files don't have the required data\n";
+                        return undef;
+                    } else {
+                        next;
+                    }
+                }
+
+                my $r_nodeStats = $statsByNode{$fields[1]};
+                if ( ! defined $r_nodeStats ) {
+                    $r_nodeStats = [];
+                    $statsByNode{$fields[1]} = $r_nodeStats;
+                }
+
+                push @{$r_nodeStats}, 
+                {
+                    'start'  => $fields[2] + $timeOffsetMs,
+                    'end'    => $fields[3] + $timeOffsetMs,
+                    'getacc' => $fields[4],
+                    'getpw'  => $fields[5],
+                    'conn'   => $fields[6],
+                    'auth'   => $fields[7]
+                };
+            }                           
+        }
+        close LOG;
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseNodeFtpDataLogs statsByNode", \%statsByNode); }
+
+    return \%statsByNode;
+}
+
+sub getConnStats($) {
+    my ($r_statArr) = @_; 
+
+    my @cols = ( 'getacc', 'getpw', 'conn', 'auth' );
+    my %result = ( 'count' => 0 );
+    foreach my $col ( @cols ) {
+        $result{$col}->{'total'} = 0;
+        $result{$col}->{'max'} = 0;
+    }   
+
+    foreach my $r_stat ( @{$r_statArr} ) {
+        $result{'count'}++;
+        foreach my $col ( @cols ) {
+            $result{$col}->{'total'} += $r_stat->{$col};
+            if ( $r_stat->{$col} > $result{$col}->{'max'} ) {
+                $result{$col}->{'max'} = $r_stat->{$col};
+            }
+        }
+    }
+
+    return \%result;
+}
+
+    
+sub extractConnectStats($) {
+    my ($r_nodeFtpData) = @_;
+    
+    my %statsByNode = ();
+    my %statsByTimeMap = ();
+
+    foreach my $fdn ( keys %{$r_nodeFtpData} ) {
+        $statsByNode{$fdn} = getConnStats($r_nodeFtpData->{$fdn});
+
+        foreach my $r_stat ( @{$r_nodeFtpData->{$fdn}} ) {
+            my $timePeriod = $r_stat->{'start'} - ($r_stat->{'start'} % 60000);
+            my $r_timeBin = $statsByTimeMap{$timePeriod};
+            if ( ! defined $r_timeBin ) { 
+                $r_timeBin = [];
+                $statsByTimeMap{$timePeriod} = $r_timeBin;
+            }
+            push @{$r_timeBin}, $r_stat;
+        }
+    }
+
+    my %statsByTime = ();
+    foreach my $timePeriod ( keys %statsByTimeMap ) {
+        $statsByTime{$timePeriod / 1000} = getConnStats($statsByTimeMap{$timePeriod});
+    }
+
+    my $r_result = { 'time' => \%statsByTime, 'node' => \%statsByNode };
+    if ( $DEBUG > 5 ) { print Dumper("extractConnectStats result", $r_result); }
+    return $r_result;
+}
+
+sub parseLogFile($$) {
+    my ($logFile,$tzOffsetHours) = @_;
+
+    my $timeOffsetMs = $tzOffsetHours * 3600 * 1000;
+
+    open LOG, $logFile or die "Cannot open $logFile";
+
+    my @allTxfr = ();
+    my $cnt = 0;
+    my $r_errorRecords = ();
+    while ( my $line = <LOG> ) {
+        chop $line;
+        $cnt++;
+        if ( $DEBUG > 9 ) { print "parseLogFile: line = $line\n"; }
+
+      # TORF-4211: Eliminate partial records where the next ROP's header runs into it [BG 2013-08-22]
+      if ( $line =~ /^SubNetwork.*###/ ) {
+          print "WARNING: Invalid record at line $cnt '$line'\n";
+          $r_errorRecords->{$cnt} = $line;
+      } elsif ( $line =~ /^SubNetwork/ ) {
+	  my @fields = split( /\|/, $line );
+	  if ( $#fields < 8 ) {
+	      print "WARNING: Suspect record at line $cnt : '$line'";
+	      next;
+	  }
+
+          my ($fdn,$scannerType,$zipped,$bytesTransferred,$bytesStored,$startTime,$endTime,$threadId,$originalRopTime) =
+	      ($fields[0],$fields[1],$fields[2],$fields[3],$fields[4],$fields[5],$fields[6],$fields[7],$fields[8]);
+	  my $filePriority = 0;
+	  if ( $#fields >= 9 ) {
+	      $filePriority = $fields[9];
+	  }
+
+          # TORF-4211: Eliminate lines where records have run into each other [BG 2013-08-22]
+          if ($scannerType =~ /SubNetwork/ || $zipped =~ /SubNetwork/ || $bytesTransferred =~ /SubNetwork/ || $bytesStored =~ /SubNetwork/ || $startTime =~ /SubNetwork/ || $endTime =~ /SubNetwork/ || $threadId =~ /SubNetwork/ || $originalRopTime =~ /SubNetwork/ || $filePriority =~ /SubNetwork/) {
+              $r_errorRecords->{$cnt} = $line;
+              my ($corruptLine, $validLine) = $line =~ /(SubNetwork.*)\|.*(SubNetwork.*)/;
+              print "WARNING: Suspect record at line " . $cnt . ":   '" . $line . "' The incomplete record '" . $corruptLine . "' will not be processed and the complete record '" . $validLine . "' will be processed. \n";
+              $line = $validLine;
+              ($fdn,$scannerType,$zipped,$bytesTransferred,$bytesStored,$startTime,$endTime,$threadId,$originalRopTime,$filePriority) = split( /\|/, $line );
+          }
+
+	  # One more corruption check
+	  my @rdns = split(",",$fdn);
+	  if ( $#rdns > 2 ) {
+	      print "WARNING: Invalid FDN in at line $cnt '$line'\n";
+	      next;
+	  }
+	  my $isValid = 1;
+	  for ( my $rdnIndex = 0; ($rdnIndex <= $#rdns) && ($isValid == 1); $rdnIndex++ ) {
+	      if ( $rdnIndex < $#rdns ) { 
+		  if ( $rdns[$rdnIndex] !~ /^SubNetwork=/ ) { 
+		      $isValid = 0;
+		  }
+	      } else {
+		  if ( $rdns[$rdnIndex] !~ /^MeContext=/ ) { 
+		      $isValid = 0;
+		  }
+	      }
+	  }
+	  if ( $isValid == 0 ) {
+	      print "WARNING: Invalid FDN in $line";
+	      next;
+	  }
+		      		      
+          if ( ! exists $scannerTypeMap{$scannerType} ) {
+              print "ERROR: unknown scanner type in ", $line;
+              die;
+          }
+
+          if ( $startTime <= 0 ) {
+              if ( $DEBUG > 3 ) { print "WARN: Skipping invalid startTime for $line\n"; }
+              next;
+          }
+
+          my $r_Txfr = {
+              'fdn' => $fdn,
+              'scannerType' => $scannerType,
+              'zipped' => $zipped,
+              'bytesTransferred' => $bytesTransferred,
+              'bytesStored' => $bytesStored,
+              'startTime' => $startTime + $timeOffsetMs,
+          };
+          if ( $endTime > $startTime ) { 
+              $r_Txfr->{'duration'} = ($endTime - $startTime);
+          } else {
+              if ( $DEBUG > 5 ) { print "ERROR: endTime <= startTime  for $line\n"; }
+          }
+          
+          if ( defined $filePriority ) {
+              $r_Txfr->{'priority'} = $filePriority;
+          } else {
+              $r_Txfr->{'priority'} = 0;
+          }
+          
+          if ( defined $originalRopTime ) {
+              $r_Txfr->{'rop'} = $originalRopTime + $timeOffsetMs;
+          }
+
+          if ( $DEBUG > 9 ) { print Dumper("parseLogFile: txFr", $r_Txfr); }
+          if ( $DEBUG > 9 ) { print "parseLogFile: txFr->startTime=", sqlTime($r_Txfr->{'startTime'}), "\n"; }
+          
+          push @allTxfr, $r_Txfr;
+      }
+  }
+    close LOG;
+
+    if ( $DEBUG > 10 ) { print Dumper("parseLogFile: allTxfr", \@allTxfr); }
+
+    return \@allTxfr;
+}
+
+sub getNodeType($) {
+    my ($fdn) = @_;
+
+    my $shortName = getShortNode($fdn);
+    my $result = $r_neTypeMap->{$shortName};
+    if ( $DEBUG > 9 ) { print "getNodeType fdn=$fdn shortName=$shortName result=$result\n"; }
+    ( defined $result ) or die "Could not get NE info type for shortName=$shortName fdn=$fdn ";
+
+    return $result;
+}
+
+sub loadNeType($) {
+    my ($site) = @_;
+
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_AllNe = readNe($dbh,$siteId);
+    my %neTypeMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) { 
+        my $shortName = $r_NeRow->{'name'};
+
+        # Originally we assumed that for LTE nodes we have a DN of
+        #  SubNetwork=RootMoId,MeContext=NodeName
+        # This assumption has proven incorrect in some cases, so now
+        # the DN can be:
+        #  SubNetwork=RootMoId,SubNetwork=SubNetId,MeContext=NodeName
+        #
+        # To work around this we assume that if rns == type then we 
+        # have the first form, but if it doesn't we have the second. This will break
+        # if anyone is using "ERBS" ad their SubNetId for example.
+        #
+        # Another problem is that at some stage, storeMeList got updated so that
+        # for nodes without an RNS, set the RNS to netype
+        #
+        # So if rns == type, we store the node twice, with and without the RNS
+        $neTypeMap{$r_NeRow->{'rns'} . "," . $shortName} = $r_NeRow->{'type'};      
+        if ( ($r_NeRow->{'rns'} eq $r_NeRow->{'type'}) ) {
+            $neTypeMap{$shortName} = $r_NeRow->{'type'};            
+        }
+    }
+    $dbh->disconnect;
+
+    if ( $DEBUG > 4 ) { print Dumper("loadNeType: neType", \%neTypeMap); }
+
+    return \%neTypeMap;
+}
+
+sub loadNeMap($$) {
+    my ($dbh,$siteId) = @_;
+
+    my $r_AllNe = readNe($dbh,$siteId);
+    my %neMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) { 
+        my $shortName = $r_NeRow->{'name'};
+        # Originally we assumed that for LTE nodes we have a DN of
+        #  SubNetwork=RootMoId,MeContext=NodeName
+        # This assumption has proven incorrect in some cases, so now
+        # the DN can be:
+        #  SubNetwork=RootMoId,SubNetwork=SubNetId,MeContext=NodeName
+        #
+        # To work around this we assume that if rns == type then we
+        # have the first form, but if it doesn't we have the second. This will break
+        # if anyone is using "ERBS" ad their SubNetId for example.
+        if ( ($r_NeRow->{'rns'} ne $r_NeRow->{'type'}) ) {
+            $shortName = $r_NeRow->{'rns'} . "," . $shortName;
+        }
+        $neMap{$shortName} = $r_NeRow->{'neid'};
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("loadNeMap: neMap", \%neMap); }
+    return \%neMap;
+}
+
+sub getStatsNodes($$) {
+    my ($scannerListFile,$r_statsNodes) = @_;
+
+    open SCANNERLIST, "$scannerListFile" or die "Cannot open $scannerListFile";
+
+    # Calculate the number of ROP Periods that have occurred based on the 
+    # time the list was taken
+    my $line = <SCANNERLIST>;    
+    my ($listTime) = $line =~ /^([\d:]+)/;
+
+    # 
+    # Now figure out the number of active scanners
+    #
+    my $validFormat = 0;
+    while ( $line = <SCANNERLIST> )
+    {
+        chop $line;
+        my ($node,$scannerId,$scannerName,$scannerState) = $line =~ /^([^:]*):([^:]*):([^:]*):([^:]*)$/;
+        if ( ! $node or ($node !~ /^SubNetwork/ ) )
+        {           
+            if ( $DEBUG > 2 ) { print "getStatsNodes: Invalid line in scanner file: ", $line, "\n"; }
+            next;
+        }
+        else
+        {
+            $validFormat = 1;
+        }
+        if ( $DEBUG > 4 ) { print "getStatsNodes: node=$node scannerId=$scannerId scannerName=$scannerName scannerState=$scannerState\n"; }
+        # 
+        # Only interested in STATS scanners
+        # UETR, GPEH, etc only last a short time so this snapshot isn't much
+        # use for monitoring these types of scanners
+        #
+        if ( ($scannerState eq "ACTIVE") and ($scannerName =~ /STATS$/) ) {
+            $r_statsNodes->{$node}++;
+        }
+    }   
+    close SCANNERLIST;
+    
+    if ( $DEBUG > 5 ) { print Dumper( "getStatsNodes listTime=$listTime statsNodes", $r_statsNodes ); }
+
+    return $listTime;
+}
+
+
+sub main()
+{
+    my ($logFile,$site,$sqlDate,$scannerListFile,$tzOffsetHours,$fthDir);
+    my $result = GetOptions("log=s"  => \$logFile,
+                            "site=s" => \$site,
+                            "sqldate=s" => \$sqlDate,
+                            'scannerlist=s' => \$scannerListFile,
+                            "tzoffset=n" => \$tzOffsetHours,
+                            "fthdir=s" => \$fthDir,
+			    "delay=n" => \$DELAY_BEFORE_ROP,
+                            "debug=s" => \$DEBUG
+        );
+    ($result == 1) or die "Invalid args"; 
+
+    # Update PRIORITIES with the specified delay
+    $PRIORITIES{'0'}->{'delay'} = $DELAY_BEFORE_ROP;
+    $PRIORITIES{'60'}->{'delay'} = $DELAY_BEFORE_ROP;
+
+    $r_neTypeMap = loadNeType($site);
+
+    #
+    # r_connStats will contain a hash 
+    #  'time' => hash of times => hash of count and hashs getacc, getpw, conn, auth 
+    #   which have a max and total 
+    #
+    #
+    my $r_connStats = undef;
+    if ( defined $fthDir ) {
+        print "Parsing nodeFtpData\n";
+        my $r_nodeFtpData = parseNodeFtpDataLogs($fthDir,$tzOffsetHours);
+        if ( defined $r_nodeFtpData ) {
+            $r_connStats = extractConnectStats($r_nodeFtpData);
+        }
+    }
+    print "Parsing ftpOutput Log\n";
+    #
+    # r_allTxfr is an array of hash, one per file transfer where the hash contains
+    #    'fdn' 
+    #    'scannerType' => Key into scannerTypeMap
+    #    'zipped' 
+    #    'bytesTransferred' => $bytesTransferred,
+    #    'bytesStored' => $bytesStored,
+    #    'startTime' => UNIX time in ms
+    #    'duration'  => in ms if available (i.e. a valid end time)
+    #    'rop'       => UNIX time in ms of the ROP the file belongs to
+    #    'priority'  => 0 = Standard, 1 = High
+    my $r_allTxfr = parseLogFile($logFile,$tzOffsetHours);
+    if ( $#{$r_allTxfr} == -1 ) {
+        print "INFO: No data found in $logFile";
+        exit 1;
+    }
+
+    # statsNodes has a entry for every node that has a stats scanner
+    # and/or that we got a stats file from
+    my %statsNodes = ();
+    my $listTimeStr;
+    if ( $scannerListFile ) { 
+        $listTimeStr = getStatsNodes($scannerListFile,\%statsNodes);
+    }
+
+    #
+    # Work out what ROPs we should have
+    # 
+    # Work out the time that we should have data from
+    # i.e. up to when the time the scanner list was created
+    my ($year,$month,$day) = $sqlDate =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})/;
+    $midNight = timegm(0,0,0,$day,$month-1,$year-1900);
+    my ($hour,$min) = ( 23, 59 );
+    if ( defined $listTimeStr ) {
+        ($hour,$min) = $listTimeStr =~ /^(\d+):(\d+)/;
+    }
+    my $listTime = timegm(0,$min,$hour,$day,$month-1,$year-1900);
+
+    print "Processing Data\n";    
+    print " By ROP\n";       
+    my $r_statsByROP = extractRopStats($r_allTxfr,$sqlDate,$listTime);    
+    print " By node\n";    
+    my $r_statsByNode = extractNodeStats($r_allTxfr,$sqlDate,\%statsNodes,$listTime);
+
+    if ( (defined $site) ) {
+        print "Storing data\n";    
+        storeStats($r_statsByROP,$r_statsByNode,$r_connStats,$site,$sqlDate);
+    }
+}
+
+main();

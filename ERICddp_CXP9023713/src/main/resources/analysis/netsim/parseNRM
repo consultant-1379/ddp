@@ -1,0 +1,69 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use JSON;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub parseInput($) {
+    my ($inputFile) = @_;
+
+    my $json_text = do {
+        open(my $json_fh, "<:encoding(UTF-8)", $inputFile)
+            or die("Can't open $inputFile: $!\n");
+        local $/;
+        <$json_fh>
+    };
+    my $r_json = decode_json($json_text);
+    if ( $DEBUG > 9 ) { print Dumper("parseInput: r_json", $r_json); }
+    return $r_json;
+}
+
+sub store($$$$) {
+    my ($r_json,$site,$date,$server) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId($dbh, $siteId, $server);
+    my $r_nrmMap = getIdMap($dbh,"netsim_nrm_names", "id", "name", [$r_json->{'NRM'}]);
+    my $r_moduleMap = getIdMap($dbh,"netsim_module_names", "id", "name", [$r_json->{'RolloutNetwork'}]);
+    dbDo($dbh, "DELETE FROM netsim_nrm WHERE siteid = $siteId AND date = '$date' AND serverid = $serverId") or die "Delete failed";
+    dbDo($dbh,
+         sprintf(
+           "INSERT INTO netsim_nrm (siteid,date,serverid,nrmid,moduleid) VALUES (%d, '%s', %d, %d, %d)",
+           $siteId,
+           $date,
+           $serverId,
+           $r_nrmMap->{$r_json->{'NRM'}},
+           $r_moduleMap->{$r_json->{'RolloutNetwork'}}
+         )
+    );
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($inputFile,$date,$site,$server);
+    my $result = GetOptions(
+        "nrm=s" => \$inputFile,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+    setStatsDB_Debug($DEBUG);
+
+    my $r_json = parseInput($inputFile);
+    store($r_json,$site,$date,$server);
+}
+
+main();

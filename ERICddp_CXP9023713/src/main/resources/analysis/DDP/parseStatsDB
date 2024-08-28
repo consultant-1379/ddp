@@ -1,0 +1,89 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main(){
+    my ($dataFile, $date, $type);
+
+    my $result = GetOptions(
+        "data=s"  => \$dataFile,
+        "date=s" => \$date,
+        "type=s" => \$type,
+        "debug=n" => \$DEBUG,
+    );
+
+    my $r_data = loadData($dataFile);
+    if ( $date ) {
+        storeData($r_data, $date, $type);
+    }
+}
+
+sub storeData($$$){
+    my ($r_data, $date, $type) = @_;
+
+    if ( $DEBUG > 0 ) {
+        setStatsDB_Debug($DEBUG);
+    }
+
+    my $dbh = connect_db();
+
+    # Don't use db.table as this breaks replication
+    dbDo( $dbh, "use ddpadmin");
+
+    my @tableNames = keys %{$r_data};
+    my $r_tableIdMap = getIdMap($dbh, "ddp_table_names", "id", "name", \@tableNames );
+
+    dbDo( $dbh, "DELETE FROM ddp_table_stats WHERE date = '$date' AND type = '$type'");
+
+    foreach my $table ( keys %{$r_data} ) {
+        dbDo($dbh,
+            sprintf("INSERT INTO ddp_table_stats (date,tableid,data,idx,avglen,type) VALUES ( '%s', %d, %d, %d, %d, '%s' )",
+                $date,
+                $r_tableIdMap->{$table},
+                $r_data->{$table}->{'data'},
+                $r_data->{$table}->{'idx'},
+                $r_data->{$table}->{'avglen'},
+                $type
+            )
+        ) or die "Failed to insert row";
+    }
+
+    $dbh->disconnect;
+}
+
+sub loadData($){
+    my ($dataFile) = @_;
+
+    my %data = ();
+    open DATA, $dataFile or die "Cannot open $dataFile";
+    <DATA>; # Skip header
+
+    while ( my $line = <DATA> ) {
+        my ($table, $data, $idx, $avglen) = $line =~ /^(\S+)\s+(\d+)\s+(\d+)\s+(\d+)/;
+
+        if ( defined $table ) {
+            $data{$table} = {
+                'data' => $data,
+                'idx' => $idx,
+                'avglen' => $avglen
+            };
+        } else {
+            print "WARN: Cannot parse $line";
+        }
+    }
+    close DATA;
+    if ( $DEBUG > 5 ) {
+        print Dumper("loadData data", \%data);
+    }
+
+    return \%data;
+}
+

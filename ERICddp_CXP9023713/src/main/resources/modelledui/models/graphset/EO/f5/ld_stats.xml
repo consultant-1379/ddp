@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="eo_f5_ld_stats">
+      <reference table="sites" condition="eo_f5_ld_stats.siteid = sites.id"/>
+    </dbtables>
+
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="size" type="tsc">
+      <title value="Size"/>
+      <column db="eo_f5_ld_stats.size" label="Size"/>
+    </graph>
+
+    <graph name="vgFree" type="tsc">
+      <title value="VGFree"/>
+      <column db="eo_f5_ld_stats.vgFree" label="VGFree"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="ld">
+      <member>size</member>
+      <member>vgFree</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

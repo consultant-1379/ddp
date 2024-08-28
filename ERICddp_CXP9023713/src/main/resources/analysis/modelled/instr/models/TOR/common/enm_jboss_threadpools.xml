@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-jmx@threadpooljmx_\S+">
+
+  <table name="enm_jboss_threadpools">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^%1%-threadpool-async$">
+      <metric source="completedTaskCount" target="async_completedTaskCount" delta="true" filteridle="true"/>
+      <metric source="activeCount" target="async_activeCount" filteridle="true"/>
+      <metric source="queueSize" target="async_queueSize" filteridle="true"/>
+      <metric source="rejectedCount" target="async_rejectedCount" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-threadpool-default$">
+      <metric source="completedTaskCount" target="default_completedTaskCount" delta="true" filteridle="true"/>
+      <metric source="activeCount" target="default_activeCount" filteridle="true"/>
+      <metric source="queueSize" target="default_queueSize" filteridle="true"/>
+      <metric source="rejectedCount" target="default_rejectedCount" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-threadpool-workmanager-long$">
+      <metric source="rejectedCount" target="workmanager_long_rejectedCount" delta="true" filteridle="true"/>
+      <metric source="queueSize" target="workmanager_long_queueSize" filteridle="true"/>
+      <metric source="currentThreadCount" target="workmanager_long_currentThreadCount" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-threadpool-workmanager-short$">
+      <metric source="rejectedCount" target="workmanager_short_rejectedCount" delta="true" filteridle="true"/>
+      <metric source="queueSize" target="workmanager_short_queueSize" filteridle="true"/>
+      <metric source="currentThreadCount" target="workmanager_short_currentThreadCount" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-threadpool-http-executor$">
+      <metric source="rejectedCount" target="http_executor_rejectedCount" delta="true" filteridle="true"/>
+      <metric source="queueSize" target="http_executor_queueSize" filteridle="true"/>
+      <metric source="currentThreadCount" target="http_executor_currentThreadCount" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-threadpool-ajp-executor$">
+      <metric source="rejectedCount" target="ajp_executor_rejectedCount" delta="true" filteridle="true"/>
+      <metric source="queueSize" target="ajp_executor_queueSize" filteridle="true"/>
+      <metric source="currentThreadCount" target="ajp_executor_currentThreadCount" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-threadpool-job-executor-tp$">
+      <metric source="currentThreadCount" target="job_executor_tp_currentThreadCount" filteridle="true"/>
+      <metric source="queueSize" target="job_executor_tp_queueSize" filteridle="true"/>
+      <metric source="rejectedCount" target="job_executor_tp_rejectedCount" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

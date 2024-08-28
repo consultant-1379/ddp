@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="month"
+>
+ <title value="Assets"/>
+ <queries>
+  <query timecol="date" multiseries="eo_assets.type">
+   <dbtables main="eo_assets">
+    <reference table="sites" condition="eo_assets.siteid = sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="types"/>
+   <where>sites.name = '%s' AND eo_assets.type IN ('%s')</where>
+   <column db="eo_assets.count" label="Count"/>
+  </query>
+ </queries>
+</modelledgraph>

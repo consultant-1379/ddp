@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_webpush_active_channels">
+    <reference table="sites" condition="enm_webpush_active_channels.siteid = sites.id"/>
+    <reference table="servers" condition="enm_webpush_active_channels.serverid = servers.id"/>
+    <reference table="enm_webpush_active_channel_names" condition="enm_webpush_active_channels.channelid = enm_webpush_active_channel_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_webpush_active_channels.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+    <column db="enm_webpush_active_channel_names.name"/>
+  </groupby>
+
+  <column db="CONCAT(servers.id,'@',enm_webpush_active_channel_names.id)" label="Instance" id="host_id" visible="false"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_webpush_active_channel_names.name" label="Channel"/>
+  <column db="SUM(incoming_events)" label="Total Incoming Events"/>
+  <column db="SUM(outgoing_events)" label="Total Outgoing Events"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="plotActiveChannels" label="Plot graphs"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>
+

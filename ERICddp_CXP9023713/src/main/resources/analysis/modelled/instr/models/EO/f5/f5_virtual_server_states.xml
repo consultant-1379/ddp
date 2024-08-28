@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="^f5instr@f5virtualstates$"
+>
+  <table name="eo_f5_virtual_states">
+    <keycol name="virtServId" reftable="f5_virtual_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>virtServId</multi>
+
+    <metricgroup name="^F5virtualstates-(\S+)">
+      <metric source="state" target="state" filterstatic="true"/>
+      <property name="virtServId" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

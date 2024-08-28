@@ -1,0 +1,35 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use DBI;
+use Time::Local;
+
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($site,$host,$type);
+    my $result = GetOptions("site=s"  => \$site,
+        "host=s"  => \$host,
+        "type=s"  => \$type,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $dbh = connect_db();
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    createServer($dbh, $siteId, $host, $type );
+
+    $dbh->disconnect();
+}

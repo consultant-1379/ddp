@@ -1,0 +1,125 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseLteesCountersLog-----------
+#       This script is to parse ec_ltees_1-counter-manager.log
+#       @author - Vinod Sharma (xvinosh)
+#       usage  parseLteesCountersLog --dir ${DIR}
+#                --site <site> --date <YYYY-MM-DD>
+######################################################################
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+use POSIX 'strftime';
+
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $siteId = "";
+our $dbh = "";
+our $dir;
+our $table = "eniq_ltees_counter_details";
+our $firstTimestamp = "";
+our $lastTimestamp = "";
+our $bcpFile = "";
+our $temporary_logFile = "";
+
+sub main {
+    my $site = "";
+    GetOptions(
+        "dir=s"     => \$dir,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+        );
+
+    ( -d $dir ) or die "Cannot locate directory $dir";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if ( $DEBUG > 0 ) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $bcpFile = "${tmpDir}/${table}_metrics.bcp";
+    temporaryLogFileCreation();
+    parseData();
+    removeOldData();
+    loadDb();
+    $dbh->disconnect();
+    if ( $DEBUG > 0 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub temporaryLogFileCreation {
+    $temporary_logFile = "$tmpDir/tmp_ltees_management_counters_log";
+    opendir(my $ltees_counters_dir, $dir) || die "can't opendir $dir: $!";
+    my @files = grep { $_ =~ /ec_ltees_1-counter-manager/ } readdir($ltees_counters_dir);
+    closedir $ltees_counters_dir;
+    @files = sort { $b cmp $a } @files;
+    foreach my $file ( @files ) {
+        `egrep "enabled successfully" $dir/$file >> $temporary_logFile`;
+    }
+}
+
+sub parseData {
+    open FILE, "<$temporary_logFile" or die "Can't open file to read $temporary_logFile\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+
+    my $firstLineFlag = "true";
+    my ($datetime, $counter);
+    my @counters = ();
+    while (my $line = <FILE>){
+        if ( $DEBUG > 1 ) {
+            print "Line Data is: $line\n";
+        }
+        if ($line =~ /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3}[\s\w]* enabled successfully : \[(.*)\]$/) {
+            $datetime = $1;
+            @counters = (split /\,/, $2);
+            my $countersSize = @counters;
+            if ( $countersSize == 0 ) {
+                @counters = "null";
+            }
+            for my $counter ( 0 .. $#counters ) {
+                $counters[$counter] =~ s/ |null//;
+                printf BCP "%s,%d,%s\n",
+                $datetime, $siteId, $counters[$counter];
+            }
+        }
+        if ($firstLineFlag eq "true") {
+            $firstTimestamp = $datetime;
+            $firstLineFlag = "false";
+        }
+        $lastTimestamp = $datetime;
+    }
+    close BCP;
+    if ( $DEBUG > 2 ) { system ("/usr/bin/cat $bcpFile\n"); }
+    close FILE;
+    unlink($temporary_logFile);
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND datetime BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ( $DEBUG > 3 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 3 ) { print "SQL query for inserting data: $insertSql \n" };
+    dbDo($dbh,$insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

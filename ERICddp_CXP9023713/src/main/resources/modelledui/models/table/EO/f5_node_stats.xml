@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="f5_node_stats">
+  <reference table="sites" condition="f5_node_stats.siteid = sites.id"/>
+  <reference table="f5_node_names" condition="f5_node_stats.nodeid = f5_node_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND f5_node_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="f5_node_names.name"/>
+ </groupby>
+
+ <order columnid="requests" direction="DESC"/>
+
+ <column db="f5_node_stats.nodeid" id="nodeid" label="nodeid" visible="false"/>
+ <column db="f5_node_names.name" label="Node"/>
+ <column db="ROUND(AVG(f5_node_stats.kbitsInPersec))" label="Kbit/s In"/>
+ <column db="ROUND(AVG(f5_node_stats.kbitsOutPerSec))" label="Kbit/s Out"/>
+ <column db="SUM(f5_node_stats.connections)" label="Connections"/>
+ <column db="SUM(f5_node_stats.requests)" label="Requests" id="requests"/>
+
+ <ctxmenu keycol="nodeid" targettype="url" multiselect="true">
+  <item id="nodestats" label="Plot"/>
+  <urltarget arg="plot"/>
+ </ctxmenu>
+</modelledtable>

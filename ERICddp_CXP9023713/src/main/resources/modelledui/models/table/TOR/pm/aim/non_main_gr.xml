@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_grouping_instr">
+    <reference table="sites" condition="enm_aim_grouping_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_grouping_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_grouping_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(totalGroupsCreated_GB)" label="totalGroupsCreated_GB"/>
+  <column db="SUM(totalGroupingProcessTime)" label="totalGroupingProcessTime"/>
+  <column db="SUM(totalReshufflesExecuted)" label="totalReshufflesExecuted"/>
+  <column db="SUM(eventsReceivedToProcess)" label="eventsReceivedToProcess"/>
+  <column db="SUM(eventsProcessed)" label="eventsProcessed"/>
+  <column db="SUM(eventsDroppedDueToTimeOut)" label="eventsDroppedDueToTimeOut"/>
+  <column db="SUM(totalGroupsCreated_IB)" label="totalGroupsCreated_IB"/>
+  <column db="SUM(totalProcessingTime)" label="totalProcessingTime"/>
+  <column db="SUM(totalGroupsReceivedToBeProcessed)" label="totalGroupsReceivedToBeProcessed"/>
+  <column db="SUM(totalIncidentsCreated)" label="totalIncidentsCreated"/>
+  <column db="SUM(totalIncidentsReceived)" label="totalIncidentsReceived"/>
+  <column db="SUM(totalUnionBatchProcessTime)" label="totalUnionBatchProcessTime"/>
+  <column db="SUM(totalEventsInsideIncidentsCreated)" label="totalEventsInsideIncidentsCreated"/>
+  <column db="SUM(failedPublishTransactions)" label="failedPublishTransactions"/>
+  <column db="SUM(combinedDimensionKeysSize)" label="combinedDimensionKeysSize"/>
+  <column db="SUM(totalCombinedDKRequestsToBatchRestService)" label="totalCombinedDKRequestsToBatchRestService"/>
+  <column db="SUM(totalSingleDKRequestsToRestService)" label="totalSingleDKRequestsToRestService"/>
+  <column db="SUM(totalCombinedDKRequestsToSingleRestService)" label="totalCombinedDKRequestsToSingleRestService"/>
+  <column db="SUM(totalTimeGettingCombinedDimensionKeys)" label="totalTimeGettingCombinedDimensionKeys"/>
+  <column db="SUM(totalTimeCalculatingConfidence)" label="totalTimeCalculatingConfidence"/>
+  <column db="SUM(totalTimeCalculatingGroupConfidence)" label="totalTimeCalculatingGroupConfidence"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="gr-all" label="Plot All"/>
+    <item id="gr-totalGroupsCreated_GB" label="Plot totalGroupsCreated_GB"/>
+    <item id="gr-totalGroupingProcessTime" label="Plot totalGroupingProcessTime"/>
+    <item id="gr-totalReshufflesExecuted" label="Plot totalReshufflesExecuted"/>
+    <item id="gr-eventsReceivedToProcess" label="Plot eventsReceivedToProcess"/>
+    <item id="gr-eventsProcessed" label="Plot eventsProcessed"/>
+    <item id="gr-eventsDroppedDueToTimeOut" label="Plot eventsDroppedDueToTimeOut"/>
+    <item id="gr-totalGroupsCreated_IB" label="Plot totalGroupsCreated_IB"/>
+    <item id="gr-totalProcessingTime" label="Plot totalProcessingTime"/>
+    <item id="gr-totalGroupsReceivedToBeProcessed" label="Plot totalGroupsReceivedToBeProcessed"/>
+    <item id="gr-totalIncidentsCreated" label="Plot totalIncidentsCreated"/>
+    <item id="gr-totalIncidentsReceived" label="Plot totalIncidentsReceived"/>
+    <item id="gr-totalUnionBatchProcessTime" label="Plot totalUnionBatchProcessTime"/>
+    <item id="gr-totalEventsInsideIncidentsCreated" label="Plot totalEventsInsideIncidentsCreated"/>
+    <item id="gr-failedPublishTransactions" label="Plot failedPublishTransactions"/>
+    <item id="gr-combinedDimensionKeysSize" label="Plot combinedDimensionKeysSize"/>
+    <item id="gr-totalCombinedDKRequestsToBatchRestService" label="Plot totalCombinedDKRequestsToBatchRestService"/>
+    <item id="gr-totalSingleDKRequestsToRestService" label="Plot totalSingleDKRequestsToRestService"/>
+    <item id="gr-totalCombinedDKRequestsToSingleRestService" label="Plot totalCombinedDKRequestsToSingleRestService"/>
+    <item id="gr-totalTimeGettingCombinedDimensionKeys" label="Plot totalTimeGettingCombinedDimensionKeys"/>
+    <item id="gr-totalTimeCalculatingConfidence" label="Plot totalTimeCalculatingConfidence"/>
+    <item id="gr-totalTimeCalculatingGroupConfidence" label="Plot totalTimeCalculatingGroupConfidence"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

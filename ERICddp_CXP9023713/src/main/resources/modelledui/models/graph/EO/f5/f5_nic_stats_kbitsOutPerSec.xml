@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+>
+  <title value="Kbit/s Out"/>
+  <queries>
+    <query timecol="time" multiseries="eo_f5_nic_names.name">
+      <dbtables main="eo_f5_nic_stats">
+        <reference table="sites" condition="eo_f5_nic_stats.siteid = sites.id"/>
+        <reference table="eo_f5_nic_names" condition="eo_f5_nic_stats.nicid = eo_f5_nic_names.id"/>
+      </dbtables>
+
+      <param name="site"/>
+      <param name="nicids"/>
+      <where>sites.name = '%s' AND eo_f5_nic_names.id IN ( %s )</where>
+      <column db="eo_f5_nic_stats.kbitsOutPerSec" label="Kbit/s Out"/>
+    </query>
+  </queries>
+  <size width="600" height="240"/>
+</modelledgraph>

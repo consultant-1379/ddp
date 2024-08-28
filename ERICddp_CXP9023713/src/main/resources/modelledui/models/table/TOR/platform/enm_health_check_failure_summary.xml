@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_vm_hc">
+    <reference table="sites" condition="enm_vm_hc.siteid = sites.id"/>
+    <reference table="servers" condition="enm_vm_hc.serverid = servers.id"/>
+    <reference table="enm_vm_hc_summarys" condition="enm_vm_hc.summaryId= enm_vm_hc_summarys.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverId"/>
+  <where>sites.name = '%site%' AND enm_vm_hc.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND servers.id IN (%serverId%)</where>
+
+  <column db="time" label="Time" />
+  <column db="servers.hostname" label="Instance"/>
+  <column db="status" label="Status"/>
+  <column db="enm_vm_hc_summarys.name" label="Summary"/>
+  <column db="summaryData" label="SummaryData"/>
+
+</modelledtable>

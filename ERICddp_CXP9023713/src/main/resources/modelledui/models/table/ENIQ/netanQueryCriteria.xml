@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pme_details">
+    <reference table="sites" condition="eniq_netan_pme_details.siteid = sites.id"/>
+    <reference table="eniq_aggregated_counter_table_name_id_mapping" condition="eniq_aggregated_counter_table_name_id_mapping.id = eniq_netan_pme_details.tableId"/>
+    <reference table="eniq_netan_pme_measure_name_id_mapping_details" condition="eniq_netan_pme_measure_name_id_mapping_details.id = eniq_netan_pme_details.measureId"/>
+    <reference table="eniq_netan_pme_data_source_id_mapping_details" condition="eniq_netan_pme_data_source_id_mapping_details.id = eniq_netan_pme_details.dataSourceId "/>
+    <reference table="eniq_netan_pme_query_category_id_mapping_details" condition="eniq_netan_pme_query_category_id_mapping_details.id = eniq_netan_pme_details.queryCategoryId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND queryCategory IN ('FetchInformation', 'ShowReport') AND time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+  <groupby>
+    <column db="eniq_netan_pme_details.fetchId"/>
+  </groupby>
+
+  <column db="eniq_netan_pme_details.time" label="Timestamp"/>
+  <column db="eniq_netan_pme_details.reportID" label="Report Id"/>
+  <column db="eniq_netan_pme_details.preFetchFilterMeasureType" label="Pre Fetch Filter Measure Type"/>
+  <column db="GROUP_CONCAT(DISTINCT eniq_netan_pme_details.measureType, ' ')" label="Measure Type"/>
+  <column db="GROUP_CONCAT(DISTINCT eniq_netan_pme_measure_name_id_mapping_details.measureName, ' ')" label="Measure Name"/>
+  <column db="GROUP_CONCAT(DISTINCT eniq_aggregated_counter_table_name_id_mapping.tableName, ' ')" label="Table Name"/>
+  <column db="eniq_netan_pme_details.timeAggregationLevel" label="Time Aggregation Level"/>
+  <column db="eniq_netan_pme_details.objectAggregationLevel" label="Object Aggregation Level"/>
+  <column db="eniq_netan_pme_details.startDateTime" label="Start Time"/>
+  <column db="eniq_netan_pme_details.endDateTime" label="End Time"/>
+  <column db="eniq_netan_pme_details.preFetchFilterDayOfWeek" label="Pre Fetch Filter Day of Week"/>
+  <column db="eniq_netan_pme_details.preFetchFilterHourOfDay" label="Pre Fetch Filter Hour of Day"/>
+  <column db="eniq_netan_pme_data_source_id_mapping_details.dataSource" label="Data Source"/>
+  <column db="eniq_netan_pme_details.collectionType" label="Collection Type"/>
+  <column db="eniq_netan_pme_details.nodeCount" label="Node Count"/>
+  <column db="SUM(DISTINCT eniq_netan_pme_details.queryExecutionTime)" label="Query Execution Time (sec)"/>
+  <column db="SUM(DISTINCT eniq_netan_pme_details.rowCount * eniq_netan_pme_details.rowCountMultiFact)" label="Row Count"/>
+  <column db="eniq_netan_pme_details.reportMode" label="Report Mode"/>
+
+</modelledtable>

@@ -1,0 +1,118 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use HTML::Parser;
+
+use StatsTime;
+use StatsDB;
+use DataStore;
+use EnmServiceGroup;
+
+our $DEBUG = 0;
+
+sub parseModCluster($) {
+    my ($file) = @_;
+    open INPUT, $file or die "Failed to open $file";
+    my $r_nodeMap = undef;
+    my %contextBySrv = ();
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseModCluster: line=$line"; }
+        if ( $line =~ /^\d{6}:\d{2}:\d{2}/ ) {
+            $r_nodeMap = {};
+        } elsif ( $line =~ /^Node: \[(\d+)\],Name: ([^,]+),/ ) {
+            $r_nodeMap->{$1} = $2;
+        } elsif ( $line =~/^Context: \[(\d+):\d+:\d+\], Context: ([^,]+),/ ) {
+            my ($nodeId,$context) = ($1,$2);
+            my $srv = $r_nodeMap->{$nodeId};
+            if ( defined $srv ) {
+                my $r_srvContexts = $contextBySrv{$srv};
+                if ( ! defined $r_srvContexts ) {
+                    $r_srvContexts = {};
+                    $contextBySrv{$srv} = $r_srvContexts;
+                }
+                $r_srvContexts->{$context} = 1;
+            }
+        }
+    }
+    close INPUT;
+
+    my %results = ();
+    while ( my ($srv,$r_srvContexts) = each %contextBySrv ) {
+        my @sortedContexts = sort keys %{$r_srvContexts};
+        $results{$srv} = \@sortedContexts;
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("parseModCluster: results", \%results); }
+    return \%results;
+}
+
+sub store($$$) {
+    my ($site,$date,$r_contextBySrv) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_rows = dbSelectAllArr($dbh,"
+SELECT
+ servers.hostname AS hostsvr,
+ enm_servicegroup_instances.serviceid
+FROM enm_servicegroup_instances, servers
+WHERE
+ enm_servicegroup_instances.siteid = $siteId AND
+ enm_servicegroup_instances.date = '$date' AND
+ enm_servicegroup_instances.serverid = servers.id
+");
+
+    my %allContexts = ();
+    my %contextBySG = ();
+    foreach my $r_row ( @{$r_rows} ) {
+        my $r_contexts = $r_contextBySrv->{$r_row->[0]};
+        if ( defined $r_contexts ) {
+            my $r_sgContexts = $contextBySG{$r_row->[1]};
+            if ( ! defined $r_sgContexts ) {
+                $r_sgContexts = {};
+                $contextBySG{$r_row->[1]} = $r_sgContexts;
+            }
+            foreach my $context ( @{$r_contexts} ) {
+                $r_sgContexts->{$context} = 1;
+                $allContexts{$context} = 1;
+            }
+        }
+    }
+
+    dbDo($dbh, "DELETE FROM enm_sg_contexts WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to delete old data";
+
+    my @allContextList = keys %allContexts;
+    my $r_idMap = getIdMap($dbh, "enm_context_names", "id", "name", \@allContextList );
+    while ( my ($sg,$r_sgContexts) = each %contextBySG ) {
+        foreach my $context ( keys %{$r_sgContexts} ) {
+            dbDo($dbh, sprintf("INSERT INTO enm_sg_contexts (siteid,date,serviceid,contextid) VALUES(%d,'%s',%d,%d)",
+                               $siteId, $date, $sg, $r_idMap->{$context} ) )
+                or die "Failed to insert context $context";
+        }
+    }
+}
+
+
+sub main() {
+    my ($file,$site,$date,$globalProps);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "input=s" => \$file,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    store( $site, $date, parseModCluster($file) );
+}
+
+main();

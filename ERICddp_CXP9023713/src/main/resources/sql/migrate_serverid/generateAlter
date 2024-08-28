@@ -1,0 +1,114 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $EXIT_FILE = undef;
+our $EXIT_FILE_FOUND = 0;
+
+sub getServerIdCols() {
+    my $db_ddl = "/data/ddp/current/sql/statsdb.ddl";
+    open INPUT, $db_ddl or die "Cannot open $db_ddl";
+    my $table = undef;
+
+    my %serverIdCols = ();
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^\s*CREATE\s+TABLE\s+(\S+)/ ) {
+            $table = $1;
+        } elsif ( $line =~ /^\s*(\S+)\s+SMALLINT\s+.*REFERENCES\s+(\S+)/ ) {
+            my ($referingColumn,$referenceTable) = ($1,$2);
+            if ( $referenceTable =~ /^servers/ ) {
+                $serverIdCols{$table}->{$referingColumn} = 1;
+            }
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 4 ) { print Dumper("getServerIdCols: serverIdCols", \%serverIdCols); }
+
+    return \%serverIdCols;
+}
+
+sub getTableSizes($) {
+    my ($dbh) = @_;
+
+    my $sql = <<ESQL;
+SELECT TABLE_NAME, DATA_LENGTH
+FROM INFORMATION_SCHEMA.TABLES
+WHERE
+ TABLE_SCHEMA = (SELECT DATABASE())
+ESQL
+
+    my %tableSizes = ();
+    my $r_rows = dbSelectAllArr($dbh, $sql);
+    foreach my $r_row ( @{$r_rows} ) {
+        $tableSizes{$r_row->[0]} = $r_row->[1];
+    }
+
+    return \%tableSizes;
+}
+
+sub main() {
+    my ($dir);
+    my $result = GetOptions("dir=s" => \$dir,
+                            "debug=s" => \$DEBUG);
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    defined $dir or die "You must provide the dir";
+    
+    my $r_serverIdsCols = getServerIdCols();
+
+    my $dbh = connect_db();
+
+    my $r_tableSizes = getTableSizes($dbh);
+    my $index = 0;
+    foreach my $table ( sort { $r_tableSizes->{$a} <=> $r_tableSizes->{$b} } keys %{$r_tableSizes} ) {
+        my $r_columns = $r_serverIdsCols->{$table};
+        if ( ! defined $r_columns ) {
+            next;
+        }
+
+        my $columnStr = join("','", keys %{$r_columns});
+        my $sql = <<ESQL;
+SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE
+TABLE_SCHEMA = (SELECT DATABASE()) AND
+TABLE_NAME = '$table' AND
+COLUMN_NAME IN ( '$columnStr' )
+ESQL
+
+        my $r_rows = dbSelectAllHash($dbh, $sql);
+        my @modifyColumns = ();
+        foreach my $r_row ( @{$r_rows} ) {
+            if ( $DEBUG > 3 ) { printf "table=%s, column=%s, type=%s is_nullable=%s\n", $table, $r_row->{'COLUMN_NAME'}, $r_row->{'COLUMN_TYPE'}, $r_row->{'IS_NULLABLE'}; }
+            if ( $r_row->{'COLUMN_TYPE'} ne 'int(10) unsigned' ) {
+                my $modifyColumn = "MODIFY COLUMN " . $r_row->{'COLUMN_NAME'} . " INT UNSIGNED";
+                if ( $r_row->{'IS_NULLABLE'} eq 'NO' ) {
+                    $modifyColumn .= " NOT NULL";
+                }
+                push @modifyColumns, $modifyColumn;
+            }
+        }
+
+        if ( $#modifyColumns > -1 ) {
+            $index++;
+            my $file = sprintf("%s/alter_%03d_%s", $dir, $index, $table);
+            open OUTPUT, ">$file" or die "Failed to open $file";
+            printf OUTPUT "ALTER TABLE %s %s\n", $table, join(",", @modifyColumns);
+            close OUTPUT;
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+main();

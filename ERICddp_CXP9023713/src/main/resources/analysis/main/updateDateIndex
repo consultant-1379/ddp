@@ -1,0 +1,195 @@
+#!/usr/bin/env perl
+
+use strict;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+
+our %monthNames = (
+	       "01" => "Jan",
+	       "02" => "Feb",
+	       "03" => "Mar",
+	       "04" => "Apr",
+	       "05" => "May",
+	       "06" => "Jun",
+	       "07" => "Jul",
+	       "08" => "Aug",
+	       "09" => "Sep",
+	       "10" => "Oct",
+	       "11" => "Nov",
+	       "12" => "Dec"
+	       );
+	     
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($indexFile,$date,$site,$oss,$file,$root);
+    my $result = GetOptions("file=s"  => \$file,
+			    "date=s" => \$date,
+			    "site=s"    => \$site,
+			    "oss=s" => \$oss, 
+			    "root=s" => \$root,
+			    "debug=s" => \$DEBUG
+			    );       
+    ($result == 1) or die "Invalid args"; 
+
+    if ( $DEBUG > 1 ) { print "main: oss=", $oss, "\n"; }
+
+    my %years = ();
+    readFile($file,\%years);
+    my ($day,$month,$year) = $date =~ /^(\d{2,2})(\d{2,2})(\d{2,2})$/;    
+
+    
+    $years{$year}->{$month}->{$day} = "site=$site&dir=$date&oss=$oss&date=20$year-$month-$day";
+    if ( $DEBUG > 1 ) { print "main: link=", $years{$year}->{$month}->{$day}; }
+
+    $years{$year}->{$month}->{0} = "site=$site&year=20$year&month=$month&root=$root";
+
+    writeFile($file,\%years);
+}
+
+sub readFile
+{
+    my ($file,$r_years) = @_;
+    open INDEX, "$file" or die "Cannot open $file";
+
+    while ( my $line = <INDEX> )
+    {
+	if ( $DEBUG > 5 ) { print "readFile: line=$line"; }
+
+	if ( $line =~ /^<b></ )
+	{
+	    if ( $line =~ /html/ )
+	    {
+		my ($month,$year) = $line =~ /href=\"\.\/(\d{2,2})(\d{2,2})\//;
+		$r_years->{$year}->{$month}->{0} = 1;
+	    }		
+	    else
+	    {
+		my ($args) = $line =~ /\?([^\"]+)/;
+		my ($year) = $args =~ /year=20(\d{2,2})/;
+		my ($month) = $args =~ /month=(\d{2,2})/;
+		$r_years->{$year}->{$month}->{0} = $args;
+	    }				      
+	}
+	elsif ( $line =~ /^\s+<td><a/ )
+	{
+	    if ( $line =~ /html/ )
+	    {
+		my ($day,$month,$year) = $line =~ /href=\"\.\/(\d{2,2})(\d{2,2})(\d{2,2})\//;
+		$r_years->{$year}->{$month}->{$day} = 1;
+	    }
+	    else
+	    {
+		my ($args) = $line =~ /\?([^\"]+)/;
+		my ($year,$month,$day) = $args =~ /date=20(\d{2,2})-(\d{2,2})-(\d{2,2})/;
+		$r_years->{$year}->{$month}->{$day} = $args;
+	    }
+	}
+    }
+    close INDEX;
+
+    if ( $DEBUG > 2 ) { print Dumper("readFile: years", $r_years); }
+}
+
+sub writeFile
+{
+    my ($file,$r_years) = @_;
+
+    open INDEX, ">$file" or die "Cannot open $file";
+    print INDEX "<html>\n";
+    foreach my $year ( sort sortdown keys %{$r_years} )
+    {
+	if ( $DEBUG > 4 ) { print "writeFile: year=$year\n"; }
+
+	foreach my $month ( sort sortdown keys %{$r_years->{$year}} )
+	{
+	    if ( $DEBUG > 4 ) { print "writeFile: month=$month\n"; }
+
+	    print INDEX "<p>\n";
+	    if ( exists $r_years->{$year}->{$month}->{0} )
+	    {
+		if ( $r_years->{$year}->{$month}->{0} == 1 )
+		{
+		    print INDEX "<b><a href=\"./", $month, $year, "/index.html\" target=\"ranosdata\">", $monthNames{$month}, "/", $year, "</a></b>\n";
+		    delete $r_years->{$year}->{$month}->{0};
+		}
+		else
+		{
+		    print INDEX "<b><a href=\"", $ENV{PHP_ROOT}, "/php/monthly/index.php?", $r_years->{$year}->{$month}->{0}, "\" target=\"ranosdata\">", $monthNames{$month}, "/", $year, "</a></b>\n";
+		}
+
+		delete $r_years->{$year}->{$month}->{0};
+	    }
+	    else
+	    {
+		print INDEX "<b>", $monthNames{$month}, "/", $year, "</b>\n";
+	    }
+
+	    print INDEX "<hr>\n";
+
+	    my $lastWday = 7;
+	    my $firstDay = 1;
+	    foreach my $day ( sort sortup keys %{$r_years->{$year}->{$month}} )
+	    {
+		if ( $DEBUG > 4 ) { print "writeFile: day=$day\n"; }
+
+		my $time = timelocal(1, 0, 0, $day, $month - 1, $year + 100);
+		my @dateParts = localtime($time);
+		my $wday = ($dateParts[6] - 1);
+		if ( $wday == -1 )
+		{
+		    $wday = 6;
+		}
+
+		if ( $firstDay == 1 )
+		{
+		    print INDEX "<table cellpadding=\"1\" cellspacing=\"1\" border=\"0\" width=\"100%\">\n";
+		    print INDEX " <tr>\n";
+		    $firstDay = 0;
+		}
+		elsif ( $lastWday > $wday ) # New week 
+		{
+		    print INDEX " </tr>\n <tr>\n";
+		}
+		
+		if ( $lastWday > $wday && $wday > 0 )
+		{
+		    for ( my $i = 0; $i < $wday; $i++ )
+		    {
+			print INDEX "  <td></td>\n";
+		    }
+		}
+		
+		$lastWday = $wday;
+		
+		if ( $r_years->{$year}->{$month}->{$day} == 1 )
+		{
+		    print INDEX "  <td><a href=\"./", $day, $month, $year, "/index.html\" target=\"ranosdata\">", $day,"</a></td>\n";
+		}
+		else
+		{
+		    print INDEX "  <td><a href=\"", $ENV{PHP_ROOT}, "/php/index.php?", $r_years->{$year}->{$month}->{$day}, "\" target=\"ranosdata\">", $day,"</a></td>\n";
+		}
+	    }
+	    print INDEX " </tr>\n";
+	    print INDEX "</table>\n";
+	    print INDEX "</p>\n";
+	}
+    }
+	
+    print INDEX "</html>\n";
+    close INDEX;		    
+}
+
+				
+sub sortup {
+    return ( $a <=> $b );
+}
+
+sub sortdown {
+    return ( $b <=> $a );
+}

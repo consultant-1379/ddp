@@ -1,0 +1,255 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use Data::Dumper;
+use DBI;
+
+our $DEBUG = 0;
+our $dbh;
+our $siteId;
+our $serverId;
+our @userNameArray = ();
+our $sapIqMetricTable = "sap_iq_metrics";
+our $sapIqDbUserTable = "sap_db_users_connections";
+our $previousReleaseFlag = 0;
+our $currentReleaseFlag = 0;
+
+sub main {
+    my ($sapIqLogFile, $site, $server);
+    my $result = GetOptions(
+        "logfile=s" => \$sapIqLogFile,
+        "site=s"  => \$site,
+        "server=s"  => \$server,
+        "debug=s" => \$DEBUG
+        );
+
+    ($result == 1) or die "Invalid arguments. Usage: parseSybaseIq --logfile <sapIqLogFile>
+        --site <site> --server <hostname> [ --debug <1-10> ]";
+
+    ( -r $sapIqLogFile ) or die "Cannot read log file $sapIqLogFile";
+
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+
+    my $r_parsedSapIqStats = parseSapIQLog($sapIqLogFile);
+    my $r_id_map = populateId($r_parsedSapIqStats);
+    if ($DEBUG > 1) { print Dumper("R_ID_MAP", $r_id_map); }
+    my ($bcpFile, $bcpFileDb) = createBcpFiles($r_parsedSapIqStats, $r_id_map);
+    my ($firstTimestamp, $lastTimestamp) = getFirstAndLastTime($r_parsedSapIqStats);
+    if ($currentReleaseFlag == 1){
+        removeOldDataCurrentRelease($firstTimestamp, $lastTimestamp);
+    }
+    if ($previousReleaseFlag == 1) {
+        removeOldDataPreviousRelease($firstTimestamp, $lastTimestamp);
+    }
+    loadDb($bcpFile, $bcpFileDb);
+    unlink ($bcpFile, $bcpFileDb);
+}
+
+sub parseSapIQLog {
+    my $logFile = shift;
+    my ($date, $cacheAllocated, $cacheFree, $currentCacheSize, $pageSize);
+    my @r_data = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    while (my $line = <FILE>){
+        # Example of what below regex would match
+        #Jun 10 00:50:01 2015 atrcxb1641 dwhdb CacheAllocated;500803 CacheFree;596554 CurrentCacheSize;5242880 PageSize;4096 User; dc;1 User; dbo;5 User; DBA;1
+        if ( my ($time, $hostname, $cacheAllocated, $cacheFree, $currentCacheSize, $pageSize, $db_details) = $line =~
+            /(\w+\s\d+\s\d+:\d+:\d+\s\d+)\s(\S+)\s\S+\sCacheAllocated;(\d+)\sCacheFree;(\d+)\sCurrentCacheSize;(\d+)\sPageSize;(\d+)\s(User;.*)/)
+        {
+            $serverId = getServerId($dbh, $siteId, $hostname);
+            $cacheAllocated = calcPageSizeFactor($cacheAllocated, $pageSize);
+            $cacheFree = calcPageSizeFactor($cacheFree, $pageSize);
+            my $cacheUsed = $currentCacheSize - $cacheFree;
+            my $cacheUsedPercentage = ($cacheUsed / $currentCacheSize) * 100;
+            my $mysqlTime = convertTimeToMysql($time);
+            my %r_dataForLine = (
+                time => "$mysqlTime",
+                serverId => "$serverId",
+                cacheAllocated => "$cacheAllocated",
+                cacheFree => "$cacheFree",
+                cacheCurrentSize => "$currentCacheSize",
+                cacheUsed => "$cacheUsedPercentage",
+                pageSize => "$pageSize",
+                db_details => "$db_details"
+            );
+            push (@r_data, \%r_dataForLine);
+            $previousReleaseFlag = 1;
+        }
+        # Example of what below regex would match
+        #Jan 31 04:20:01 2018 ieatrcxb5989 dwhdb CacheFree;6190969 CacheAllocated;25600 PageSize;4096 User; dbo;7 User; DBA;3
+        elsif (($time, $hostname, $cacheFree, $cacheAllocated, $pageSize, $db_details) = $line =~
+               /(\w+\s\d+\s\d+:\d+:\d+\s\d+)\s(\S+)\s\S+\sCacheFree;(\d+)\sCacheAllocated;(\d+)\sPageSize;(\d+)\s(User;.*)/)
+        {
+            $serverId = getServerId($dbh, $siteId, $hostname);
+            $cacheFree = calcPageSizeFactor($cacheFree, $pageSize);
+            $cacheAllocated = $cacheAllocated * 1024;
+            my $cacheUsed = $cacheAllocated - $cacheFree;
+            my $cacheUsedPercentage = ($cacheUsed / $cacheAllocated) * 100;
+            my $mysqlTime = convertTimeToMysql($time);
+            my %r_dataForLine = (
+                time => "$mysqlTime",
+                serverId => "$serverId",
+                cacheAllocated => "$cacheAllocated",
+                cacheFree => "$cacheFree",
+                cacheCurrentSize => 0,
+                cacheUsed => "$cacheUsedPercentage",
+                pageSize => "$pageSize",
+                db_details => "$db_details"
+            );
+            push (@r_data, \%r_dataForLine);
+            $currentReleaseFlag = 1;
+        }
+    }
+    if ($DEBUG > 2) { print Dumper ("R_DATA", \@r_data); }
+    return (\@r_data);
+}
+
+sub calcPageSizeFactor {
+    #Page Size value in byte needs to be divided by 1024 to convert in KB's
+    my ($valueToBeCalculated, $pageSizeValue) = @_;
+    return ($valueToBeCalculated * ($pageSizeValue/1024));
+}
+
+sub convertTimeToMysql {
+    #Converts timestamp in format Mon DD HH:MM:SS YYYY(Jun 10 00:05:04 2015) to YYYY-DD-MM HH:MM:SS(2015-05-12 12:36:09)
+    my $timeStamp = shift;
+    my @time = split(/\ /,$timeStamp);
+    my %monthMap = (
+        Jan => "01",
+        Feb => "02",
+        Mar => "03",
+        Apr => "04",
+        May => "05",
+        Jun => "06",
+        Jul => "07",
+        Aug => "08",
+        Sep => "09",
+        Oct => "10",
+        Nov => "11",
+        Dec => "12"
+    );
+    my $monthNumber = $monthMap{$time[0]} ;
+    return  $time[3] . "-" . $monthNumber . "-" . $time[1] . " " . $time[2];
+}
+
+sub populateId {
+    my $getIdRef = shift;
+    for my $value ( @$getIdRef ) {
+        my @dbUserInfo = split /User;/, $value->{db_details};
+        my $r_UsersConnections = createDbUsersHash(\@dbUserInfo);
+        foreach my $userName (keys %{ $r_UsersConnections })
+        {
+            $userName =~ s/^\s+|\s+$//g;
+            push (@userNameArray, $userName);
+        }
+    }
+    my $r_id_map = getIdMap($dbh, "sap_db_users", "db_user_id", "db_username", \@userNameArray);
+    return $r_id_map;
+}
+
+sub createBcpFiles {
+    my ($array_ref, $r_id_map) = @_;
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+
+    my $metricsBcpFile = "${tmpDir}/sybase_metrics.bcp";
+    my $dbUserConnectionBcpFile = "${tmpDir}/sybase_db_username.bcp";
+    open BCP, ">$metricsBcpFile" or die "Cannot open BCPFile";
+    open BCP2, ">$dbUserConnectionBcpFile" or die "Cannot open BCPDbFile";
+    my $size = @$array_ref;
+    for my $href ( @$array_ref ) {
+        printf BCP "%s|%d|%d|%d|%d|%d|%d|%d|\n",
+            $href->{time},
+            $href->{serverId},
+            $href->{cacheAllocated},
+            $href->{cacheFree},
+            $href->{cacheCurrentSize},
+            $href->{cacheUsed},
+            $siteId,
+            $href->{pageSize};
+        my @dbUserInfo = split /User;/, $href->{db_details};
+        my $hash_reference = createDbUsersHash(\@dbUserInfo);
+        foreach my $key (keys %{ $hash_reference })
+        {
+            if (defined $key && $r_id_map->{$key} && $hash_reference->{$key})
+            {
+                printf BCP2 "%s|%d|%d|%d|%s|\n",
+                    $href->{time},
+                    $siteId,
+                    $href->{serverId},
+                    $r_id_map->{$key},
+                    $hash_reference->{$key};
+            }
+        }
+    }
+    close BCP;
+    close BCP2;
+    if ($DEBUG > 2) {
+        print "BCP:$metricsBcpFile\n";
+        system("/usr/bin/cat $metricsBcpFile");
+        print "BCP2:$dbUserConnectionBcpFile\n";
+        system("/usr/bin/cat $dbUserConnectionBcpFile");
+    }
+
+    return $metricsBcpFile, $dbUserConnectionBcpFile;
+}
+
+sub createDbUsersHash {
+    my $ref = shift;
+    my @db_users = @$ref;
+    my %hash_db_users=\();
+    my $size = @db_users;
+    my ($k, $j);
+
+    for (my $i=1; $i <= ($size-1); $i++)
+    {
+        ($k, $j)= split(/;/, $db_users[$i]);
+        $k =~ s/^\s+|\s+$//g;
+        $j =~ s/^\s+|\s+$//g;
+        $hash_db_users{$k} = $j;
+    }
+    if ($DEBUG > 2) { print Dumper ("HASH DB USERS CONNECTIONS", \%hash_db_users); }
+    return \%hash_db_users
+}
+
+sub loadDb {
+    my ($bcpFile, $bcpFileDb, $r_parsedSapIqStats) = @_;
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $sapIqMetricTable FIELDS TERMINATED BY \'|\'";
+    my $rth = "LOAD DATA LOCAL INFILE \'$bcpFileDb\' INTO TABLE $sapIqDbUserTable FIELDS TERMINATED BY \'|\'";
+    dbDo($dbh,$sth) or die "Failed to load Data".$dbh->errstr."\n";
+    dbDo($dbh,$rth) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+sub removeOldDataCurrentRelease {
+    my ($firstTimestamp, $lastTimestamp) = @_;
+    my $deleteSql = "DELETE FROM $sapIqMetricTable WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    my $deleteSql1 = "DELETE FROM $sapIqDbUserTable WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh,$deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub removeOldDataPreviousRelease {
+    my ($firstTimestamp, $lastTimestamp) = @_;
+    my $deleteSql = "DELETE FROM $sapIqMetricTable WHERE siteid = $siteId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    my $deleteSql1 = "DELETE FROM $sapIqDbUserTable WHERE siteid = $siteId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh,$deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub getFirstAndLastTime {
+    my $arry_ref = shift;
+    my @timeArray = @$arry_ref;
+    my $startTime = $timeArray[0]{time};
+    my $endTime = $timeArray[-1]{time};
+    if ($DEBUG > 3) { print ("START TIME & END TIME: $startTime $endTime\n");}
+    return ($startTime, $endTime);
+}
+
+main();

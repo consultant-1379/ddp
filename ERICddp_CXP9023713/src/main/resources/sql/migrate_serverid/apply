@@ -1,0 +1,11 @@
+#!/bin/bash
+
+DIR=$1
+EXIT_FILE=$2
+ALTER_FILE=$3
+
+APPLY_FILE=$(echo ${ALTER_FILE} | sed 's/^alter/apply/')
+
+if [ ! -r ${EXIT_FILE} ] ; then
+    mysql -v -v -v statsdb < ${DIR}/${ALTER_FILE} > ${DIR}/${APPLY_FILE}
+fi

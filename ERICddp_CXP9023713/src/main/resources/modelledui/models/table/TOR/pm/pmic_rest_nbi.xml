@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_pmic_rest_nbi">
+    <reference table="sites" condition="enm_pmic_rest_nbi.siteid = sites.id"/>
+    <reference table="servers" condition="enm_pmic_rest_nbi.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_pmic_rest_nbi.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="requestType"/>
+  </groupby>
+
+  <column db="requestType" label="Request Type"/>
+  <column db="httpMethod" label="HTTP Method"/>
+  <column db="SUM(totalRequestRecieved)" label="Total Request Received"/>
+  <column db="SUM(totalFailedHttpResponse)" label="Total Failed HTTP Response"/>
+  <column db="SUM(totalTimeTakenToRespondRequest)" label="Total Time Taken To Respond Request (ms)"/>
+</modelledtable>

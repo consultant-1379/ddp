@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="cm_import" timecol="job_end">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+  <services>
+    <service name="importexportservice"/>
+  </services>
+
+  <merge>
+    <grouping>
+      <groupby name="jobId"/>
+    </grouping>
+  </merge>
+
+  <events>
+    <event name="BULK_CMIMPORT.importJobParameters"/>
+    <event name="BULK_CMIMPORT.validateSchema"/>
+    <event name="BULK_CMIMPORT.parseFile"/>
+    <event name="BULK_CMIMPORT.modelValidation"/>
+    <event name="BULK_CMIMPORT.copyManagedObjects"/>
+    <event name="BULK_CMIMPORT.executeImport"/>
+    <event name="BULK_CMIMPORT.NODE_NAMES"/>
+    <event name="_MERGED" time_source="BULK_CMIMPORT.importJobParameters.jobEndTime">
+      <metric source="jobId" target="jobid"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.serverId" target="serverid"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.status" target="status"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.jobStartTime" target="job_start"/>
+      <metric source="BULK_CMIMPORT.validateSchema.validateSchemaTotalElapsedTime" target="validate_schema_time"/>
+      <metric source="BULK_CMIMPORT.parseFile.parseFileTotalElapsedTime" target="parsing_time"/>
+      <metric source="BULK_CMIMPORT.modelValidation.modelValidationTotalElapsedTime" target="model_validation_time"/>
+      <metric source="BULK_CMIMPORT.copyManagedObjects.copyManagedObjectsTotalElapsedTime" target="copy_time"/>
+      <metric source="BULK_CMIMPORT.executeImport.executeImportTotalElapsedTime" target="import_time"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.nodesCopied" target="nodes_copied"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.nodesNotCopied" target="nodes_not_copied"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.mosCreated" target="mos_created"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.mosUpdated" target="mos_updated"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.mosDeleted" target="mos_deleted"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.fileFormat" target="file_format"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.configuration" target="configuration"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.importFile" target="import_file"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.errorHandling" target="error_handling"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.instanceValidation" target="instance_validation"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.lastValidationTime" target="lastValidationTime"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.interfaceType" target="interfaceType"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.executionType" target="executionType"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.averageBatchExecutionTime" target="averageBatchExecutionTime"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.totalBatchExecutionTime" target="totalBatchExecutionTime"/>
+      <metric source="BULK_CMIMPORT.importJobParameters.numberOfPartitions" target="numberOfPartitions"/>
+      <metric source="BULK_CMIMPORT.NODE_NAMES.numberOfNodes" target="numberOfNodes"/>
+    </event>
+  </events>
+</modelledevents>

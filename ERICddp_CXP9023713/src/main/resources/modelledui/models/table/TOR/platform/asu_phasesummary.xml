@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_flow_asu_phasesummary">
+    <reference table="sites" condition="enm_flow_asu_phasesummary.siteId = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="instanceName"/>
+  <where>sites.name = '%site%' AND enm_flow_asu_phasesummary.flowExecutionName = '%instanceName%' AND enm_flow_asu_phasesummary.time BETWEEN '%date%' - INTERVAL 30 DAY AND '%date% 23:59:59' AND enm_flow_asu_phasesummary.eventName = 'ASU'</where>
+
+  <column db="flowExecutionName" label="Flow Execution Name"/>
+  <column db="FROM_UNIXTIME(UNIX_TIMESTAMP(time) - (timeTaken))" label="Start Time"/>
+  <column db="time" label="End Time"/>
+  <column db="phase" label="Phase"/>
+  <column db="nodesParticipated" label="Total Nodes"/>
+  <column db="nodesSuccess" label="Nodes Success"/>
+  <column db="nodesFailed" label="Nodes Failed"/>
+  <column db="nodesCancelled" label="Nodes Cancelled"/>
+  <column db="nodesCompletedwithwarnings" label="Upgraded nodes with warnings"/>
+  <column db="SEC_TO_TIME(timeTaken)" label="Total Time Taken"/>
+  <column db="activitiesSelected" label="Activities Selected"/>
+</modelledtable>

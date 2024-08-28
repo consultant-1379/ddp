@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cm_revocation_instr" timecol="endTime">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="cmservice"/>
+    <service name="conscmeditor"/>
+  </services>
+
+  <events>
+      <event name="CM_REVOCATION" time_source="endTime">
+        <metric source="undoJobId" target="undoJobId"/>
+        <metric source="startTime" target="startTime"/>
+        <metric source="totalCreate" target="totalCreate"/>
+        <metric source="totalDelete" target="totalDelete"/>
+        <metric source="totalModify" target="totalModify"/>
+        <metric source="totalHistoryItems" target="totalHistoryItems"/>
+        <metric source="totalExcludedUnsupportedOperations" target="totalExcludedUnsupportedOperations"/>
+        <metric source="totalExcludedNonNrmMos" target="totalExcludedNonNrmMos"/>
+        <metric source="totalExcludedSystemCreatedMos" target="totalExcludedSystemCreatedMos"/>
+        <metric source="totalExcludedNotDeletableMos" target="totalExcludedNotDeletableMos"/>
+        <metric source="queryDuration" target="queryDuration"/>
+        <metric source="processingDuration" target="processingDuration"/>
+        <metric source="fileWriteDuration" target="fileWriteDuration"/>
+        <metric source="application" target="application"/>
+        <metric source="applicationJobId" target="applicationJobId"/>
+      </event>
+  </events>
+</modelledevents>

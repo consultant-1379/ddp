@@ -1,0 +1,134 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+ 
+our $DEBUG=0;
+our @NON_DELTA_COUNTERS = ( 'key_blocks_unused', 'key_blocks_used', 'innodb_buffer_pool_pages_dirty' );
+main();
+
+
+sub main()
+{
+    my ($dataFile);
+    my $result = GetOptions("data=s"  => \$dataFile,
+                            "debug=n" => \$DEBUG,
+                            );
+			    
+    my $r_data = loadData($dataFile);
+    if ( $DEBUG > 3 ) { print "main: pre-delta #r_data=", $#{$r_data}, "\n"; }
+    deltaData($r_data);
+    if ( $DEBUG > 3 ) { print "main: post-delta #r_data=", $#{$r_data}, "\n"; }
+    if ( $#{$r_data} >= 0 ) {
+	storeData($r_data);
+    }
+    
+}
+
+sub storeData
+{
+    my ($r_data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+
+    # Don't use db.table as this breaks replication
+    dbDo( $dbh, "use ddpadmin");
+
+    my $r_rows = dbSelectAllArr($dbh, "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = 'ddp_mysql_stats' AND table_schema = 'ddpadmin'");
+    my %columns = ();
+    foreach my $r_row ( @{$r_rows} ) {
+	if ( $r_row->[0] ne "time" ) {
+	    $columns{$r_row->[0]}++;
+	}
+    }
+    my @statColumns = sort keys %columns;
+
+    dbDo( $dbh, sprintf("DELETE FROM ddp_mysql_stats WHERE time BETWEEN '%s' AND '%s'",
+			$r_data->[0]->{'timestamp'}, $r_data->[$#{$r_data}]->{'timestamp'}) ) or
+			    die "Failed to remove data from ddp_mysql_stats";
+
+    my $sqlTemplate = "INSERT INTO ddp_mysql_stats (time," . join(",", @statColumns) .
+	") VALUES( '%s'%s)";
+
+    foreach my $r_row ( @{$r_data} ) {
+	my $valueStr = "";
+	foreach my $statColumn ( @statColumns ) {
+	    $valueStr .= ", " . $r_row->{'values'}->{$statColumn};
+	}
+	dbDo($dbh, sprintf($sqlTemplate, $r_row->{'timestamp'}, $valueStr)) 
+	    or die "Failed to insert row";
+    }
+    
+    $dbh->disconnect;
+}
+
+sub deltaData
+{
+    my ($r_data) = @_;
+
+    my %nonDeltaCounters = ();
+    foreach my $counter ( @NON_DELTA_COUNTERS ) {
+	$nonDeltaCounters{$counter} = 1;
+    }
+
+    for ( my $index = 0 ; $index < $#{$r_data} ; $index++ ) {
+	my $r_CurrVals = $r_data->[$index]->{'values'};
+	my $r_NextVals = $r_data->[$index+1]->{'values'};
+	foreach my $name ( keys %{$r_CurrVals} ) {
+	    if ( ! exists $nonDeltaCounters{$name} ) {
+		my $delta = $r_NextVals->{$name} - $r_CurrVals->{$name}; 
+		if ( $delta < 0 ) { 
+		    $delta = $r_NextVals->{$name};
+		}
+		$r_CurrVals->{$name} = $delta;
+	    }
+	}
+    }
+
+    pop @{$r_data};
+
+    if ( $DEBUG > 5 ) { print Dumper("deltaData: r_data", $r_data); }
+}
+
+sub loadData
+{
+    my ($dataFile) = @_;
+
+    my @data = ();
+
+    open DATA, $dataFile or die "Cannot open $dataFile";
+    my $timestamp;
+    my $r_values;
+    while ( my $line = <DATA> ) {
+	if ( $DEBUG > 9 ) { print "loadData: line=$line"; }
+
+	if ( $line =~ /^(\d{2,2})(\d{2,2})(\d{2,2}) ([\d:]+)$/ ) {
+	    my ($day,$month,$year,$time) = ($1,$2,$3,$4);
+	    $timestamp = sprintf("20%02d-%02d-%02d %s", $year,$month,$day,$time);
+	    if ( $DEBUG > 7 ) { print "loadData: timestamp = $timestamp\n"; }
+	    $r_values = {};
+	    <DATA>; <DATA> ; <DATA>;
+	    
+	} elsif ( $line =~ /^\| (\S+)\s+\| (\d+)/ ) {
+	    my ($name,$value) = ($1,$2);
+	    if ( $DEBUG > 7 ) { print "loadData: name = $name, value = $value\n"; }
+	    $r_values->{lc($name)} = $value;
+	} elsif ( $line =~ /^\+/ && defined $timestamp ) {
+	    if ( $DEBUG > 7 ) { print "loadData: storing sample\n"; }
+
+	    my $r_sample = {
+		'timestamp' => $timestamp,
+		'values' => $r_values
+	    };
+	    push @data, $r_sample;
+	}
+    }
+    close DATA;
+    if ( $DEBUG > 5 ) { print Dumper("loadData data", \@data); }
+   return \@data;
+}

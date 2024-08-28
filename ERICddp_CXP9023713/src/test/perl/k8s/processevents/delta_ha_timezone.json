@@ -1,0 +1,68 @@
+{
+    "podstatus": {},
+    "helm": [],
+    "events": [
+        {
+            "count": 2,
+            "eventTime": null,
+            "reportingInstance": "",
+            "firstTimestamp": "2021-06-18T09:20:04Z",
+            "lastTimestamp": "2021-06-21T08:33:34Z",
+            "source": {
+                "host": "control-plane-lbn01c01",
+                "component": "kubelet"
+            },
+            "reason": "Unhealthy",
+            "reportingComponent": "",
+            "involvedObject": {
+                "kind": "Pod",
+                "name": "jms-0",
+                "namespace": "lbn01cnm",
+                "apiVersion": "v1",
+                "fieldPath": "spec.containers{jms}",
+                "resourceVersion": "10416447",
+                "uid": "1c7c3b69-419c-43db-8a47-71ab8439b79e"
+            },
+            "message": "Liveness probe errored: command \"/opt/ericsson/vmmonitord/bin/ocf_monitor.py --exec_agents\" timed out",
+            "type": "Warning",
+            "metadata": {
+                "name": "jms-0.1689a2acfa59bab2",
+                "namespace": "lbn01cnm",
+                "resourceVersion": "23282533",
+                "creationTimestamp": "2021-06-21T08:33:34Z",
+                "managedFields": [
+                    {
+                        "fieldsV1": {
+                            "f:source": {
+                                "f:host": {},
+                                "f:component": {}
+                            },
+                            "f:message": {},
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:resourceVersion": {},
+                                "f:fieldPath": {},
+                                "f:uid": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:kind": {}
+                            },
+                            "f:reason": {},
+                            "f:type": {},
+                            "f:lastTimestamp": {},
+                            "f:count": {},
+                            "f:firstTimestamp": {}
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kubelet",
+                        "time": "2021-06-21T08:33:34Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    }
+                ],
+                "selfLink": "/api/v1/namespaces/lbn01cnm/events/jms-0.1689a2acfa59bab2",
+                "uid": "ce31f2e5-1580-4c9b-aeb7-47877d1193be"
+            }
+        }
+    ]
+}

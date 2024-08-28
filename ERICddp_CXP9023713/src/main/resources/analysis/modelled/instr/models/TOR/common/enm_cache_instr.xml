@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^cache@cache$">
+
+  <table name="enm_cache_instr">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="cacheid" reftable="enm_cache_names"/>
+  </table>
+
+  <services>
+    <service name="pmservice"/>
+    <service name="comecimpolicy"/>
+    <service name="conscommonmed"/>
+    <service name="fmservice"/>
+  </services>
+
+  <metricgroups>
+    <multi>cacheid</multi>
+
+    <metricgroup name="^cache-(\S+)-stats$">
+      <metric source="stores" target="stores" delta="true" filteridle="true"/>
+      <metric source="removeHits" target="removeHits" delta="true" filteridle="true"/>
+      <metric source="numberOfEntries" target="numberOfEntries"/>
+      <property name="cacheid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^cache-(\S+)-rpc$">
+      <metric source="replicationCount" target="replicationCount" delta="true" filteridle="true"/>
+      <metric source="replicationFailures" target="replicationFailures" delta="true" filteridle="true"/>
+      <property name="cacheid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^cache-(\S+)-channel$">
+      <metric source="received_messages" target="received_messages" delta="true" filteridle="true"/>
+      <metric source="sent_messages" target="sent_messages" delta="true" filteridle="true"/>
+      <metric source="received_bytes" target="sent_bytes" delta="true" filteridle="true"/>
+      <property name="cacheid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

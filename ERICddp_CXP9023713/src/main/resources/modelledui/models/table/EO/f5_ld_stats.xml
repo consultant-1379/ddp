@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_f5_ld_stats">
+    <reference table="sites" condition="eo_f5_ld_stats.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_f5_ld_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="ROUND(AVG(size))" label="Size(MB)"/>
+  <column db="ROUND(AVG(vgFree))" label="VGFree(MB)"/>
+
+  <ctxmenu keycol="size" targettype="url" multiselect="true">
+    <item id="ldstats" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

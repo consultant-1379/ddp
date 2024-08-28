@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use JSON;
+
+use StatsDB;
+
+our $DEBUG = 0;
+
+sub getStated($$) {
+    my ($file,$deploymentType) = @_;
+
+    my $r_config = undef;
+    if (open (my $json_fh, $file))
+    {
+        local $/ = undef;
+        my $json = JSON->new;
+        $r_config = $json->decode(<$json_fh>);
+        close($json_fh);
+    }
+    if ( $DEBUG > 7 ) { print Dumper("getStated r_config",$r_config); }
+
+    my %capacityByDeploymentType = ();
+    my $kpiIndex = 0;
+    foreach my $r_kpi ( @{$r_config->{'key_dimensioning_values'}} ) {
+        $kpiIndex++;
+        if ( exists $r_kpi->{'name'} ) {
+            my $name = $r_kpi->{'name'};
+            if ( $DEBUG > 6 ) { print "getStated: name=$name\n"; }
+            foreach my $r_typeValue ( @{$r_kpi->{'deployment'}} ) {
+                if ( $DEBUG > 6 ) { print Dumper("getStated r_typeValue", $r_typeValue); }
+                $capacityByDeploymentType{$r_typeValue->{'enm_deployment_type'}}->{$name} =
+                    $r_typeValue->{'capacity'};
+            }
+        } else {
+            print "WARN: Invalid KPI file, no name in key_dimensioning_values entry $kpiIndex\n";
+            return undef;
+        }
+    }
+
+    if ( exists $capacityByDeploymentType{$deploymentType} ) {
+        my $result = $capacityByDeploymentType{$deploymentType};
+        if ( $DEBUG > 4 ) { print Dumper("getStated result",$result); }
+        return $result;
+    } else {
+        print "WARN: no match for deployment type $deploymentType in $file\n";
+    }
+
+    return undef;
+}
+
+sub main() {
+    my ($site,$date,$configFile,$deploymentType,$dimValuesFile);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "config=s" => \$configFile,
+        "type=s" => \$deploymentType,
+        "dimvalues=s" => \$dimValuesFile,
+        "debug=s" => \$DEBUG
+        );
+
+    setStatsDB_Debug($DEBUG);
+
+    my $r_deploymentCapacity = undef;
+    if ( defined $deploymentType ) {
+        $r_deploymentCapacity = getStated($dimValuesFile, $deploymentType);
+    }
+
+    my $r_config = undef;
+    if (open (my $json_fh, $configFile))
+    {
+        local $/ = undef;
+        my $json = JSON->new;
+        $r_config = $json->decode(<$json_fh>);
+        close($json_fh);
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    dbDo($dbh, 'SET collation_connection = "latin1_general_cs"') or die "Failed to set char set";
+
+    dbDo($dbh, 'SET @siteid=' . $siteId) or die "Failed to set siteid";
+    dbDo($dbh, 'SET @date="' . $date . '"') or die "Failed to set date";
+
+    my %attributeRows = ();
+        foreach my $r_entry ( @{$r_config} ) {
+        my $r_rows = dbSelectAllArr($dbh, $r_entry->{'query'})
+            or die "Query failed for " . $r_entry->{'attribute'};
+        if ( $DEBUG > 2 ) { print Dumper("main: r_rows", $r_rows); }
+        if ( $#{$r_rows} == 0 && defined $r_rows->[0]->[0] ) {
+            $attributeRows{$r_entry->{'attribute'}} = { 'used' => $r_rows->[0]->[0] };
+        } else {
+            $attributeRows{$r_entry->{'attribute'}} = { 'used' => 0 };
+        }
+        if ( defined $r_deploymentCapacity && exists $r_deploymentCapacity->{$r_entry->{'attribute'}} ) {
+            $attributeRows{$r_entry->{'attribute'}}->{'available'} = $r_deploymentCapacity->{$r_entry->{'attribute'}};
+        }
+
+    }
+    if ( $DEBUG > 3 ) { print Dumper("main: attributeRows", \%attributeRows); }
+
+    dbDo($dbh, "DELETE FROM enm_capacity WHERE siteid = $siteId AND date = '$date'")
+        or die "Cannot remove old data";
+
+    my @values = ();
+    while ( my ($attributeName, $r_attributeRow) = each %attributeRows) {
+        my @columnValues = ( $siteId, "'$date'", "'$attributeName'", $r_attributeRow->{'used'});
+        if ( exists $r_attributeRow->{'available'} ) {
+            push @columnValues, $r_attributeRow->{'available'};
+        } else {
+            push @columnValues, "NULL";
+        }
+        push @values, sprintf("(%s)", join(",", @columnValues));
+    }
+
+    my @columnNames = ( 'siteid', 'date', 'area', 'used', 'available' );
+    dbDo($dbh, sprintf("INSERT INTO enm_capacity (%s) VALUES %s",
+                       join(",",@columnNames), join(",", @values))
+        ) or die "Cannot insert data";
+
+    $dbh->disconnect();
+}
+
+main();

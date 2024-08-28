@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_secserv_comaa_instr">
+    <reference table="sites" condition="enm_secserv_comaa_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_secserv_comaa_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_secserv_comaa_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(numberOfInitialProxyBindReq)" label="Number Of Initial Proxy Bind Req"/>
+  <column db="SUM(numberOfInitialUserBindReq)" label="Number Of Initial User Bind Req"/>
+  <column db="SUM(numberOfAddProxyBindReq)" label="Number Of Add Proxy Bind Req"/>
+  <column db="SUM(numberOfAddUserBindReq)" label="Number Of Add User Bind Req"/>
+  <column db="SUM(numberOfSearchReq)" label="Number Of Search Req"/>
+  <column db="SUM(numberOfConnectionReq)" label="Number Of Connection Req"/>
+  <column db="SUM(numberOfErrorDisconnection)" label="Number Of Error Disconnection"/>
+  <column db="SUM(numberOfSuccessfullDisconnection)" label="Number Of Successfull Disconnection"/>
+  <column db="SUM(numberOfTlsHandshakeError)" label="Number Of TLS Handshake Error"/>
+  <column db="SUM(numberOfProxyBindError)" label="Number Of Proxy Bind Error"/>
+  <column db="SUM(numberOfUserBindError)" label="Number Of User Bind Error"/>
+  <column db="SUM(totalTimeError)" label="Total Time Error (ms)"/>
+  <column db="SUM(totalTimeSuccessful)" label="Total Time Successful (ms)"/>
+  <column db="SUM(numberOfFastConnection)" label="Number Of Fast Connections"/>
+  <column db="SUM(numberOfMediumConnection)" label="Number Of Medium Connections"/>
+  <column db="SUM(numberOfHighConnection)" label="Number Of High Connections"/>
+  <column db="SUM(numberOfSlowConnection)" label="Number Of Slow Connections"/>
+  <column db="SUM(numberOfSuccessfulTokenValidations)" label="Number of Successfully Token Validation"/>
+  <column db="SUM(numberOfFailedTokenValidations)" label="Number of Failed Token Validation"/>
+  <column db="SUM(numberOfFastTokenValidations)" label="Number of Fast Token Validation"/>
+  <column db="SUM(numberOfHighTokenValidations)" label="Number of High Token Validation"/>
+  <column db="SUM(numberOfSlowTokenValidations)" label="Number of Slow Token Validation"/>
+
+</modelledtable>
+

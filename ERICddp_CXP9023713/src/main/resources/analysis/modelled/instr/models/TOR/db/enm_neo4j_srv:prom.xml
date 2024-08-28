@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@enm_neo4j_srv:prom">
+
+  <table name="enm_neo4j_srv">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="neo4j">
+      <!-- common for neo4j 3 and 4 -->
+      <metric source="neo4j_page_cache_eviction_exceptions_total" target="cacheEvictionExceptions" delta="true"/>
+      <metric source="neo4j_page_cache_evictions_total" target="cacheEvictions" delta="true"/>
+      <metric source="neo4j_page_cache_page_faults_total" target="cacheFaults" delta="true"/>
+      <metric source="neo4j_page_cache_flushes_total" target="cacheFlushes" delta="true"/>
+      <metric source="neo4j_page_cache_pins_total" target="cachePins" delta="true"/>
+
+      <!-- specific for neo4j 3 -->
+      <metric source="neo4j_transaction_last_committed_tx_id_total" target="transLastCommitted"/>
+      <metric source="neo4j_transaction_committed_total" target="transCommitted" delta="true"/>
+      <metric source="neo4j_transaction_started_total" target="transOpened" delta="true"/>
+      <metric source="neo4j_transaction_active" target="transOpen"/>
+      <metric source="neo4j_transaction_rollbacks_total" target="transRolledBack" delta="true"/>
+
+      <!-- specific for neo4j 4 -->
+      <metric source="neo4j_dps_transaction_last_committed_tx_id_total" target="transLastCommitted"/>
+      <metric source="neo4j_dps_transaction_committed_total" target="transCommitted" delta="true"/>
+      <metric source="neo4j_dps_transaction_started_total" target="transOpened" delta="true"/>
+      <metric source="neo4j_dps_transaction_active" target="transOpen"/>
+      <metric source="neo4j_dps_transaction_rollbacks_total" target="transRolledBack" delta="true"/>
+      <metric source="neo4j_page_cache_bytes_read_total" target="cacheKbRead" delta="true" scale="1024"/>
+      <metric source="neo4j_page_cache_bytes_written_total" target="cacheKbWritten" delta="true" scale="1024"/>
+
+      <metric source="neo4j_bolt_accumulated_processing_time_total" target="boltProcTime" delta="true" scale="1000"/>
+      <metric source="neo4j_bolt_accumulated_queue_time_total" target="boltQTime" delta="true" scale="1000"/>
+      <metric source="neo4j_bolt_connections_opened_total" target="boltConnOpened" delta="true"/>
+      <metric source="neo4j_bolt_connections_closed_total" target="boltConnClosed" delta="true"/>
+      <metric source="neo4j_bolt_connections_running" target="boltConnRunning"/>
+      <metric source="neo4j_bolt_connections_idle" target="boltConnIdle"/>
+      <metric source="neo4j_bolt_messages_received_total" target="boltMsgRecv" delta="true"/>
+      <metric source="neo4j_bolt_messages_started_total" target="boltMsgStarted" delta="true"/>
+      <metric source="neo4j_bolt_messages_done_total" target="boltMsgDone" delta="true"/>
+      <metric source="neo4j_bolt_messages_failed_total" target="boltMsgFailed" delta="true"/>
+
+      <metric source="neo4j_dps_causal_clustering_core_append_index" target="clustAppendIndex"/>
+      <metric source="neo4j_dps_causal_clustering_core_applied_index" target="clustAppliedIndex"/>
+      <metric source="neo4j_dps_causal_clustering_core_commit_index" target="clustCommitIndex"/>
+      <metric source="neo4j_dps_causal_clustering_core_message_processing_delay" target="clustMsgProcDelay"/>
+
+
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^routes@routes$">
+  <table name="enm_route_instr">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="routeid" reftable="enm_route_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>routeid</multi>
+    <metricgroup name="^routes-(\S+)">
+      <metric source="ExchangesTotal" target="ExchangesTotal" delta="true" filteridle="true"/>
+      <metric source="ExchangesCompleted" target="ExchangesCompleted" delta="true" filteridle="true"/>
+      <metric source="ExchangesFailed" target="ExchangesFailed" delta="true" filteridle="true"/>
+      <metric source="TotalProcessingTime" target="TotalProcessingTime" delta="true" filteridle="true"/>
+      <property name="routeid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

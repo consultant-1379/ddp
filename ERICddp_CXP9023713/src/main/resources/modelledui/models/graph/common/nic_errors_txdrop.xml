@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="TX Drops/s"/>
+ <queries>
+  <query timecol="time">
+  <dbtables main="nic_errors">
+   <reference table="sites" condition="nic_errors.siteid = sites.id"/>
+  </dbtables>
+
+
+   <param name="nicid"/>
+   <param name="site"/>
+   <where>nic_errors.nicid = %d AND sites.name = '%s'</where>
+   <column db="txdrop" label="TX Drops/s"/>
+  </query>
+ </queries>
+</modelledgraph>

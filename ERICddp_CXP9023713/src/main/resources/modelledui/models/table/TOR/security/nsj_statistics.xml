@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_nsj_statistics">
+    <reference table="sites" condition="enm_nsj_statistics.siteid = sites.id"/>
+    <reference table="servers" condition="enm_nsj_statistics.serverid=servers.id"/>
+  </dbtables>
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_nsj_statistics.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <column db="time" label="Job End" formatter="ddpFormatTime"/>
+  <column db="IFNULL(TIMEDIFF(time(time), SEC_TO_TIME(ROUND(jobStartDuration))), 'NA')" label="Job Start" formatter="ddpFormatTime"/>
+  <column db="IFNULL(TIMEDIFF(time(time), SEC_TO_TIME(ROUND(jobInsertDuration))), 'NA')" label="Job Insert" formatter="ddpFormatTime"/>
+  <column db="jobCommandId" label="Command Type"/>
+  <column db="jobNumWorkflows" label="Num of Workflows"/>
+  <column db="jobNumSuccessWorkflows" label="Num of Success Workflows"/>
+  <column db="jobNumErrorWorkflows" label="Num of Error Workflows"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(jobMinSuccessWorkflowsDuration)), 'NA')" label="Min Duration of Success Workflows (HH:MM:SS)" formatter="ddpFormatTime"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(jobMaxSuccessWorkflowsDuration)), 'NA')" label="Max Duration of Success Workflows (HH:MM:SS)" formatter="ddpFormatTime"/>
+  <column db="IFNULL(SEC_TO_TIME(ROUND(jobAvgSuccessWorkflowsDuration)), 'NA')" label="Avg Duration of Success Workflows (HH:MM:SS)" formatter="ddpFormatTime"/>
+</modelledtable>

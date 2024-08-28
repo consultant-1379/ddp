@@ -1,0 +1,443 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+
+our $DEBUG=0;
+our %STATE_MAP = (
+    "started"         => "Enabled",
+    "initializing..." => "Enabled",
+    "offline"         => "Disabled",
+    "failed"          => "Disabled",
+    "terminating..."  => "Disabled",
+    "retrying..."     => "Disabled",
+    "stopped"         => "Disabled"
+    );
+
+our %GROUP_COUNT = (
+    "EBA"                      => 0,
+    "External Access Manager"  => 0,
+    "Fault Manager"            => 0,
+    "Notification External"    => 0,
+    "Notification Internal"    => 0,
+    "PDM"                      => 0,
+    "RNO"                      => 0,
+    "Self Management Services" => 0
+    );
+
+
+our %restartedGroups = ();
+our %currentGroup = ();
+our $isGroupFound=0;
+
+
+#
+# Construct a map, restartedMCs  mc name -> array of RestartInfo
+# Each time the MC restarts (started to stop & stop to started), add a RestartInfo to
+# the array
+# RestartInfo contains the time the MC was stopped and the length
+# of time it was down
+#
+
+sub readLog($$)
+{
+    my ($log,$today) = @_;
+
+    my %restartedMCs = ();
+
+    open LOG, "$log" or die "Could not open Log File";
+    while ( my $line = <LOG> ) {
+        if ( $DEBUG > 9 ) { print "readLog: line=$line"; }
+        chop $line;
+
+        my ($date, $time, $logType, $appName, $rest) = $line =~
+            /^(\S+) (\S+) (\S+) \"([^\"]*)\" (.*)/;
+        if ( ! defined $rest ) {
+            print "WARN: Failed to parse $line\n";
+        }
+        if ( $DEBUG > 8) { print "readLog: date=$date time=$time logType=$logType appName=$appName rest=$rest\n"; }
+
+        if ( $date ne $today || $logType ne 'SYSTEM' || $appName ne 'SelfManagementStartStop' || $rest !~ /ManagedComponent/ ) {
+            next;
+        }
+
+        my $restart_reason = "";
+        my $restart_reason_txt = "";
+        my $user = "";
+        my $group = "STANDALONE";
+        my $groupInfo = "";
+        my $indWarmCold = "COLD";
+        my ($oldState, $newState, $reason, $mc, $extra);
+
+        # Warm restart case (HL25348)
+        if ( $rest =~ /MC_WARM_RESTARTED/ ) {
+            ($reason, $mc, $extra) = $rest =~ /^Reason: (\S+).*ManagedComponent\w+=(\w+)(.*)"$/;
+            $oldState = "started";
+            $newState = "started";
+            $indWarmCold = "WARM";
+        }
+        # Other (cold) restart case
+        else {
+            ($oldState, $newState,$reason,$mc, $extra) = $rest =~ /Running state from (\S+) to (\S+)\s+Reason: (\S+).*ManagedComponent\w+=(\w+)(.*)"$/;
+        }
+
+        if ( $DEBUG > 5 ) { print "readLog: time=$time oldState=$oldState newState=$newState reason=$reason mc=$mc extra=$extra\n"; }
+
+        if ( $extra =~ /restart_reason=(\S+); restart-reason_txt=(.*); userid=(\S+);(.*)/ ) {
+            ($restart_reason, $restart_reason_txt, $user, $groupInfo) = ($1,$2,$3,$4);
+            if ( $groupInfo =~ /groupname=(\S+);/ ) {
+                $group = $1;
+            }
+            if( $rest =~ /.*Reason:.*Restart cold/ && defined $groupInfo && $groupInfo ne "") {
+                ($group) = $groupInfo =~ /.*groupname=(.*);/;
+            }
+
+            if ( $DEBUG > 5 ) { print "readLog: extra=\'$extra\' restart_reason=$restart_reason restart_reason_txt=$restart_reason_txt user=$user group=$group\n"; }
+        }
+
+        my $mappedOldState = $oldState;
+        if ( exists $STATE_MAP{$oldState} )
+        {
+            $mappedOldState = $STATE_MAP{$oldState};
+        }
+
+        my $mappedNewState = $newState;
+        if ( exists $STATE_MAP{$newState} )
+        {
+            $mappedNewState = $STATE_MAP{$newState};
+        }
+        if ( $DEBUG > 5 ) { print "readLog: mappedOldState=$mappedOldState mappedNewState=$mappedNewState\n"; }
+
+        if ( ($mappedOldState ne $mappedNewState) )
+        {
+            processStartStopEvent($date,$time,$mc,$mappedOldState,$mappedNewState,$reason,$indWarmCold,$restart_reason,$restart_reason_txt,$user,$group,\%restartedMCs);
+        }
+        elsif ( ($oldState eq "started") && ($newState eq "started") )
+        {
+            if ( $indWarmCold eq "WARM" ) {
+                processStartStopEvent($date,$time,$mc,"Enabled","WarmEnabled",$reason,$indWarmCold,$restart_reason,$restart_reason_txt,$user,$group,\%restartedMCs);
+            } else {
+                processStartStopEvent($date,$time,$mc,"Enabled","Disabled",$reason,$indWarmCold,$restart_reason,$restart_reason_txt,$user,$group,\%restartedMCs);
+                processStartStopEvent($date,$time,$mc,"Disabled","Enabled",$reason,$indWarmCold,$restart_reason,$restart_reason_txt,$user,$group,\%restartedMCs);
+            }
+        }
+    }
+    close LOG;
+
+    if ( $DEBUG > 4 ) { print Dumper("readLog: restartedMCs", \%restartedMCs); }
+
+    # Deleting those MCs from list that are not started after they are stopped
+    foreach my $mc ( sort keys %restartedMCs ) {
+        my $r_lastRestart = $restartedMCs{$mc}->[$#{$restartedMCs{$mc}}];
+        if ( ! exists $r_lastRestart->{'stopTime'} ) {
+            # As we don't have a stop time, remove this entry
+            if ( $DEBUG > 3 ) { print Dumper("readLog: removing r_lastRestart for $mc", $r_lastRestart); }
+            pop @{$restartedMCs{$mc}};
+        }
+    }
+
+    return \%restartedMCs;
+}
+
+sub processStartStopEvent($$$$$$$$$$$$)
+{
+    my ($date, $time, $mc, $oldstatus, $newstatus, $type, $indWarmCold, $restart_reason, $restart_reason_txt, $user, $group, $restartedMCs) = @_;
+    if ( ! defined $group )
+    {
+        $group="STANDALONE";
+    }
+    if ( $DEBUG > 5 ) { print "processStartStopEvent: time=$time mc=$mc oldstatus=$oldstatus newstatus=$newstatus group=$group\n"; }
+
+    if ( ! exists $restartedMCs->{$mc} ) {
+        $restartedMCs->{$mc} = [];
+    }
+    my $r_RestartsForThisMC = $restartedMCs->{$mc};
+
+    if ( $group ne "STANDALONE" )
+    {
+        if ( ! exists $restartedGroups{$group} ) {
+            $restartedGroups{$group} = [];
+            $isGroupFound=1;
+        }
+        else { $currentGroup{$group}++; }
+    }
+
+    if ( $oldstatus eq "Enabled" && $newstatus eq "Disabled") {
+        my $r_RestartInfo = {
+            "startTime" => "$date $time",
+            "type" => $type,
+            "indWarmCold" => $indWarmCold,
+            "restart_reason" => $restart_reason,
+            "restart_reason_txt" => $restart_reason_txt,
+            "user" => $user,
+            "group" => $group
+        };
+
+        if ( $group ne "STANDALONE" )
+        {
+            $GROUP_COUNT{$group} = $GROUP_COUNT{$group} + 1;
+            if ( $isGroupFound == 1 )
+            {
+                $r_RestartInfo->{'groupStartTime'} = "$date $time";
+                $r_RestartInfo->{'finished'} = "false";
+                push @{$restartedGroups{$group}}, $r_RestartInfo;
+                $isGroupFound=0;
+            }
+            else
+            {
+                my $r_groupRestartInfoList = $restartedGroups{$group};
+                foreach my $r_GroupInfo ( @{$r_groupRestartInfoList} )
+                {
+                    if ( $r_GroupInfo->{'finished'} eq "true" )
+                    {
+                        if ( $currentGroup{$group} == 1)
+                        {
+                            $r_RestartInfo->{'groupStartTime'} = "$date $time";
+                            $r_RestartInfo->{'finished'} = "false";
+                            push @{$restartedGroups{$group}}, $r_RestartInfo;
+                            last;
+                        }
+                    }
+                }
+            }
+        }
+        push @{$r_RestartsForThisMC}, $r_RestartInfo;
+    } elsif ( $oldstatus eq "Disabled" && $newstatus eq "Enabled") {
+        my $r_restartInfo;
+        if ( $#{$r_RestartsForThisMC} > -1 ) {
+            if ( ! exists $r_RestartsForThisMC->[$#{$r_RestartsForThisMC}]->{'stopTime'} ) {
+                $r_restartInfo = $r_RestartsForThisMC->[$#{$r_RestartsForThisMC}];
+            }
+        }
+
+        if ( ! defined $r_restartInfo ) {
+            # We never saw the Enabled to Disabled transition for this MC
+            # Exclude this if it looks like a manual online
+            if ( $DEBUG > 5 ) { printf("processStartStopEvent: type=%s restart_reason=%s\n", $type, $restart_reason); }
+            if ( $type ne "OPERATOR_COMMAND" || (defined $restart_reason && $restart_reason ne "") ) {
+                $r_restartInfo = {
+                    "startTime" => "$date $time",
+                    "type" => $type,
+                    "indWarmCold" => $indWarmCold,
+                    "restart_reason" => $restart_reason,
+                    "restart_reason_txt" => $restart_reason_txt,
+                    "user" => $user,
+                    "group" => $group
+                };
+                push @{$r_RestartsForThisMC}, $r_restartInfo;
+            }
+        }
+
+        if ( $DEBUG > 5 ) { print Dumper("processStartStopEvent: mc enabled r_restartInfo", $r_restartInfo); }
+
+        if ( defined $r_restartInfo ) {
+            $r_restartInfo->{'stopTime'} = "$date $time";
+            $r_restartInfo->{'downTime'} = parseTime($r_restartInfo->{'stopTime'}, $StatsTime::TIME_YYYYMD_HMS) -
+                parseTime($r_restartInfo->{'startTime'}, $StatsTime::TIME_YYYYMD_HMS);
+        }
+
+        if ( $group ne "STANDALONE" )
+        {
+            $GROUP_COUNT{$group} = $GROUP_COUNT{$group} - 1;
+            my $r_groupRestartInfoList = $restartedGroups{$group};
+            foreach my $r_GroupInfo ( @{$r_groupRestartInfoList} )
+            {
+                if ( $r_GroupInfo->{'finished'} eq "false" && $GROUP_COUNT{$group} == 0 )
+                {
+                    $r_GroupInfo->{'groupStopTime'} = "$date $time";
+                    $r_GroupInfo->{'finished'} = "true";
+                }
+            }
+            if ( exists $currentGroup{$group} )
+            {
+                delete $currentGroup{$group};
+            }
+        }
+    } elsif ( $oldstatus eq "Enabled" && $newstatus eq "WarmEnabled") {
+        my $r_RestartInfo = {
+            "startTime" => "$date $time",
+            "stopTime" => "1970-01-01 00:00:00",
+            "downTime" => 0,
+            "startTime" => "$date $time",
+            "type" => $type,
+            "indWarmCold" => $indWarmCold,
+            "restart_reason" => $restart_reason,
+            "restart_reason_txt" => $restart_reason_txt,
+            "user" => $user,
+            "group" => $group
+        };
+
+        push @{$r_RestartsForThisMC}, $r_RestartInfo;
+    }
+}
+
+
+
+sub store($$$)
+{
+    my ($site,$date, $restartedMCs) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    #
+    # Get map of MC name to id, insert any missing names
+    #
+    my @_mcNames = keys %{$restartedMCs};
+    my %typeCounts = ();
+    my %userCounts = ();
+    foreach my $r_restartInfoList ( values %{$restartedMCs} ) {
+        foreach my $r_restartInfo ( @{$r_restartInfoList} ) {
+            if ( defined $r_restartInfo->{'type'} ) {
+                $typeCounts{$r_restartInfo->{'type'}}++;
+            }
+            if ( defined $r_restartInfo->{'user'} ) {
+                $userCounts{$r_restartInfo->{'user'}}++;
+            }
+        }
+    }
+
+
+    my @_groupNames = keys %restartedGroups;
+    push(@_mcNames,@_groupNames);       # Appending group names ni mcNames.
+
+    my @_restartTypeNames = keys %typeCounts;
+    my @_restartUsersStrings = keys %userCounts;
+    my $r_nameMap = getIdMap($dbh,"mc_names", "id", "name", \@_mcNames );
+    my $r_typeMap = getIdMap($dbh, "mc_restart_types", "id", "type", \@_restartTypeNames );
+    my $r_restartUsersMap = getIdMap($dbh, "oss_users", "id", "name", \@_restartUsersStrings );
+
+    # Remove any existing row
+    dbDo($dbh, "DELETE FROM mc_restarts WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'");
+    my $mcStatus="";
+    foreach my $mc ( sort keys %{$restartedMCs} )
+    {
+
+        my $r_RestartInfoList = $restartedMCs->{$mc};
+        my ($mcName) =  split(" ",$mc);
+        foreach my $r_RestartInfo ( @{$r_RestartInfoList} )
+        {
+            my $time= $r_RestartInfo->{"startTime"};
+            my $uid = 1;
+            if ( exists $r_RestartInfo->{"user"} && defined $r_RestartInfo->{"user"} &&$r_RestartInfo->{"user"} ne "" ) {
+                $uid = $r_restartUsersMap->{$r_RestartInfo->{"user"}};
+            }
+            my $mcName = $r_nameMap->{$mcName};
+            my $downTime = $r_RestartInfo->{"downTime"};
+            my $typeid = $r_typeMap->{$r_RestartInfo->{'type'}};
+            my $indWarmCold = $r_RestartInfo->{'indWarmCold'};
+            my $restart_reason = $r_RestartInfo->{"restart_reason"};
+            my $reason_txt = $r_RestartInfo->{"restart_reason_txt"};
+            my $group = $r_nameMap->{$r_RestartInfo->{"group"}};
+            if ( ! defined $group || $group eq "" )
+            {
+                $group=0;
+                $mcStatus="STANDALONE";
+            }
+            elsif ( $group ne "STANDALONE" )
+            {
+                $mcStatus="GROUP_MEMBER";
+            }
+
+            $time =~ s/\./:/g;
+
+            dbDo($dbh, sprintf("INSERT INTO mc_restarts (time,siteid,nameid,duration,typeid,ind_warm_cold,restart_reason,restart_reason_txt,userid,groupid,groupstatus) VALUES (\'%s\', %d, %d, %d, %d, %s, %s, %s, %d, %d, %s)",
+                               $time,
+                               $siteId,
+                               $mcName,
+                               $downTime,
+                               $typeid,
+                               $dbh->quote($indWarmCold),
+                               lc($dbh->quote($restart_reason)),
+                               $dbh->quote($reason_txt),
+                               $uid,
+                               $group,
+                               $dbh->quote($mcStatus) ))
+                or die "Failed to insert restart";
+        }
+    }
+    $mcStatus='GROUP';
+    foreach my $group ( sort keys %restartedGroups )
+    {
+        my $r_groupRestartInfoList = $restartedGroups{$group};
+        foreach my $r_GroupInfo ( @{$r_groupRestartInfoList} )
+        {
+            my $uid = 1;
+            if ( exists $r_GroupInfo->{"user"} && defined $r_GroupInfo->{"user"} && $r_GroupInfo->{"user"} ne "" )
+            {
+                $uid = $r_restartUsersMap->{$r_GroupInfo->{"user"}};
+                my $startTime= $r_GroupInfo->{"groupStartTime"};
+                my $stopTime= $r_GroupInfo->{"groupStopTime"};
+                if ( ! defined $stopTime || $stopTime eq "")
+                {
+                    next;
+                }
+                my $downTime = parseTime($stopTime, $StatsTime::TIME_YYYYMD_HMS) -
+                    parseTime($startTime, $StatsTime::TIME_YYYYMD_HMS);
+                my $typeid = $r_typeMap->{$r_GroupInfo->{'type'}};
+                my $indWarmCold = $r_GroupInfo->{'indWarmCold'};
+                my $restart_reason = $r_GroupInfo->{"restart_reason"};
+                my $reason_txt = $r_GroupInfo->{"restart_reason_txt"};
+                my $group = $r_nameMap->{$group};
+
+                $startTime =~ s/\./:/g;
+                dbDo($dbh, sprintf("INSERT INTO mc_restarts (time,siteid,nameid,duration,typeid,ind_warm_cold,restart_reason,restart_reason_txt,userid,groupid,groupstatus) VALUES (\'%s\', %d, %d, %d, %d, %s, %s, %s, %d, %d, %s)",
+                                   $startTime,
+                                   $siteId,
+                                   $group,
+                                   $downTime,
+                                   $typeid,
+                                   $dbh->quote($indWarmCold),
+                                   lc($dbh->quote($restart_reason)),
+                                   $dbh->quote($reason_txt),
+                                   $uid,
+                                   $group,
+                                   $dbh->quote($mcStatus) ))
+                    or die "Failed to insert group restart";
+            }
+        }
+    }
+    $dbh->disconnect;
+}
+
+sub printUsageAndExit($)
+{
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseMC --log logfile --site sitename --date yyyy-mm-dd\n";
+
+    exit 1;
+}
+
+sub main
+{
+    my ($lvLog,$site,$date);
+    my %restartedMCs = ();
+    my $result = GetOptions(
+        "log=s"  => \$lvLog,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+
+    ( $result == 1 ) or printUsageAndExit("Invalid Args");
+
+    if ( ! $lvLog ) {
+        printUsageAndExit("No Log specified");
+    }
+
+    my $r_restartedMCs = readLog($lvLog,$date);
+
+    if ( $site ) {
+        store($site,$date,$r_restartedMCs);
+    }
+}
+
+main();

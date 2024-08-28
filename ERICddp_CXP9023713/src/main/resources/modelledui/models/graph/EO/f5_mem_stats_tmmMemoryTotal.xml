@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+>
+  <title value="TMM Total Memory (MB)"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eo_f5_memory_stats">
+        <reference table="sites" condition="eo_f5_memory_stats.siteid = sites.id"/>
+      </dbtables>
+
+      <param name="site"/>
+      <param name="memStats"/>
+      <where>sites.name = '%s'</where>
+      <column db="eo_f5_memory_stats.tmmMemoryTotal" label="TMM Total Memory (MB)"/>
+    </query>
+  </queries>
+  <size width="600" height="240"/>
+</modelledgraph>

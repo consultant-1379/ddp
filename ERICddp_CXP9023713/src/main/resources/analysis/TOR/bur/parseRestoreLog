@@ -1,0 +1,207 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use PerlIO::gzip;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ($restoreDir, $site, $date, $keyword);
+    my $result = GetOptions("site=s"  => \$site,
+                            "date=s"  => \$date,
+                            "dir=s"   => \$restoreDir,
+                            "debug=s" => \$DEBUG
+                            );
+
+    my %restoreLogFiles = ();
+    opendir(my $dh, $restoreDir) || die "can't opendir restore dir: $!";
+    while ( my $file = readdir($dh) ) {
+        if ( $file =~ /^\./ ) {
+            next;
+        }
+        elsif ( $file =~ /^ROS.*\.log(?:.gz)?\.?(\d*)/ ) {
+            if ( $1 ne '' ) {
+                $restoreLogFiles{$1} = $restoreDir . "/" . $file;
+            }
+            else {
+                $restoreLogFiles{0} = $restoreDir . "/" . $file;
+            }
+        }
+        elsif ( $file =~ /^ROS-PTAF.log/ ) {
+            print "main: Invalid ROS ros log file name - $restoreDir/$file\n";
+        }
+    }
+
+    my @restoreLogs = ();
+    foreach (sort {$b <=> $a} keys %restoreLogFiles) {
+        push (@restoreLogs, $restoreLogFiles{$_});
+    }
+    if ( $DEBUG > 5 ) { print Dumper("main: restoreLogs ", \@restoreLogs); }
+
+    my $restoreStageStats = parseRestoreLogs(\@restoreLogs);
+    storeRestoreStageData($site, $date, $restoreStageStats);
+}
+
+sub parseRestoreLogs($) {
+    my ($restoreLogs) = @_;
+    my @restoreStageStats = ();
+
+    foreach my $r_restoreFile ( @{$restoreLogs} ) {
+        if ( $r_restoreFile =~ /gz$/ ) {
+            open INPUT, "<:gzip", "$r_restoreFile" or die "Cannot open $r_restoreFile: $!";
+        }
+        else {
+            open INPUT, $r_restoreFile or die "Cannot open $r_restoreFile";
+        }
+
+        # Fetching KEYWORD from ROS logs
+        # Sample log lines for non-interactive and interactive modes
+        # NON INTERACTIVE MODE
+        # 2018-01-26 06:34:00,584 - ros.ROSOrchLib - INFO - KEYWORD=ENM_ieatlms3962-bkp1_PTAF_201801260357
+        # INTERACTIVE MODE
+        # 2018-03-24 13:10:41,901 - ros.ROSOrchLib - DEBUG - selected: ENM_ieatlms5666-bkup1_20180324095856
+        # 2018-03-24 13:10:45,954 - ros.ROSOrchLib - INFO - Browse content of backup metadata for keyword 'ENM_ieatlms5666-bkup1_20180324095856'
+        while ( my $line = <INPUT> ) {
+            if ( $line =~ /.*\s-\s+ros\.ROSOrchLib\s+-\s+.*(KEYWORD=|selected:\s|keyword\s')(.*_\d+).*/ ) {
+                push (@restoreStageStats, {'keyword' => $2});
+                last;
+            }
+        }
+
+        while ( my $line = <INPUT> ) {
+            if ( $line =~ /Starting\s(.*)\sat\s\((\d{4}-\d{2}-\d{2}).(\d{2}:\d{2}:\d{2})\)/ ) {
+                my $start_time = $2 . ' ' . $3;
+                my $restore_stage = $1;
+
+                my $index = scalar @restoreStageStats - 1;
+                next if ( $index < 0 );
+
+                # Add the start of a restore stage, only if there exists a restore keyword
+                if ( exists $restoreStageStats[$index]->{'keyword'} ) {
+                    my $statsHash = {
+                        'start_time' => $start_time,
+                        'end_time'   => '\N',
+                        'duration'   => '\N'
+                    };
+
+                    if ( ! exists $restoreStageStats[$index]->{$restore_stage} ) {
+                        $restoreStageStats[$index]->{$restore_stage} = [];
+                    }
+
+                    push (@{$restoreStageStats[$index]->{$restore_stage}}, $statsHash);
+                }
+            }
+            elsif ( $line =~ /(\d{4}-\d{2}-\d{2}).(\d{2}:\d{2}:\d{2}).*\[(.*)\s*hrs\s*(.*)\s*mins\s*(.*)\s*secs\]\s*.*duration of (.*)/ ) {
+                my $end_time = $1 . ' ' . $2; 
+                my $duration = ($3 * 3600) + ($4 * 60) + $5;
+                my $restore_stage = $6;
+
+                my $index = scalar @restoreStageStats - 1;
+                next if ( $index < 0 );
+
+                # Add the end of a restore stage, only if its corresponding start already exists
+                if ( exists $restoreStageStats[$index]->{$restore_stage} ) {
+                    my $sIndex = scalar @{$restoreStageStats[$index]->{$restore_stage}} - 1;
+                    next if ( $sIndex < 0 );
+
+                    $restoreStageStats[$index]->{$restore_stage}->[$sIndex]->{'end_time'} = $end_time;
+                    $restoreStageStats[$index]->{$restore_stage}->[$sIndex]->{'duration'} = $duration;
+                }
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parseRestoreLogs: restoreStageStats ", \@restoreStageStats); }
+
+    return \@restoreStageStats;
+}
+
+sub storeRestoreStageData($$$) {
+    my ($site, $date, $restoreStageStats) = @_;
+
+    if ( scalar @{$restoreStageStats} == 0 ) {
+        return;
+    }
+
+    # Establish DB connection
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    # Get the site ID
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    # Get ID maps for restore keyword, stages and statuses
+    my %restoreKeywords = ();
+    my %restoreStages   = ();
+    foreach my $restore (@{$restoreStageStats}) {
+        if ( exists $restore->{'keyword'} ) {
+            $restoreKeywords{$restore->{'keyword'}} = 1;
+
+            foreach my $restoreStage (keys %{$restore}) {
+                if ( $restoreStage eq 'keyword' ) {
+                    next;
+                }
+
+                foreach my $stageStats (@{$restore->{$restoreStage}}) {
+                    if ( exists $stageStats->{'start_time'} ) {
+                        $restoreStages{$restoreStage} = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    my @restoreKeywords = keys %restoreKeywords;
+    my @restoreStages   = keys %restoreStages;
+
+    my $keywordIdMap = getIdMap($dbh, 'enm_bur_restore_keywords', 'id', 'restore_keyword', \@restoreKeywords);
+    my $stageIdMap = getIdMap($dbh, 'enm_bur_restore_stage_names', 'id', 'restore_stage_name', \@restoreStages);
+
+    if ( $DEBUG > 9 ) { print Dumper("storeRestoreStageData: keywordIdMap ", $keywordIdMap); }
+    if ( $DEBUG > 9 ) { print Dumper("storeRestoreStageData: stageIdMap ", $stageIdMap); }
+
+    # Write the restore stage stats to 'enm_restore_restore_stage_stats.bcp' file
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFile = "$tmpDir/enm_bur_restore_stage_stats.bcp";
+
+    open (BCP, "> $bcpFile");
+    foreach my $restore (@{$restoreStageStats}) {
+        if ( exists $restore->{'keyword'} ) {
+            foreach my $restoreStage (keys %{$restore}) {
+                if ( $restoreStage eq 'keyword' ) {
+                    next;
+                }
+
+                foreach my $stageStats (@{$restore->{$restoreStage}}) {
+                    if ( exists $stageStats->{'start_time'} ) {
+                        print BCP "$siteId\t" . $stageStats->{'start_time'} . "\t" .
+                                  $stageStats->{'end_time'} . "\t" . $stageIdMap->{$restoreStage} . "\t" .
+                                  $stageStats->{'duration'} . "\t" . $keywordIdMap->{$restore->{'keyword'}} . "\n";
+                    }
+                }
+            }
+        }
+    }
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM enm_bur_restore_stage_stats WHERE siteid = $siteId AND start_time BETWEEN '$date 00:00:00' AND '$date 23:59:59'")
+        or die "Failed to remove old data from 'enm_bur_restore_stage_stats' table";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE enm_bur_restore_stage_stats
+                 (siteid, start_time, end_time, restore_stage_id, duration, restore_keyword_id)" )
+        or die "Failed to load new data from '$bcpFile' file to 'enm_bur_restore_stage_stats' table";
+
+    $dbh->disconnect();
+    unlink $bcpFile;
+}
+
+main();

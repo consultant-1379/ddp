@@ -1,0 +1,11 @@
+IubEdch pmEdchDataFrameDelayIub 16
+UtranCell pmUlRlcUserPacketThp 30
+UtranCell pmDlRlcUserPacketThp 41
+UtranCell pmRes1 19
+UtranCell pmRes2 19
+UtranCell pmRes3 19
+UtranCell pmRes4 19
+UtranCell pmRes5 19
+UtranCell pmRes6 19
+UtranCell pmEulHarqTransmTti10PsInteractive 4
+UtranCell pmEulHarqTransmTti10Srb 4

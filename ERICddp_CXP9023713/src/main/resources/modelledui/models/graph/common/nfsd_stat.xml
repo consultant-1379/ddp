@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+>
+  <title value="NFSD RPC Calls/s" />
+  <queries>
+    <query timecol="time">
+      <dbtables main="nfsd_stat">
+        <reference table="sites" condition="nfsd_stat.siteid = sites.id" />
+      </dbtables>
+
+      <param name="site" />
+      <param name="serverid" />
+      <where>sites.name = '%s' AND nfsd_stat.serverid = %d</where>
+      <column db="nfsd_stat.scall" label="Total" />
+      <column db="nfsd_stat.badcall" label="Bad" />
+      <column db="nfsd_stat.packet" label="Packets" />
+      <column db="nfsd_stat.sread" label="Reads" />
+      <column db="nfsd_stat.swrite" label="Writes" />
+      <column db="nfsd_stat.saccess" label="Access" />
+      <column db="nfsd_stat.sgetatt" label="GetAttr" />
+    </query>
+  </queries>
+  <size width="600" height="240" />
+</modelledgraph>

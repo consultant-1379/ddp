@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Time (millisec)"
+>
+ <title value="Transformation Time"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="ecson_cm_data_loader">
+    <reference table="sites" condition="ecson_cm_data_loader.siteid = sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="ecson_cm_data_loader.processTimeP0" label="P0"/>
+   <column db="ecson_cm_data_loader.processTimeP1" label="P1"/>
+   <column db="ecson_cm_data_loader.processTimeP2" label="P2"/>
+   <column db="ecson_cm_data_loader.processTimeP3" label="P3"/>
+  </query>
+ </queries>
+ <size width="630" height="400"/>
+</modelledgraph>

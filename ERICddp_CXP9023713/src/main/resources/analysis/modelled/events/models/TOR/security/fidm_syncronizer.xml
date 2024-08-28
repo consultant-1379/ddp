@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_fidm_syncronizer">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="idmservice"/>
+    <service name="consaccessauth"/>
+  </services>
+
+  <events>
+      <event name="FIDM.SYNCRONIZER">
+        <metric source="host" target="serverid"/>
+        <metric source="USECASE" target="usecase"/>
+        <metric source="TASK_START_TIME" target="taskStartTime"/>
+        <metric source="TASK_DURATION" target="taskDuration"/>
+        <metric source="SEARCH_REQUESTS_SUCCESS" target="searchRequestsSuccess"/>
+        <metric source="SEARCH_RESULTS_SUCCESS" target="searchResultsSuccess"/>
+        <metric source="SEARCH_REQUESTS_ERROR" target="searchRequestsError"/>
+        <metric source="LDAP_ERRORS" target="ldapErrors"/>
+        <metric source="FEDERATED_USERS" target="federatedUsers"/>
+        <metric source="EXT_IPD_ENTRIES" target="extIpdEntries"/>
+        <metric source="OPENDJ_ENTRIES" target="opendjEntries"/>
+        <metric source="USER_CREATE_SUCCESS" target="userCreateSuccess"/>
+        <metric source="USER_CREATE_ERROR" target="userCreateError"/>
+        <metric source="USER_UPDATE_SUCCESS" target="userUpdateSuccess"/>
+        <metric source="USER_UPDATE_ERROR" target="userUpdateError"/>
+        <metric source="USER_DELETE_SUCCESS" target="userDeleteSuccess"/>
+        <metric source="USER_DELETE_ERROR" target="userDeleteError"/>
+      </event>
+  </events>
+</modelledevents>

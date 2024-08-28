@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="nbibnsifm"/>
+  </services>
+
+  <table name="fm_bnsi_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.nbi.fm.bnsi.instrumentation.bnsi-server:type=TestInstrumentedBean">
+      <metric source="alarmsTranslated" target="alarmsTranslated" delta="true"/>
+      <metric source="apsAlarmsTranslated" target="apsAlarmsTranslated" delta="true"/>
+      <metric source="totalDelay" target="totalDelay" delta="true"/>
+      <metric source="totalDelayOnlyBnsi" target="totalDelayOnlyBnsi" delta="true"/>
+      <metric source="counterOverTimeMax" target="counterOverTimeMax" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

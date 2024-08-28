@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="sum_enm_dps_neo4jtx">
+    <reference table="sites" condition="sum_enm_dps_neo4jtx.siteid = sites.id"/>
+    <reference table="servers" condition="sum_enm_dps_neo4jtx.serverid = servers.id"/>
+    <reference table="enm_servicegroup_instances" condition="enm_servicegroup_instances.serverid = sum_enm_dps_neo4jtx.serverid AND enm_servicegroup_instances.siteid = sum_enm_dps_neo4jtx.siteid"/>
+    <reference table="enm_servicegroup_names" condition="enm_servicegroup_instances.serviceid = enm_servicegroup_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="sids"/>
+  <where>sites.name = '%site%' AND sum_enm_dps_neo4jtx.date = '%date%' AND enm_servicegroup_instances.date = '%date%' AND servers.id IN ( %sids% )</where>
+
+  <groupby>
+    <column db="inst"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance" id="inst"/>
+  <column db="readTxCount" label="Read Tx count"/>
+  <column db="writeTxCount" label="Write Tx count"/>
+  <column db="writeTxWithoutChangesCount" label="Write Tx Without Changes Count"/>
+  <column db="totalWriteOperationsPerformed" label="Total Write Operations Performed"/>
+  <column db="readTx5MillisecondsCount" label="Read 5ms"/>
+  <column db="writeTx5MillisecondsCount" label="Write 5ms"/>
+  <column db="readTx10MillisecondsCount" label="Read 10ms"/>
+  <column db="writeTx10MillisecondsCount" label="Write 10ms"/>
+  <column db="readTx50MillisecondsCount" label="Read 50ms"/>
+  <column db="writeTx50MillisecondsCount" label="Write 50ms"/>
+  <column db="readTx100MillisecondsCount" label="Read 100ms"/>
+  <column db="writeTx100MillisecondsCount" label="Write 100ms"/>
+  <column db="readTx500MillisecondsCount" label="Read 500ms"/>
+  <column db="writeTx500MillisecondsCount" label="Write 500ms"/>
+  <column db="readTx1SecondCount" label="Read 1sec"/>
+  <column db="writeTx1SecondCount" label="Write 1sec"/>
+  <column db="readTx10SecondsCount" label="Read 10sec"/>
+  <column db="writeTx10SecondsCount" label="Write 10sec"/>
+  <column db="readTx1MinuteCount" label="Read 1min"/>
+  <column db="writeTx1MinuteCount" label="Write 1min"/>
+  <column db="readTx2MinutesCount" label="Read 2min"/>
+  <column db="writeTx2MinutesCount" label="Write 2min"/>
+  <column db="readTx3MinutesCount" label="Read 3min"/>
+  <column db="writeTx3MinutesCount" label="Write 3min"/>
+  <column db="readTx4MinutesCount" label="Read 4min"/>
+  <column db="writeTx4MinutesCount" label="Write 4min"/>
+  <column db="readTx5MinutesCount" label="Read 5min"/>
+  <column db="writeTx5MinutesCount" label="Write 5min"/>
+  <column db="readTxOver5MinutesCount" label="Read over 5min"/>
+  <column db="writeTxOver5MinutesCount" label="Write over 5min"/>
+
+</modelledtable>

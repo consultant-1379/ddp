@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_secserv_comaa_instr">
+      <reference table="sites" condition="enm_secserv_comaa_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_secserv_comaa_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="numberOfInitialProxyBindReq" type="sb" ylabel="count">
+      <title value="Number Of Initial Proxy Bind Requests"/>
+      <column db="numberOfInitialProxyBindReq" label="Number Of Initial Proxy Bind Requests"/>
+    </graph>
+    <graph name="numberOfAddUserBindReq" type="sb" ylabel="count">
+      <title value="Number Of Additional User Bind Requests"/>
+      <column db="numberOfAddUserBindReq" label="Number Of Additional User Bind Requests"/>
+    </graph>
+    <graph name="numberOfSearchReq" type="sb" ylabel="count">
+      <title value="Number Of Search Requests"/>
+      <column db="numberOfSearchReq" label="Number Of Search Requests"/>
+    </graph>
+    <graph name="numberOfErrorDisconnection" type="sb" ylabel="count">
+      <title value="Number Of Error Disconnections"/>
+      <column db="numberOfErrorDisconnection" label="Number Of Error Disconnections"/>
+    </graph>
+    <graph name="numberOfConnectionReq" type="sb" ylabel="count">
+      <title value="Number Of Connections"/>
+      <column db="numberOfConnectionReq" label="Number Of Connections"/>
+    </graph>
+    <graph name="timePerDisconnection" type="sb" ylabel="millisecond (ms)">
+      <title value="Average Connection Duration"/>
+      <column db="((IFNULL(totalTimeSuccessful,0)+IFNULL(totalTimeError,0))/(IFNULL(numberOfSuccessfullDisconnection,0)+IFNULL(numberOfErrorDisconnection,0)))" label="Average Connection Duration"/>
+    </graph>
+    <graph name="maxNumberOfConnectionAlive" type="sb" ylabel="count">
+      <title value="Number of Max Connections"/>
+      <column db="maxNumberOfConnectionAlive" label="Number of Max Connections"/>
+    </graph>
+    <graph name="numberOfInitialUserBindReq" type="sb" ylabel="count">
+      <title value="Number Of Initial User Bind Requests"/>
+      <column db="numberOfInitialUserBindReq" label="Number Of Initial User Bind Requests"/>
+    </graph>
+    <graph name="numberOfAddProxyBindReq" type="sb" ylabel="count">
+      <title value="Number Of Additional Proxy Bind Requests"/>
+      <column db="numberOfAddProxyBindReq" label="Number Of Additional Proxy Bind Requests"/>
+    </graph>
+    <graph name="numberOfTlsHandshakeError" type="sb" ylabel="count">
+      <title value="Number Of TLS Handshake Errorr"/>
+      <column db="numberOfTlsHandshakeError" label="Number Of TLS Handshake Error"/>
+    </graph>
+    <graph name="numberOfProxyBindError" type="sb" ylabel="count">
+      <title value="Number Of Proxy Bind Error"/>
+      <column db="numberOfProxyBindError" label="Number Of Proxy Bind Error"/>
+    </graph>
+    <graph name="numberOfUserBindError" type="sb" ylabel="count">
+      <title value="Number Of User Bind Error"/>
+      <column db="numberOfUserBindError" label="Number Of User Bind Error"/>
+    </graph>
+    <graph name="numberOfFastConnection" type="sb" ylabel="count">
+      <title value="Number Of Fast Connections"/>
+      <column db="numberOfFastConnection" label="Number Of Fast Connections"/>
+    </graph>
+    <graph name="numberOfMediumConnection" type="sb" ylabel="count">
+      <title value="Number Of Medium Connections"/>
+      <column db="numberOfMediumConnection" label="Number Of Medium Connections"/>
+    </graph>
+    <graph name="numberOfHighConnection" type="sb" ylabel="count">
+      <title value="Number Of High Connections"/>
+      <column db="numberOfHighConnection" label="Number Of High Connections"/>
+    </graph>
+    <graph name="numberOfSlowConnection" type="sb" ylabel="count">
+      <title value="Number Of Slow Connections"/>
+      <column db="numberOfSlowConnection" label="Number Of Slow Connections"/>
+    </graph>
+    <graph name="numberOfSuccessfulTokenValidations" type="sb" ylabel="count">
+      <title value="Number of Successfully Token Validation"/>
+      <column db="numberOfSuccessfulTokenValidations" label="Number of Successfully Token Validation"/>
+    </graph>
+    <graph name="numberOfFailedTokenValidations" type="sb" ylabel="count">
+      <title value="Number of Failed Token Validation"/>
+      <column db="numberOfFailedTokenValidations" label="Number of Failed Token Validation"/>
+    </graph>
+    <graph name="numberOfFastTokenValidations" type="sb" ylabel="count">
+      <title value="Number of Fast Token Validation"/>
+      <column db="numberOfFastTokenValidations" label="Number of Fast Token Validation"/>
+    </graph>
+    <graph name="numberOfHighTokenValidations" type="sb" ylabel="count">
+      <title value="Number of High Token Validation"/>
+      <column db="numberOfHighTokenValidations" label="Number of High Token Validation"/>
+    </graph>
+    <graph name="numberOfSlowTokenValidations" type="sb" ylabel="count">
+      <title value="Number of Slow Token Validation"/>
+      <column db="numberOfSlowTokenValidations" label="Number of Slow Token Validation"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>numberOfInitialProxyBindReq</member>
+      <member>numberOfAddUserBindReq</member>
+      <member>numberOfSearchReq</member>
+      <member>numberOfErrorDisconnection</member>
+      <member>numberOfConnectionReq</member>
+      <member>timePerDisconnection</member>
+      <member>maxNumberOfConnectionAlive</member>
+      <member>numberOfInitialUserBindReq</member>
+      <member>numberOfAddProxyBindReq</member>
+      <member>numberOfTlsHandshakeError</member>
+      <member>numberOfProxyBindError</member>
+      <member>numberOfUserBindError</member>
+      <member>numberOfFastConnection</member>
+      <member>numberOfMediumConnection</member>
+      <member>numberOfHighConnection</member>
+      <member>numberOfSlowConnection</member>
+      <member>numberOfSuccessfulTokenValidations</member>
+      <member>numberOfFailedTokenValidations</member>
+      <member>numberOfFastTokenValidations</member>
+      <member>numberOfHighTokenValidations</member>
+      <member>numberOfSlowTokenValidations</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

@@ -1,0 +1,652 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use DBI;
+
+use StatsDB;
+use StatsCommon;
+
+our $OP_SERVICE = "operation \\\\'([^\\\\']*)\\\\' failed.*SERVICE ==> \\\\'([^\\\\']*)\\\\'";
+our $FIELD_PATTERN = "\\\\'(.*?)\\\\'";
+
+our $DEBUG=0;
+my $cnt = 0;
+
+
+sub getValue
+{
+    my ($info,$fieldName) = @_;
+
+    if ( $DEBUG > 6 ) { print "getValue: fieldName=$fieldName\n"; }
+
+    my $fieldValue = "";
+    if ( $info =~ /$fieldName ==> \\\'(.*?)\\\'/ ) {
+	$fieldValue = 1;
+    } elsif ( $info =~ /$fieldName ==> \'([^\']*)\'/ ) {
+	$fieldValue = $1;
+    }
+
+    if ( $DEBUG > 6 ) { print "getValue: fieldValue=$fieldValue\n"; }    
+
+    return $fieldValue;
+}
+
+sub timeLogToSql
+{
+    my ($logTime) = @_;
+    
+    #16-03-07:23:38:10
+    my ($day,$month,$year,$hour,$min,$sec) = $logTime =~ /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d{2,2}):(\d{2,2}):(\d{2,2})$/;
+    my $sqlTime = sprintf("20%02d-%02d-%02d %02d:%02d:%02d", $year, $month, $day, $hour, $min, $sec);
+    return $sqlTime;
+}
+
+sub loadNeMap
+{
+    my ($dbh,$siteId) = @_;
+
+    my $r_AllNe = readNe($dbh,$siteId);
+    my %neMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) { 
+	# Some assumptions/problems about what the RNS means causes problems 
+	# so we "register" the node with and without the RNS
+        $neMap{$r_NeRow->{'name'}} = $r_NeRow->{'neid'};
+        $neMap{$r_NeRow->{'rns'} . "," . $r_NeRow->{'name'}} = $r_NeRow->{'neid'};
+    }
+
+    if ( $DEBUG > 1 ) { print Dumper("loadNeMap: neMap", \%neMap); }
+    return \%neMap;
+}
+
+sub storeResults
+{
+    my ( $site, $sqldate, $r_nodeList, $r_syncSuccessCount, $r_syncFailureCount, $r_nodeSyncSuccess, $r_nodeSyncFailures ) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 1 ) { print "storeStats: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+
+    my $r_NeMap = loadNeMap($dbh,$siteId);
+
+    #
+    # Store failed syncs
+    # 
+    dbDo( $dbh, sprintf("DELETE FROM ne_sync_failure WHERE siteid = %d AND date = %s", 
+                        $siteId,
+                        $dbh->quote($sqldate)) ) 
+        or die "Failed to delete old ne rows from ne_sync_failure";
+    
+    
+    my %allTypes = ();
+    my %allErrors = ();
+    foreach my $node ( keys %{$r_nodeSyncFailures} )
+    {
+        foreach my $type ( keys %{$r_nodeSyncFailures->{$node}} )
+        {
+            $allTypes{$type}++;
+            foreach my $error ( keys %{$r_nodeSyncFailures->{$node}->{$type}} )
+            {
+                $allErrors{$error}++;
+            }
+        }
+    }
+
+    my @typeList = keys %allTypes;
+    my $r_typeMap = getIdMap($dbh, "ne_sync_failure_type", "id", "name", \@typeList );
+    my @errorList = keys %allErrors;
+    my $r_errorMap = getIdMap($dbh, "ne_sync_failure_error", "id", "name", \@errorList );
+    
+    foreach my $node ( keys %{$r_nodeSyncFailures} )
+    {
+        if ( exists $r_NeMap->{$node} ) {
+            foreach my $type ( keys %{$r_nodeSyncFailures->{$node}} )
+            {
+                foreach my $error ( keys %{$r_nodeSyncFailures->{$node}->{$type}} )
+                {
+                    dbDo($dbh, sprintf("INSERT INTO ne_sync_failure (date,siteid,neid,typeid,errorid,count) VALUES (%s,%d,%d,%d,%d,%d)",
+                                       $dbh->quote($sqldate),
+                                       $siteId,
+                                       $r_NeMap->{$node},
+                                       $r_typeMap->{$type},
+                                       $r_errorMap->{$error},
+                                       $r_nodeSyncFailures->{$node}->{$type}->{$error}) ) 
+                        or die "Failed to insert rows";
+                }
+            }
+        } else {
+            print "WARN: No entry found for $node in ne table";
+        }
+    }
+    
+    
+    #
+    # Store successfull syncs
+    # 
+    if ( $#{$r_nodeSyncSuccess} > -1 )
+    {
+        my $firstTime = $r_nodeSyncSuccess->[0]->{'timestamp'};
+        my $lastTime = $r_nodeSyncSuccess->[$#{$r_nodeSyncSuccess}]->{'timestamp'};
+        dbDo( $dbh, sprintf("DELETE FROM ne_sync_success WHERE siteid = %d AND endtime BETWEEN %s AND %s", $siteId,
+                            $dbh->quote(timeLogToSql($firstTime)), $dbh->quote(timeLogToSql($lastTime)))) 
+            or die "Failed to delete old ne rows";
+        
+        foreach my $r_sync ( @{$r_nodeSyncSuccess} )
+        {
+            if ( $DEBUG > 0 ) { print Dumper("storeResults: processing sync success", $r_sync); }
+            if ( exists $r_NeMap->{$r_sync->{'node'}} ) {               
+                my $fieldNameStr = "";
+                my $fieldValueStr = "";
+                foreach my $fieldName ( 'numMoCreate', 'numMoDelete', 'numMoRead', 'numMoWrite', 
+                                        'timeMoCreate', 'timeMoDelete', 'timeMoRead', 'timeMoWrite', 'timeOther', 'timeTotal', 
+                                        'timeReadMoMirror', 'timeReadMoNe', 'numReadMoNe', 'numReadMoMirror',
+                                        'timeFind', 'numFind',
+                                        'timeCommit', 'timeConvert',
+                                        'timeReadWaitQ', 'timeWriteWaitQ',
+                                        'numTx', 'gcDelta',
+                                        'ngc', 'restart', 'isdelta' )
+                {
+                    if ( exists $r_sync->{$fieldName} )
+                    {
+                        if ( $DEBUG > 3 ) { print "storeResults: found value for $fieldName\n"; }
+                        $fieldNameStr .= ", $fieldName";
+                        $fieldValueStr .= ', ' . $r_sync->{$fieldName};
+                    }
+                    else 
+                    {
+                        if ( $DEBUG > 3 ) { print "storeResults: no value found for $fieldName\n"; }
+                    }
+                }
+                
+                dbDo( $dbh, sprintf("INSERT INTO ne_sync_success (endtime, siteid, neid %s) VALUES ( %s, %d, %d %s)",
+                                    $fieldNameStr,
+                                    $dbh->quote(timeLogToSql($r_sync->{'timestamp'})), 
+                                    $siteId, 
+                                    $r_NeMap->{$r_sync->{'node'}},
+                                    $fieldValueStr)) 
+                    or die "Failed to insert rows";
+            }   else {
+                    print "WARN: No entry found for $r_sync->{'node'} in ne table\n";
+            }
+        }
+    }
+
+    $dbh->disconnect;    
+}
+
+
+sub analyseFailure($$$$) {
+    my ($line,$r_SyncFailureCount,$r_NodeSyncFailures,$r_NodeList) = @_;
+
+    if ( $DEBUG > 6 ) { print "analyseFailure: line=$line"; }
+
+    my $node = "";
+    if ( $line =~ /(FULL|DELTA) SYNC FAILED.*target=SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=([^:]*)/ ) {
+        $node = $2 . "," . $3;
+    } elsif ( $line =~ /(FULL|DELTA) SYNC FAILED.*target=SubNetwork=[^,]*,MeContext=([^:]*)/ ) {
+	$node = $2;
+    }
+    if ( $DEBUG > 5 ) { print "analyseFailure: node=$node\n"; }
+
+    $r_SyncFailureCount->{$node}++;
+    $r_NodeList->{$node} = 1;
+
+    
+    my $operation = "";
+    if ( $line =~ /operation \'([^\']+)\' failed/ ) {
+	$operation = $1;
+    }
+    my $service = "";
+    if ( $line =~ /SERVICE ==> \'([^\']+)\'/ ) {
+	$service = $1;
+    }
+    
+    my $info = "";
+    if ( $line =~ /\[(.*)\]\"$/ ) {
+	$info = $1;
+    } elsif ( $line =~ /the defined tags are: \[(.*)/ ){
+	$info = $1;
+    }
+
+    if ( $DEBUG > 5 ) { print "analyseFailure: operation=$operation service=$service info=$info\n"; }
+    
+    if ( !($operation eq "GET ATTRIBUTE" && $service eq "NE"))
+    {
+        #print "$service,$operation,$info\n";
+    }
+
+    my $moName = getValue($info,"MONAME");
+    my $exception = getValue($info, "EXCLASS");
+    my $reason = getValue($info,"REASON");
+    if ( $DEBUG > 4 ) { print "analyseFailure: exception'=$exception' moname='$moName' reason='$reason'\n"; }
+    
+    my $error = $reason;
+    my $type = "unknown";                                                                                                                    
+
+    if ( $exception =~ /^org\.omg/ )
+    {
+        $type = "COMMUNICATION";
+        ($error) = $exception =~ /^org\.omg\.(.*)$/;
+    }
+    elsif ( $exception eq "com.ericsson.nms.cif.cs.Configuration.NotAcceptedException" ) 
+    {
+        $type = "FAULT";
+
+        my ($csReason) = $reason =~ /Reason=([^\@]+)/;
+        chop $csReason;
+
+        my $exType = getValue($info,"EXTYPE");
+        $error = $operation . " " . $exType;
+
+        if ( $reason =~ /MoAttributeName/ )
+        {
+            my ($attrName) = $reason =~ /MoAttributeName=([^,]+)/;
+            $error = "$attrName ";
+        }
+        
+        if ( $reason =~ /\@MoDName=(.*)/ )
+        {
+            $moName = $1;
+        }
+        $moName =~ s/.*,ManagedElement=1,//;
+        $error .= " " . $moName;
+
+        $error .= "$csReason";
+    }
+    elsif ( $exception eq "com.ericsson.nms.cif.cs.BasicConfig.ProcessingFailure" ) {
+        if ( $reason =~ /OutOfResources/ )
+        {
+            $error = "CS OutOfResources";
+        }
+    } 
+    elsif ( $reason eq "Aborting SYNCH due to overflow occurring" )
+    {
+        $error = $reason;
+        $type = "NE FAULT";
+    }
+    elsif ( $reason =~ /TAG/ )
+    {
+        ($error) = $reason =~ /TAG :\\\"([^\"\\]*)/;
+        if ( ! $error )
+        {
+            ($error) = $reason =~ /TAG :\"([^\"]*)/;
+        }
+        if ( $reason =~ /Additional information\" = \"([^\"]*)/ )
+        {
+            $error .= " " . $1;
+        }
+
+        my ($rdn) = $moName =~ /SubNetwork=[^,]*,MeContext=[^,]*,ManagedElement=1,(.*)/;
+        $error .= ": " . $rdn;
+        $type = "FAULT";
+    } elsif ( $reason =~ / com.versant.odbms.DatastoreException: \[(\S+)\]/ ) {
+        $type = "Versant";
+        $error = "$1";
+    } elsif ( $reason =~ /^Writer failed with no Exception/ ) {
+        $error = "Writer failed with no Exception";
+    }
+
+    if ( $service ne "" )
+    {
+        $type = $service . " ". $type;
+    }
+
+    if ( $type eq "NE " )
+    {
+        $type = "NE FAULT";
+        $error = $reason;
+    }
+    
+    # Strip any trailing spaces off the error
+    $error =~ s/\s+$//;
+    
+    if ( $DEBUG > 4 ) { print "analyseFailure: $node \"$type\" \"$error\"\n"; }
+
+    $r_NodeSyncFailures->{$node}->{$type}->{$error}++;
+}
+
+sub addSyncs
+{
+    my ( $s1, $s2 ) = @_;
+    foreach my $field ( keys %{$s1} )
+    {
+        $s1->{$field} += $s2->{$field};
+    }
+}
+
+sub analyseSuccess($$$$$$) {
+    my ($line,$timestamp,$r_SyncSuccess,$r_NodeList,$r_PartialSync,$r_nodeSyncSuccess) = @_;
+#SYNCINFO:SubNetwork=UK,SubNetwork=Oldham_RNCOM1,MeContext=Oldham_RNCOM1:RNCOM1.om.vodafone:Part MO SYNC STOPPED, SUCCESS: CDRW(0,0,203,203)  CDRWT(0,0,9,2)  RFM(5) RFNE(13) WWT(0) NWT(9) NWRRB(0) NDL(0) OT(4)  TT(35)" "<no_session>:"
+#SYNCINFO:SubNetwork=UK,SubNetwork=Oldham_RNCOM1,MeContext=Oldham_RNCOM1:RNCOM1.om.vodafone:FULL SYNC STOPPED, SUCCESS: CDRW(0,0,4172,4111)  CDRWT(0,0,350,652)  RFM(5) RFNE(13) WWT(4) NWT(164) NWRRB(0) NDL(0) OT(4)  TT(1032)" "<no_session>:"
+    my $node = "";
+
+    if ( $line =~ /SYNCINFO:SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=([^:]*)/ )
+    {
+        my ($rns,$mc) = $line =~ /SYNCINFO:SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=([^:]*)/;
+        $node = $rns . "," . $mc;
+    }
+    else
+    {
+        ($node) = $line =~ /SYNCINFO:SubNetwork=[^,]*,MeContext=([^:]*)/;
+    }
+
+    my $r_PartSync = {};
+    my $syncStats;
+    if ( $line =~ /FULL SYNC STOPPED, SUCCESS: ([^\"]+)/ ) {
+        $syncStats = $1;
+        $r_PartSync->{'isdelta'} = 'FALSE';
+    } elsif ( $line =~ /DELTA SYNC STOPPED, SUCCESS: ([^\"]+)/ ) {
+        $syncStats = $1;
+        $r_PartSync->{'isdelta'} = 'TRUE';
+    } else {
+        if ( $DEBUG > 0 ) { print "analyseSuccess: doesn't look like a sync: $line\n"; }
+        return;
+    }
+
+    if ( $DEBUG > 5 ) { print "analyseSuccess: node=$node syncStats = $syncStats\n" };
+
+
+
+    if ( $line =~ /CDRAWS\((\d+),(\d+),(\d+),\d+,(\d+),(\d+)\)  CDRAWST\((\d+),(\d+),(\d+),\d+,(\d+),(\d+)\)  RFMTS\((\d+)\) RFNETS\((\d+)\) WWT\((\d+)\) NWT\((\d+)\) NWRRB\((\d+)\) NDL\((\d+)\) NGC\((-?\d+)\) OT\((-?\d+)\)  TT\((\d+)\)/ )
+    {
+	# CDRAWS: 
+	#  C: MOs Created in the mirror 
+	#  D: MOs Delete in the mirror 
+	#  R: Attributes Read from the Node
+	#  A: Number of attr read from the mirror during attribute sync (Only applicable for Fast Force Sync)
+	#  W: Number of attr written to the CS during sync
+	#  S: Number of calls to SNAD during sync
+	# CDRAWST: Same as above but just specifing the time for each
+	# RFMTS:   The amount of time it takes NEAD to read MO's from the MirrorMib when doing TOPOLOGY synch
+	# RFNETS:  The amount of time it takes NEAD to read MO's from the NetworkElementMib when doing TOPOLOGY synch
+	# WWT:     Total time spent waiting for a Transaction during a Synch
+	# NWT:     Total number of write Transactions used during a Synch
+	# NWRRB:   The number of write retries and unnessary rollbacks during a Synch
+	# NDL:     The number of deadlocks or lock timeouts during a Synch
+	# NGC:     The number of GenerationCounter changes reported from the get_mib_changes() interface. 
+	#           Positive value if method returns with a number of changes
+	#           -1 reported if out of range
+	#           -2 for other exceptions and 
+	#           0 if the ranos GC is greater than the node GC (Got it a bit wrong in the explaination below)
+	# OT:      Time spend on other things apart from the above
+	# TT:	   Total time for whole sync
+	($r_PartSync->{'numMoCreate'},$r_PartSync->{'numMoDelete'},$r_PartSync->{'numMoRead'},$r_PartSync->{'numMoWrite'},$r_PartSync->{'numSnadCalls'},
+	 $r_PartSync->{'timeMoCreate'},$r_PartSync->{'timeMoDelete'},$r_PartSync->{'timeMoRead'}, $r_PartSync->{'timeMoWrite'},$r_PartSync->{'timeSnadCalls'},
+	 $r_PartSync->{'timeReadMoMirror'},$r_PartSync->{'timeReadMoNe'}, $r_PartSync->{'timeWaitTx'}, 
+	 $r_PartSync->{'numTx'}, $r_PartSync->{'numTxRb'}, $r_PartSync->{'numDl'}, $r_PartSync->{'ngc'},$r_PartSync->{'timeOther'},$r_PartSync->{'timeTotal'}) = 
+	     ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20);
+
+	if ( $DEBUG > 5 ) { print "analyseSuccess: format=1\n"; }
+    }
+    elsif ( $line =~ /CDRAWS\((\d+),(\d+),(\d+),\d+,(\d+),(\d+)\)  CDRAWST\((\d+),(\d+),(\d+),\d+,(\d+),(\d+)\)  RFMTS\((\d+)\) RFNETS\((\d+)\) RAFMTS\(\d+\) WWT\((\d+)\) NWT\((\d+)\) NWRRB\((\d+)\) NDL\((\d+)\) NGC\((-?\d+)\) OT\((\d+)\)  TT\((\d+)\)/ )
+    {
+	# Format as above with extra RAFMTS field, Read Attribute From Mirror Time Seconds, only used during comparision sync
+	#  CDRAWS(0,0,185,0,185,0)  CDRAWST(0,0,55,0,4,0)  RFMTS(0) RFNETS(32) RAFMTS(0) WWT(1) NWT(12) NWRRB(0) NDL(0) NGC(0) OT(11)  TT(104)
+	( $r_PartSync->{'numMoCreate'},$r_PartSync->{'numMoDelete'},$r_PartSync->{'numMoRead'},$r_PartSync->{'numMoWrite'},$r_PartSync->{'numSnadCalls'},
+	  $r_PartSync->{'timeMoCreate'},$r_PartSync->{'timeMoDelete'},$r_PartSync->{'timeMoRead'}, $r_PartSync->{'timeMoWrite'},$r_PartSync->{'timeSnadCalls'},
+	  $r_PartSync->{'timeReadMoMirror'},$r_PartSync->{'timeReadMoNe'}, $r_PartSync->{'timeWaitTx'}, 
+	  $r_PartSync->{'numTx'}, $r_PartSync->{'numTxRb'}, $r_PartSync->{'numDl'}, $r_PartSync->{'ngc'},$r_PartSync->{'timeOther'},$r_PartSync->{'timeTotal'} ) = 
+	     ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19);
+
+	if ( $DEBUG > 5 ) { print "analyseSuccess: format=2\n"; }
+    }
+    elsif ( $line =~ /CDRW\((\d+),(\d+),(\d+),(\d+)\)  CDRWT\((\d+),(\d+),(\d+),(\d+)\)  RFM\((\d+)\) RFNE\((\d+)\) WWT\((\d+)\) NWT\((\d+)\) NWRRB\((\d+)\) NDL\((\d+)\) OT\((-?\d+)\)  TT\((\d+)\)/ )
+    {
+	# RFM - Time in seconds it took to Read MOs from Mirror
+	# RFNE - Time in seconds it took to Read MOs from NE
+	# WWT - Time spent waiting for a transaction
+	# NWT - Number of write transactions created
+	# NWRRB - Number of write rollback/retries
+	# NDL - number of deadlocks from the CS during writing
+	#   RFM(8) RFNE(16) WWT(8) NWT(7103) NWRRB(0) NDL(0) 
+
+	($r_PartSync->{'numMoCreate'},$r_PartSync->{'numMoDelete'},$r_PartSync->{'numMoRead'},$r_PartSync->{'numMoWrite'},
+	 $r_PartSync->{'timeMoCreate'},$r_PartSync->{'timeMoDelete'},$r_PartSync->{'timeMoRead'}, $r_PartSync->{'timeMoWrite'}, 
+	 $r_PartSync->{'timeReadMoMirror'},$r_PartSync->{'timeReadMoNe'}, $r_PartSync->{'timeWaitTx'}, 
+	 $r_PartSync->{'numTx'}, $r_PartSync->{'numTxRb'}, $r_PartSync->{'numDl'}, $r_PartSync->{'timeOther'},$r_PartSync->{'timeTotal'}) =
+	     ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
+    }
+    elsif ( $line =~ /CDRW\((\d+),(\d+),(\d+),(\d+)\)  CDRWT\((\d+),(\d+),(\d+),(\d+)\)  OT\((-?\d+)\)  TT\((\d+)\)/ )
+    {
+	($r_PartSync->{'numMoCreate'},$r_PartSync->{'numMoDelete'},$r_PartSync->{'numMoRead'},$r_PartSync->{'numMoWrite'},
+	 $r_PartSync->{'timeMoCreate'},$r_PartSync->{'timeMoDelete'},$r_PartSync->{'timeMoRead'}, $r_PartSync->{'timeMoWrite'},
+	 $r_PartSync->{'timeOther'},$r_PartSync->{'timeTotal'}) =
+	     ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10);
+
+	if ( $DEBUG > 5 ) { print "analyseSuccess: format=3\n"; }
+    }     
+    else
+    {
+	if ( $DEBUG > 5 ) { print "analyseSuccess: format=4\n"; }
+
+	my @parts = split / /, $syncStats;
+	foreach my $part ( @parts )
+	{
+	    my ($name,$valueStr) = $part =~ /^([A-Za-z]+)\((\S+)\)/;
+	    	    
+	    if ( defined $name ) {
+		if ( $DEBUG > 6 ) { print "analyseSuccess: part=$part name=$name, valueStr=$valueStr\n"; }
+
+		my @values = split(/,/, $valueStr);
+		
+		# New format for 5.3
+		# MoNM(82451,75034)        - totalMosNode   - totalMosMirror
+		# MoNMT(59,163)               - readFromNETime readFromMirrorTime - For Topology Sync i.e just find FDNs
+		# CDRWF(0,0,75028,75028,75028) - created deleted read written numFinds - these is the numbers done
+		# CDRWFT(0,0,5820,167,253) - created deleted read written numFinds  - Time in seconds
+		# CT(3)                                  - commitTransTime - No attributes change so commit is quick
+		#  Restart(true) - node restarted so cant do delta sync
+		# NGC(0,-1)  - Generation counter (reported number of changes, difference between our gc and the ne gc)
+		# Uniq(0)      - for Delta Sync
+		# CVT(83)                         - conversionTime - To convert from Corba to Java Object - this is also part of the read time
+		# OT(-4194)               - Because the reads are in Parallel this number is meaning less so We need to fix this up.
+		# TT(2270)                 - Total Time = 38 Minutes
+		if ( $name eq 'MoNM' )
+		{
+		    ($r_PartSync->{'numReadMoNe'}, $r_PartSync->{'numReadMoMirror'}) = ($values[0],$values[1]);
+		}
+		elsif ( $name eq 'MoNMT' )
+		{
+		    ( $r_PartSync->{'timeReadMoNe'}, $r_PartSync->{'timeReadMoMirror'} ) = ($values[0],$values[1]);
+		}
+		elsif ( $name eq 'CDRWF' )
+		{
+		    ($r_PartSync->{'numMoCreate'},$r_PartSync->{'numMoDelete'},
+                     $r_PartSync->{'numMoRead'},$r_PartSync->{'numMoWrite'}, 
+		     $r_PartSync->{'numFind'}) = 
+			 ($values[0],$values[1],$values[2],$values[3],$values[4]);
+		}
+		elsif ( $name eq 'CDRWFT' )
+		{
+		    ($r_PartSync->{'timeMoCreate'},$r_PartSync->{'timeMoDelete'},
+                     $r_PartSync->{'timeMoRead'},$r_PartSync->{'timeMoWrite'},
+                     $r_PartSync->{'timeFind'}) = 
+			 ($values[0],$values[1],$values[2],$values[3],$values[4]);
+		}
+		elsif ( $name eq 'CT' )
+		{
+		    $r_PartSync->{'timeCommit'} = $values[0];		    
+		}
+		elsif ( $name eq 'CVT' )
+		{
+		    $r_PartSync->{'timeConvert'} = $values[0];		    
+		}
+
+		#
+		# Value that have exists since pre 5.3
+		#
+		elsif ( $name eq 'CDRAWS' )
+		{
+		    ($r_PartSync->{'numMoCreate'},$r_PartSync->{'numMoDelete'},
+                     $r_PartSync->{'numMoRead'},$r_PartSync->{'numMoWrite'},
+                     $r_PartSync->{'numSnadCalls'}) = ($values[0],$values[1],$values[2],$values[4],$values[5]);
+		}
+		elsif ( $name eq 'CDRAWST' )
+		{
+		    ($r_PartSync->{'timeMoCreate'},$r_PartSync->{'timeMoDelete'},
+                     $r_PartSync->{'timeMoRead'},$r_PartSync->{'timeMoWrite'},
+                     $r_PartSync->{'timeSnadCalls'}) = ($values[0],$values[1],$values[2],$values[4],$values[5]);
+		}
+		elsif ( $name eq 'RFMTS' )
+		{
+		    $r_PartSync->{'timeReadMoMirror'} = $values[0];
+		}
+		elsif ( $name eq 'RFNETS' )
+		{
+		    $r_PartSync->{'timeReadMoNe'} = $values[0];
+		}
+		elsif ( $name eq 'WWT' )
+		{
+		    $r_PartSync->{'timeWaitTx'} = $values[0];
+		}
+		elsif ( $name eq 'NWT' )
+		{
+		    $r_PartSync->{'numTx'} = $values[0];
+		}
+		elsif ( $name eq 'NWRRB' )
+		{
+		    $r_PartSync->{'numTxRb'} = $values[0];
+		}
+		elsif ( $name eq 'NDL' ) 
+		{
+		    $r_PartSync->{'numDl'} = $values[0];
+		}
+		elsif ( $name eq 'NGC' ) {
+		    # "NGC(" + numGenerationCounterChanges + ","+ generationCounterDiff+") " +
+		    # The number of GenerationCounter changes reported from the get_mib_changes() interface.
+		    # -1 reported if out of range, -2 for other exceptions and 0 if the ranos GC is greater than the node GC*/
+		    # public int numGenerationCounterChanges;
+		    #
+		    # Numerical Difference between the GC stored in the CS and on the node
+		    # public int generationCounterDiff
+		    $r_PartSync->{'ngc'} = $values[0];
+		    $r_PartSync->{'gcDelta'} = $values[1];
+		} elsif ( $name eq 'Uniq' ) {
+		    $r_PartSync->{'uniq'} = $values[0];
+		} elsif ( $name eq 'Restart' ) {
+		    $r_PartSync->{'restart'} = uc($values[0]);
+		}
+		elsif ( ($name eq 'OT') || ($name eq 'OCT') )
+		{
+		    $r_PartSync->{'timeOther'} = $values[0];
+		}
+		elsif ( $name eq 'TT' )
+		{
+		    $r_PartSync->{'timeTotal'} = $values[0];
+		}
+		#
+		#RWT(343,63)  R - total amount of time time spent waiting by reader waiting to
+                #                 put data into write queue (multiple threads so it can be more than the total time)
+		#             W - total amount of time writer spends waiting for something to come in
+		elsif ( $name eq 'RWT' )
+		{
+		    $r_PartSync->{'timeReadWaitQ'} = $values[0];
+		    $r_PartSync->{'timeWriteWaitQ'} = $values[1];
+		}
+                elsif ( $DEBUG > 2 ) { print "analyseSuccess: WARN Unknown field $name\n"; } 
+	    }
+	}
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("analyseSuccess: r_PartSync", $r_PartSync); }
+
+    my $isFullSync = 0;
+    if ( $line =~ /FULL SYNC STOPPED, SUCCESS/ ||  $line =~ /DELTA SYNC STOPPED, SUCCESS/ ) {
+	$isFullSync = 1;
+	$r_SyncSuccess->{$node}++;
+    $cnt++;
+	$r_NodeList->{$node} = 1;
+    }
+    else
+    {
+	$isFullSync = 0;
+    }
+    
+    if ( $r_PartialSync->{$node} )
+    {
+	addSyncs( $r_PartSync, $r_PartialSync->{$node} );
+    }
+    
+    if ( $isFullSync )
+    {
+	if ( $r_PartialSync->{$node} )
+	{
+	    delete $r_PartialSync->{$node};
+	}
+
+	$r_PartSync->{'timestamp'} = $timestamp;
+	$r_PartSync->{'node'} = $node;
+
+	push @{$r_nodeSyncSuccess}, $r_PartSync;
+    }
+    else
+    {
+	$r_PartialSync->{$node} = $r_PartSync;
+    }
+}
+
+sub parseLog($$$$$$) {
+    my ($lvLog, $r_syncSuccessCount, $r_nodeSyncSuccess, ,$r_syncFailureCount, $r_nodeSyncFailures, $r_nodeList) = @_;
+
+    my %partialSyncs = ();
+
+    open LOG, $lvLog or die "Cannot open $lvLog";	
+    while ( my $line = <LOG> ) {
+	if ( $line =~ /SYNCINFO/ ) {
+	    if ( $DEBUG > 7 ) { print "parseLog: line = $line"; }
+	    
+	    my ($year,$month,$day,$hour,$min,$sec) = $line =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2})/;	    
+	    my $timestamp = sprintf "%02d-%02d-%02d:%02d:%02d:%02d", $day,$month,$year - 2000, $hour, $min, $sec;
+	    analyseSuccess($line,$timestamp,$r_syncSuccessCount, $r_nodeList, \%partialSyncs,$r_nodeSyncSuccess);
+	} elsif ( $line =~ /SYNC FAILED/ ) {
+	    my ($year,$month,$day,$hour,$min,$sec) = $line =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2})/;	    
+	    my $timestamp = sprintf "%02d-%02d-%02d:%02d:%02d:%02d", $day,$month,$year - 2000, $hour, $min, $sec;
+	    analyseFailure($line,$r_syncFailureCount, $r_nodeSyncFailures, $r_nodeList);
+	}
+    }
+    close LOG;
+
+    if ( $DEBUG > 2 ) {
+        print Dumper("parseLog: r_syncSuccessCount:", $r_syncSuccessCount);
+        print Dumper("parseLog: r_nodeSyncSuccess:", $r_nodeSyncSuccess);
+        print Dumper("parseLog: r_syncFailureCount" , $r_syncFailureCount );
+        print Dumper("parseLog: r_nodeSyncFailures" , $r_nodeSyncFailures );
+        print Dumper("parseLog: r_nodeList" , $r_nodeList );
+    }
+}
+
+sub main
+{
+    my ($lvLog,$site,$sqldate);
+    my $result = GetOptions(
+                            "lvLog=s"  => \$lvLog,
+                            "site=s" => \$site,
+                            "sqldate=s" => \$sqldate,
+                            "debug=s" => \$DEBUG,
+                            );       
+    ($result == 1) or die "Invalid args"; 
+
+    setStatsDB_Debug($DEBUG);
+    setStatsCommon_Debug($DEBUG);
+
+    my %syncSuccessCount = ();
+    my @nodeSyncSuccess = ();
+    my %syncFailureCount = ();
+    my %nodeList = ();
+    my %nodeSyncFailures = ();
+    parseLog($lvLog, \%syncSuccessCount, \@nodeSyncSuccess, \%syncFailureCount, \%nodeSyncFailures, \%nodeList );
+
+    if ( defined $site ) {
+        storeResults( $site, $sqldate, \%nodeList, \%syncSuccessCount, \%syncFailureCount, \@nodeSyncSuccess, \%nodeSyncFailures );
+    }
+}
+
+main();
+

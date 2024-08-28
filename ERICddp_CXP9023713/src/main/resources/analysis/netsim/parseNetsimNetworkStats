@@ -1,0 +1,150 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseNetsimNetworkStats
+# Author  : Maheedhar Reddy Rachamalla (xmahrac)
+# Purpose : The purpose of this script is to parse 'netsim_nodes_perfstats.txt' logs of NetSim servers
+#           in order to extract various network configuration parameters such as 'Bandwidth' & 'Latency'
+#           and store them under database
+# Usage   : ${ANALYSIS_BIN}/netsim/parseNetsimNetworkStats --rhdir ${DATADIR}/remotehosts --date ${DATE} --sqldate ${SQL_DATE} --site ${SITE}
+#=====================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use StatsDB;
+use EnmCluster;
+
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+
+sub main {
+    my $rhDir;
+    my $date;
+    my $sqlDate;
+    my $site;
+
+    my $result = GetOptions (
+        "rhdir=s"   => \$rhDir,
+        "date=s"    => \$date,
+        "sqldate=s" => \$sqlDate,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+        );
+
+    die "Invalid args"  if ($result != 1);
+
+    # Get the list of 'netsim_nodes_perfstats.txt' logs present under the 'remotehosts' directory
+    my @fileDataset = ();
+    opendir (my $dh, $rhDir) || die "Failed to open the directory $rhDir: $!";
+    while (readdir $dh) {
+        next    if (/^\.\.?$/);
+        my $netStatsFile = $rhDir . '/' . $_ . '/' . $date . '/netsim_nodes_perfstats.txt';
+        if (-f $netStatsFile) {
+            push (@fileDataset, $netStatsFile);
+        }
+    }
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", \@fileDataset); }
+
+    # Parse the logs of NetSim servers to get the network configuration stats
+    my ($neTypes, $parsedNetworkStats) = &parseLogs(\@fileDataset);
+
+    # Store the network configuration stats in 'netsim_network_stats' table under 'statsdb' database
+    &storeNetConfigStats($sqlDate, $site, $neTypes, $parsedNetworkStats);
+}
+
+
+sub parseLogs($) {
+    my $logsList = shift;
+
+    my @parsedNetworkStats = ();
+    my %neTypes            = ();
+
+    foreach my $log (@{$logsList}) {
+        print "Parsing $log\n";
+
+        open (LOGCSV, $log) or die "Failed to open the file $log";
+        while (my $logLine = <LOGCSV>) {
+            if ($DEBUG > 9) { print "parseLogs: Logline=$logLine"; }
+            next    if ($logLine =~ /Bandwidth\s+Latency/i);
+
+            # At present, six configuration parameters namely 'Netsim Server', 'Simulation',
+            # 'Type', 'Bandwidth', 'Latency' & 'No. of Nodes' are getting parsed from the logs
+            my @networkStats = split (/\s+/, $logLine);
+            if ( scalar @networkStats < 6 ) {
+                print "parseLogs: Ignoring the log line as it consists of no values for one or more parameters. Logline=$logLine";
+                next;
+            }
+
+            #Die on invalid ne_type
+            if ( $networkStats[0] =~ /(^\d+$|=)/ ) {
+                die("Error: $networkStats[0] not a valid ne_type, No data will be stored for parseNetsimNetworkStats\n");
+            }
+
+            $networkStats[1] =~ s/Kbit//i;
+            $networkStats[2] =~ s/ms//i;
+
+            $neTypes{$networkStats[0]} = 1;
+            push (@parsedNetworkStats, \@networkStats);
+        }
+    }
+
+    return (\%neTypes, \@parsedNetworkStats);
+}
+
+
+sub storeNetConfigStats($$$$) {
+    my $sqlDate        = shift;
+    my $site           = shift;
+    my $neTypes        = shift;
+    my $netConfigStats = shift;
+
+    # Write the parsed network configuration stats to 'netsim_network_stats.bcp' file
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFile = "$tmpDir/netsim_network_stats.bcp";
+
+    # Establish DB connection
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+
+    my $siteId;
+    if (defined $site) {
+        $siteId = getSiteId($dbh, $site);
+        ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    }
+
+    my @nodeTypes = keys %{$neTypes};
+    my $nodeTypesMap = getIdMap($dbh, "ne_types", "id", "name", \@nodeTypes);
+
+    open (BCP, "> $bcpFile");
+    foreach my $networkStats (@{$netConfigStats}) {
+        if ($DEBUG > 5) { print "storeNetConfigStats: @{$networkStats}\n"; }
+        my $serverId = getServerId($dbh, $siteId, $networkStats->[5]);
+        if (exists $nodeTypesMap->{$networkStats->[0]}) {
+            print BCP "$sqlDate\t$siteId\t$serverId\t$networkStats->[4]\t$nodeTypesMap->{$networkStats->[0]}\t$networkStats->[1]\t$networkStats->[2]\t$networkStats->[3]\n";
+        }
+    }
+    close BCP;
+
+    # Delete the old network configuration stats from 'netsim_network_stats' table for the given date
+    dbDo( $dbh, sprintf("DELETE FROM netsim_network_stats WHERE siteid = %d AND date = '%s'",
+                        $siteId, $sqlDate) )
+        or die "Failed to remove old data from 'netsim_network_stats' table";
+
+    # Populate the 'netsim_network_stats' DB table with the new network configuration stats
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE netsim_network_stats" )
+        or die "Failed to load new data from '$bcpFile' file to 'netsim_network_stats' table";
+
+    $dbh->disconnect();
+}
+
+

@@ -1,0 +1,451 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Time::Local;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub storeExports($$) {
+    my ( $site, $r_exports ) = @_;
+
+    my $minTime = timelocal( 0, 0, 0, 1, 1, 130 );
+    my $maxTime = -1;
+    foreach my $r_Export ( @{$r_exports} )
+    {
+        my ($startYear,$startMonth,$startDay,$startHour,$startMin,$startSec) = $r_Export->{'start'} =~
+            /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+)/;
+        my $startTime = timelocal( $startSec, $startMin, $startHour, $startDay, $startMonth - 1, $startYear - 1900 );
+
+        if ( $minTime > $startTime )
+        {
+            $minTime = $startTime;
+        }
+        if ( $maxTime < $startTime )
+        {
+            $maxTime = $startTime;
+        }
+    }
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    dbDo($dbh, sprintf("DELETE FROM export WHERE siteid = %d AND start BETWEEN '%s' AND '%s'",
+                       $siteId,
+                       formatTime($minTime,$StatsTime::TIME_SQL),
+                       formatTime($maxTime,$StatsTime::TIME_SQL))
+        )
+        or die "Failed to delete old data";
+
+    foreach my $r_Export ( @{$r_exports} )
+    {
+        dbDo($dbh, sprintf("INSERT INTO export " .
+                           "(siteid,start,end,root,file,numMo,numNode,numCachedMo,numCachedNode,user,filter) " .
+                           "VALUES ( %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s )",
+                           $siteId, $dbh->quote($r_Export->{'start'}), $dbh->quote($r_Export->{'end'}),
+                           $dbh->quote($r_Export->{'root'}), $dbh->quote($r_Export->{'file'}),
+                           $dbh->quote($r_Export->{'mocount'}), $dbh->quote($r_Export->{'nodes'}),
+                           $dbh->quote($r_Export->{'cachedmo'}), $dbh->quote($r_Export->{'cachednodes'}),
+                           $dbh->quote($r_Export->{'userid'}), $dbh->quote($r_Export->{'filter'}))
+            ) or die "Failed to insert data";
+    }
+
+    $dbh->disconnect;
+}
+
+sub readLine() {
+    my $line = <EXPORT_LOG>;
+    if ( defined $line ) {
+        if ( $DEBUG > 9 ) { print "readLine: #$. line=$line"; }
+    } else {
+        if ( $DEBUG > 9 ) { print "readLine: EOF\n"; }
+    }
+
+    return $line;
+}
+
+sub parseErrInfo($) {
+    my ($fileName) = @_;
+    if ( $DEBUG > 3 ) { print "parseErrInfo: fileName=$fileName\n"; }
+
+    my $r_Export = {
+        'root' => undef,
+        'cachednodes' => 0,
+        'cachedmo' => 0
+    };
+
+    my %cachedNodes = ();
+
+    open EXPORT_LOG, $fileName or die "Cannot open $fileName";
+
+    my ($year, $month, $day);
+    my $startHour = 0;
+    while ( my $line = readLine() )     {
+        if ( $DEBUG > 9 ) { print "parseErrInfo: #$. line=$line"; }
+
+        if ( $line =~ /^\s*<activity dateTime=\"([^\"]+)\"/ ) {
+            my $startTimeStr = $1;
+            if ( $DEBUG > 6 ) { print "parseErrInfo: startTime = $startTimeStr\n"; }
+            my ( $hour, $min, $sec );
+            ( $year, $month, $day, $hour, $min, $sec ) = $startTimeStr
+                =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})T(\d{2,2}):(\d{2,2}):(\d{2,2})/;
+            $r_Export->{'start'} =
+                sprintf("%04d-%02d-%02d:%02d:%02d:%02d", $year, $month, $day, $hour, $min, $sec);
+            $startHour = $hour;
+        } elsif ( $line =~ /^\s+\<log time=\"([^\"]+)\" type=\"([^\"]+)\"/ ) {
+            my ($eventTime,$eventType) = ($1, $2);
+            my ($hour,$min,$sec) = $eventTime =~ /^(\d{2,2}):(\d{2,2}):(\d{2,2})/;
+            if ( $hour < $startHour ) {
+                if ( $DEBUG > 5 ) { print "parseErrInfo: crossed midnight: hour=$hour startHour=$startHour\n"; }
+                my @timeFields = localtime( timelocal(0,0,0,$day,$month-1,$year - 1900) + (60 * 60 * 24) );
+                $year  = $timeFields[5] + 1900;
+                $month = $timeFields[4] + 1;
+                $day   = $timeFields[3];
+                $startHour = 0;
+            }
+
+            if ( ! defined $year ) {
+                if ( $DEBUG > 0 ) { print "parseErrInfo: undefined year line $. $line"; }
+		next;
+            }
+
+            my $eventDateTime = sprintf("%04d-%02d-%02d:%02d:%02d:%02d", $year, $month, $day, $hour, $min,$sec);
+
+            my $message = "";
+            while ( defined($line = readLine()) && ($line !~ /^\s+\<\/log/) ) {
+                my ($messagePart) = $line =~ /^\s*(.*)/;
+                $message .= " " . $messagePart;
+            }
+            if ( $message =~ /^ \<Message\>([^\<]+)\<\/Message\>$/ ) {
+                $message = $1;
+            } else {
+                if ( $DEBUG > 0 ) { print "Failed to parse message line#=$. message=$message\n"; }
+                next;
+            }
+
+            if ( $DEBUG > 8 ) { print "parseErrInfo: eventDateTime = $eventDateTime, message=$message\n"; }
+
+            if ( $message =~ /^SubNetwork\S+,MeContext=(\S+) is Exported from the Cache/ ) {
+                $cachedNodes{$1} = 1;
+            } elsif ( $message =~ /Node (\S+) .* contains (\d+) MOs/ ) {
+                my ($node,$numMO) = ($1,$2);
+                if ( exists $cachedNodes{$node} ) {
+                    $r_Export->{'cachedmo'} += $numMO;
+                }
+            } elsif ( $message =~ /^Log for export file: (\S+)\. / ) {
+                my @fileParts = split(/\//, $1);
+                $r_Export->{'file'} = $fileParts[$#fileParts];
+                if ( $message =~ /Activity ID:\s+(\d+)/ ) {
+                    $r_Export->{'actid'} = $1;
+                }
+                if ( $message =~ /User: (\S+)\. / ) {
+                    $r_Export->{'userid'} = $1;
+                }
+                if ( $message =~ /Filter: ([^: \.]+)\. / ) {
+                    $r_Export->{'filter'} = uc($1);
+                }
+                if ( $message =~ /Root managed object\(s\) for export: (\S+)/ ) {
+                    $r_Export->{'root'} = $1;
+                }
+            } elsif ( $message =~ /^Upload operation parameters/ ) {
+                if ( $DEBUG > 3 ) { print "parseErrInfo: Found Irathom export\n" };
+                if ( $message =~ /sink : \"([^\"]+)\"/ ) {
+                    my $filePath = $1;
+                    if ( $DEBUG > 4 ) { print "parseErrInfo: filePath = $filePath\n" };
+                    my @fileParts = split(/\//, $filePath);
+                    $r_Export->{'file'} = $fileParts[$#fileParts];
+                }
+                if ( $message =~ /base_object\(s\) : \"([^\"]+)\"/ ) {
+                    my $root = 'SubNetwork=' . $1;
+                    if ( $root !~ /^SubNetwork/ ) {
+                        $root = $root;
+                    }
+                    $r_Export->{'root'} = $root;
+                }
+                if ( $message =~ /Activity ID:\s+(\d+)/ ) {
+                    $r_Export->{'actid'} = $1;
+                }
+            } elsif ( $message =~ /^Successfully completed \S+_EXPORT\. (\d+)/ ) {
+                $r_Export->{'mocount'} = $1;
+                $r_Export->{'end'} = $eventDateTime;
+
+                if ( $message =~ /(\d+) \/ \d+ node\(s\) were/ ) {
+                    $r_Export->{'nodes'} = $1;
+                } elsif ( $message =~ /successfully exported from (\d+) node/ ) {
+                    $r_Export->{'nodes'} = $1;
+                }
+
+                if ( $message =~ /Nodes Exported from Cache : (\d+)/ ) {
+                    $r_Export->{'cachednodes'} = $1;
+                }
+
+            }
+        }
+    }
+    close EXPORT_LOG;
+
+    if ( $DEBUG > 4 ) { print Dumper("parseErrInfo: r_Export", $r_Export); }
+    if ( $DEBUG > 8 ) {
+        my @cachedNodeList = keys %cachedNodes;
+        print "parseErrInfo: detected cached nodes = " . ($#cachedNodeList + 1) . "\n";
+    }
+    if ( exists $r_Export->{'end'} ) {
+        return $r_Export;
+    } else {
+        return undef;
+    }
+}
+
+sub parseThreadInfo($$) {
+    my ($fileName,$startTime) = @_;
+
+    my ($startYear,$startMonth) = $startTime =~ /^(\d{4,4})-(\d{2,2})/;
+
+    open TI, $fileName or die "Cannot open file $fileName";
+
+    my %batches = ();
+    my %batchesByTime = ();
+    my $r_batch;
+
+    my $IDLE = 0;
+    my $CS_EXPORT = 1;
+    my $POST_PRO = 2;
+    my $state = $IDLE;
+
+    while ( my $line = <TI> )
+    {
+        if ( $DEBUG > 9 ) { print "parseThreadInfo: state=$state line=$line"; }
+
+	# CS Export section
+	#
+	# Nodes in Thread::                       51
+	# Start Time::                            05/11 11:02:18.918
+	# End Time::                              05/11 11:05:38.243
+	# Time in Thread::                        199325 milliseconds
+	# Mib Name::                              RBS
+	# Mim Version::                           K.1.9.G.4.1
+	# Number of retries                       0
+	# File Name::                             rbsGroup_RNC01RBS13716785420.xml
+
+	# Post Process task
+	#
+	# PostProcessTask:                        rbsGroup_RNC01RBS13716785420.xml
+	# Time in PostProcess Thread::            3830 milliseconds
+	# Start Time ::                           05/11 11:05:38.244
+	# End Time ::                             05/11 11:05:42.074
+	# Time in PostProcess Thread::            3830 milliseconds
+	# MOs in PostProcess Thread::             3948
+	# Noes in PostProcess Thread::            51
+	# *********************
+
+
+        if ( ($state == $IDLE) )
+        {
+            if ( $line =~ /^Nodes in Thread::\s+(\d+)/)
+            {
+                $state = $CS_EXPORT;
+
+                my $numNodes = $1;
+                $r_batch = {
+                    'numnodes' => $numNodes
+                };
+            }
+            elsif ( $line =~ /^PostProcessTask:\s+(\S+)/ )
+            {
+                my $fileName = $1;
+                if ( exists $batches{$fileName} )
+                {
+                    $r_batch = $batches{$fileName};
+                    $state = $POST_PRO;
+                }
+            }
+        }
+
+        elsif ( $state == $CS_EXPORT )
+        {
+            if ( $line =~ /^Start Time::\s+(.*)/ )
+            {
+                $r_batch->{'cs_start'} = parseTiTime($1, $startYear, $startMonth);
+
+                my $timeKey = parseTime($r_batch->{'cs_start'}, $StatsTime::TIME_YYYYMD_HMS);
+                if ( ! exists $batchesByTime{$timeKey} )
+                {
+                    $batchesByTime{$timeKey} = [];
+                }
+                push @{$batchesByTime{$timeKey}}, $r_batch;
+            }
+            elsif ( $line =~ /^End Time::\s+(.*)/ )
+            {
+                $r_batch->{'cs_end'} = parseTiTime($1, $startYear, $startMonth);
+            }
+            elsif ( $line =~ /^Mib Name::\s+(\S+)/ )
+            {
+                $r_batch->{'nodetype'} = $1;
+            }
+            elsif ( $line =~ /^File Name::\s+(\S+)/ )
+            {
+                my $fileName = $1;
+                $r_batch->{'file'} = $fileName;
+                $batches{$fileName} = $r_batch;
+            }
+            elsif ( $line =~ /^\*/ )
+            {
+                $state = $IDLE;
+                undef $r_batch;
+            }
+        }
+
+        elsif ( $state == $POST_PRO )
+        {
+            if ( $line =~ /^Start Time ::\s+(.*)/ )
+            {
+                $r_batch->{'pp_start'} = parseTiTime($1, $startYear, $startMonth);
+            }
+            elsif ( $line =~ /^End Time ::\s+(.*)/ )
+            {
+                $r_batch->{'pp_end'} = parseTiTime($1, $startYear, $startMonth);
+            }
+            elsif ( $line =~ /^MOs in PostProcess Thread::\s+(\d+)/ )
+            {
+                $r_batch->{'nummo'} = $1;
+            }
+            elsif ( $line =~ /^\*/ )
+            {
+                $state = $IDLE;
+                undef $r_batch;
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseThreadInfo: batchesByTime", \%batchesByTime); }
+
+    return \%batchesByTime;
+}
+
+sub parseTiTime($$$) {
+    my ($tiTime, $startYear, $startMonth) = @_;
+    #05/11 14:14:17.875
+
+    my ( $day, $month, $hour, $min, $sec ) = $tiTime =~ /(\d+)\/(\d+)\s+(\d{2,2}):(\d{2,2}):(\d{2,2})\.\d{3,3}$/;
+    if ( $DEBUG > 9 ) { print "parseTiTime: startMonth=$startMonth tiTime=$tiTime day, monthhour, min, sec= $day, $month, $hour, $min, $sec\n"; }
+    if ( $month < $startMonth ) {
+        $startYear++;
+    }
+
+    return sprintf("%04d-%02d-%02d %02d:%02d:%02d",$startYear,$month,$day,$hour,$min,$sec);
+}
+
+sub writeThreadInfoTable($$$$) {
+    my ($r_ThreadInfo,$tableDir, $startTime, $name) = @_;
+
+    my $fileName = $tableDir . "/ti_" . $startTime . "_" . $name . ".html";
+
+    open TABLE, ">$fileName" or die "ERROR: Cannot open $fileName";
+    print TABLE "<table border=1> <tr><th>CS Export Start</th> <th>CS Export End</th> <th>Post Processing Start</th> <th>Post Processing End</th> <th>Node Type</th> <th>Num Nodes</th> <th>Num MO</th> " .
+	"<th>CS Export Time</th> <th>CS Export MO/sec</th> <th>Post Processing Time</th> <th>Post Processing MO/sec</th> </tr>\n";
+
+    foreach my $timeKey ( sort { $a <=> $b } keys %{$r_ThreadInfo} ) {
+        foreach my $r_ti ( @{$r_ThreadInfo->{$timeKey}} ) {
+            if ( $DEBUG > 8 ) { print Dumper("writeThreadInfoTable ti", $r_ti); }
+            my $csExportTime = parseTime( $r_ti->{'cs_end'}, $StatsTime::TIME_SQL ) - parseTime( $r_ti->{'cs_start'}, $StatsTime::TIME_SQL );
+            my $csExportRate = "";
+
+            if ( ! defined $r_ti->{'nummo'} ) {
+                print "WARN: Incomplete ti for $name, missing nummo\n";
+                next;
+            }
+
+            if (  $csExportTime > 0 ) {
+                $csExportRate = sprintf("%.1f",($r_ti->{'nummo'} / $csExportTime));
+            }
+
+            if ( (! defined $r_ti->{'pp_end'}) || (! defined $r_ti->{'pp_start'}) ) {
+                print "WARN: Incomplete ti for $name missing pp_start or pp_end\n";
+                next;
+            }
+
+            my $ppRate = "";
+            my $ppTime = parseTime( $r_ti->{'pp_end'}, $StatsTime::TIME_SQL ) - parseTime( $r_ti->{'pp_start'}, $StatsTime::TIME_SQL );
+            if ( $ppTime > 0 ) { $ppRate = sprintf("%.1f",($r_ti->{'nummo'} / $ppTime)); }
+
+            printf TABLE " <tr> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> <td>%d</td> <td>%s</td> <td>%d</td> <td>%s</td> <td>%d</td> <td>%s</td> </tr>\n",
+            $r_ti->{'cs_start'}, $r_ti->{'cs_end'}, $r_ti->{'pp_start'}, $r_ti->{'pp_end'},
+            $r_ti->{'nodetype'}, $r_ti->{'numnodes'}, $r_ti->{'nummo'},
+            $csExportTime, $csExportRate, $ppTime, $ppRate;
+        }
+    }
+    print TABLE "</table>\n";
+    close TABLE;
+}
+
+sub main() {
+    my ($logDir,$site,$tableDir);
+    my $result = GetOptions("dir=s"  => \$logDir,
+                            "site=s" => \$site,
+                            'tabledir=s' => \$tableDir,
+                            "debug=n" => \$DEBUG,
+        );
+
+    my @allfiles = ();
+    if ( opendir(DIR, $logDir) ) {
+        @allfiles = readdir DIR;
+        closedir DIR;
+    }
+    my @exports = ();
+    foreach my $file ( @allfiles ) {
+        if ( $DEBUG > 5 ) { print "main: file = $file\n"; }
+        if ( $file =~ /^errInfoLog_(\S+)/ ) {
+            my $fullName = $1;
+            my ( $name, $num, $num2 );
+            if (( $fullName =~ /(\S+)\.(\d+)$/ ) || ( $fullName =~ /(\S+)\.(\d+)\-(\d+)$/ )) {
+                ( $name, $num, $num2 ) = ( $1, $2, $3 );
+            } else {
+                $name = $fullName;
+            }
+            my $r_Export = parseErrInfo($logDir . "/" . $file);
+
+            if ( $r_Export ) {
+                push @exports, $r_Export;
+
+                my $threadInfoFile;
+                if ( defined $num )  {
+                    # Assume .number at end of file is due to duplicate data files
+                    $threadInfoFile = sprintf("%s/%s.threadinfo.%d", $logDir, $name, $num);
+		    if ( defined $num2) {
+			# Assume -number at end of file is due to duplicate data files
+			$threadInfoFile = sprintf("%s/%s.threadinfo.%d-%d", $logDir, $name, $num, $num2);
+			# Check if .threadInfo file exists (due to duplication)
+			if ( ! -e $threadInfoFile ) {
+			    # If file does not exist due to duplication, assume .number or -number is part of original data file name
+			    $threadInfoFile = sprintf("%s/%s.threadinfo", $logDir, $fullName);
+			    $name = $fullName;
+			}
+		    }
+                } else {
+                    $threadInfoFile = sprintf("%s/%s.threadinfo", $logDir, $name);
+                }
+
+                if ( $DEBUG > 3 ) { print "main: Looking for threadinfo $threadInfoFile\n"; }
+                if ( -r $threadInfoFile ) {
+                    my $r_batchesByTime = parseThreadInfo($threadInfoFile, $r_Export->{'start'});
+                    if ( defined $tableDir ) {
+			writeThreadInfoTable($r_batchesByTime, $tableDir, $r_Export->{'start'}, $name);
+                    }
+                }
+            }
+        }
+    }
+
+    if ( $site ) {
+        storeExports($site,\@exports);
+    }
+}
+
+main();

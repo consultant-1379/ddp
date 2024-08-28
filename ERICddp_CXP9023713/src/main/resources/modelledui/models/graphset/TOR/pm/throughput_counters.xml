@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_ebsm_inst_stats">
+      <reference table="sites" condition="enm_ebsm_inst_stats.siteid = sites.id"/>
+      <reference table="servers" condition="enm_ebsm_inst_stats.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="Session Aggregation Indexes" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Session Aggregation Indexes"/>
+      <column db="indexSizeOfUplinkThroughputNR" label="Index_Size_Of_Nr_Uplink_Throughput_Counters"/>
+      <column db="indexSizeOfDownlinkNonVoiceThroughputNR" label="Index_Size_Of_Nr_Downlink_Non_Voice_Throughput_Counters"/>
+      <column db="indexSizeOfDownlinkVoiceThroughputNR" label="Index_Size_Of_Nr_Downlink_Voice_Throughput_Counters"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="throughput">
+      <member>Session Aggregation Indexes</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

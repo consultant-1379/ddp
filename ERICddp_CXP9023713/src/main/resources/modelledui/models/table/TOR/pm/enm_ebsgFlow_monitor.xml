@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="enm_ebsgflow">
+   <reference table="sites" condition="enm_ebsgflow.siteid = sites.id"/>
+   <reference table="servers" condition="enm_ebsgflow.serverid = servers.id"/>
+ </dbtables>
+
+<param name="site"/>
+<param name="date"/>
+
+<where>sites.name = '%site%' AND enm_ebsgflow.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+<groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+<column db="servers.hostname" label="Instance"/>
+ <column db="SUM(inputEventRatePerSecond)" label="Input Event Rate"/>
+ <column db="SUM(filteredEventRatePerSecond)" label="Filtered Event Rate"/>
+ <column db="SUM(processedEventRatePerSecond)" label="Processed Event Rate"/>
+ <column db="SUM(outputMonitorVolume)" label="Output Monitor Volume"/>
+ <column db="SUM(numberOfMonitorFilesWritten)" label="Number Of Monitor Files Written"/>
+ <column db="SUM(numberOfMonitorFilesRewritten)" label="Number Of Monitor Files Rewritten"/>
+
+</modelledtable>
+
+

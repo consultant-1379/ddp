@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@elasticsearch_tp"
+    sampleinterval="900">
+
+  <table name="elasticsearch_tp">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="tpid" reftable="elasticsearch_tp_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>tpid</multi>
+    <multi>servicetype</multi>
+
+    <metricgroup name="completed:(\S+):(\S+)">
+      <metric source="elasticsearch_thread_pool_completed_count" target="completed" delta="true" filteridle="true"/>
+      <property name="tpid" xsi:type="multilabelproperty" label="type" index="1"/>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="2"/>
+    </metricgroup>
+
+    <metricgroup name="rejected:(\S+):(\S+)">
+      <metric source="elasticsearch_thread_pool_rejected_count" target="rejected" delta="true" filteridle="true"/>
+      <property name="tpid" xsi:type="multilabelproperty" label="type" index="1"/>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="2"/>
+    </metricgroup>
+
+    <metricgroup name="active:(\S+):(\S+)">
+      <metric source="elasticsearch_thread_pool_active_count" target="active" filteridle="true"/>
+      <property name="tpid" xsi:type="multilabelproperty" label="type" index="1"/>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="2"/>
+    </metricgroup>
+
+    <metricgroup name="queue:(\S+):(\S+)">
+      <metric source="elasticsearch_thread_pool_queue_count" target="queue" filteridle="true"/>
+      <property name="tpid" xsi:type="multilabelproperty" label="type" index="1"/>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="2"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,211 @@
+#!/usr/bin/perl
+########################################################################################
+#  Description --------- parseEDEControllerLog -----------
+#  This script parses the EDE Controller log file for DDP
+#  and store data to Db
+#  @author - Anam Pargal (xanampa)
+#  usage parseEDEControllerLog --logfile ${LOG_FILE} --instance ${EDE_INSTANCE_NAME}
+#                              --site ${SITE} --date ${SQL_DATE}
+########################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+use List::Util qw(first);
+use POSIX 'strftime';
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $siteId;
+our $logfile;
+our $instance;
+our $date;
+our $site;
+our $DEBUG = 0;
+our $source_id_map;
+our $tmpDir = "/data/tmp";
+our $currentDate;
+our $previousDate;
+our $firstTimestamp;
+our $lastTimestamp;
+our $currentYear;
+our @sourceList = ();
+our $streamingBcpFile = "";
+our $nodeCountBcpFile = "";
+our $lastStreamingTable = "ede_controller";
+our $nodeCountTable = "ede_controller_node_count";
+our $temporary_logFile;
+our %mon2num = qw(
+                    jan 1  feb 2  mar 3  apr 4  may 5  jun 6
+                    jul 7  aug 8  sep 9  oct 10 nov 11 dec 12
+                );
+
+sub main {
+    my $result = GetOptions(
+        "logfile=s"  => \$logfile,
+        "instance=s" => \$instance,
+        "site=s"     => \$site,
+        "date=s"     => \$date,
+        "debug=s"    => \$DEBUG
+        );
+    ( -r $logfile ) or die "Cannot read log file $logfile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    findpreviousdate();
+    my ($parsedStreamingData, $nodeCountData) = parsedata();
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $source_id_map = getIdMap($dbh, "data_source_id_mapping", "id", "data_source", \@sourceList);
+    createBcpFile($parsedStreamingData, $nodeCountData);
+    loadDb($streamingBcpFile, $nodeCountBcpFile);
+    if($DEBUG > 1){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+# To make sure data is not lost for the interval when DDC collection stops and starts.
+sub findpreviousdate {
+    my ($year, $month, $day) = $date =~ /(\d{4})-(\d{2})-(\d{2})/;
+    $currentYear = $year;
+    my $currentDateSqlFormat = "$date 00:00:00";
+    my $currentDateInEpoch = parseTime( $currentDateSqlFormat, $StatsTime::TIME_YYYYMD_HMS );
+    my $previousDateInEpoch = $currentDateInEpoch - 24*60*60;
+    $currentDate = strftime("%b %d", localtime $currentDateInEpoch);
+    $previousDate = strftime("%b %d", localtime $previousDateInEpoch);
+}
+
+sub convertDate {
+    my $timestamp = shift;
+    my ($month, $day, $time) = $timestamp =~ /(.*) (\d{2}) (.*)/;
+    my $mon = $mon2num{lc $month};
+    $timestamp = "$currentYear-$mon-$day $time";
+    return $timestamp;
+}
+
+sub parsedata {
+    my $firstLine = "true";
+    my $timestamp;
+    my @streamingList = ();
+    my @nodeCountList = ();
+    my $logFileName = (split /\//, $logfile)[-1];
+    my $temporary_logfile = "/$tmpDir/tmp_$logFileName";
+   `egrep "$currentDate|$previousDate" $logfile > $temporary_logfile`;
+    open FILE, "<$temporary_logfile" or die "Can't open file to read $temporary_logfile";
+    while (my $line = <FILE>){
+        if ( $line =~ /.* \((.*)\).* for (.*) for .* : (\d{12})/ ) {
+            $timestamp = convertDate($1);
+            my $source   = $2;
+            my $rop_time = $3;
+            my ($y, $m, $d, $h, $M) = $rop_time =~ /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/;
+            $rop_time = "$y-$m-$d $h:$M:00";
+            my %streamingRecord = (
+                timestamp => "$timestamp",
+                source    => "$source",
+                rop_time  => "$rop_time"
+            );
+            push (@streamingList, \%streamingRecord);
+            push (@sourceList, $source);
+        }
+        elsif ( $line =~ /.* \((.*)\).* source (.*) is : (\d+)/ ){
+            $timestamp = convertDate($1);
+            my $source_name = $2;
+            my $nodeCount   = $3;
+            my %nodeRecord = (
+                timestamp   => "$timestamp",
+                source_name => "$source_name",
+                nodeCount   => "$nodeCount"
+            );
+            push (@nodeCountList, \%nodeRecord);
+            push (@sourceList, $source_name);
+        }
+        if ($firstLine eq "true") {
+            $firstTimestamp = $timestamp;
+            $firstLine = "false";
+        }
+        $lastTimestamp = $timestamp;
+    }
+    close FILE;
+    unlink($temporary_logfile);
+    if ($DEBUG >= 2) {
+       print Dumper ("Parsed Streaming Data", \@streamingList);
+       print Dumper ("Parsed Node Count Data", \@nodeCountList);
+    }
+    return (\@streamingList, \@nodeCountList);
+}
+
+sub createBcpFile {
+    my ($parsedStreamingData, $parsedNodeCountData) = @_;
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $streamingBcpFile = "${tmpDir}/streamingLog.bcp";
+    $nodeCountBcpFile = "${tmpDir}/nodeCountLog.bcp";
+    open BCP1, ">$streamingBcpFile" or die "Cannot open streamingBcpFile";
+        foreach my $data_element ( @$parsedStreamingData ) {
+            printf BCP1 "%s|%d|%s|%d|%s\n",
+                $data_element->{timestamp},
+                $siteId,
+                $instance,
+                $source_id_map->{$data_element->{'source'}},
+                $data_element->{rop_time};
+        }
+    if ($DEBUG >= 3) {
+        print "Printing streaming Bcp File\n";
+        system ("/bin/cat $streamingBcpFile");
+    }
+    close BCP1;
+    open BCP2, ">$nodeCountBcpFile" or die "Cannot open nodeCountBcpFile.";
+    foreach my $data_element ( @$parsedNodeCountData ) {
+    printf BCP2 "%s|%d|%s|%d|%s\n",
+        $data_element->{timestamp},
+        $siteId,
+        $instance,
+        $source_id_map->{$data_element->{'source_name'}},
+        $data_element->{nodeCount};
+    }
+    if ($DEBUG >= 4) {
+        print "Printing node Count Bcp File\n";
+        system ("/bin/cat $nodeCountBcpFile");
+    }
+    close BCP2;
+}
+
+sub loadDb {
+    my $loadSql1 = "LOAD DATA LOCAL INFILE \'$streamingBcpFile\' INTO TABLE $lastStreamingTable FIELDS TERMINATED BY \'|\'";
+    my $loadSql2 = "LOAD DATA LOCAL INFILE \'$nodeCountBcpFile\' INTO TABLE $nodeCountTable FIELDS TERMINATED BY \'|\'";
+    removeOldData();
+    if ($DEBUG >= 6) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql1\n";
+    }
+    dbDo($dbh, $loadSql1) or die "Failed to load Data".$dbh->errstr."\n";
+    dbDo($dbh, $loadSql2) or die "Failed to load Data".$dbh->errstr."\n";
+    $dbh->disconnect();
+    unlink($streamingBcpFile, $nodeCountBcpFile);
+}
+
+sub removeOldData {
+    my $deleteSql1 = "DELETE FROM $lastStreamingTable WHERE siteid = $siteId AND ede_instance = '$instance' AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    my $deleteSql2 = "DELETE FROM $nodeCountTable WHERE siteid = $siteId AND ede_instance = '$instance' AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ($DEBUG >= 5) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql1\n";
+        print "Sq2 statement for deleting old data.\n";
+        print "$deleteSql2\n";
+    }
+    dbDo($dbh, $deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteSql2) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main ();

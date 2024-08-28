@@ -1,0 +1,126 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+
+our $DEBUG = 0;
+our @STATS = ( "totalMem", "freeMem", "pushed", "received", "discarded", "outflow", "inflow", "notifInQ", "supiOpQ", "evntOutQ", "fromSupiOpQ", "fromNotifQ" );
+
+main();
+
+sub main
+{
+    my ($inputFile,$outputFile);
+    my $result = GetOptions("input=s"  => \$inputFile,
+			    "output=s"    => \$outputFile,
+			    "debug=s" => \$DEBUG );
+    
+    open INPUT, "$inputFile" or die "Cannot open inputFile $inputFile";
+
+    open OUTPUT, ">$outputFile" or die "Cannot open outputFile $outputFile";
+    print OUTPUT "STATS";
+    foreach my $stat ( @STATS )
+    {
+	print OUTPUT ",", $stat;
+    }
+    print OUTPUT "\n";
+    
+    my $currMc = "";
+    my %stats = ();
+    while ( my $line = readLine() )
+    {
+	if ( $line =~ /^\S+ \S+ fma_cirpman_/ )
+	{
+	    my ($date,$time,$mc,$test) = $line =~ /^(\S+) (\S+) (\S+) (\S+)/;	    
+	    if ( $DEBUG > 4 ) { print "date=$date time=$time mc=$mc test=$test\n"; }
+
+	    if ( $mc ne $currMc )
+	    {
+		if ( $currMc )
+		{
+		    writeStats($currMc,\%stats);
+		    %stats = ();
+		}
+		$stats{"ts"} = $date . " " . $time;
+		$currMc = $mc;
+	    }
+	    
+	    if ( $test eq "selfTest5" )
+	    {
+		my ($pushed) = readLine() =~ / (\d+)$/;
+		my ($received) = readLine() =~ / (\d+)$/;
+		my ($discarded) = readLine() =~ / (\d+)$/;
+		my ($outflow) = readLine() =~ /last 10 seconds: (\d+),/;
+		my ($inflow) = readLine() =~ /last 10 seconds: (\d+),/;
+
+		$stats{"pushed"} = $pushed;
+		$stats{"received"} = $received;
+		$stats{"discarded"} = $discarded;
+		$stats{"outflow"} = $outflow;
+		$stats{"inflow"} = $inflow;
+	    }
+	    elsif ( $test eq "selfTest6" )
+	    {
+		my $totalMemLine = readLine(); 
+		if ( $totalMemLine !~ /^Total memory/ )
+		{
+		    $totalMemLine = readLine();
+		}
+
+		my ($totalMem) = $totalMemLine =~ / (\d+)$/;
+		my ($freeMem) = readLine() =~ / (\d+)$/;
+		readLine();readLine();readLine();
+
+		$stats{"totalMem"} = $totalMem * 1024;
+		$stats{"freeMem"} = $freeMem * 1024;
+	    }
+	    elsif ( $test eq "selfTest7" ) 
+	    {
+		my ($notifInQ) = readLine() =~ /current=(\d+),/;
+		my ($supiOpQ) = readLine() =~ /current=(\d+),/;
+		my ($evntOutQ) = readLine() =~ /current=(\d+),/;
+
+		$stats{"notifInQ"} = $notifInQ;
+		$stats{"supiOpQ"} = $supiOpQ;
+		$stats{"evntOutQ"} = $evntOutQ;
+	    }
+	    elsif ( $test eq "selfTest9" )
+	    {
+		my ($fromSupiOpQ) = readLine() =~ / (\d+)$/;
+		my ($fromNotifQ) = readLine() =~ / (\d+)$/;
+
+		$stats{"fromNotifQ"} = $fromNotifQ;
+		$stats{"fromSupiOpQ"} = $fromSupiOpQ;
+	    }
+	    elsif ( $test eq "selfTest10" )
+	    {
+		readLine();
+	    }
+	}
+    }
+
+    close INPUT;
+    close OUTPUT;
+}
+
+
+sub writeStats
+{
+    my ($fmMc, $r_Stats ) = @_;
+    if ( $DEBUG > 3 ) { print Dumper( "writeStats $fmMc", $r_Stats ); }
+
+    print OUTPUT $r_Stats->{"ts"}, " ", $fmMc;
+    foreach my $stat ( @STATS )
+    {
+	print OUTPUT " ", $r_Stats->{$stat};
+    }
+    print OUTPUT "\n";
+}
+
+sub readLine
+{
+    my $line = <INPUT>;
+    if ( $DEBUG > 5 ) { print $line }
+    return $line;
+}

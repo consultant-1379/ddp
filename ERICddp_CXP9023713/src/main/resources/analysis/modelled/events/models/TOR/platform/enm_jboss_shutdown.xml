@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_jboss_shutdown">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid" />
+  </table>
+
+  <events>
+    <!-- JBOSS_SHUTDOWN { "result": "STOP", "duration": 3 } -->
+    <event name="JBOSS_SHUTDOWN">
+      <metric source="host" target="serverid" />
+      <metric source="result" target="result" />
+      <metric source="duration" target="duration" />
+    </event>
+  </events>
+</modelledevents>

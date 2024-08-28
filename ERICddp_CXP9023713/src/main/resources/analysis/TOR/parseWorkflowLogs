@@ -1,0 +1,339 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use PerlIO::gzip;
+use DBI;
+
+use StatsTime;
+use StatsDB;
+use StatsCommon;
+
+our $DEBUG = 0;
+
+sub handleOldWf($$$) {
+    my ($r_workFlow,$r_oldWfById,$r_workFlows) = @_;
+
+    if ( $DEBUG > 9 ) { print Dumper("handleOldWf: r_workFlow", $r_workFlow); }
+
+    if ( exists $r_workFlow->{'log'} ) {
+        my $r_logEntries = delete $r_workFlow->{'log'};
+        # There's bug in older versions where it's writting
+        # the same workflow multiple times, so we need to check
+        # if we've already read a line with this instance id
+        my $r_existingWf = $r_oldWfById->{$r_workFlow->{'instanceId'}};
+        my $r_logHash = undef;
+        if ( defined $r_existingWf ) {
+            $r_logHash = $r_existingWf->{'_logs'};
+        } else {
+            $r_logHash = {};
+            $r_workFlow->{'_logs'} = $r_logHash;
+            push @{$r_workFlows}, $r_workFlow;
+            $r_oldWfById->{$r_workFlow->{'instanceId'}} = $r_workFlow;
+        }
+        # Also, the orignal format was print log entires multiple times
+        # Put the logs into a hash so we can remove the dupicates
+        foreach my $r_entry ( @{$r_logEntries} ) {
+            $r_logHash->{$r_entry} = 1;
+        }
+    } else {
+        push @{$r_workFlows}, $r_workFlow;
+    }
+}
+
+sub parseLogs($) {
+    my ($logFile) = @_;
+
+    open(my $logFileFh, $logFile) or die "Failed to open $logFile";
+    my $line = <$logFileFh>;
+    if ( ! defined $line ) {
+        return [];
+    }
+
+    my %oldWfById = ();
+
+    my $r_workFlows = decode_json($line);
+    if( ref($r_workFlows) eq 'ARRAY') {
+        # New format, first line is an array of the progressSummaries
+        foreach my $r_workFlow ( @{$r_workFlows} ) {
+            $r_workFlow->{'_rawevents'} = <$logFileFh>;
+        }
+    } else {
+        # Old format, each workflow on seperate line
+        my $r_firstWorkFlow = $r_workFlows;
+        $r_workFlows = [];
+        handleOldWf($r_firstWorkFlow,\%oldWfById,$r_workFlows);
+        while ( my $line = <$logFileFh> ) {
+            my $r_workFlow = decode_json($line);
+            handleOldWf($r_workFlow,\%oldWfById,$r_workFlows);
+        }
+    }
+    close($logFileFh);
+
+    #
+    # Now for the orginal format, we need to add a "fake" Node as
+    # that format didn't include the nodeName
+    #
+    while ( my ($instanceId,$r_workFlow) = each %oldWfById ) {
+        my @logEntries = keys %{delete $r_workFlow->{'_logs'}};
+        $r_workFlow->{'logs'} = [ { 'log' => \@logEntries } ];
+    }
+    
+    if ( $DEBUG > 8 ) { print Dumper("parseLogs: r_workFlows", $r_workFlows); }
+
+    return $r_workFlows;
+}
+
+sub processWorkflows($$) {
+    my ($r_workFlows,$r_incr) = @_;
+
+    my @topWorkFlows = ();
+    my %wfById = ();
+    foreach my $r_workFlow ( @{$r_workFlows} ) {
+        if ( $r_workFlow->{'definitionId'} =~ /__top$/ ) {
+            push @topWorkFlows, $r_workFlow;
+        }
+        $wfById{$r_workFlow->{'instanceId'}} = $r_workFlow;
+    }
+
+    my @wfToProcess = ();
+    foreach my $r_workFlow ( @topWorkFlows ) {
+        my $endTime = $r_workFlow->{'endTime'};
+        if ( defined $endTime ) {
+            my $prevEndTime = $r_incr->{'endTime'}->{$r_workFlow->{'instanceId'}};
+            if ( (! defined $prevEndTime) || ($prevEndTime ne $endTime) ) {
+                push @wfToProcess, $r_workFlow;
+            }
+        }
+    }
+
+    foreach my $r_workFlow ( @wfToProcess ) {
+        my @tasks = ();
+        if ( exists $r_workFlow->{'_rawevents'} ) {
+            getTasks($r_workFlow->{'instanceId'},\%wfById,\@tasks);
+        } elsif ( exists $r_workFlow->{'logs'} ) {
+            logsToTasks($r_workFlow,\@tasks);
+        }
+
+        foreach my $r_task ( @tasks ) {
+            if ( $DEBUG > 6 ) { print Dumper("processWorkflows: r_task", $r_task); }
+            my @sortedLog = sort { $a->{'index'} <=> $b->{'index'} } @{$r_task->{'log'}};
+            if ( $DEBUG > 5 ) { print Dumper("processWorkflows: sortedLog", \@sortedLog); }
+            my @logEntries = ();
+            foreach my $r_logEntry ( @sortedLog ) {
+                push @logEntries, $r_logEntry->{'value'};
+            }
+            $r_task->{'log'} = \@logEntries;
+        }
+
+        $r_workFlow->{'_tasks'} = \@tasks;
+        if ( $DEBUG > 5 ) { print Dumper("processWorkflows: r_workFlow", $r_workFlow); }
+    }
+
+
+
+    return \@wfToProcess;
+}
+
+sub convertWfTime($) {
+    my ($wfTime) = @_;
+
+    return formatTime( parseTime( $wfTime, $StatsTime::TIME_WORKFLOWS_MSEC),
+                       $StatsTime::TIME_SQL );
+}
+
+sub logsToTasks($$) {
+    my ($r_workFlow,$r_tasks) = @_;
+
+    my $r_logs = delete $r_workFlow->{'logs'};
+    my @tasks = ();
+    if ( $DEBUG > 5 ) { print Dumper("logsToTasks: logs for $r_workFlow->{'instanceId'}",$r_logs); }
+    #
+    # Covert the old format in to the new
+    #
+    my $r_lastTask = undef;
+    foreach my $r_node ( @{$r_logs} ) {
+        if ( (! defined $r_lastTask) || ((! exists $r_lastTask->{'nodeName'}) && (! exists $r_node->{'nodeName'})) || ($r_node->{'nodeName'} ne $r_lastTask->{'nodeName'}) ) {
+            $r_lastTask = { 'log' => [] };
+            if ( exists $r_node->{'nodeName'} ) {
+                $r_lastTask->{'nodeName'} = $r_node->{'nodeName'};
+            };
+            push @tasks, $r_lastTask;
+        }
+        my $r_taskLog = $r_lastTask->{'log'};
+        foreach my $logLine ( @{$r_node->{'log'}} ) {
+            my ($time) = $logLine =~ /^([\d-]+ [\d:\.]+)/;
+            $time =~ s/[- :\.]//g;
+            push @{$r_taskLog}, { 'index' => $time, 'value' => $logLine }
+        }
+    }
+   
+    # For the second format (with nodeName but without start/endTime)
+    # the other of the nodes isn't in time sequence, so sort them
+    # using the timestamp of the first log entry in each node
+    @tasks = sort { $a->{'log'}->[0]->{'index'} <=> $b->{'log'}->[0]->{'index'} } @tasks;
+
+    push @{$r_tasks}, @tasks;
+    if ( $DEBUG > 5 ) { print Dumper("logsToTasks: r_tasks",$r_tasks); }
+}
+
+sub getTasks {
+    my ($instanceId,$r_wfById,$r_tasks) = @_;
+
+    my $r_workFlow = $r_wfById->{$instanceId};
+
+    my $rawEventsStr = delete $r_workFlow->{'_rawevents'};
+    if ( ! defined $rawEventsStr ) {
+        return [];
+    }
+
+    my $r_wfEvents = decode_json($rawEventsStr);
+
+    my @filteredEvents = ();
+    foreach my $r_wfEvent ( @{$r_wfEvents} ) {
+        my $nodeType = $r_wfEvent->{'nodeType'};
+        my $eventType = $r_wfEvent->{'eventType'};
+        if ( ($nodeType eq 'serviceTask' && $eventType =~ /^start$|^end$|^log$/) ||
+                 ($nodeType eq 'callActivity' && $eventType eq 'call') ) {
+            my $ts = parseTime($r_wfEvent->{'eventTime'}, $StatsTime::TIME_WORKFLOWS_MSEC) * 1000;
+            my ($msec) = $r_wfEvent->{'eventTime'} =~ /\.(\d{3})/;
+            $ts += $msec;
+            $r_wfEvent->{'ts'} = $ts;
+            push @filteredEvents, $r_wfEvent;
+        }
+    }
+    my @sortedEvents = sort { $a->{'ts'} <=> $b->{'ts'} } @filteredEvents;
+    if ( $DEBUG > 6 ) { print Dumper("getTasks: sortedEvents", \@sortedEvents); }
+
+    foreach my $r_wfEvent ( @sortedEvents ) {
+        if ( $DEBUG > 7 ) { print Dumper("getTasks: r_wfEvent", $r_wfEvent); }
+        my $nodeType = $r_wfEvent->{'nodeType'};
+        my $eventType = $r_wfEvent->{'eventType'};
+        my $r_lastEvent = $r_tasks->[$#{$r_tasks}];
+        if ( $nodeType eq 'serviceTask' ) {
+            if ( $eventType eq 'start' ) {
+                if ( (! defined $r_lastEvent) || ($r_lastEvent->{'nodeName'} ne $r_wfEvent->{'nodeName'}) ) {
+                    push @{$r_tasks}, {
+                        'startTime' => convertWfTime($r_wfEvent->{'eventTime'}),
+                        'nodeName' => $r_wfEvent->{'nodeName'},
+                        'log' => []
+                    };
+                }
+            } elsif ( $eventType eq 'end' ) {
+                if ( defined $r_lastEvent && $r_lastEvent->{'nodeName'} eq $r_wfEvent->{'nodeName'} ) {
+                    $r_lastEvent->{'endTime'} = convertWfTime($r_wfEvent->{'eventTime'});
+                }
+            } elsif ( $eventType eq 'log' ) {
+                if ( defined $r_lastEvent && $r_lastEvent->{'nodeName'} eq $r_wfEvent->{'nodeName'} ) {
+                    my $r_eventAttributes = decode_json($r_wfEvent->{'eventAttributes'});
+                    while ( my ($key,$value) = each %{$r_eventAttributes} ) {
+                        if ( $key =~ /^LOG(\d+)/ ) {
+                            my $logIndex = $1;
+                            push @{$r_lastEvent->{'log'}}, { 'index' => $logIndex, 'value' => $value };
+                        }
+                    }
+                }
+            }
+        } elsif ( $nodeType eq 'callActivity' && $r_wfEvent->{'eventType'} eq 'call' ) {
+            getTasks($r_wfEvent->{'childInstanceId'},$r_wfById,$r_tasks);
+        }
+    }
+}
+
+
+sub storeWorkflows($$$) {
+    my ($site,$r_workFlows,$analysisOutDir) = @_;
+
+    my %allWfNames = ();
+    my ($min,$max);
+    foreach my $r_workFlow ( @{$r_workFlows} ) {
+        $allWfNames{$r_workFlow->{'definitionName'}} = 1;
+        my $startTime = parseTime($r_workFlow->{'startTime'}, $StatsTime::TIME_WORKFLOWS_MSEC);
+        if ( ! defined $min || $startTime < $min ) {
+            $min = $startTime;
+        }
+        if ( ! defined $max || $startTime > $max ) {
+            $max = $startTime;
+        }
+        $r_workFlow->{'start'} = $startTime;
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    my @allWfNamesList = keys %allWfNames;
+    my $r_nameMap = getIdMap($dbh, "enm_vnflaf_wfnames", "id", "name", \@allWfNamesList );
+
+    my $r_rows = dbSelectAllHash($dbh,
+                                 sprintf("SELECT start,end,instanceId FROM enm_vnflaf_wfexec WHERE siteid = %d AND start BETWEEN '%s' AND '%s'",
+                                         $siteId,
+                                         formatTime($min,$StatsTime::TIME_SQL),
+                                         formatTime($max,$StatsTime::TIME_SQL))
+                             ) or die "Failed to get existing rows";
+    my %wfById = ();
+    foreach my $r_row ( @{$r_rows} ) {
+        $wfById{$r_row->{'instanceId'}} = { 'start' => $r_row->{'start'}, 'end' => $r_row->{'end'} };
+    }
+
+
+    foreach my $r_workFlow ( @{$r_workFlows} ) {
+        if ( ! exists $wfById{$r_workFlow->{'instanceId'}} ) {
+            my $start = formatTime($r_workFlow->{'start'}, $StatsTime::TIME_SQL);
+            my $endStr = 'NULL';
+            if ( defined $r_workFlow->{'endTime'} ) {
+                $endStr = "'" . formatTime(parseTime($r_workFlow->{'endTime'}, $StatsTime::TIME_WORKFLOWS_MSEC),
+                                    $StatsTime::TIME_SQL) . "'";
+            }
+            dbDo($dbh, sprintf("INSERT INTO enm_vnflaf_wfexec (siteid,start,end,nameid,instanceId) VALUES ( %d, '%s', %s, %d, '%s')",
+                               $siteId, $start, $endStr, $r_nameMap->{$r_workFlow->{'definitionName'}}, $r_workFlow->{'instanceId'}))
+                or die "Failed to insert workflow";
+        } elsif ( ! defined $wfById{$r_workFlow->{'instanceId'}}->{'end'} && defined $r_workFlow->{'endTime'} ) {
+            my $end = formatTime(parseTime($r_workFlow->{'endTime'}, $StatsTime::TIME_WORKFLOWS_MSEC),
+                                 $StatsTime::TIME_SQL);
+            dbDo($dbh, sprintf("UPDATE enm_vnflaf_wfexec SET end = '%s' WHERE siteid = %s AND start = '%s' AND instanceId = '%s'",
+                               $end, $siteId, $wfById{$r_workFlow->{'instanceId'}}->{'start'}, $r_workFlow->{'instanceId'}))
+                or die "Failed to update workflow";
+        }
+
+        my $outputFile =  $analysisOutDir . "/" . $r_workFlow->{'instanceId'} . ".gz";
+        open OUTPUT, ">:gzip", $outputFile or die "Failed to open $outputFile";
+        print OUTPUT encode_json($r_workFlow);
+        close OUTPUT;
+    }
+
+    $dbh->disconnect();
+}
+
+sub main {
+    my ($site, $logFile, $analysisOutDir,$incrFile);
+
+    my $result = GetOptions(
+        "site=s"        => \$site,
+        "logFile=s"     => \$logFile,
+        "analysisOut=s" => \$analysisOutDir,
+        "incr=s"        => \$incrFile,
+        "debug=s"       => \$DEBUG
+        );
+    die "Invalid args"  if ($result != 1);
+    setStatsDB_Debug($DEBUG);
+    setStatsCommon_Debug($DEBUG);
+
+    my $r_workFlows = parseLogs($logFile);
+    my $r_incr = incrRead($incrFile);
+    my $r_processedWfs = processWorkflows($r_workFlows,$r_incr);
+    storeWorkflows($site,$r_processedWfs,$analysisOutDir);
+
+    foreach my $r_processedWf ( @{$r_processedWfs} ) {
+        my $endTime = $r_processedWf->{'endTime'};
+        if ( defined $endTime ) {
+            $r_incr->{'endTime'}->{$r_processedWf->{'instanceId'}} = $endTime;
+        }
+    }
+    incrWrite($incrFile,$r_incr);
+}
+
+main();

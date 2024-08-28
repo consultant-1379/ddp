@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Count"
+>
+  <title value="Dwhdb Count"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_stats_dwhdb_count">
+        <reference table="sites" condition="eniq_stats_dwhdb_count.siteId = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="eniq_stats_dwhdb_count.dbCount" label="Dwhdb Count"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

@@ -1,0 +1,151 @@
+#!/usr/bin/env perl
+
+use Time::Local;
+use Getopt::Long;
+use strict;
+
+my %STATE_MAP = 
+(
+ "started"         => "Enabled",
+ "initializing..." => "Enabled",
+ "offline"         => "Disabled",
+ "failed"          => "Disabled",
+ "terminating..."  => "Disabled",
+ "retrying..."     => "Disabled",
+ "stopped"         => "Disabled"
+ );
+
+our $DEBUG = 0;
+my ($logFile,$output,$format,$date);
+my $result = GetOptions(
+			"input=s"  => \$logFile,
+			"output=s" => \$output,
+			"format=s" => \$format,
+			"date=s" => \$date,
+			"debug=s" => \$DEBUG
+			);
+
+( $result == 1 ) or die("Invalid Args");
+( -r $logFile ) or die("Could not read from logFile $logFile");
+$output or die("No output specified");
+$format or die("No format specified");
+
+my ($startDay,$startMon,$startYear) = $date =~ /^(\d{2,2})-(\d{2,2})-(\d{2,2})/;
+
+# Log will normally only include entries from 23:35 the previous day, we filter
+# out anything from before this
+my $startTime = timelocal(0,0,0,$startDay,$startMon - 1, $startYear + 100) - (25 * 60);
+
+open LOG, $logFile or die "Cannot open logFile $logFile";
+open OUTPUT, ">$output" or die "Cannot open output $output";
+while ( my $line = <LOG> )
+{
+    if ( $line =~ /^\d+/ )
+    {
+	my ($year,$month,$day,$hour,$min,$sec, $mc, $addInfo);
+	if ( $format eq 'cifr2' )
+	{
+	    ($year,$month,$day,$hour,$min,$sec, $mc, $addInfo) = $line =~
+		/^(\d+)-(\d+)-(\d+) (\d+):(\d+)\.(\d+) (\S+) .*  \"([^\"]+)\"/;		
+	}
+	#2005-02-16 02:06.37 StartStop "COM.ERICSSON.NMS.CIF.SSR.RUNNING_STATE_CHANGE" "COARSE" "NAMUpdateServer: Running state from stopped to started  Reason: PROCESS_DIED  DN: ManagedComponentNAMUpdateServer=NAMUpdateServer"
+	#2005-02-16 09:10.23  StartStop "frran1omc" "COM.ERICSSON.NMS.CIF.SSR.RUNNING_STATE_CHANGE" "COARSE" "Region_CS: Running state from started to stopped\n Reason: OPERATOR_COMMAND Restart cold\n Elapsed time: 798 ms\n DN: ManagedComponentConfigurationService=Region_CS"
+	elsif ( $format eq 'cifr3' )
+	{
+	    ($year,$month,$day,$hour,$min,$sec, $mc, $addInfo) = $line =~
+		/^(\d+)-(\d+)-(\d+) (\d+):(\d+)\.(\d+)\s+(\S+) .* \"([^\"]+)\"/;		
+	}
+
+	if ( $DEBUG > 9 ) { print "$year,$month,$day,$hour,$min,$sec, $mc, $addInfo\n"; }
+
+	if ( ! $month ) # Log entry in wrong format, report and skip to next line
+	{
+	    print "Pattern match failed for $line";
+	    next;
+	}
+
+	
+	if ( ($mc =~ /StartStop$/) && ($addInfo =~ /ManagedComponent/) )
+	{
+	    my $time = timelocal($sec, $min, $hour, $day, $month - 1, $year - 1900);
+	    if ( $time < $startTime )
+	    {
+		if ( $DEBUG > 1 ) { print "Skipping $line"; }
+		next;
+	    }
+	    else
+	    {
+		if ( $DEBUG > 1 ) { print "$year:$month:$day:$hour:$min $addInfo\n"; }
+	    }
+
+	    my ($oldState,$newState,$mc,$reason,$restart_reason,$restart_reason_txt,$user,$extra_data);
+	    if ( $addInfo =~ /Reason: / )
+	    {
+		#rnh_config_reg: Running state from stopped to started  Reason: NON_RESPONDING_SERVER  DN: ManagedComponentrnh_config_reg=rnh_config_reg
+		($mc,$oldState,$newState,$reason,$extra_data) = $addInfo =~ /^([^:]+): Running state from (\S+) to (\S+)\s+Reason: (\S+) (.*)/;
+        if ($DEBUG > 5) { print "extra_data: $extra_data\n"; }
+		if ( $newState =~ /\\n$/ )
+		{
+		    ($newState) = $newState =~ /(.*)\\n$/;
+		}
+		if ( $reason =~ /\\n$/ )
+		{
+		    ($reason) = $reason =~ /(.*)\\n$/;
+		}
+
+        # New fields added in OSS-RC R6
+        ($restart_reason,$restart_reason_txt,$user) = $extra_data =~ /.*restart_reason=(\S+); restart-reason_txt=(.*); userid=(\S+);$/;
+        if ($DEBUG > 5) { print "restart_reason: $restart_reason\trestart_reason_txt: $restart_reason_txt\tuser: $user\n";}
+	    }
+	    else
+	    {
+		($oldState,$newState,$mc) = $addInfo =~ /^Running state from (\S+) to (\S+) for ManagedComponent[^=]+=([^\"]+)/;
+		$reason = "NA";
+        $restart_reason = "";
+        $restart_reason_txt = "";
+	    }
+	    
+	    my $mappedOldState = $oldState;
+	    if ( exists $STATE_MAP{$oldState} )
+	    {
+		$mappedOldState = $STATE_MAP{$oldState};
+	    }
+
+	    my $mappedNewState = $newState;
+	    if ( exists $STATE_MAP{$newState} )
+	    {
+		$mappedNewState = $STATE_MAP{$newState};
+	    }
+
+	    if ( $DEBUG > 5 ) { print "oldState = $oldState, newState = $newState, mc = $mc, reason = $reason, mappedOldState = $mappedOldState, mappedNewState = $mappedNewState\n"; }
+
+	    # A lot of the states are mapped to the same value
+	    # So the transition from terminating... to stopped
+	    # produces Disabled to Disabled, so we only
+	    # output when the mapped old and new states are
+	    # different
+	    if ( ($mappedOldState ne $mappedNewState) )
+	    {
+		printf OUTPUT "%d::%s::%s::%s::%s::%s::%s::%s\n",
+		$time,$mc,$mappedOldState,$mappedNewState,$reason,$restart_reason,$restart_reason_txt,$user;
+	    }
+	    elsif ( ($oldState eq "started") && ($newState eq "started") )
+	    {
+		printf OUTPUT "%d::%s::%s::%s::%s::%s::%s::%s\n",
+		$time,$mc,"Enabled","Disabled",$reason,$restart_reason,$restart_reason_txt,$user;
+		printf OUTPUT "%d::%s::%s::%s::%s::%s::%s::%s\n",
+		$time,$mc,"Disabled","Enabled",$reason,$restart_reason,$restart_reason_txt,$user;
+	    }
+	    else
+	    {
+		if ( $DEBUG > 2 )
+		{
+		    print "Disgarding $addInfo\n";
+		}
+	    }
+	}
+    }
+}
+close LOG;
+close OUTPUT;
+    

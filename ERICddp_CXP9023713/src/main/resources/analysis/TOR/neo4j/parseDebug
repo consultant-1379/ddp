@@ -1,0 +1,433 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use EnmServiceGroup;
+
+our $DEBUG = 0;
+
+sub parseFiles($$) {
+    my ($inputDir,$date) = @_;
+
+    opendir DIR, $inputDir or die "Cannot open input dir $inputDir";
+    my @inputFiles = sort grep {/^debug\./} readdir(DIR);
+    closedir(DIR);
+    if ( $DEBUG > 0 ) { print Dumper("parseFiles: inputFiles", \@inputFiles); }
+
+    my $minTime = parseTime("$date 00:00:00", $StatsTime::TIME_SQL);
+    if ( $DEBUG > 5 ) { print "parseFiles: minTime=$minTime\n"; }
+
+    my @events = ();
+    foreach my $inputFile ( @inputFiles ) {
+        my ($host) = $inputFile =~ /^debug\.(.*)/;
+        if ( ! defined $host ) {
+            die "Failed to get host from $inputFile";
+        }
+
+        open INPUT, $inputDir . "/" . $inputFile or die "Cannot open $inputFile";
+        while ( my $line = <INPUT> ) {
+            if ( $DEBUG > 9 ) { print "parseFiles: line=$line"; }
+
+            if ( $line =~ /^(\S+) ([\d:]+)\.(\d+)[\+-]\d+ INFO\s+\[\S+\.([^ \.\]]+)\] (.*)/ ) {
+                my ($date,$time,$msec,$logger,$message) = ($1,$2,$3,$4,$5);
+                my $timestamp = parseTime("$date $time", $StatsTime::TIME_SQL);
+                if ( $DEBUG > 5 ) { print "parseFiles: time=$time timestamp=$timestamp\n"; }
+
+                if ( $timestamp >= $minTime ) {
+                    my $tsmsec = ($timestamp * 1000) + $msec;
+
+                    my $type = undef;
+                    if ( $logger eq 'RaftMachine' ) {
+                        $type = 'raft';
+                    } elsif ( $logger eq 'CheckPointerImpl' ) {
+                        $type = 'chkpnt';
+                    }
+                    if ( defined $type ) {
+                        my $database = 'graph.db';
+                        if ( $message =~ /^\[(system|dps|dps\/.*)\]\s+(.+)/ ) {
+                            $database = $1;
+                            $message = $2;
+                        }
+                        push @events, { 'time' => "$date $time", 'tsmsec' => $tsmsec, 'type' => $type, 'message' => $message, 'host' => $host, 'database' => $database };
+                    }
+                }
+            }
+        }
+        close INPUT;
+    }
+
+    my @sortedEvents = sort { $a->{'tsmsec'} <=> $b->{'tsmsec'} } @events;
+    if ( $DEBUG > 5 ) { print Dumper("parseFiles: sortedEvents", \@sortedEvents); }
+
+    return \@sortedEvents;
+}
+
+sub compareMembers($$) {
+    my ($a,$b) = @_;
+
+    if ( $DEBUG > 5 ) { print Dumper("compareMembers a and b", $a, $b); }
+
+    my %aKeys = ();
+    foreach my $r_member ( @{$a} ) {
+        $aKeys{$r_member->{'ip'}} = $r_member->{'role'} . ":" . $r_member->{'id'};
+    }
+
+    foreach my $r_member ( @{$b} ) {
+        my $aKey = delete $aKeys{$r_member->{'ip'}};
+        if ( ! defined $aKey ) {
+            if ( $DEBUG > 5 ) { print "compareMembers : no aKey for " . $r_member->{'ip'}; }
+            return 0;
+        }
+        my $bKey = $r_member->{'role'} . ":" . $r_member->{'id'};
+        if ($bKey ne $aKey) {
+            if ( $DEBUG > 5 ) { print "compareMembers : key diff  for " . $r_member->{'ip'} . ", aKey=$aKey, bKey=$bKey\n"; }
+            return 0;
+        }
+    }
+
+    my @extraAKeys = keys %aKeys;
+    if ( $#extraAKeys > -1 ) {
+        if ( $DEBUG > 5 ) { print "compareMembers : extra keys\n"; }
+        return 0;
+    }
+
+    return 1;
+}
+
+sub parseClusterOverview($) {
+    my ($coFile) = @_;
+
+    my @samples = ();
+    my $r_currSample = undef;
+    open INPUT, $coFile or die "Cannot open $coFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseClusterOverview: line=$line\n"; }
+        if ( $line =~ /^(\d{6,6}:\d{2,2}:\d{2,2})$/ ) {
+            my $timestamp = formatTime(parseTime($1,$StatsTime::TIME_DDMMYY_HM),$StatsTime::TIME_SQL);
+            if ( $DEBUG > 7 ) { print "parseClusterOverview: sample start @ $timestamp\n"; }
+            $r_currSample = { 'time' => $timestamp, 'members' => [] };
+            push @samples, $r_currSample;
+        } elsif ( $line =~ /^([\d\.]+):([A-Z]+):(.*)/ ) {
+            push @{$r_currSample->{'members'}}, { 'ip' => $1, 'role' => $2, 'id' => $3 };
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 7 ) { print Dumper("parseClusterOverview: samples", \@samples); }
+
+    my $r_currMemberState = undef;
+    my @states = ();
+    foreach my $r_sample ( @samples ) {
+        if ( (! defined $r_currMemberState) || (! compareMembers($r_currMemberState,$r_sample->{'members'})) ) {
+            push @states, $r_sample;
+            $r_currMemberState = $r_sample->{'members'};
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseClusterOverview: states", \@states); }
+    return \@states;
+}
+
+sub processCheckPointEvents($) {
+    my ($r_inEvents) = @_;
+
+    my %CHECK_POINT_TRIGGERS = (
+        'Store copy' => 'STORE_COPY',
+        'Store file copy' => 'STORE_COPY',
+        'scheduler for time threshold' => 'TIME',
+        'Scheduled checkpoint for time threshold' => 'TIME',
+        'scheduler for tx count threshold' => 'TX',
+        'scheduler for tx log pruning' => 'TX',
+        'Scheduled checkpoint for tx count threshold' => 'TX',
+        'database shutdown' => 'DB_SHUTDOWN',
+        'ericsson.driver.force_check_point' => 'FORCE_CHKPNT',
+        'Scheduled checkpoint for every 15 minutes threshold' => 'TIME',
+        'Scheduled checkpoint for every 100000 transactions threshold' => 'TX',
+        'Database shutdown' => 'DB_SHUTDOWN'
+        );
+
+    my %chkPnts = ();
+    foreach my $r_event ( @{$r_inEvents} ) {
+        if ( $r_event->{'type'} eq 'chkpnt' ) {
+            my $r_chkpnts = $chkPnts{$r_event->{'host'}};
+            if ( ! defined $r_chkpnts ) {
+                $r_chkpnts = [];
+                $chkPnts{$r_event->{'host'}} = $r_chkpnts;
+            }
+            if ( $DEBUG > 6 ) { print "processCheckPointEvents: message=" . $r_event->{'message'} . "\n"; }
+            if ( $r_event->{'message'} =~ /^Check(.*) triggered by/ ) {
+                # To cover Newer Neo4j versions (NEO4J 3.4.1 onward)
+                if ($r_event->{'message'} =~ /^Checkpoint triggered by\s+(.+)\s+@ txId: (\d+) (.*)/) {
+                    my ($trigger, $txId, $info) = ($1, $2, $3);
+                    if ($DEBUG > 5) {print "processCheckPointEvents: trigger=$trigger txId=$txId info=$info\n";}
+                    if ($info =~ /^checkpoint started.../) {
+                        # Newer log messages quote the trigger
+                        $trigger =~ s/"//g;
+                        my $type = $CHECK_POINT_TRIGGERS{$trigger};
+                        if (!defined $type) {
+                            print "WARN: Unknown checkpoint type \"$trigger\"\n";
+                            $type = 'UNKNOWN';
+                        }
+                        my $r_chkpnt = { 'type' => $type, 'start' => $r_event->{'time'}, 'txid' => $txId };
+                        if ($DEBUG > 6) {print Dumper("processCheckPointEvents: host=" . $r_event->{'host'},
+                            $r_chkpnt);}
+                        push @{$r_chkpnts}, $r_chkpnt;
+                    }
+                    elsif ($info =~ /^checkpoint completed in/) {
+                        my $lastIndex = $#{$r_chkpnts};
+                        if ($lastIndex > -1) {
+                            my $r_lastChkPnt = $r_chkpnts->[$lastIndex];
+                            if ($txId == $r_lastChkPnt->{'txid'}) {
+                                $r_lastChkPnt->{'end'} = $r_event->{'time'};
+                            }
+                        }
+                    }
+                }
+                # To cover Legacy Neo4j versions
+                elsif ($r_event->{'message'} =~ /^Check Pointing triggered by ([^\[]+) \[(\d+)\]:  (.*)/) {
+                    my ($trigger, $txId, $info) = ($1, $2, $3);
+                    $trigger =~ s/"//g;
+                    if ($DEBUG > 5) {print "processCheckPointEvents: trigger=$trigger txId=$txId info=$info\n";}
+                    if ($info =~ /^Starting check pointing.../) {
+                        my $type = $CHECK_POINT_TRIGGERS{$trigger};
+                        if (!defined $type) {
+                            print "WARN: Unknown checkpoint type \"$trigger\"\n";
+                            $type = 'UNKNOWN';
+                        }
+                        my $r_chkpnt = { 'type' => $type, 'start' => $r_event->{'time'}, 'txid' => $txId };
+                        if ($DEBUG > 6) {print Dumper("processCheckPointEvents: host=" . $r_event->{'host'},
+                            $r_chkpnt);}
+                        push @{$r_chkpnts}, $r_chkpnt;
+                    }
+                    elsif ($info =~ /^Check pointing completed/) {
+                        my $lastIndex = $#{$r_chkpnts};
+                        if ($lastIndex > -1) {
+                            my $r_lastChkPnt = $r_chkpnts->[$lastIndex];
+                            if ($txId == $r_lastChkPnt->{'txid'}) {
+                                $r_lastChkPnt->{'end'} = $r_event->{'time'};
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("processCheckPointEvents: chkPnts", \%chkPnts); }
+    return \%chkPnts;
+}
+
+sub processRaftEvents($$) {
+    my ($r_inEvents,$r_clusterStates) = @_;
+
+    my %idMap = ();
+    my $currentLeader = undef;
+    foreach my $r_state ( @{$r_clusterStates} ) {
+        foreach my $r_member ( @{$r_state->{'members'}} ) {
+            if ( ! defined $currentLeader ) {
+                if ( $r_member->{'role'} eq 'LEADER' ) {
+                    $currentLeader = $r_member->{'ip'};
+                }
+            }
+            $idMap{$r_member->{'id'}} = $r_member->{'ip'};
+        }
+    }
+
+    my @outEvents = ();
+    foreach my $r_event ( @{$r_inEvents} ) {
+        if ( $r_event->{'type'} eq 'raft' ) {
+            if ( $r_event->{'message'} =~ /^Election started with vote request: Vote.Request from MemberId\{([a-f\d]+)\}/ ) {
+                my $memberId = $1;
+                $idMap{$memberId} = $r_event->{'host'};
+                push @outEvents, {
+                    'time' => $r_event->{'time'},
+                        'host' => $r_event->{'host'},
+                        'event' => 'START_ELECTION',
+                        'leader' => $currentLeader,
+                        'changeleader' => 0,
+                        'dbname' => $r_event->{'database'}
+                };
+            } elsif ( $r_event->{'message'} =~ /^Moving to (\S+)/ ) {
+                my $newState = $1;
+                my $r_event = {
+                    'time' => $r_event->{'time'},
+                        'host' => $r_event->{'host'},
+                        'event' => 'CHANGE_ROLE_' . $newState,
+                        'leader' => $currentLeader,
+                        'dbname' => $r_event->{'database'}
+                };
+                my $changeLeader = 0;
+
+                if ( $newState eq 'LEADER' ) {
+                    $currentLeader = $r_event->{'host'};
+                    $changeLeader = 1;
+                } elsif ( (defined $currentLeader) && ($currentLeader eq $r_event->{'host'}) ) {
+                    # Current Leader is moving to something other then LEADER so
+                    # so we have no leader
+                    $currentLeader = undef;
+                    $changeLeader = 1;
+                }
+                $r_event->{'changeleader'} = $changeLeader;
+                push @outEvents, $r_event;
+            }
+        }
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("processEvents: outEvents", \@outEvents); }
+    return \@outEvents;
+}
+
+
+sub storeData($$$$) {
+    my ($site,$date,$r_chkPnts,$r_raftEvents) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    # In cloud this is enough as the VM only has the neo4j SG
+    my $r_neo4jSrv = enmGetServiceGroupInstances($site,$date,"neo4j");
+    my %neo4jSrvIds = ();
+    while ( my ($hostname,$srvId) = each %{$r_neo4jSrv} ) {
+        $neo4jSrvIds{$srvId} = 1;
+    }
+
+    # But for phyiscal there are other SG on the blade, so also try and get the servers from
+    # the enm_neo4j_srv table
+    my $r_rows = dbSelectAllArr($dbh,"SELECT DISTINCT(serverid) FROM enm_neo4j_srv WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'");
+    foreach my $r_row ( @{$r_rows} ) {
+        $neo4jSrvIds{$r_row->[0]} = 1;
+    }
+
+    my $srvIdsStr = join(",", keys %neo4jSrvIds);
+    $r_rows = dbSelectAllArr($dbh,"
+SELECT
+ network_interface_ip.ipaddress,
+ servers.id
+FROM
+ servers, network_interfaces, network_interface_ip
+WHERE
+ servers.siteid = $siteId AND
+ servers.id IN ( $srvIdsStr ) AND
+ network_interface_ip.date = '$date' AND
+ network_interface_ip.ifid = network_interfaces.id AND
+ network_interfaces.serverid = servers.id
+") or die "Failed to query for neo4j IP addrs";
+    my %ipToSrvId = ();
+    foreach my $r_row ( @{$r_rows} ) {
+        if ( ! exists $ipToSrvId{$r_row->[0]} ) {
+            $ipToSrvId{$r_row->[0]} = $r_row->[1];
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("storeData: ipToSrvId", \%ipToSrvId); }
+
+    #
+    # CheckPoints
+    #
+    dbDo($dbh, sprintf("DELETE FROM enm_neo4j_chkpnts WHERE siteid = %d AND start BETWEEN '%s 00:00:00' AND '%s 23:59:59'",
+                       $siteId, $date, $date))
+        or die "Failed to remove old data";
+    while ( my ($hostIP,$r_hostChkPnts) = each %{$r_chkPnts} ) {
+        my $serverId = $ipToSrvId{$hostIP};
+        if ( defined $serverId || $hostIP eq 'neo4j1' ) {
+            # For STANDALONE neo4j, we put NULL for the serverId
+            if ( $hostIP eq 'neo4j1' ) {
+                $serverId = '\N';
+            }
+            foreach my $r_chkPnt ( @{$r_hostChkPnts} ) {
+                if ( exists $r_chkPnt->{'end'} ) {
+                    dbDo($dbh,sprintf("INSERT INTO enm_neo4j_chkpnts (siteid,start,serverid,end,type,txid) VALUES (%d,'%s',%s,'%s','%s', %d)",
+                                      $siteId, $r_chkPnt->{'start'}, $serverId,
+                                      $r_chkPnt->{'end'}, $r_chkPnt->{'type'},
+                                      $r_chkPnt->{'txid'}))
+                        or die "Failed to insert data";
+                }
+            }
+        } else {
+            print "WARN: Could not find serverId for $hostIP for enm_neo4j_chkpnts\n";
+        }
+    }
+
+    if ( ! defined $r_raftEvents ) {
+        $dbh->disconnect();
+        return;
+    }
+
+    #
+    # Raft Events
+    #
+    dbDo($dbh, sprintf("DELETE FROM enm_neo4j_raftevents WHERE siteid = %d AND time BETWEEN '%s 00:00:00' AND '%s 23:59:59'",
+                       $siteId, $date, $date))
+        or die "Failed to remove old data";
+    my $lastTime = '';
+    my $seqNumber = 0;
+    foreach my $r_raftEvent ( @{$r_raftEvents} ) {
+        my $leader = "NULL";
+        my $leaderIP = $r_raftEvent->{'leader'};
+        if ( defined $leaderIP ) {
+            $leader = $ipToSrvId{$leaderIP};
+        }
+
+        if ( $r_raftEvent->{'time'} eq $lastTime ) {
+            $seqNumber++;
+        } else {
+            $seqNumber = 0;
+        }
+
+        my $serverId = $ipToSrvId{$r_raftEvent->{'host'}};
+        if ( defined $serverId ) {
+            dbDo($dbh,
+                 sprintf("INSERT INTO enm_neo4j_raftevents (siteid,time,seqno,serverid,leaderid,type,changeleader,dbname) VALUES (%d,'%s',%d,%d,%s,'%s',%d,'%s')",
+                         $siteId, $r_raftEvent->{'time'},$seqNumber,
+                         $serverId,
+                         $leader,
+                         $r_raftEvent->{'event'},
+                         $r_raftEvent->{'changeleader'},
+                         $r_raftEvent->{'dbname'}
+                 )
+                ) or die "Failed to insert data";
+        } else {
+            print "WARN: Could not find serverId for $r_raftEvent->{'host'} for enm_neo4j_raftevents\n";
+        }
+
+        $lastTime = $r_raftEvent->{'time'};
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($inputDir,$site,$date);
+    my $result = GetOptions(
+        "indir=s" => \$inputDir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG,
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_rawEvents = parseFiles($inputDir,$date);
+
+    my $r_raftEvents = undef;
+    my $clusterOverviewLog = $inputDir . "/cluster_overview.log";
+    if ( -r $clusterOverviewLog ) {
+        my $r_clusterStates = parseClusterOverview($inputDir . "/cluster_overview.log");
+        $r_raftEvents = processRaftEvents($r_rawEvents,$r_clusterStates);
+    }
+
+    my $r_chkPnts = processCheckPointEvents($r_rawEvents);
+
+    if ( defined $site ) {
+        storeData($site,$date,$r_chkPnts,$r_raftEvents);
+    }
+}
+
+main();

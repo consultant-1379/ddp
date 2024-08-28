@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_f5_tcp_stats">
+    <reference table="sites" condition="eo_f5_tcp_stats.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_f5_tcp_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="SUM(eo_f5_tcp_stats.connects)" label="Connects"/>
+  <column db="SUM(eo_f5_tcp_stats.connFails)" label="FailedConnects"/>
+
+  <ctxmenu keycol="connects" targettype="url" multiselect="true">
+    <item id="tcpstats" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

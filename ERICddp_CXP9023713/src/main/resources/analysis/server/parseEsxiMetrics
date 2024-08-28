@@ -1,0 +1,195 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub writeIncr($$) {
+    my($incrFile,$last_timestamp) = @_;
+    open INC, ">$incrFile";
+    print INC $last_timestamp;
+    close INC;
+}
+
+sub readIncr($) {
+    my ($incrFile) = @_;
+    my($last_timestamp);
+    if ( defined $incrFile && -r $incrFile ) {
+        do{
+            local $/ = undef;
+            open my $fh, "<", $incrFile or die "could not open $incrFile";
+            $last_timestamp = <$fh>;
+            close $fh;
+        };
+    return $last_timestamp;
+    }
+}
+
+sub readEsxiMetrics($$) {
+    my ($inputFile,$last_ts) = @_;
+    my(@f_data);
+    my (%data);
+    open(INPUT,"<",$inputFile) or die "Could not open input file " . $inputFile . ": " . $!;
+
+    if(defined $last_ts){
+        while (<INPUT> ) {
+            if(/^$last_ts/)
+            {
+                 while (<INPUT> ) {
+                     last if /^$/;
+                     push @f_data, $_;
+                }
+            }
+        }
+    }
+    else
+    {
+        @f_data = <INPUT>;
+    }
+    close(INPUT);
+    my($last_timestamp)= split(/;/,$f_data[$#f_data]);
+    my($first_timestamp)= split(/;/,$f_data[0]);
+    $data{'last_timestamp'} = $last_timestamp;
+    $data{'first_timestamp'} = $first_timestamp;
+    foreach my $line(@f_data){
+        if ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});mem.usage.average\(percent\);(\d+)/) {
+            $data{'hires_server_stat'}{$1}{'memused'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});net.received.average\(kiloBytesPerSecond\);(\d+)/ ) {
+            $data{'nic_stat'}{$1}{'ibytes_per_sec'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});net.transmitted.average\(kiloBytesPerSecond\);(\d+)/ ) {
+            $data{'nic_stat'}{$1}{'obytes_per_sec'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});net.packetsRx.summation\(number\);(\d+)/ ) {
+            $data{'nic_stat'}{$1}{'ipkts_per_sec'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});net.packetsTx.summation\(number\);(\d+)/ ) {
+            $data{'nic_stat'}{$1}{'opkts_per_sec'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});cpu.usage.average\(percent\);(\d+)/ ) {
+            $data{'hires_server_stat'}{$1}{'guest'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});cpu.ready.summation\(millisecond\);(\d+)/ ) {
+            $data{'enm_esxi_metrics'}{$1}{'cpu_ready_summation'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});cpu.costop.summation\(millisecond\);(\d+)/ ) {
+            $data{'enm_esxi_metrics'}{$1}{'cpu_costop_summation'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});disk.read.average\(kiloBytesPerSecond\);(\d+)/ ) {
+            $data{'hires_disk_stat'}{$1}{'readkb'} = $2;
+        } elsif ( $line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2});disk.write.average\(kiloBytesPerSecond\);(\d+)/ ) {
+            $data{'hires_disk_stat'}{$1}{'writekb'} = $2;
+        }
+    }
+    if ( $DEBUG > 3 ) { print Dumper("readEsxiMetrics: data", \%data); }
+    return \%data;
+}
+
+sub storeEsxiMetrics($$$$) {
+    my ($site,$date,$hostname,$r_data) = @_;
+    my $first_timestamp=$r_data->{'first_timestamp'};
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId($dbh,$siteId,$hostname);
+    my $r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name",[ "vnic0" ], $serverId, "serverid" );
+    my $nicid = $r_nicMap->{"vnic0" };
+    my $r_diskMap = getIdMap($dbh, "disks", "id", "name", [ "vsan0" ], $serverId, "serverid" );
+    my $diskId = $r_diskMap->{"vsan0"};
+
+    dbDo($dbh, "DELETE FROM raw_devices where serverid = $serverId AND diskid = $diskId AND date = '$date'");
+    dbDo($dbh, "INSERT INTO raw_devices (date,serverid,diskid) VALUES ('$date', $serverId, $diskId)");
+    while (my($table,$data) = each %{$r_data}){
+        if($table eq "enm_esxi_metrics"){
+            my $enm_esxi_metrics = getBcpFileName("enm_esxi_metrics");
+            open (BCP, "> $enm_esxi_metrics") or die "Failed to open $enm_esxi_metrics";
+            dbDo($dbh, "DELETE FROM enm_esxi_metrics WHERE serverid = $serverId AND siteid = $siteId AND time BETWEEN '$r_data->{'first_timestamp'}' AND '$date 23:59:59'" ) or die "Failed to delete from enm_esxi_metrics";
+    
+            while (my($time,$metrics) = each %{$data}) {
+                if ( ! defined $r_data->{'enm_esxi_metrics'}->{$time}->{'cpu_ready_summation'}  ) { $r_data->{'enm_esxi_metrics'}->{$time}->{'cpu_ready_summation'}  = 0; }
+        if ( ! defined $r_data->{'enm_esxi_metrics'}->{$time}->{'cpu_costop_summation'}  ) { $r_data->{'enm_esxi_metrics'}->{$time}->{'cpu_costop_summation'}  = 0; }
+                print BCP $siteId . "\t" . $serverId . "\t" . $time . "\t". 
+                          $r_data->{'enm_esxi_metrics'}->{$time}->{'cpu_ready_summation'} . "\t".
+                          $r_data->{'enm_esxi_metrics'}->{$time}->{'cpu_costop_summation'} . "\n";
+            }
+            close BCP;
+            dbDo( $dbh, "LOAD DATA LOCAL INFILE '$enm_esxi_metrics' INTO TABLE enm_esxi_metrics" )
+            or die "Failed to load new data from '$enm_esxi_metrics' file to 'enm_esxi_metrics' table";
+        }
+        if($table eq "hires_server_stat") {
+            dbDo($dbh, "DELETE FROM hires_server_stat WHERE serverid = $serverId AND siteid = $siteId AND time BETWEEN '$r_data->{'first_timestamp'}' AND '$date 23:59:59'                ") or die "Failed to delete from hires_server_stat";
+            my $hires_server_stat = getBcpFileName("hires_server_stat");
+            open (BCP, "> $hires_server_stat") or die "Failed to open $hires_server_stat";
+
+            while (my($time,$metrics) = each %{$data}) {
+                if ( ! defined $r_data->{'hires_server_stat'}->{$time}->{'guest'}  ) { $r_data->{'hires_server_stat'}->{$time}->{'guest'}  = 0; }
+                if ( ! defined $r_data->{'hires_server_stat'}->{$time}->{'memused'}  ) { $r_data->{'hires_server_stat'}->{$time}->{'memused'}  = 0; }
+                print BCP $time . "\t" . $siteId . "\t" . $serverId . "\t" .
+                          $r_data->{'hires_server_stat'}->{$time}->{'guest'}/100 . "\t".
+                          $r_data->{'hires_server_stat'}->{$time}->{'memused'}/100 . "\t".
+                                     "0". "\t" ."0"."\n";
+            }
+            close BCP;
+            dbDo($dbh, "LOAD DATA LOCAL INFILE '$hires_server_stat' INTO TABLE hires_server_stat (time,siteid,serverid,guest,memused,membuffers,memcached)")
+                or die "Failed to load new data from '$hires_server_stat' file to 'hires_server_stat' table";
+        }
+        if($table eq "hires_disk_stat") {
+            dbDo($dbh, "DELETE FROM hires_disk_stat WHERE serverid = $serverId AND siteid = $siteId AND time BETWEEN '$r_data->{'first_timestamp'}' AND '$date 23:59:59'") or die "Failed to delete from hires_disk_stat";
+            my $hires_disk_stat = getBcpFileName("hires_disk_stat");
+            open (BCP, "> $hires_disk_stat") or die "Failed to open $hires_disk_stat";
+
+            while (my($time,$metrics) = each %{$data}) {
+                my $blks = ($r_data->{'hires_disk_stat'}->{$time}->{'writekb'}+$r_data->{'hires_disk_stat'}->{$time}->{'readkb'}) * 2;
+                my $readblks = $r_data->{'hires_disk_stat'}->{$time}->{'readkb'} * 2;
+                print BCP $time . "\t" . $siteId . "\t" . $serverId . "\t" . $diskId . "\t". $blks . "\t" . $readblks  . "\n";
+            }
+            close BCP;
+            dbDo($dbh, "LOAD DATA LOCAL INFILE '$hires_disk_stat' INTO TABLE hires_disk_stat (time,siteid,serverid,diskId,blks,readblks)")
+                        or die "Failed to load new data from '$hires_disk_stat' file to 'hires_disk_stat' table";
+        }
+        if($table eq "nic_stat") {
+            dbDo($dbh, "DELETE FROM nic_stat WHERE serverid = $serverId AND siteid = $siteId AND time BETWEEN '$r_data->{'first_timestamp'}' AND '$date 23:59:59'") or die "Failed to delete from nic_stat";
+            my $nic_stat = getBcpFileName("nic_stat");
+            open (BCP, "> $nic_stat") or die "Failed to open $nic_stat";
+
+            while (my($time,$metrics) = each %{$data}) {
+            if ( ! defined $r_data->{'nic_stat'}->{$time}->{'ibytes_per_sec'}  ) { 
+                   $r_data->{'nic_stat'}->{$time}->{'ibytes_per_sec'}  = 0; }
+        if ( ! defined $r_data->{'nic_stat'}->{$time}->{'obytes_per_sec'}  ) {
+                $r_data->{'nic_stat'}->{$time}->{'obytes_per_sec'}  = 0; }
+        if ( ! defined $r_data->{'nic_stat'}->{$time}->{'ipkts_per_sec'}  ) {
+                $r_data->{'nic_stat'}->{$time}->{'ipkts_per_sec'}  = 0; }
+        if ( ! defined $r_data->{'nic_stat'}->{$time}->{'opkts_per_sec'}  ) { 
+                $r_data->{'nic_stat'}->{$time}->{'opkts_per_sec'}  = 0; }
+                print BCP $siteId . "\t" . $serverId . "\t" . $nicid . "\t" .$time . "\t" .
+                          $r_data->{'nic_stat'}->{$time}->{'ibytes_per_sec'}/1000 . "\t".
+                          $r_data->{'nic_stat'}->{$time}->{'obytes_per_sec'}/1000 . "\t".
+                          $r_data->{'nic_stat'}->{$time}->{'ipkts_per_sec'} . "\t".
+                          $r_data->{'nic_stat'}->{$time}->{'opkts_per_sec'} . "\n";
+           }
+           close BCP;
+           dbDo($dbh, "LOAD DATA LOCAL INFILE '$nic_stat' INTO TABLE nic_stat (siteid,serverid,nicid,time,ibytes_per_sec,obytes_per_sec,ipkts_per_sec,opkts_per_sec)")
+               or die "Failed to load new data from '$nic_stat' file to 'nic_stat' table";
+        }
+    }
+        $dbh->disconnect();
+}
+
+sub main()
+{
+    my ($inputFile,$incrFile,$site,$hostname,$date);
+    my $result = GetOptions("input=s" => \$inputFile,
+                            "incr=s" => \$incrFile,
+                            "site=s" => \$site,
+                            "date=s" => \$date,
+                            "hostname=s" => \$hostname,
+                            "debug=s" => \$DEBUG,
+        );
+   ($result == 1) or die "Invalid args";
+   my $last_timestamp = readIncr($incrFile);
+   my ($r_data, $hires_server_stat_key, $nic_stat_key, $enm_esxi_metrics_key, $hires_disk_stat_key) = readEsxiMetrics($inputFile,$last_timestamp);
+   storeEsxiMetrics($site,$date,$hostname, $r_data);
+   writeIncr($incrFile,$r_data->{'last_timestamp'});
+}
+
+main();
+
+

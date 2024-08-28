@@ -1,0 +1,87 @@
+#!/bin/sh
+
+#set -xv
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+PLOTARG="NA"
+
+INPUTFILE=$1
+shift
+OUTPUTFILE=$1
+shift
+DATE=$1
+shift
+DATASCALE=$1
+shift
+XSCALE=$1
+shift
+YSCALE=$1
+shift
+PLOTFILE=$1
+shift
+PLOTARG=$1
+shift
+
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+FILTER="^DUMP"
+STATS=""
+for STAT in $@; do
+    if [ ! -z "${STATS}" ]; then
+	STATS="${STATS},"
+    fi
+    STATS="${STATS}${STAT}"
+    FILTER="${FILTER}|^${STAT}"
+done
+
+PLOT_FILE_OPT=""
+if [ "${PLOTFILE}" != "NA" ] ; then
+   PLOT_FILE_OPT="--plot ${PLOTFILE}"
+fi
+
+egrep "${FILTER}" ${INPUTFILE} | ${ANALYSIS_BIN}/cms/getNeadStat --scale ${DATASCALE} --disableMissing 0 --input - --output ${TMP_DIR}/neadStat.txt -stats ${STATS} ${PLOT_FILE_OPT} --plotarg "${PLOTARG}"
+if [ $? -ne 0 ]; then
+    echo "Parse failed"
+    echo "${ANALYSIS_BIN}/cms/getNeadStat --scale $SCALE --disableMissing $DISABLEMISSING --input ${INPUTFILE} --output ${TMP_DIR}/neadStat.txt -stats ${STATS} ${PLOTOPT}"
+    exit 1
+fi
+
+/bin/rm -f ${TMP_DIR}/neadplot.txt
+cat > ${TMP_DIR}/neadplot.txt <<EOF
+set xdata time
+set size ${XSCALE},${YSCALE}
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DATE}:00:00":"${DATE}:23:59" ]
+set format x "%H"
+set terminal jpeg
+set output "${OUTPUTFILE}"
+set title "" 
+set key under
+EOF
+
+COL=2
+PLOTCMD="plot"
+for STAT in $@; do
+    if [ ${COL} -gt 2 ]; then
+	PLOTCMD="${PLOTCMD}, "
+    fi
+
+    PLOTCMD="${PLOTCMD} \"${TMP_DIR}/neadStat.txt\" using 1:${COL} title \"${STAT}\" with lines"
+    COL=`expr ${COL} + 1`
+done
+
+echo "${PLOTCMD}" >> ${TMP_DIR}/neadplot.txt
+echo "exit" >> ${TMP_DIR}/neadplot.txt
+
+gnuplot ${TMP_DIR}/neadplot.txt
+
+if [ $? -eq 0 ]; then 
+    /bin/rm -f ${TMP_DIR}/neadplot.txt
+fi
+

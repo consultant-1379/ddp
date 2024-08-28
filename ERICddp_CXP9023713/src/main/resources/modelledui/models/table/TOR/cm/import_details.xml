@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="cm_import">
+    <reference table="sites" condition="cm_import.siteid = sites.id"/>
+    <reference table="servers" condition="cm_import.serverid = servers.id" join="LEFT OUTER JOIN"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND cm_import.job_end BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <order columnid="start" direction="ASC"/>
+
+  <column id="jobid" db="jobid" label="Job Id"/>
+  <column db="status" label="Status"/>
+  <column id="start" db="job_start" label="Job Start" formatter="ddpFormatTime"/>
+  <column db="job_end" label="Job End" formatter="ddpFormatTime"/>
+  <column db="numberOfNodes" label="Number Of Nodes"/>
+  <column db="IFNULL((servers.hostname), 'NA' )" label="Hostname"/>
+  <column db="''" label="Non Transactional Nodes" formatter="formatNTN"/>
+  <column db="IFNULL( SEC_TO_TIME( ROUND( (validate_schema_time/1000), 0 ) ), 'NA')" label="Schema Validation Time"/>
+  <column db="IFNULL( SEC_TO_TIME( ROUND( (parsing_time/1000), 0 ) ), 'NA')" label="Parsing Time"/>
+  <column db="IFNULL( SEC_TO_TIME( ROUND( (model_validation_time/1000), 0 ) ), 'NA')" label="Model Validation Time"/>
+  <column db="IFNULL( SEC_TO_TIME( ROUND( (copy_time/1000), 0 ) ), 'NA')" label="Copy Time"/>
+  <column db="IFNULL( SEC_TO_TIME( ROUND( (import_time/1000), 0 ) ), 'NA')" label="Import Time"/>
+  <column db="IFNULL( TIMEDIFF(job_end, job_start), 'NA')" label="Total Elapsed Time"/>
+  <column db="nodes_copied" label="Nodes Copied"/>
+  <column db="nodes_not_copied" label="Nodes Not Copied"/>
+  <column db="mos_created" label="MOs Created"/>
+  <column db="mos_updated" label="MOs Updated"/>
+  <column db="mos_deleted" label="MOs Deleted"/>
+  <column db="ROUND( ( IFNULL( mos_created, 0 ) + IFNULL( mos_updated, 0 ) + IFNULL( mos_deleted, 0 ) )/( IFNULL(import_time, 0) /1000), 2 )" label="MOs Processed/sec. execution phase"/>
+  <column db="file_format" label="File Format"/>
+  <column db="configuration" label="Configuration"/>
+  <column db="error_handling" label="Error Handling"/>
+  <column db="instance_validation" label="Validation Options"/>
+  <column db="import_file" label="Import File"/>
+
+</modelledtable>

@@ -1,0 +1,67 @@
+#!/bin/bash
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+##If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+DATADIR=$1
+ANALYSIS_OUTPUT=$2
+DATE=$3
+SQL_DATE=$4
+DASH_DATE=$5
+SITE=$6
+
+processHost() {
+    REMOTE_SERVER=$1
+    REMOTEHOSTNAME=$2
+    TYPE=$3
+
+    # create filesystem structures for analysis output
+    REMOTE_ANALYSIS_DIR=${ANALYSIS_OUTPUT}/servers/${REMOTEHOSTNAME}
+    REMOTE_DATA_DIR=${DATADIR}/remotehosts/${REMOTE_SERVER}
+
+    #
+    # Some extra tasks, depending on the server type
+    #
+    if [ "${TYPE}" = "NEDSS" ] || [ "${TYPE}" = "NESS" ] ; then
+        run ${ANALYSIS_BIN}/smrs/parseMessages --input ${REMOTE_DATA_DIR}/${DATE}/server/messages.txt \
+            --date ${SQL_DATE} --site ${SITE} --server ${REMOTEHOSTNAME}
+    elif [ "${TYPE}" = "UAS" ] ; then
+        if [ -r ${REMOTE_DATA_DIR}/${DATE}/ctxfarm.txt ] ; then
+            run ${ANALYSIS_BIN}/uas/processUas ${DATADIR}/remotehosts/${REMOTE_SERVER} ${SQL_DATE} \
+                ${SITE} ${REMOTEHOSTNAME}
+        fi
+    elif [  "${TYPE}" = "INFRA" ] || [  "${TYPE}" = "OTHER" ] ; then
+        if [ -d  ${REMOTE_DATA_DIR}/${DATE}/common ] && [ -r ${REMOTE_DATA_DIR}/${DATE}/common/caas_performance ] ; then
+            run ${ANALYSIS_BIN}/OSS/caas/parseCaas --file ${REMOTE_DATA_DIR}/${DATE}/common/caas_performance \
+            --site ${SITE} --date ${SQL_DATE} --remote ${REMOTEHOSTNAME}
+        fi
+    fi
+}
+
+#
+# General server stats for remote servers
+#
+if [ -r ${DATADIR}/remotehosts ]; then
+    log "Remote Servers"
+    REMOTE_SERVERS=`ls ${DATADIR}/remotehosts`
+    SUPPORTED_TYPES="MASTER UAS ENIQ EBAS EBSS EBSW SMRS SMRS_SLAVE NESS NEDSS NETSIM PEER SFS ACCESSNAS OTHER INFRA TOR"
+    for REMOTE_SERVER in ${REMOTE_SERVERS} ; do
+        REMOTEHOSTNAME=`echo ${REMOTE_SERVER} | awk -F_ '{ print $1 }'`
+        TYPE=`echo ${REMOTE_SERVER} | awk -F_ '{ print $2 }'`
+        log " ${REMOTEHOSTNAME} ${TYPE}"
+        MATCHED_TYPE="OTHER"
+        for stype in ${SUPPORTED_TYPES} ; do
+            if [ "${stype}" = "${TYPE}" ] ; then
+                MATCHED_TYPE=${stype}
+                break
+            fi
+        done
+        processHost ${REMOTE_SERVER} ${REMOTEHOSTNAME} ${MATCHED_TYPE}
+    done
+fi

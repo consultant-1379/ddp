@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="imgroupingservice"/>
+  </services>
+
+  <table name="enm_aim_grouping_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.grouping.instrumentation.incident-management-grouping-service:type=GroupingInstrumentationBean$">
+          <metric source="totalGroupsCreated" target="totalGroupsCreated_GB" delta="true" filteridle="true"/>
+          <metric source="totalGroupingProcessTime" target="totalGroupingProcessTime" delta="true" filteridle="true"/>
+          <metric source="eventsDroppedDueToTimeOut" target="eventsDroppedDueToTimeOut"/>
+          <metric source="totalReshufflesExecuted" target="totalReshufflesExecuted" delta="true" filteridle="true"/>
+          <metric source="eventsReceivedToProcess" target="eventsReceivedToProcess" delta="true" filteridle="true"/>
+          <metric source="eventsProcessed" target="eventsProcessed" delta="true" filteridle="true"/>
+    </metricgroup>
+    
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.union.instrumentation.incident-management-grouping-service:type=UnionInstrumentationBean$">
+          <metric source="totalIncidentsCreated" target="totalIncidentsCreated" delta="true" filteridle="true"/>
+          <metric source="totalIncidentsReceived" target="totalIncidentsReceived" delta="true" filteridle="true"/>
+          <metric source="totalUnionBatchProcessTime" target="totalUnionBatchProcessTime" delta="true" filteridle="true"/>
+          <metric source="totalEventsInsideIncidentsCreated" target="totalEventsInsideIncidentsCreated" delta="true" filteridle="true"/>
+          <metric source="failedPublishTransactions" target="failedPublishTransactions"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.intersection.instrumentation.incident-management-grouping-service:type=IntersectionInstrumentationBean$">
+          <metric source="totalGroupsCreated" target="totalGroupsCreated_IB" delta="true" filteridle="true"/>
+          <metric source="totalProcessingTime" target="totalProcessingTime" delta="true" filteridle="true"/>
+          <metric source="totalGroupsReceivedToBeProcessed" target="totalGroupsReceivedToBeProcessed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.grouping.instrumentation.incident-management-grouping-service:type=GroupingServiceCacheInstrumentationBean$">
+          <metric source="combinedDimensionKeysSize" target="combinedDimensionKeysSize"/>
+          <metric source="totalCombinedDKRequestsToBatchRestService" target="totalCombinedDKRequestsToBatchRestService" delta="true" filteridle="true"/>
+          <metric source="totalSingleDKRequestsToRestService" target="totalSingleDKRequestsToRestService" delta="true" filteridle="true"/>
+          <metric source="totalCombinedDKRequestsToSingleRestService" target="totalCombinedDKRequestsToSingleRestService" delta="true" filteridle="true"/>
+          <metric source="totalTimeGettingCombinedDimensionKeys" target="totalTimeGettingCombinedDimensionKeys" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.incidentmgt.grouping.instrumentation.incident-management-grouping-service:type=GroupingKnowledgeBaseInstrumentationBean$">
+          <metric source="totalTimeCalculatingConfidence" target="totalTimeCalculatingConfidence" delta="true" filteridle="true"/>
+          <metric source="totalTimeCalculatingGroupConfidence" target="totalTimeCalculatingGroupConfidence"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

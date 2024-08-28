@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@generic_jmx_stats:promCC">
+
+  <table name="generic_jmx_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <blacklist>
+    <service name="sparkworker-build"/>
+  </blacklist>
+
+  <metricgroups>
+    <metricgroup name="misc">
+      <metric source="java_lang_Memory_HeapMemoryUsage_committed" target="hp_committed" scale="1048576"/>
+      <metric source="java_lang_Memory_HeapMemoryUsage_init" target="hp_init" scale="1048576"/>
+      <metric source="java_lang_Memory_HeapMemoryUsage_max" target="hp_max" scale="1048576"/>
+      <metric source="java_lang_Memory_HeapMemoryUsage_used" target="hp_used" scale="1048576"/>
+      <metric source="java_lang_Memory_NonHeapMemoryUsage_committed" target="nh_committed" scale="1048576"/>
+      <metric source="java_lang_Memory_NonHeapMemoryUsage_init" target="nh_init" scale="1048576"/>
+      <metric source="java_lang_Memory_NonHeapMemoryUsage_max" target="nh_max" scale="1048576"/>
+      <metric source="java_lang_Memory_NonHeapMemoryUsage_used" target="nh_used" scale="1048576"/>
+      <metric source="java_lang_Threading_PeakThreadCount" target="peakthreadcount"/>
+      <metric source="java_lang_Threading_ThreadCount" target="threadcount"/>
+      <metric source="java_lang_OperatingSystem_ProcessCpuTime" target="cputime" scale="1000000000" delta="true"/>
+      <metric source="java_lang_OperatingSystem_OpenFileDescriptorCount" target="fd"/>
+      <property name="nameid" xsi:type="fixedproperty" value="_servicegroup"/>
+    </metricgroup>
+
+    <metricgroup name="nio-direct">
+      <metric source="java_nio_BufferPool_MemoryUsed" target="nio_mem_direct" scale="1048576">
+        <labelfilter name="name" value="^direct$"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="nio-mapped">
+      <metric source="java_nio_BufferPool_MemoryUsed" target="nio_mem_mapped" scale="1048576">
+        <labelfilter name="name" value="^mapped$"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="gc-young-g1">
+      <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="G1 Young Generation"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="G1 Young Generation"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="G1 Young Generation"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="gc-old-g1">
+     <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="G1 Old Generation"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="G1 Old Generation"/>
+      </metric>
+    </metricgroup>
+
+
+    <metricgroup name="gc-young-para">
+      <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="PS Scavenge"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="PS Scavenge"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="gc-old-para">
+     <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="PS MarkSweep"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="PS MarkSweep"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="gc-young-para">
+      <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="PS Scavenge"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="PS Scavenge"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="gc-old-para">
+     <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="PS MarkSweep"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="PS MarkSweep"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="gc-young-copy">
+      <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_youngcount" delta="true">
+        <labelfilter name="name" value="Copy"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_youngtime" delta="true">
+        <labelfilter name="name" value="Copy"/>
+      </metric>
+    </metricgroup>
+    <metricgroup name="gc-old-msc">
+     <metric source="java_lang_GarbageCollector_CollectionCount" target="gc_oldcount" delta="true">
+        <labelfilter name="name" value="MarkSweepCompact"/>
+      </metric>
+      <metric source="java_lang_GarbageCollector_CollectionTime" target="gc_oldtime" delta="true">
+        <labelfilter name="name" value="MarkSweepCompact"/>
+      </metric>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

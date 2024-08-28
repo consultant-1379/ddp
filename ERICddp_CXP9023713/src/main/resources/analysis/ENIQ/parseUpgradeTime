@@ -1,0 +1,248 @@
+#!/usr/bin/perl
+#####################################################################################################
+#  Description --------- parseUpgradeTime-----------
+#  This script parses the ENIQ Events feature upgrade logs
+#  and stores data to DDP DB.
+#  @author - Anam Pargal (xanampa)
+#  usage parseUpgradeTime --dir ${DIR} --site ${SITE} --date ${SQL_DATE}
+######################################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use Getopt::Long;
+use POSIX 'strftime';
+use Date::Parse;
+use StatsTime;
+
+###############################################################
+# Globals
+###############################################################
+our $date;
+our $dir;
+our $tmpDir = "/data/tmp";
+our $dbh;
+our $DEBUG = 0;
+our $siteId;
+
+sub main {
+    my  $site;
+    my $result = GetOptions(
+        "dir=s"     => \$dir,
+        "site=s"    => \$site,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+        );
+    my $start_time = 0;
+    my $end_time = 0;
+    if( $DEBUG >= 1 ) {
+        $start_time = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    parseData();
+    $dbh->disconnect();
+    if( $DEBUG >= 1 ) {
+        my $end_time = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${start_time}\n";
+        print "End Time (EPOCH milliseconds): ${end_time}\n";
+        print "Execution Time in milliseconds:".($end_time-$start_time)."\n";
+    }
+}
+
+sub parseData {
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    foreach my $file ( @files ) {
+        next if $file =~ /^\./;
+        if ( $file eq 'features_name_list_log.txt' ) {
+            removeOldData("eniq_missing_upgrade_detail"); #Remove old data from the table eniq_missing_upgrade_detail for the scenarios where parseMissingUpgradeLog() is not invoked as missing_upgrade_logs.txt is not present.
+            my $bcpFile = parseUpgradeFeatureList();
+            my $table = "eniq_feature_upgrade_list";
+            removeOldData($table);
+            loadDb($bcpFile, $table);
+        }
+        elsif ( $file eq 'upgrade_timing_detail_log.txt' ) {
+            my $bcpFile = parseUpgradeTimingLog();
+            my $table = "eniq_upgrade_timing_detail";
+            removeOldData($table);
+            loadDb($bcpFile, $table);
+        }
+        elsif ( $file eq 'missing_upgrade_logs.txt' ) {
+            my $bcpFile = parseMissingUpgradeLog();
+            my $table = "eniq_missing_upgrade_detail";
+            removeOldData($table);
+            loadDb($bcpFile, $table);
+        }
+        elsif ( $file eq 'upgrade_server_type_info.txt' ) {
+            my $upgrade_type = parseUpgradeTypeLog();
+            my $table = "eniq_upgrade_type_detail";
+            removeOldData($table);
+            loadDb($upgrade_type, $table);
+        }
+    }
+    closedir DIR;
+}
+
+sub parseUpgradeFeatureList {
+    my $upgradetype_id = 1;
+    open FILE, "<$dir/features_name_list_log.txt" or die "Can't open file to read features_name_list_log.txt";
+    my $bcpFile = "$tmpDir/features_name_list_log.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    my $line = <FILE>;
+    my $upgradeType = (split / /, $line)[-1];
+    chomp ($upgradeType);
+    if ( $upgradeType eq 'Rolling' ) {
+        $upgradetype_id = 2;
+    }
+    my $feature_name_list = "No feature list is available";
+    if( eof FILE ) {
+        printf BCP "%s|%d|%d|%s\n",
+        $date,
+        $siteId,
+        $upgradetype_id,
+        $feature_name_list;
+    }
+    else {
+        my $counter = 0;
+        while ( $line = <FILE> ) {
+            if( eof FILE and $counter == 0 ) {
+                printf BCP "%s|%d|%d|%s\n",
+                $date,
+                $siteId,
+                $upgradetype_id,
+                $feature_name_list;
+            }
+            else {
+                if ( $line =~ /(.*) \(.*/ ) {
+                    printf BCP "%s|%d|%d|%s\n",
+                    $date,
+                    $siteId,
+                    $upgradetype_id,
+                    $1;
+                }
+            }
+            $counter = 1;
+        }
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parseUpgradeTimingLog {
+    my ($events_upgrade_section, $events_upgrade_stage);
+    open FILE, "<$dir/upgrade_timing_detail_log.txt" or die "Can't open file to read upgrade_timing_detail_log.txt";
+    my $bcpFile = "$tmpDir/upgrade_timing_detail_log.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    while ( my $line = <FILE> ) {
+        my @line_data = (split /\s+/, $line);
+        $events_upgrade_section = $line_data[0] =~ s/\_/ /gr;
+        $events_upgrade_stage = $line_data[1] =~ s/\_/ /gr;
+        my($start_date, $start_time) = $line_data[2] =~ /(\d{4}-\d{2}-\d{2})-(\d{2}-\d{2}-\d{2})/;
+        $start_time =~ s/-/:/g;
+        if ( !defined $line_data[3] ) {
+            $line_data[3] = "0000-00-00-00-00-00";
+        }
+        my ($end_date, $end_time) = $line_data[3] =~ /(\d{4}-\d{2}-\d{2})-(\d{2}-\d{2}-\d{2})/;
+        $end_time =~ s/-/:/g;
+        my $start_date_sql_format = "$start_date $start_time";
+        my $end_date_sql_format = "$end_date $end_time";
+        my $start_seconds = str2time( $start_date_sql_format );
+        my $end_seconds = str2time( $end_date_sql_format );
+        my $upgrade_duration = "00:00:00";
+        if( $line_data[3] ne "0000-00-00-00-00-00" ) {
+            if ( $start_seconds < $end_seconds ) {
+                $upgrade_duration = $end_seconds - $start_seconds;
+                $upgrade_duration = strftime("\%H:\%M:\%S", gmtime($upgrade_duration));
+            }
+        }
+        if ( $events_upgrade_stage eq 'Create Snaphot Coordinator') {
+            $events_upgrade_stage = "Create Snapshot Coordinator";
+        }
+        if ( $events_upgrade_stage eq 'Mediation GW Upgrade') {
+            $events_upgrade_stage = "Mediation Gateway Workflow Auto-Provisioning";
+        }
+        printf BCP "%s|%d|%s|%s|%s|%s|%s\n",
+        $date,
+        $siteId,
+        $events_upgrade_section,
+        $events_upgrade_stage,
+        $start_date_sql_format,
+        $end_date_sql_format,
+        $upgrade_duration;
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parseMissingUpgradeLog {
+    my ($events_upgrade_section, $events_upgrade_stage, $missing_upgrade_message);
+    open FILE, "<$dir/missing_upgrade_logs.txt" or die "Can't open file to read missing_upgrade_logs.txt";
+    my $bcpFile = "$tmpDir/missing_upgrade_logs.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    while ( my $line = <FILE> ) {
+        if ( $line =~ /(.*?) (.*?) (.*)/ ) {
+            $events_upgrade_section = $1;
+            $events_upgrade_stage = $2;
+            $missing_upgrade_message = $3;
+            $events_upgrade_section =~ s/\_/ /g;
+            $events_upgrade_stage =~ s/\_/ /g;
+        }
+        if ( $events_upgrade_stage eq 'Create Snaphot Coordinator') {
+            $events_upgrade_stage = "Create Snapshot Coordinator";
+        }
+        if ( $events_upgrade_stage eq 'Mediation GW Upgrade') {
+            $events_upgrade_stage = "Mediation Gateway Workflow Auto-Provisioning";
+        }
+        printf BCP "%s|%d|%s|%s|%s\n",
+        $date,
+        $siteId,
+        $events_upgrade_section,
+        $events_upgrade_stage,
+        $missing_upgrade_message;
+    }
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parseUpgradeTypeLog {
+    my $line = `cat $dir/upgrade_server_type_info.txt`;
+    chomp($line);
+    $line =~ /^Upgrade_Server\s(.*)/;
+    my $upgrade_type = $1;
+    return $upgrade_type;
+}
+
+sub loadDb {
+    my ($bcpFile, $table) = @_;
+    my $loadSql;
+    if ($bcpFile =~ /\.bcp$/) {
+        $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    }
+    else {
+        $loadSql = "INSERT INTO $table (date,siteId,upgradeType) VALUES ('$date',$siteId,'$bcpFile')";
+    }
+    if ( $DEBUG >= 3 ) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+sub removeOldData {
+    my $table = shift;
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND date = '$date'";
+    if ( $DEBUG >= 2 ) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql\n";
+    }
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+main();

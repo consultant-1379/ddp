@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^kafka@kafka$">
+  <table name="enm_kafka_srv">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^kafka-srv-MessagesInPerSec$">
+      <metric source="Count" target="messagesIn" delta="true"/>
+    </metricgroup>
+    <metricgroup name="^kafka-srv-RequestHandlerAvgIdlePercent$">
+      <metric source="Count" target="requestHandlerAvgIdlePercent" delta="true" scale="600000000"/>
+    </metricgroup>
+    <metricgroup name="^kafka-srv-NetworkProcessorAvgIdlePercent$">
+      <metric source="Value" target="networkProcessorAvgIdlePercent" scale="0.01"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

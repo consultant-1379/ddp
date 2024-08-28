@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="securityservice"/>
+    <service name="security"/>
+  </services>
+
+  <table name="enm_secserv_comaa_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.security.accesscontrol.comaa.com-aa-service:type=LdapData$">
+      <metric source="numberOfInitialProxyBindReq" target="numberOfInitialProxyBindReq" delta="true" filteridle="true"/>
+      <metric source="numberOfInitialUserBindReq" target="numberOfInitialUserBindReq" delta="true" filteridle="true"/>
+      <metric source="numberOfAddProxyBindReq" target="numberOfAddProxyBindReq" delta="true" filteridle="true"/>
+      <metric source="numberOfAddUserBindReq" target="numberOfAddUserBindReq" delta="true" filteridle="true"/>
+      <metric source="numberOfSearchReq" target="numberOfSearchReq" delta="true" filteridle="true"/>
+      <metric source="numberOfConnectionReq" target="numberOfConnectionReq" delta="true" filteridle="true"/>
+      <metric source="numberOfErrorDisconnection" target="numberOfErrorDisconnection" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessfullDisconnection" target="numberOfSuccessfullDisconnection" delta="true" filteridle="true"/>
+      <metric source="numberOfTlsHandshakeError" target="numberOfTlsHandshakeError" delta="true" filteridle="true"/>
+      <metric source="numberOfProxyBindError" target="numberOfProxyBindError" delta="true" filteridle="true"/>
+      <metric source="numberOfUserBindError" target="numberOfUserBindError" delta="true" filteridle="true"/>
+      <metric source="totalTimeError" target="totalTimeError" delta="true" filteridle="true"/>
+      <metric source="totalTimeSuccessful" target="totalTimeSuccessful" delta="true" filteridle="true"/>
+      <metric source="maxNumberOfConnectionAlive" target="maxNumberOfConnectionAlive"/>
+      <metric source="numberOfFastConnection" target="numberOfFastConnection" delta="true" filteridle="true"/>
+      <metric source="numberOfMediumConnection" target="numberOfMediumConnection" delta="true" filteridle="true"/>
+      <metric source="numberOfHighConnection" target="numberOfHighConnection" delta="true" filteridle="true"/>
+      <metric source="numberOfSlowConnection" target="numberOfSlowConnection" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.adapter.ldap.ejb.instrumentation.com-aa-service:type=LdapTokenMonitoredData$">
+      <metric source="numberOfTokenValidationSuccessfull" target="numberOfSuccessfulTokenValidations" delta="true" filteridle="true"/>
+      <metric source="numberOfTokenValidationFailed" target="numberOfFailedTokenValidations" delta="true" filteridle="true"/>
+      <metric source="numberOfFastTokenValidation" target="numberOfFastTokenValidations" delta="true" filteridle="true"/>
+      <metric source="numberOfHighTokenValidation" target="numberOfHighTokenValidations" delta="true" filteridle="true"/>
+      <metric source="numberOfSlowTokenValidation" target="numberOfSlowTokenValidations" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

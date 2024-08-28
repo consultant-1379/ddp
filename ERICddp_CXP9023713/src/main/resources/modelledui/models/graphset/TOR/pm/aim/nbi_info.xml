@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time">
+    <dbtables main="enm_aim_lifecycle_instr">
+      <reference table="sites" condition="enm_aim_lifecycle_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_aim_lifecycle_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="push" type="sb" ylabel="Count">
+      <title value="AIM NBI Event Published"/>
+      <column db="totalBatchNotificationsSent" label="totalBatchNotificationsSent"/>
+      <column db="totalEventsSent" label="totalEventsSent"/>
+      <column db="totalNotificationErrors" label="totalNotificationErrors"/>
+    </graph>
+    <graph name="pull" type="sb" ylabel="Count">
+      <title value="AIM NBI Event Published On Demand"/>
+      <column db="totalSingleIncidentRequest" label="totalSingleIncidentRequest"/>
+      <column db="totalMultipleFiltersIncidentRequest" label="totalMultipleFiltersIncidentRequest"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="nbi">
+      <member>push</member>
+      <member>pull</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

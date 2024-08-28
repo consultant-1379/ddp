@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_proxy_statistics">
+      <reference table="sites" condition="enm_proxy_statistics.siteid = sites.id"/>
+      <reference table="servers" condition="enm_proxy_statistics.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="numTotalProxyAccount" type="sb" ylabel="count">
+      <title value="Number Of Proxy Accounts"/>
+      <column db="numTotalProxyAccountLockable" label="lockable_subtree"/>
+      <column db="numTotalProxyAccountLegacy" label="legacy_subtree"/>
+    </graph>
+    <graph name="numTotalProxyAccountEnabled" type="sb" ylabel="count">
+      <title value="Number Of Proxy Accounts Enabled"/>
+      <column db="numTotalProxyAccountEnabledLockable" label="lockable_subtree"/>
+      <column db="numTotalProxyAccountEnabledLegacy" label="legacy_subtree"/>
+    </graph>
+    <graph name="numTotalProxyAccountDisabled" type="sb" ylabel="count">
+      <title value="Number Of Proxy Accounts Disabled"/>
+      <column db="numTotalProxyAccountDisabledLockable" label="lockable_subtree"/>
+      <column db="numTotalProxyAccountDisabledLegacy" label="legacy_subtree"/>
+    </graph>
+    <graph name="numTotalProxyAccountInactive" type="sb" ylabel="count">
+      <title value="Number Of Proxy Accounts Inactive For 30Days"/>
+      <column db="numTotalProxyAccountInactiveLocable" label="lockable_subtree"/>
+      <column db="numTotalProxyAccountInactiveLegacy" label="legacy_subtree"/>
+    </graph>
+    <graph name="maxNumTotProxyAccount" type="tsc" ylabel="count">
+      <title value="Proxy Accounts Utilization"/>
+      <column db="numTotalProxyAccountLockable + numTotalProxyAccountLegacy" label="total_proxy_accounts"/>
+      <column db="maxNumTotProxyAccountThreshold" label="max_allowed_proxy_accounts"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="proxy">
+      <member>numTotalProxyAccount</member>
+      <member>numTotalProxyAccountEnabled</member>
+      <member>numTotalProxyAccountDisabled</member>
+      <member>numTotalProxyAccountInactive</member>
+      <member>maxNumTotProxyAccount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

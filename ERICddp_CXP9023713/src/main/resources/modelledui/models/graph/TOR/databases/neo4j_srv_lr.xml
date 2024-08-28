@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sa"
+ timespan="day"
+ forcelegend="true"
+ useragg="true"
+>
+ <title value="Ids In Use"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="enm_neo4j_srv_lr">
+     <reference table="sites" condition="enm_neo4j_srv_lr.siteid = sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="inst"/>
+   <where>sites.name = '%s' AND enm_neo4j_srv_lr.serverid = '%s'</where>
+   <column db="propIds" label="Properties"/>
+   <column db="nodeIds" label="Nodes"/>
+   <column db="relIds" label="Relationships"/>
+   <column db="relTypeIds" label="RelationshipTypeIds"/>
+  </query>
+ </queries>
+</modelledgraph>

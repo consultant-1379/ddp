@@ -1,0 +1,278 @@
+{
+    "pmic": {
+        "GENERATION": [
+            {
+                "config": [
+                    {
+                        "collectionDelay": 0,
+                        "durationInSeconds": 86400
+                    },
+                    {
+                        "collectionDelay": 0,
+                        "durationInSeconds": 900
+                    }
+                ],
+                "dataTypes": [
+                    "PM_STATISTICAL_1MIN",
+                    "PM_STATISTICAL_5MIN",
+                    "PM_STATISTICAL",
+                    "PM_STATISTICAL_12HOUR",
+                    "PM_STATISTICAL_30MIN",
+                    "PM_STATISTICAL_1HOUR",
+                    "PM_STATISTICAL_24HOUR"
+                ],
+                "neTypes": [
+                    "JUNIPER-vMX",
+                    "JUNIPER-SRX",
+                    "JUNIPER-PTX",
+                    "CISCO-ASR9000",
+                    "CISCO-ASR900",
+                    "JUNIPER-MX",
+                    "JUNIPER-vSRX"
+                ]
+            }
+        ],
+        "PULL": [
+            {
+                "config": [
+                    {
+                        "collectionDelay": 300,
+                        "durationInSeconds": 900
+                    },
+                    {
+                        "collectionDelay": 300,
+                        "durationInSeconds": 3600
+                    },
+                    {
+                        "collectionDelay": 60,
+                        "durationInSeconds": 300
+                    },
+                    {
+                        "collectionDelay": 300,
+                        "durationInSeconds": 1800
+                    },
+                    {
+                        "collectionDelay": 300,
+                        "durationInSeconds": 43200
+                    },
+                    {
+                        "collectionDelay": 300,
+                        "durationInSeconds": 86400
+                    },
+                    {
+                        "collectionDelay": 60,
+                        "durationInSeconds": 60
+                    }
+                ],
+                "dataTypes": [
+                    "PM_BSC_PERFORMANCE_EVENT_STATISTICS",
+                    "PM_STATISTICAL_12HOUR",
+                    "PM_EBSL",
+                    "PM_EBSN_DU",
+                    "PM_BSC_PERFORMANCE_CTRL",
+                    "PM_UETRACE_DU",
+                    "PM_STATISTICAL_30MIN",
+                    "PM_MTR_RAW",
+                    "PM_BSC_RTT",
+                    "PM_EBSM_3GPP",
+                    "PM_BSC_BAR_RAW",
+                    "PM_STATISTICAL_1MIN",
+                    "PM_EBSN_CUUP",
+                    "PM_STATISTICAL_5MIN",
+                    "PM_BSC_CER_RAW",
+                    "PM_BSC_MRR_RAW",
+                    "PM_UETRACE_CUCP",
+                    "PM_CELLTRAFFIC",
+                    "PM_UETRACE",
+                    "PM_STATISTICAL_1HOUR",
+                    "PM_BSC_PERFORMANCE_EVENT_MONITORS",
+                    "PM_BSC_CTR",
+                    "PM_EBM",
+                    "PM_EBSN_CUCP",
+                    "PM_MTR",
+                    "PM_CONTINUOUSCELLTRACE",
+                    "PM_EBSM_ENIQ",
+                    "PM_STATISTICAL",
+                    "PM_UETRACE_CUUP",
+                    "PM_UETR",
+                    "PM_BSC_MRR",
+                    "PM_BSC_CTR_RAW",
+                    "PM_BSC_CER",
+                    "PM_BSC_PERFORMANCE_EVENT",
+                    "PM_BSC_RIR_RAW",
+                    "PM_BSC_BAR",
+                    "PM_EBS",
+                    "PM_CELLTRACE",
+                    "PM_CELLTRACE_CUCP",
+                    "PM_CELLTRACE_CUUP",
+                    "PM_CELLTRACE_DU",
+                    "PM_CTUM",
+                    "PM_GPEH",
+                    "PM_BSC_PERFORMANCE_EVENT_RAW",
+                    "PM_BSC_RIR",
+                    "PM_STATISTICAL_24HOUR"
+                ],
+                "neTypes": [
+                    "RNC",
+                    "vDU",
+                    "vECE",
+                    "EPG-OI",
+                    "vTIF",
+                    "UPG",
+                    "CCRC",
+                    "MSC-BC-BSP",
+                    "Controller6610",
+                    "HSS-FE",
+                    "CCES",
+                    "vMSC",
+                    "vSAPC",
+                    "BSC",
+                    "vSBG",
+                    "DSC",
+                    "vIPWorks",
+                    "HLR-FE-BSP",
+                    "EME",
+                    "BSP",
+                    "vWMG-OI",
+                    "ERBS",
+                    "BGF",
+                    "RBS",
+                    "WMG-OI",
+                    "CCSM",
+                    "MSC-BC-IS",
+                    "HLR-FE-IS",
+                    "Router6274",
+                    "vRC",
+                    "Router6273",
+                    "vEPG-OI",
+                    "Router6672",
+                    "Router6673",
+                    "vMTAS",
+                    "HLR-FE",
+                    "Router6675",
+                    "MSC-DB-BSP",
+                    "WMG",
+                    "PCC",
+                    "IPWorks",
+                    "PCG",
+                    "FRONTHAUL-6020",
+                    "vEIR-FE",
+                    "MTAS",
+                    "vMRF",
+                    "MRF",
+                    "vHLR-FE",
+                    "MSRBS_V1",
+                    "CCPC",
+                    "CSCF",
+                    "vWMG",
+                    "vHSS-FE",
+                    "VEPG",
+                    "MRS",
+                    "SC",
+                    "vEME",
+                    "ESA",
+                    "vMSC-HC",
+                    "vCSCF",
+                    "EIR-FE",
+                    "SGSN-MME",
+                    "5GRadioNode",
+                    "SBG",
+                    "IP-STP-BSP",
+                    "vBGF",
+                    "VTFRadioNode",
+                    "vUPG",
+                    "SAPC",
+                    "IP-STP",
+                    "RadioNode",
+                    "vDSC",
+                    "Router6x71",
+                    "CUDB",
+                    "vIP-STP",
+                    "FRONTHAUL-6080",
+                    "vWCG",
+                    "CCDM",
+                    "vPP",
+                    "vCUDB",
+                    "MSC-DB",
+                    "MGW",
+                    "EPG",
+                    "RadioTNode"
+                ]
+            }
+        ],
+        "PUSH": [
+            {
+                "config": [
+                    {
+                        "collectionDelay": 0,
+                        "durationInSeconds": 86400
+                    },
+                    {
+                        "collectionDelay": 0,
+                        "durationInSeconds": 900
+                    }
+                ],
+                "dataTypes": [
+                    "PM_STATISTICAL_1MIN",
+                    "PM_STATISTICAL_5MIN",
+                    "PM_STATISTICAL",
+                    "PM_STATISTICAL_12HOUR",
+                    "PM_STATISTICAL_30MIN",
+                    "PM_STATISTICAL_1HOUR",
+                    "PM_STATISTICAL_24HOUR"
+                ],
+                "neTypes": [
+                    "SCU",
+                    "ESC",
+                    "MTAS-TSP",
+                    "SIU02",
+                    "TCU02",
+                    "SBG-IS",
+                    "vAFG",
+                    "HSS-FE-TSP",
+                    "cSAPC-TSP",
+                    "CSCF-TSP"
+                ]
+            }
+        ],
+        "PUSH_ONDEMAND": [
+            {
+                "config": [
+                    {
+                        "collectionDelay": 0,
+                        "durationInSeconds": 86400
+                    },
+                    {
+                        "collectionDelay": 0,
+                        "durationInSeconds": 900
+                    }
+                ],
+                "dataTypes": [
+                    "PM_STATISTICAL_1MIN",
+                    "PM_STATISTICAL_5MIN",
+                    "PM_STATISTICAL",
+                    "PM_STATISTICAL_12HOUR",
+                    "PM_STATISTICAL_30MIN",
+                    "PM_STATISTICAL_1HOUR",
+                    "PM_STATISTICAL_24HOUR"
+                ],
+                "neTypes": [
+                    "MINI-LINK-CN810R1",
+                    "MINI-LINK-CN810R2",
+                    "MINI-LINK-CN510R2",
+                    "MINI-LINK-CN210",
+                    "MINI-LINK-PT2020",
+                    "Fronthaul-6392",
+                    "MINI-LINK-665x",
+                    "MINI-LINK-CN510R1",
+                    "MINI-LINK-669x",
+                    "MINI-LINK-6366",
+                    "MINI-LINK-6351",
+                    "Switch-6391",
+                    "MINI-LINK-6352",
+                    "MINI-LINK-Indoor"
+                ]
+            }
+        ]
+    }
+}

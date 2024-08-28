@@ -1,0 +1,33 @@
+#!/bin/sh
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+
+#
+# Create create to calculate average
+#
+cat > ${TMP_DIR}/avg.pl <<EOF
+\$total = 0;
+\$count = 0;
+while ( \$line = <STDIN> )
+{
+    chop \$line;
+    \$total += \$line;
+    \$count++;
+}
+if ( \$count > 0 ) 
+{
+    print int (\$total / \$count );
+}
+else
+{
+    print "0";
+}
+EOF
+
+TOTAL=`cat $1 | egrep "^TOTAL_NODES" | sed 's/[^ ]* = \([0-9]*\)/\1/g' | perl -F ${TMP_DIR}/avg.pl`
+ALIVE=`cat $1 | egrep "^ALIVE_NODES" | sed 's/[^ ]* = \([0-9]*\)/\1/g' | perl -F ${TMP_DIR}/avg.pl`
+
+echo "${TOTAL} ${ALIVE}" > $2

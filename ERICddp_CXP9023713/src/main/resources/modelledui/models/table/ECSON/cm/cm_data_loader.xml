@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_cm_data_loader">
+  <reference table="sites" condition="ecson_cm_data_loader.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_cm_data_loader.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <column db="SUM(ecson_cm_data_loader.parsingTransformingProcessTime)" label="Total Processing Time (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_cm_data_loader.processTimeP0)" label="Transformation Time-P0 (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_cm_data_loader.processTimeP1)" label="Transformation Time-P1 (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_cm_data_loader.processTimeP2)" label="Transformation Time-P2 (hh:mm:ss)" formatter="ddpFormatMSec"/>
+ <column db="SUM(ecson_cm_data_loader.processTimeP3)" label="Transformation Time-P3 (hh:mm:ss)" formatter="ddpFormatMSec"/>
+
+</modelledtable>

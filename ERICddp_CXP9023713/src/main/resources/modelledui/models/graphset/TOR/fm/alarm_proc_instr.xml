@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="fm_alarmprocessing_instr">
+      <reference table="sites" condition="fm_alarmprocessing_instr.siteid = sites.id"/>
+      <reference table="servers" condition="fm_alarmprocessing_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="processed" type="sb" forcelegend="true">
+      <title value="Alarms Processed by APS"/>
+      <column db="alarmProcessedByAPSPerMinute" label="Alarms Processed"/>
+    </graph>
+    <graph name="received" type="sb" forcelegend="true">
+      <title value="Alarms Received by APS"/>
+      <column db="alarmCountReceivedByAPSPerMinute" label="Alarms Received"/>
+    </graph>
+    <graph name="failed" type="sb" forcelegend="true">
+      <title value="Unprocessed Alarms sent to Northbound"/>
+      <column db="failedAlarmCountByAPSPerMinute" label="Alarms Failed"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="instr">
+      <member>processed</member>
+      <member>received</member>
+      <member>failed</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

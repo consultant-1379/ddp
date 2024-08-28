@@ -1,0 +1,24 @@
+#!/bin/bash
+
+SITE=$1
+DATE=$2
+USER=$3
+
+ROOT_DIR=$(dirname $0)
+ANALYSIS_BIN=$(dirname ${ROOT_DIR})
+
+. /data/stats/config
+
+if [ -z "${EXTERNAL_STORE_ENDPOINT}" ] ; then
+    echo "ERROR: EXTERNAL_STORE_ENDPOINT not defined"
+    exit 1
+fi
+
+FTP_DIR=$(echo "SELECT ddpadmin.ftpusers.homedir FROM ddpadmin.ftpusers JOIN statsdb.sites ON ddpadmin.ftpusers.siteid  = statsdb.sites.id WHERE statsdb.sites.name = '${SITE}'" | ${ANALYSIS_BIN}/sql/runSql)
+if [ -d ${FTP_DIR} ] ; then
+    echo "${USER}" > ${FTP_DIR}/DDC_LoadMetrics_${DATE}.tar.gz
+    exit 0
+else
+    echo "ERROR: Problem with ftpdir for ${SITE} - ${FTP_DIR}"
+    exit 1
+fi

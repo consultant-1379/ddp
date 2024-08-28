@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_flexible_controller">
+      <reference table="sites" condition="enm_flexible_controller.siteid = sites.id"/>
+      <reference table="servers" condition="enm_flexible_controller.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="numberOfFlexibleCountersInSystem" type="sb" ylabel="Count">
+      <title value="Current number of Flexible Counters"/>
+      <column db="numberOfFlexibleCountersInSystem" label="Current number of Flexible Counters"/>
+    </graph>
+    <graph name="numberOfRequestForCreateEndpoint" type="sb" ylabel="Count">
+      <title value="Create Request Count" type="sb"/>
+      <column db="numberOfRequestForCreateEndpoint" label="Create Request Count"/>
+    </graph>
+    <graph name="numberOfRequestsForUpdateEndpoint" type="tsc" ylabel="Count">
+      <title value="Update Request Count"/>
+      <column db="numberOfRequestsForUpdateEndpoint" label="Update Request Count"/>
+    </graph>
+    <graph name="numberOfRequestForImportEndpoint" type="sb" ylabel="Count">
+      <title value="Import Request Count" type="sb"/>
+      <column db="numberOfRequestForImportEndpoint" label="Import Request Count"/>
+    </graph>
+    <graph name="numberOfRequestsForDeleteEndpoint" type="sb" ylabel="Count">
+      <title value="Delete Request Count"/>
+      <column db="numberOfRequestsForDeleteEndpoint" label="Delete Request Count"/>
+    </graph>
+    <graph name="numberOfBatchesAddedToQueue" type="sb" ylabel="Count">
+      <title value="Number of Batches added to the Queue"/>
+      <column db="numberOfBatchesAddedToQueue" label="Number of Batches added to the Queue"/>
+    </graph>
+    <graph name="numberOfBatchesRemovedFromQueue" type="sb" ylabel="Count">
+      <title value="Number of Batches removed from the Queue"/>
+      <column db="numberOfBatchesRemovedFromQueue" label="Number of Batches removed from the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersAddedToQueue" type="sb" ylabel="Count">
+      <title value="Number of Flexible Counters added to the Queue"/>
+      <column db="numberOfFlexibleCountersAddedToQueue" label="Number of Flexible Counters added to the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersRemovedFromQueue" type="sb" ylabel="Count">
+      <title value="Number of Flexible Counters removed from the Queue"/>
+      <column db="numberOfFlexibleCountersRemovedFromQueue" label="Number of Flexible Counters removed from the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersInCreationAddedToQueue" type="sb" ylabel="Count">
+      <title value="Number of Flexible Counters in Creation added to the Queue"/>
+      <column db="numberOfFlexibleCountersInCreationAddedToQueue" label="Number of Flexible Counters in Creation added to the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersInCreationRemovedFromQueue" type="sb" ylabel="Count">
+      <title value="Number of Flexible Counters in Creation removed from the Queue"/>
+      <column db="numberOfFlexibleCountersInCreationRemovedFromQueue" label="Number of Flexible Counters in Creation removed from the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersInUpdateAddedToQueue" type="tsc" ylabel="Count">
+      <title value="Number of Flexible Counters in Update added to the Queue"/>
+      <column db="numberOfFlexibleCountersInUpdateAddedToQueue" label="Number of Flexible Counters in Update added to the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersInUpdateRemovedFromQueue" type="tsc" ylabel="Count">
+      <title value="Number of Flexible Counters in Update removed from the Queue"/>
+      <column db="numberOfFlexibleCountersInUpdateRemovedFromQueue" label="Number of Flexible Counters in Update removed from the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersInDeletionAddedToQueue" type="sb" ylabel="Count">
+      <title value="Number of Flexible Counters in Deletion added to the Queue"/>
+      <column db="numberOfFlexibleCountersInDeletionAddedToQueue" label="Number of Flexible Counters in Deletion added to the Queue"/>
+    </graph>
+    <graph name="numberOfFlexibleCountersInDeletionRemovedFromQueue" type="sb" ylabel="Count">
+      <title value="Number of Flexible Counters in Deletion removed from the Queue"/>
+      <column db="numberOfFlexibleCountersInDeletionRemovedFromQueue" label="Number of Flexible Counters in Deletion removed from the Queue"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="fcm">
+      <member>numberOfFlexibleCountersInSystem</member>
+      <member>numberOfRequestForCreateEndpoint</member>
+      <member>numberOfRequestsForUpdateEndpoint</member>
+      <member>numberOfRequestForImportEndpoint</member>
+      <member>numberOfRequestsForDeleteEndpoint</member>
+      <member>numberOfBatchesAddedToQueue</member>
+      <member>numberOfBatchesRemovedFromQueue</member>
+      <member>numberOfFlexibleCountersAddedToQueue</member>
+      <member>numberOfFlexibleCountersRemovedFromQueue</member>
+      <member>numberOfFlexibleCountersInCreationAddedToQueue</member>
+      <member>numberOfFlexibleCountersInCreationRemovedFromQueue</member>
+      <member>numberOfFlexibleCountersInUpdateAddedToQueue</member>
+      <member>numberOfFlexibleCountersInUpdateRemovedFromQueue</member>
+      <member>numberOfFlexibleCountersInDeletionAddedToQueue</member>
+      <member>numberOfFlexibleCountersInDeletionRemovedFromQueue</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+    <services>
+        <service name="ebsgflow"/>
+    </services>
+
+    <table name="enm_ebsgflow">
+        <keycol name="serverid" reftable="servers"/>
+    </table>
+
+    <metricgroups>
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=com.ericsson.oss.services_EbaSolutionSet_1.0.0.inputEventQueue.eventsReceived$">
+            <metric source="Count" target="inputEventRatePerSecond" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Filtered_Event_Rate_Per_Second$">
+            <metric source="Count" target="filteredEventRatePerSecond" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Processed_Event_Rate_Per_Second$">
+            <metric source="Count" target="processedEventRatePerSecond" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Output_Counter_Volume$">
+            <metric source="Count" target="outputCounterVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Processed_Counter_Volume$">
+            <metric source="Count" target="processedCounterVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Dropped_Counter_Volume$">
+            <metric source="Count" target="droppedCounterVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Number_Of_Counter_Files_Written$">
+            <metric source="Count" target="numberOfCounterFilesWritten" delta="true" filteridle="true"/> 
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Number_Of_Counter_Files_Rewritten$">
+            <metric source="Count" target="numberOfCounterFilesRewritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventmonitors.Number_Of_Monitor_Files_Written$">
+            <metric source="Count" target="numberOfMonitorFilesWritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventmonitors.Number_Of_Monitor_Files_Rewritten$">
+            <metric source="Count" target="numberOfMonitorFilesRewritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsgflow\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventmonitors.Output_Monitor_Volume$">
+            <metric source="Count" target="outputMonitorVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=com.ericsson.oss.services_EbaSolutionSet_1.0.0.inputEventQueue.eventsReceived$">
+            <metric source="Count" target="inputEventRatePerSecond" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Filtered_Event_Rate_Per_Second$">
+            <metric source="Count" target="filteredEventRatePerSecond" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Processed_Event_Rate_Per_Second$">
+            <metric source="Count" target="processedEventRatePerSecond" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Output_Counter_Volume$">
+            <metric source="Count" target="outputCounterVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Processed_Counter_Volume$">
+            <metric source="Count" target="processedCounterVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Dropped_Counter_Volume$">
+            <metric source="Count" target="droppedCounterVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Number_Of_Counter_Files_Written$">
+            <metric source="Count" target="numberOfCounterFilesWritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventstatistics.Number_Of_Counter_Files_Rewritten$">
+            <metric source="Count" target="numberOfCounterFilesRewritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventmonitors.Number_Of_Monitor_Files_Written$">
+            <metric source="Count" target="numberOfMonitorFilesWritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventmonitors.Number_Of_Monitor_Files_Rewritten$">
+            <metric source="Count" target="numberOfMonitorFilesRewritten" delta="true" filteridle="true"/>
+        </metricgroup>
+
+        <metricgroup name="^ebsg-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.ebsg-eps\d+:name=bscperformanceeventmonitors.Output_Monitor_Volume$">
+            <metric source="Count" target="outputMonitorVolume" delta="true" filteridle="true"/>
+        </metricgroup>
+
+    </metricgroups>
+
+</modelledinstr>

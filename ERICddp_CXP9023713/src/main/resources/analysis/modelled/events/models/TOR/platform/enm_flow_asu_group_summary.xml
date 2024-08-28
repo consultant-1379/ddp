@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_flow_asu_group_summary">
+  </table>
+  <services>
+    <service name="flowautomation"/>
+  </services>
+  <events>
+    <!-- FLOW.ASU.GROUPSUMMARY {"FlowId":"com.ericsson.oss.services.shm.asu.flow","FlowVersion":"1.62.1","StartedInMaintenanceWindow":1,"TotalFailed":3,"NodesSuccessful":0,"TimeTaken":58,"UpgradedNodeswithWarnings":0,"TotalNodes":3,"SequenceOrder":1,"FlowExecutionName":"ASU_144735"} -->
+    <event name="FLOW.ASU.GROUPSUMMARY">
+      <metric source="FlowExecutionName" target="flowExecutionName" filtervalue="^[\d a-zA-Z_-]+$"/>
+      <metric source="SequenceOrder" target="sequenceOrder"/>
+      <metric source="TotalNodes" target="totalNodes"/>
+      <metric source="NodesSuccessful" target="nodesSuccessful"/>
+      <metric source="TotalFailed" target="totalFailed"/>
+      <metric source="UpgradedNodeswithWarnings" target="upgradedNodeswithWarnings"/>
+      <metric source="StartedInMaintenanceWindow" target="startedInMaintenanceWindow"/>
+      <metric source="TimeTaken" target="timeTaken"/>
+    </event>
+  </events>
+</modelledevents>

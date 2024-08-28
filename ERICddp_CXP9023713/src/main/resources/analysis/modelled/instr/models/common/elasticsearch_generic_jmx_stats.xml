@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@elasticsearch_jmx">
+
+  <table name="generic_jmx_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nameid" reftable="jmx_names"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="misc">
+      <metric source="elasticsearch_process_open_files_count" target="fd"/>
+      <property name="nameid" xsi:type="fixedproperty" value="_servicegroup"/>
+    </metricgroup>
+
+    <metricgroup name="cpu">
+      <metric source="elasticsearch_process_cpu_time_seconds_sum" target="cputime" delta="true">
+        <labelfilter name="type" value="^total"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="heap">
+      <metric source="elasticsearch_jvm_memory_committed_bytes" target="hp_committed" scale="1048576">
+        <labelfilter name="area" value="^heap"/>
+      </metric>
+      <metric source="elasticsearch_jvm_memory_used_bytes" target="hp_used" scale="1048576">
+        <labelfilter name="area" value="^heap"/>
+      </metric>
+      <metric source="elasticsearch_jvm_memory_max_bytes" target="hp_max" scale="1048576">
+        <labelfilter name="area" value="^heap"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="nonheap">
+      <metric source="elasticsearch_jvm_memory_committed_bytes" target="nh_committed" scale="1048576">
+        <labelfilter name="area" value="^non-heap"/>
+      </metric>
+      <metric source="elasticsearch_jvm_memory_used_bytes" target="nh_used" scale="1048576">
+        <labelfilter name="area" value="^non-heap"/>
+      </metric>
+      <metric source="elasticsearch_jvm_memory_max_bytes" target="nh_max" scale="1048576">
+        <labelfilter name="area" value="^non-heap"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="nio-mapped">
+      <metric source="elasticsearch_jvm_buffer_pool_used_bytes" target="nio_mem_mapped" scale="1048576">
+        <labelfilter name="type" value="mapped"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="nio-direct">
+      <metric source="elasticsearch_jvm_buffer_pool_used_bytes" target="nio_mem_direct" scale="1048576">
+        <labelfilter name="type" value="direct"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="gc-young">
+      <metric source="elasticsearch_jvm_gc_collection_seconds_count" target="gc_youngcount" delta="true">
+        <labelfilter name="gc" value="young"/>
+      </metric>
+      <metric source="elasticsearch_jvm_gc_collection_seconds_sum" target="gc_youngtime" delta="true" scale="0.001">
+        <labelfilter name="gc" value="young"/>
+      </metric>
+    </metricgroup>
+
+    <metricgroup name="gc-old">
+      <metric source="elasticsearch_jvm_gc_collection_seconds_count" target="gc_oldcount" delta="true">
+        <labelfilter name="gc" value="old"/>
+      </metric>
+      <metric source="elasticsearch_jvm_gc_collection_seconds_sum" target="gc_oldtime" delta="true" scale="0.001">
+        <labelfilter name="gc" value="old"/>
+      </metric>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

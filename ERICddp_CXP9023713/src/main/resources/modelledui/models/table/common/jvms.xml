@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="generic_jmx_stats">
+  <reference table="sites" condition="generic_jmx_stats.siteid = sites.id"/>
+  <reference table="jmx_names" condition="generic_jmx_stats.nameid = jmx_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND generic_jmx_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="generic_jmx_stats.nameid"/>
+ </groupby>
+
+ <order columnid="tcpu" direction="DESC"/>
+
+ <column db="generic_jmx_stats.nameid" label="nameid" id="nameid" visible="false"/>
+ <column db="jmx_names.name" label="Name"/>
+ <column db="SUM(generic_jmx_stats.cputime)" label="CPU" id="tcpu"/>
+ <column db="SUM(generic_jmx_stats.gc_youngtime)" label="Young GC"/>
+ <column db="SUM(generic_jmx_stats.gc_oldtime)" label="Old GC"/>
+ <column db="MAX(generic_jmx_stats.threadcount)" label="Max Threadcount"/>
+ <column db="MAX(generic_jmx_stats.fd)" label="Max FD"/>
+
+ <ctxmenu keycol="nameid" targettype="url" >
+  <item id="jvmstats" label="Plot"/>
+  <urltarget arg="plot"/>
+ </ctxmenu>
+
+</modelledtable>

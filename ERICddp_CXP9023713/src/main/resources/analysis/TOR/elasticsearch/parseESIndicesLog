@@ -1,0 +1,95 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## script  : parseESIndicesLog
+## Author  : Patrick O Connor (epatoco)
+## Purpose : The purpose of this script is to parse the ES_indices.log file
+##           and store the data under the database.
+## Usage   : ${ANALYSIS_BIN}/TOR/elasticsearch/parseESIndicesLogs --log
+##           ${DATADIR} --date ${DATE} --site ${SITE}
+#=====================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseLog($) {
+    my ($logFile) = @_;
+
+    my %indicesHelath = ();
+    open INPUT, $logFile or die "Cannot open $logFile";
+    while ( my $line = <INPUT> ) {
+        chomp $line;
+        if ( $DEBUG > 9 ) { print "parseLog: $line\n"; }
+
+        # Skip commented [OR] empty [OR] header lines, if any
+        if ( $line =~ /^\s*#/ || $line !~ /\S/ || $line =~ /^\s*health/i ) {
+            if ( $DEBUG > 5 ) { print "parseLog: Skipping the line '$line'\n"; }
+            next;
+        }
+
+        # Split each index line on "\s+"
+        my @indexSplit = split(/\s+/, $line);
+        my $indexHealth = lc($indexSplit[0]);
+        if ( $indexHealth ne 'green' && $indexHealth ne 'yellow' && $indexHealth ne 'red' ) {
+            $indexHealth = 'other';
+        }
+        $indicesHelath{$indexSplit[2]} = $indexHealth;
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseLog: indicesHelath", \%indicesHelath); }
+    return %indicesHelath;
+}
+
+sub main() {
+    my ($logFile, $site, $date) = @_;
+    my $result = GetOptions(
+        "log=s"   => \$logFile,
+        "date=s"  => \$date,
+        "site=s"  => \$site,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my %indicesHelath = parseLog($logFile);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1) or die "Failed to get siteid for $site";
+
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    # Get ID maps for Elasticsearch index names
+    my @esIndexNames = keys %indicesHelath;
+    my $indexNameIdMap = getIdMap($dbh, 'enm_es_index_names', 'id', 'name', \@esIndexNames);
+
+    my $bcpFile = "$tmpDir/enm_es_indices_cmd_stats.bcp";
+    open (BCP, "> $bcpFile") or die "Cannot open $bcpFile";
+    foreach (sort {$b cmp $a} keys %indicesHelath) {
+        print BCP "$siteId\t$date\t$indexNameIdMap->{$_}\t$indicesHelath{$_}\n";
+    }
+    close BCP;
+
+    # Remove the old data from table for the selected site and date
+    dbDo($dbh, "DELETE FROM enm_es_indices_cmd_stats WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to remove old data from 'enm_es_indices_cmd_stats' table";
+
+    # Load the new data into the table
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE enm_es_indices_cmd_stats" )
+        or die "Failed to load new data from '$bcpFile' file to 'enm_es_indices_cmd_stats' table";
+
+    unlink($bcpFile);
+    $dbh->disconnect();
+}
+
+main();

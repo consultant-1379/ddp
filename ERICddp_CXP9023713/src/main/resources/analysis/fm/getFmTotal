@@ -1,0 +1,195 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($inputFile,$dataFile,$totalFile);
+    my $result = GetOptions("input=s"  => \$inputFile,
+			    "data=s"    => \$dataFile,
+			    "total=s"    => \$totalFile,
+			    "debug=s" => \$DEBUG );
+    my @data = ();
+    readFile($inputFile, \@data);
+    if ( $DEBUG > 2 ) { print Dumper("main: data", \@data); }
+
+    my @sortedMc = aggregateData(\@data, $totalFile);
+    if ( $DEBUG > 2 ) { print Dumper("main: sortedMc", \@sortedMc); }
+
+    writeFile(\@data,\@sortedMc, $dataFile);
+
+    print "MC";
+    foreach my $mc ( @sortedMc )
+    {
+	print " ", $mc;
+    }
+    print "\n";
+}
+
+sub aggregateData
+{
+    my ($r_data,$totalFile) = @_;
+
+    my %totals = ();
+    for my $r_timeSample ( @{$r_data} )
+    {
+	foreach my $mc ( keys %{$r_timeSample} )
+	{
+	    if ( $mc ne "time" )
+	    {
+		$totals{$mc} += $r_timeSample->{$mc};
+	    }
+	}
+    }
+    my $r_sortedKeys = getKeysSortedByValue(\%totals);
+
+    open TOTALS, ">$totalFile" or die "Cannot write to totals $totalFile";
+    my $overallTotal = 0;
+    foreach my $mc ( @{$r_sortedKeys} )
+    {
+	printf TOTALS " <tr> <td>%s<\/td> <td>%d<\/td> <\/tr>\n",
+	$mc, $totals{$mc};
+	$overallTotal += $totals{$mc};
+    }
+    printf TOTALS " <tr> <td>Total<\/td> <td>%d<\/td> <\/tr>\n", $overallTotal;
+    close TOTALS;
+
+
+    if ( $#{$r_sortedKeys} > 7 )
+    {
+	$#{$r_sortedKeys} = 6;
+	my %keepMc = ();
+	foreach my $mc ( @{$r_sortedKeys} )
+	{
+	    $keepMc{$mc} = 1;
+	}
+	
+	for my $r_timeSample ( @{$r_data} )
+	{
+	    my $others = 0;
+	    foreach my $mc ( keys %{$r_timeSample} )
+	    {
+		if ( $mc ne "time" && ! exists $keepMc{$mc} )
+		{
+		    $others += $r_timeSample->{$mc};
+		    delete $r_timeSample->{$mc};
+		}
+	    }
+	    $r_timeSample->{"Others"} = $others;
+	}
+
+	push @{$r_sortedKeys}, "Others";
+    }
+
+    return @{$r_sortedKeys};
+}
+
+	
+sub readFile
+{
+    my ($inputFile, $r_data) = @_;
+
+    open INPUT, "$inputFile" or die "Cannot open inputFile $inputFile";
+    my $r_timeSample;
+    my %counterVal = ();
+    while ( my $line = <INPUT> )
+    {
+	if ( $DEBUG > 5 ) { print "readFile: line=$line"; };
+
+	if ( $line =~ /^\d/ )
+	{
+	    chop $line;
+	    my @fields = split / /, $line;
+
+	    if ( $DEBUG > 4 ) { print "readFile: fields 1,2,6 $fields[1],$fields[2],$fields[6]\n"; };
+
+	    my ($time) = $fields[1] =~ /(.*?):\d{2,2}\.\d{3,3}$/;
+	    
+	    my $delta = 0;
+	    if ( exists $counterVal{$fields[2]} )
+	    {
+		if ( $fields[6] < $counterVal{$fields[2]} )
+		{
+		    if ( $DEBUG > 2 ) { print "readFile: counterVal less then currVal\n"; }
+		    # Assume restart
+		    $delta = $fields[6];		    
+		}
+		else
+		{
+		    $delta = $fields[6] - $counterVal{$fields[2]};
+		}
+	    }
+	    if ( $DEBUG > 3 ) { print "readFile: mc=$fields[2] counterVal=$counterVal{$fields[2]} delta=$delta\n"; };
+	    $counterVal{$fields[2]} = $fields[6];
+
+
+
+	    if ( (! $r_timeSample) || (exists $r_timeSample->{$fields[2]}) )
+	    {
+		if ( $DEBUG > 3 ) { print Dumper("readFile: creating new time sample, time=$time, prev sample=", $r_timeSample); }
+
+		$r_timeSample = {
+		    'time' => $time
+		    };
+		push @{$r_data}, $r_timeSample;
+	    }
+
+
+	    $r_timeSample->{$fields[2]} = $delta;
+	}
+    }
+    close INPUT;
+}
+
+sub writeFile
+{
+    my ($r_data,$r_sortedMc, $dataFile) = @_;
+
+    open DATA, ">$dataFile" or die "Cannot write to data $dataFile";
+    for my $r_timeSample ( @{$r_data} )
+    {
+	print DATA $r_timeSample->{"time"};
+	my $runningTotal = 0;
+	foreach my $mc ( @{$r_sortedMc} )
+	{
+	    $runningTotal += $r_timeSample->{$mc}; 
+	    print DATA " ", $runningTotal;
+	}
+	print DATA "\n";
+    }
+    close DATA;
+}
+
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+        my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+        $reverseHash{$reverseKey} = $key;
+        $counter++;
+    }
+
+    my $r_Result = [];
+    foreach my $reverseKey ( sort by_number keys %reverseHash )
+    {
+        $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+
+    return $r_Result;
+}
+
+sub by_number
+{
+    return $b <=> $a;
+}

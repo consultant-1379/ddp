@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="% System"/>
+ <queries>
+  <query timecol="time" multiseries="f5_cpu_names.name">
+   <dbtables main="f5_cpu_stats">
+    <reference table="sites" condition="f5_cpu_stats.siteid = sites.id"/>
+    <reference table="f5_cpu_names" condition="f5_cpu_stats.cpuid = f5_cpu_names.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="cpuids"/>
+   <where>sites.name = '%s' AND f5_cpu_names.id IN ( %s )</where>
+   <column db="f5_cpu_stats.system" label="% System"/>
+  </query>
+ </queries>
+ <size width="600" height="240"/>
+</modelledgraph>

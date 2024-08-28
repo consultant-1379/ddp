@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^\S+-jmx@(?:3pp|e2e)_(\S+)">
+  <services>
+    <service name="sso"/>
+  </services>
+
+  <table name="enm_sso_openam_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-SsoServerAuthSvc$">
+      <metric source="AuthenticationSuccessCount" target="AuthenticationSuccessCount" delta="true" filteridle="true"/>
+      <metric source="AuthenticationFailureCount" target="AuthenticationFailureCount" delta="true" filteridle="true"/>
+      <metric source="AuthenticationSuccessRate" target="AuthenticationSuccessRate"/>
+      <metric source="AuthenticationFailureRate" target="AuthenticationFailureRate"/>
+    </metricgroup>
+    <metricgroup name="^%1%-SsoServerSessSvc$">
+      <metric source="SessionActiveCount" target="SessionActiveCount"/>
+      <metric source="SessionCreatedCount" target="SessionCreatedCount" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-SsoServerIdRepoSvc$">
+      <metric source="IdRepoCacheEntries" target="IdRepoCacheEntries"/>
+      <metric source="IdRepoCacheHits" target="IdRepoCacheHits" delta="true" filteridle="true"/>
+      <metric source="IdRepoGetRqts" target="IdRepoGetRqts" delta="true" filteridle="true"/>
+      <metric source="IdRepoSearchCacheHits" target="IdRepoSearchCacheHits" delta="true" filteridle="true"/>
+      <metric source="IdRepoSearchRqts" target="IdRepoSearchRqts" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

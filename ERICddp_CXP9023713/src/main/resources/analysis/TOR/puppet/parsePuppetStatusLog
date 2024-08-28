@@ -1,0 +1,113 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## Script  : parsePuppetStatusLog
+## Author  : Rory Kelly(erorkel)
+## Purpose : Parses in the mco_puppet_status.log file and stores the data in the database
+## Usage   : ${ANALYSIS_BIN}/TOR/puppet/parsePuppetStatusLog --site ${SITE} --file ${DATADIR}/TOR/litp/mco_puppet_status.log --date ${SQL_DATE}
+##====================================================================
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ($site,$file,$date);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "file=s" => \$file,
+        "date=s" => \$date
+    );
+    setStatsDB_Debug($DEBUG);
+
+    if ( not defined($site) or not defined($file) or not defined($date) ) {
+        print "Mandatory parameter missing\n";
+        print "Expected usage: \${ANALYSIS_BIN}/TOR/puppet/parsePuppetStatusLog --site \${SITE} --file \${DATADIR}/TOR/litp/mco_puppet_status.log --date \${SQL_DATE}\n";
+    }
+    else {
+        my $r_puppetStatusList = parsePuppetStatusLog($file);
+        storePuppetStatus($r_puppetStatusList,$site,$date);
+    }
+}
+
+sub parsePuppetStatusLog($) {
+    my ($file) = @_;
+
+    my @puppetStatusList = ();
+
+    open INPUT, $file or die "Cannot open $file";
+
+    my $notProcessing = 0;
+    my $datefound = 1;
+
+    my $datetime;
+    my $state = $notProcessing;
+    while ( my $line = <INPUT> ) {
+        if ($DEBUG > 8) { print "Processing line: $line" };
+        if ( $state == $notProcessing) {
+            if ( $line =~ /^(\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}:\d{2})/ ) {
+                $datetime = $1;
+                if ( $DEBUG > 5) { print "Starting processing for: $datetime\n"; }
+                $state = $datefound;
+            }
+        }
+        elsif ( $state == $datefound ) {
+            if ( $line =~ /^\s*([^:]*):\s*Currently\s*stopped[;]*\s*last/ ) {
+                my $hostname = $1;
+                if ($DEBUG > 5) { print "Found stoppage on host: $hostname\n"; }
+                push (@puppetStatusList, {'datetime' => "$datetime", 'hostname' => "$hostname"});
+            }
+            elsif ( $line =~ /^Finished\s*processing/) {
+                if ($DEBUG > 5) { print "Finished processing for: $datetime\n"; }
+                $state = $notProcessing;
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) {
+        print Dumper("parsePuppetStatusLog: puppetStatusList", \@puppetStatusList);
+    }
+    return \@puppetStatusList;
+}
+
+sub storePuppetStatus($$) {
+    my ($r_puppetStatusList,$site,$date) = @_;
+
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $bcpFileName = "$tmpDir/puppetStatus.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    my $r_serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId );
+    foreach my $puppetStatus (@{$r_puppetStatusList}) {
+        my $hostname = $puppetStatus->{'hostname'};
+        my $serverid = $r_serverIdMap->{$hostname};
+        my $datetime = $puppetStatus->{'datetime'};
+        print BCP "$siteId\t$datetime\t$serverid\n";
+    }
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM enm_puppet_stoppages WHERE siteid = $siteId AND date BETWEEN '$date 00:00:00' AND '$date 23:59:59'"
+            ) or die "Failed to delete from enm_puppet_stoppages".$dbh->errstr."\n";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_puppet_stoppages" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_puppet_stoppages table".$dbh->errstr."\n";
+    $dbh->disconnect();
+
+    unlink $bcpFileName;
+}
+
+main();

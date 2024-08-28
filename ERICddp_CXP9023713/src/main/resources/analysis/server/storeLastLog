@@ -1,0 +1,114 @@
+#!/usr/bin/env perl
+# This script parses the network IO data as collected by kstat via the instr2
+# utility.
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Time::Local;
+use POSIX;
+
+our $server;
+our $site;
+our $DEBUG = 0;
+our $bcpFile;
+
+sub main {
+    my ($lastlog, $passwd, $date);
+    my $result = GetOptions(
+        "log=s" => \$lastlog,
+        "passwd=s" => \$passwd,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    my %userMap = ();
+    if (defined($passwd)) {
+        %userMap = parsePasswd($passwd);
+    }
+    open LL, $lastlog or die "Could not open lastlog " . $lastlog . ": " . $!;
+    my ($year, $month, $day) = split("-", $date);
+    my $fmtDate = POSIX::strftime("%b %e", (0, 0, 0, $day, ($month - 1), ($year - 1900), 0, 0, 0));
+
+    my @logins;
+    my @terminals;
+    my ($start, $end);
+    while (my $line = <LL>) {
+        next if ($line !~ /.* $fmtDate .*/);
+        my ($uid,$term,$host,$dow,$mon,$day,$time,$delim,$logout,$dur) = split(/ +/, $line);
+        # assign uid to itself if we don't have a uid
+        if (! defined($userMap{$uid})) { $userMap{$uid} = $uid; }
+        # logins are in reverse order by time, so the last entry is always the earliest and the
+        # first entry is the latest.
+        if (! defined($end)) { $end = $time; }
+        $start = $time;
+        my @login = ($uid, $time, $term);
+        push @logins, \@login;
+        push @terminals, $term;
+    }
+    close LL;
+    my $dbh = connect_db();
+    my $r_uidRefMap = storePasswd(\%userMap, $dbh);
+    my $r_termMap = getIdMap($dbh, "terminals","id","name",\@terminals);
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    # store logins
+    # only delete ones we have in this interval, rather than entire day.
+    # TODO: store type of login as well
+    dbDo($dbh, "DELETE FROM logins WHERE serverid = " . $serverId . " AND time BETWEEN '" . $date . " " . $start . "' AND '" . $date . " " . $end . "'");
+
+    my $sth = $dbh->prepare("INSERT INTO logins (serverid,user_id,terminal,time) VALUES (?,?,?,?)") or die "Could not prepare statement : " . $!;
+    foreach my $login (@logins) {
+        my @login = @{$login};
+        if ($DEBUG > 9) {
+            print "serverid: " . $serverId . ", uid: " . $login[0] . ", uidref: " . $r_uidRefMap->{$login[0]} .
+                ", terminal: " . $login[2] . ", termid: " . $r_termMap->{$login[2]} . ", time: " . $date . " " . $login[1] . "\n";
+        }
+        $sth->execute($serverId,$r_uidRefMap->{$login[0]},$r_termMap->{$login[2]}, $date . " " . $login[1]);
+    }
+}
+
+sub parsePasswd {
+    my $passwd = shift;
+    open PW, $passwd or die "could not open password file " . $passwd . ": " . $!;
+    my %userMap = ();
+    while (my $line = <PW>) {
+        my ($login, $passwd, $uid, $gid, $gcos, $home, $shell) = split(/:/, $line);
+        $userMap{$uid} = $login;
+    }
+    close PW;
+    return %userMap;
+}
+
+sub storePasswd {
+    my ($r_userMap, $dbh) = @_;
+    my %uidRefMap = ();
+    my $sth = $dbh->prepare("SELECT id FROM uid_username_map WHERE uid = ? AND username = ?") or die "Could not prepare statement : " . $!;
+    my $storeSth = $dbh->prepare("INSERT INTO uid_username_map (uid,username) VALUES (?,?)") or die "Could not prepare statement : " . $!;
+    for my $uid (keys %{$r_userMap}) {
+        if ($DEBUG > 9) { print "Storing / retrieving " . $uid . " => " . $r_userMap->{$uid} . "\n"; }
+        # do we already have this userid / username pair?
+        $sth->execute($uid, $r_userMap->{$uid});
+        my $refId;
+        while ( my $r_row = $sth->fetchrow_hashref() ) {
+            $refId = $r_row->{'id'};
+        }
+        if (! defined($refId)) {
+            # store it
+            $storeSth->execute($uid, $r_userMap->{$uid});
+            # get the id
+            $sth->execute($uid, $r_userMap->{$uid});
+            while ( my $r_row = $sth->fetchrow_hashref() ) {
+                $refId = $r_row->{'id'};
+            }
+        }
+        $uidRefMap{$uid} = $refId;
+    }
+    return \%uidRefMap;
+}
+
+main;

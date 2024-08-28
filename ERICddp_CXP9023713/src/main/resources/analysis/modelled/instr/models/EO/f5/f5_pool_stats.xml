@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^f5instr@f5poolstats$">
+
+  <table name="f5_pool_stats">
+    <keycol name="poolid" reftable="f5_pool_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>poolid</multi>
+
+    <metricgroup name="^F5poolstats-(\S+)">
+      <metric source="serverside.bitsOut" target="kbitsOutPerSec" delta="true" scale="1000" rate="true"/>
+      <metric source="serverside.bitsIn" target="kbitsInPerSec" delta="true" scale="1000" rate="true"/>
+      <metric source="serverside.totConns" target="connections" delta="true"/>
+      <metric source="serverside.totRequests" target="requests" delta="true"/>
+      <property name="poolid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

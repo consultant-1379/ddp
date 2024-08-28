@@ -1,0 +1,304 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use POSIX;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+
+our $GET_TIME = 1;
+our $GET_SECT = 2;
+
+our $MAX_COUNTER_STEP = 1000000000;
+
+main();
+
+sub main
+{
+    my ($inputFile,$dataFile,$date,$site);
+    my $result = GetOptions(
+			    "input=s" => \$inputFile,
+			    "date=s"  => \$date,
+			    "site=s"  => \$site,
+			    "debug=s" => \$DEBUG,
+			    ); 
+     ($result == 1) or die "Invalid args";		
+
+    #
+    # r_Data DataType => Data
+    # where DataType is one of "time", "Devices", "Engines", "DataCache"
+    #
+    # Data
+    #  DataType = Devices
+    #    Data: Map devName => [] of ($reads,$apfReads,$writes,$semReq,$semWait,$ioTime)
+    #
+    #  DataType = DataCache
+    #   Data: Map cacheName => [] of ($search, $phyRead, $phyWrite, $logicalReads, $stalls)
+    #
+    #  DataType = Engines
+    #   Data: Map EngineNumber => [] of ($cpu, $system, $user, $io, $idle)
+    # 
+    #  DataType = time
+    #   Data: [] of times, each entry gives the timestamp for all the samples in the other 
+    #         DataTypes, e.g. $r_Data->['time']->[0] gives the timestamp for 
+    #         $r_Data->['Devices']->['datadev1']->[0]
+    #
+    my $r_Data = readMdaLog($inputFile);
+    calDelta($r_Data);
+    
+    if ( (defined $site) && ($#{$r_Data->{'time'}} > -1) ) {
+	storeData($site,$r_Data);
+    }
+}
+
+sub storeData
+{
+    my ($site,$r_data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $numSamples = $#{$r_data->{'time'}} + 1;
+    my $minTime = $r_data->{'time'}->[0];
+    my $maxTime = $r_data->{'time'}->[$numSamples-1];
+    dbDo($dbh, sprintf("DELETE FROM sybase_mda WHERE siteid = $siteId AND time BETWEEN '%s' AND '%s'",
+		       formatTime( parseTime($minTime, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL),
+		       formatTime( parseTime($maxTime, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL)))
+	or die "Failed to delete existing data";
+
+    my @cacheNames = keys %{$r_data->{'DataCache'}};    
+    for ( my $sampleIndex = 0; $sampleIndex < $numSamples; $sampleIndex++ ) {
+	my $timestamp = formatTime( parseTime($r_data->{'time'}->[$sampleIndex], $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL);
+	my $cpu = $r_data->{'Engines'}->{'Total'}->[$sampleIndex];
+	my $cache = $r_data->{'DataCache'}->{$cacheNames[0]}->[$sampleIndex];
+	dbDo($dbh,sprintf("INSERT INTO sybase_mda (time,siteid," .
+			  "cpu_sys,cpu_user,cpu_io,cpu_idle," .
+			  "cache_search,cache_read,cache_write,cache_lread,cache_stall) " .
+			  "VALUES('%s',%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)",
+			  $timestamp,$siteId,
+			  # CPUTime SystemCPUTime, UserCPUTime, IOCPUTime, IdleCPUTime
+			  $cpu->[1], $cpu->[2], $cpu->[3],$cpu->[4],
+			  # CacheSearches PhysicalReads PhysicalWrites LogicalReads
+			  $cache->[0],$cache->[1],$cache->[2],$cache->[3],$cache->[4]))
+	    or die "Failed to insert sample";
+    }
+
+    #
+    # Device IO
+    # 
+    my @devList = keys %{$r_data->{'Devices'}};
+    my $r_devIdMap = getIdMap($dbh,"sybase_mda_device_name", "id","name",\@devList);
+    my $bcpFileName = writeBcp($r_data,$siteId,$r_devIdMap);
+    dbDo($dbh, 
+	 sprintf("DELETE FROM sybase_mda_device_io WHERE siteid = $siteId AND time BETWEEN '%s' AND '%s'", 		       
+		 formatTime( parseTime($minTime, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL),
+		 formatTime( parseTime($maxTime, $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL)))
+	or die "Failed to delete existing data";
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE sybase_mda_device_io") or
+	die "Failed to load data";
+
+    $dbh->disconnect;
+}
+
+sub writeBcp() {
+    my ($r_data,$siteId,$r_devIdMap) = @_;
+
+    my @devList = keys %{$r_data->{'Devices'}};
+    
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+	$tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = $tmpDir . "/sybase_mda_device_io.bcp";
+    
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+    my $numSamples = $#{$r_data->{'time'}} + 1;
+    if ( $DEBUG > 2 ) { print "writeBcp: numSamples=$numSamples\n"; } 
+    for ( my $sampleIndex = 0; $sampleIndex < $numSamples; $sampleIndex++ ) {
+	my $timestamp = formatTime( parseTime($r_data->{'time'}->[$sampleIndex], $StatsTime::TIME_DDMMYY_HM), $StatsTime::TIME_SQL);
+	foreach my $devName ( @devList ) {
+	    my $r_devSample = $r_data->{'Devices'}->{$devName}->[$sampleIndex];
+	    printf BCP "%s\t%d\t%d\t%s\n", $timestamp, $siteId, $r_devIdMap->{$devName},
+	    join("\t", @{$r_devSample});
+	}
+    }
+
+    close BCP;
+
+    return $bcpFileName;
+}
+
+sub calDelta
+{
+    my ($r_data) = @_;
+
+    # Sum EngineData first
+    my $r_totals = []; # Array of (CPUTime, SystemCPUTime, UserCPUTime, IOCPUTime, IdleCPUTime)
+    my $sectionName = 'Engines';
+    foreach my $name ( keys %{$r_data->{$sectionName}} )
+    {
+	my $r_Samples = $r_data->{$sectionName}->{$name};
+	for ( my $sampleIndex = 0; $sampleIndex < $#{$r_Samples}; $sampleIndex++ )
+	{
+	    for ( my $valueIndex = 0; $valueIndex <= $#{$r_Samples->[$sampleIndex]}; $valueIndex++ )
+	    {
+		$r_totals->[$sampleIndex]->[$valueIndex] += $r_Samples->[$sampleIndex]->[$valueIndex];
+	    }
+	}
+	
+	delete $r_data->{$sectionName}->{$name};
+    }
+    if ( $DEBUG > 3 ) { print Dumper("calDelta Engines totals", $r_totals ); }
+    $r_data->{$sectionName}->{'Total'} = $r_totals;
+
+
+    foreach my $sectionName ( keys %{$r_data} )
+    {
+	if ( $sectionName eq "time" ) 
+	{
+	    shift @{$r_data->{$sectionName}};
+	}
+	else
+	{
+	    foreach my $name ( keys %{$r_data->{$sectionName}} )
+	    {
+		if ( $DEBUG > 3 ) { print "calDelta sectionName=$sectionName\n"; }
+
+		my $r_Samples = $r_data->{$sectionName}->{$name};
+
+		for ( my $sampleIndex = 0; $sampleIndex < $#{$r_Samples}; $sampleIndex++ )
+		{
+		    if ( $DEBUG > 4 ) { print Dumper("calDelta r_Samples $sampleIndex", $r_Samples->[$sampleIndex] ); }
+		    if ( $DEBUG > 4 ) { print Dumper("calDelta r_Samples $sampleIndex + 1", $r_Samples->[$sampleIndex + 1] ); }
+
+		    for ( my $valueIndex = 0; $valueIndex <= $#{$r_Samples->[$sampleIndex]}; $valueIndex++ )
+		    {
+
+			if ( $r_Samples->[$sampleIndex+1]->[$valueIndex] >= $r_Samples->[$sampleIndex]->[$valueIndex] )
+			{
+			    $r_Samples->[$sampleIndex]->[$valueIndex] =
+				$r_Samples->[$sampleIndex+1]->[$valueIndex] - $r_Samples->[$sampleIndex]->[$valueIndex];
+			}
+			else
+			{
+			    my $preWrap = &POSIX::INT_MAX - $r_Samples->[$sampleIndex]->[$valueIndex];			    
+
+			    if ( $DEBUG > 2 ) { print "calDelta: counter wrap sectionName=$sectionName name=$name sampleIndex=$sampleIndex valueIndex=$valueIndex: ", $r_Samples->[$sampleIndex]->[$valueIndex], " " , $r_Samples->[$sampleIndex+1]->[$valueIndex], " ", $preWrap, "\n"; }
+				
+			    # Handle where counter value is reset to 0 instead of wrappimg
+			    if ( $preWrap > $MAX_COUNTER_STEP )
+			    {
+				if ( $DEBUG > 2 ) { print "calDelta: counter reset \n"; }
+				$preWrap = 0;
+			    }
+
+			    $r_Samples->[$sampleIndex]->[$valueIndex] = $preWrap + $r_Samples->[$sampleIndex+1]->[$valueIndex];
+			}
+		    }
+		}
+		
+		pop @{$r_Samples};
+	    }
+	}
+    }
+    
+    if ( $DEBUG > 3 ) { print Dumper("calDelta data:" , $r_data); }
+}
+
+
+sub readMdaLog
+{
+    my ($inputFile) = @_;
+
+    open INPUT, $inputFile or die "Failed to open $inputFile";
+    my $sectionName = "";
+
+    my %data = ();
+    $data{'time'} = [];
+
+    while ( my $line = <INPUT> )
+    {
+	if ( $DEBUG > 9 ) { print "readMdaLog: line = $line"; }
+
+	if ( $line =~ /^(\d{6,6}:\d{2,2}:\d{2,2})$/ )
+	{
+	    push @{$data{'time'}}, $1;
+	}
+	elsif ( $line =~ /^\*\*\* (\S+) \*\*\*/ )
+	{
+	    $sectionName = $1;
+	    #<INPUT> ; <INPUT>; 
+	}
+	else
+	{
+	    if ( $sectionName eq "Devices" )
+	    {
+		my ($reads,$apfReads,$writes,$semReq,$semWait,$ioTime,$devName) =
+		    $line =~ /^\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/;
+		if ( ! exists $data{$sectionName}->{$devName} )
+		{
+		    $data{$sectionName}->{$devName} = [];
+		}
+		my @devSample = ($reads,$apfReads,$writes,$semReq,$semWait,$ioTime);
+
+		push @{$data{$sectionName}->{$devName}}, \@devSample;
+	    }
+	    elsif ( $sectionName eq "DataCache" )
+	    {
+		my ( $search, $phyRead, $phyWrite, $logicalReads, $stalls, $cacheName ) = $line =~
+		    /^\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.*)\s+$/;
+		if ( ! exists $data{$sectionName}->{$cacheName} )
+		{
+		    $data{$sectionName}->{$cacheName} = [];
+		}
+		my @cacheSample = ($search, $phyRead, $phyWrite, $logicalReads, $stalls);
+		push @{$data{$sectionName}->{$cacheName}}, \@cacheSample;
+	    }
+	    elsif ( $sectionName eq "Engines" )
+	    {
+		my ( $engine, $cpu, $system, $user, $idle, $io ) = ( 0, 0, 0, 0, 0, 0 );
+		chop $line;
+		my @fields = split(/\s+/, $line );
+		shift @fields; # Drop the first blank element		
+		if ( $DEBUG > 8 ) { print Dumper("readMdaLog: Engine fields", \@fields); }
+		if ( $#fields >= 4 ) {
+		    $engine = $fields[0];
+		    $cpu    = $fields[1];
+		    $system = $fields[2];
+		    $user   = $fields[3];
+		    $idle   = $fields[4];
+		}
+		if ( $#fields >= 5 ) {
+		    $io = $fields[5];
+		}
+		    
+
+		my @sample = ( $cpu, $system, $user, $io, $idle );
+		if ( ! exists $data{$sectionName}->{$engine} )
+		{
+		    $data{$sectionName}->{$engine} = [];
+		}
+		push @{$data{$sectionName}->{$engine}}, \@sample;
+	    }
+	    elsif ( $sectionName eq "Locks" )
+	    {
+		if ( $DEBUG > 8 ) { print "readMdaLog: Locks $line\n   "; }
+	    }
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 4 ) { print Dumper("readMdaLog: data", \%data); }
+
+    return \%data;
+}
+		
+		    
+

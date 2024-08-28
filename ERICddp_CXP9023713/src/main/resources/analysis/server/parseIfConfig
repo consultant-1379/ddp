@@ -1,0 +1,98 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseIfConfig($) {
+    my ($ifConfigFile) = @_;
+
+    open INPUT,$ifConfigFile or die "Cannot open $ifConfigFile";
+    my $currNic = undef;
+    my %nicIp = ();
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^(\S+)/ ) {
+            my $nic = $1;
+            $nic =~ s/:$//;
+            $nic =~ s/:\d+//;
+            if ( $nic ne 'lo' && $nic ne 'lo0' ) {
+                $currNic = $nic;
+            }
+        } elsif ( defined $currNic ) {
+            if ( $line =~ /^\s*$/ ) {
+                $currNic = undef;
+            } elsif ( ($line =~ /^\s+inet addr:([\d\.]+)/) || ($line =~ /^\s+inet ([\d\.]+)/ ) ) {
+                my $ipAddr = $1;
+                my $r_ipAddrList = $nicIp{$currNic};
+                my $currNicVirutal = 1;
+                if ( ! defined $r_ipAddrList ) {
+                    $currNicVirutal = 0;
+                    $r_ipAddrList = [];
+                    $nicIp{$currNic} = $r_ipAddrList;
+                }
+                push @{$r_ipAddrList}, { 'ip' => $ipAddr, 'virtual' => $currNicVirutal };
+            }
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseIfConfig: nicIp", \%nicIp); }
+    return \%nicIp;
+}
+
+sub storeData($$$$) {
+    my ($site,$server,$date,$r_config) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    ($serverId > -1 ) or die "Failed to get serverId for $server";
+
+    my @nicList = keys %{$r_config};
+    my $r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name", \@nicList, $serverId, "serverid" );
+
+    foreach my $nic ( @nicList ) {
+        my $nicid = $r_nicMap->{$nic};
+        dbDo($dbh, "DELETE FROM network_interface_ip WHERE ifid = $nicid AND date = '$date'")
+            or die "Failed to remove old data";
+        my $r_ipAddrList = $r_config->{$nic};
+        if ( $#{$r_ipAddrList} > 50 ) {
+            # Skip boxes with large numbers of VIP, normally simulators
+            print "WARN: $nic has more then 10 IP addresses, ignoring\n";
+        } else {
+            foreach my $r_ipAddr ( @{$r_ipAddrList} ) {
+            dbDo($dbh, sprintf("INSERT INTO network_interface_ip (ifid,date,ipaddress,isvirtual) VALUES (%d,'%s','%s',%d)",
+                       $nicid,$date,$r_ipAddr->{'ip'}, $r_ipAddr->{'virtual'}))
+                or die "Failed to remove old data";
+            }
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($site,$server,$date,$ifConfigFile);
+    my $result = GetOptions(
+        "input=s" => \$ifConfigFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG,
+    );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my $r_config = parseIfConfig($ifConfigFile);
+    storeData($site,$server,$date,$r_config);
+}
+
+main();

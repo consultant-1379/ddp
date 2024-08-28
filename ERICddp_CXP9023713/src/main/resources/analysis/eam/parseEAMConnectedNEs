@@ -1,0 +1,252 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+use DBI;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use StatsTime;
+use File::Basename;
+use lib dirname($0);
+use EAMCommon;
+
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($file,$dashDate,$site);
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "file=s" => \$file,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    # Validate the parameters passed
+    if ( ! $file ) {
+        printUsageAndExit("No feed file specified");
+    }
+    if ( ! $site ) {
+        printUsageAndExit("No site specified");
+    }
+    if ( ! $dashDate ) {
+        printUsageAndExit("No date specified");
+    }
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    my $r_cmdStats = parseLog($file,$dashDate);
+    store($site,$dashDate,$r_cmdStats);
+    return 0;
+}
+
+sub parseLog() {
+    my ($logFile,$date) = @_;
+
+    my $midNight = parseTime("$date:00:00:00", $StatsTime::TIME_DDMMYY_HMS);
+    my $currTime = $midNight - (60*30);
+    my %cmdStats = (
+    'byTime' => [],
+    'byNE'   => {}
+    );
+    my $r_currBin;
+
+    open IN, $logFile or die "Cannot open $logFile";
+    while ( my $line = <IN> ) {
+    if ( $DEBUG > 9 ) { print "parseLog: line=$line"; }
+    chop $line;
+
+
+    my @fields = split(/\|/, $line);
+    if ( $DEBUG > 8 ) { print Dumper("parseLog: fields", \@fields); }
+    if ( $#fields != 8 ) {
+        if ( $DEBUG > 0 ) { print "parseLog: invalid number of fields in $line\n"; }
+        next;
+    }
+
+    my ($time,$es_name,$assoc_id,$cmd,$appName,$initiator);
+    $time = $fields[1];
+    $es_name = $fields[2];
+    $assoc_id = $fields[3];
+    $cmd = $fields[4];
+    $appName = $fields[7];
+    $initiator = $fields[8];
+
+    $time = parseTime($time, $StatsTime::TIME_SYB_NO_SEC);
+    next if ( $time < 0 );
+
+    while ( $time > ($currTime + (60*30)) ) {
+        $currTime += (60*30);
+        $r_currBin = {
+        'time' => formatTime( $currTime, $StatsTime::TIME_SQL ),
+        'init' => {},
+    };
+    if ( $DEBUG > 5 ) { print "parseLog: allocating bin for " . $r_currBin->{'time'} . "\n"; }
+        push @{$cmdStats{'byTime'}}, $r_currBin;
+    }
+
+    if ( $DEBUG > 7 ) { print "parseLog: initiator = $initiator\n"; }
+    my $r_initStats = $r_currBin->{'init'}->{$initiator};
+    if ( ! defined $r_initStats ) {
+        $r_initStats = {};
+        $r_currBin->{'init'}->{$initiator} = $r_initStats;
+    }
+
+    if ( $appName =~ /^cna_update/ ) {
+        $appName = "cna_update";
+    } else {
+        $appName =~ s/\d//g;
+    }
+    if ( $DEBUG > 7 ) { print "parseLog: appName=$appName\n"; }
+
+    my $r_appStats = $r_initStats->{$appName};
+    if ( ! defined $r_appStats ) {
+        $r_appStats = {
+            'sess'    => {},
+            'command' => 0,
+            'ne'      => {}
+        };
+        $r_initStats->{$appName} = $r_appStats;
+    }
+
+    # Strip ',' & '=' from end of $es_name
+    $es_name =~ s/[,|=]$//;
+
+    # Strip if any ',' & string after ',' of $es_name
+    $es_name =~ s/,.*//;
+
+    $r_appStats->{'sess'}->{$assoc_id}++;
+    $r_appStats->{'command'}++;
+    $r_appStats->{'ne'}->{$es_name}++;
+
+    # Strip any arg values
+    $cmd =~ s/\;$//;
+    if ( $cmd =~ /^([^: ]+):/ ) {
+        $cmd = $1;
+    } elsif ( $cmd =~ /^(\S+) / ) {
+        $cmd = $1;
+    }
+    $cmd = EAMCommon::stripCommand($cmd);
+
+    my $r_ne = $cmdStats{'byNE'}->{$es_name};
+    if ( ! defined $r_ne ) {
+        $r_ne = {};
+        $cmdStats{'byNE'}->{$es_name} = $r_ne;
+    }
+    $r_ne->{$initiator}->{$cmd}++;
+    }
+    close IN;
+
+    foreach my $r_timeBin ( @{$cmdStats{'byTime'}} ) {
+        foreach my $init ( keys %{$r_timeBin->{'init'}} ) {
+            foreach my $app ( keys %{$r_timeBin->{'init'}->{$init}} ) {
+                my $r_bin = $r_timeBin->{'init'}->{$init}->{$app};
+                my @sessionIds = keys %{delete $r_bin->{'sess'}};
+                $r_bin->{'numsess'} = ($#sessionIds + 1);
+                my @neNames = keys %{delete $r_bin->{'ne'}};
+                $r_bin->{'numne'} = ($#neNames + 1);
+            }
+        }
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("parseLog cmdStats", \%cmdStats); }
+
+    return \%cmdStats;
+}
+
+sub store() {
+    my ($site,$dash_date,$r_cmdStats) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    my %nes = ();
+    my %cmds = ();
+    foreach my $neName ( keys %{$r_cmdStats->{'byNE'}} ) {
+        $nes{$neName}++;
+        foreach my $init ( keys %{$r_cmdStats->{'byNE'}->{$neName}} ) {
+            foreach my $cmd ( keys %{$r_cmdStats->{'byNE'}->{$neName}->{$init}} ) {
+                $cmds{$cmd}++;
+            }
+        }
+    }
+    my @_cmdNames = keys %cmds;
+    my @_neNames = keys %nes;
+    my $r_cmdIdMap = getIdMap($dbh, "eam_trimmed_cmd_names", "id", "name", \@_cmdNames );
+    my $r_neIdMap = getIdMap($dbh, "eam_ne_names", "id", "name", \@_neNames );
+
+    my %inits = ();
+    my %apps = ();
+    foreach my $r_timeBin ( @{$r_cmdStats->{'byTime'}} ) {
+        foreach my $init ( keys %{$r_timeBin->{'init'}} ) {
+            $inits{$init}++;
+            foreach my $app ( keys %{$r_timeBin->{'init'}->{$init}} ) {
+                $apps{$app}++;
+            }
+        }
+    }
+    my @_initNames = keys %inits;
+    my @_appNames = keys %apps;
+    my $r_initIdMap = getIdMap($dbh, "eam_initiator_names", "id", "name", \@_initNames );
+    my $r_appIdMap = getIdMap($dbh, "eam_trimmed_app_names", "id", "name", \@_appNames );
+
+    my $fromStr = formatTime( parseTime("$dash_date:00:00:00", $StatsTime::TIME_DDMMYY_HMS), $StatsTime::TIME_SQL );
+    my $toStr = formatTime( parseTime("$dash_date:23:59:59", $StatsTime::TIME_DDMMYY_HMS), $StatsTime::TIME_SQL );
+    my ($fromDate,$fromTime) = split(" ", $fromStr);
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} )
+    {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+
+    my $timeBcpFile = "$tmpDir/eam_cmd_time.bcp";
+    open TIME_BCP, ">$timeBcpFile" or die "Cannot open $timeBcpFile";
+    foreach my $r_timeBin ( @{$r_cmdStats->{'byTime'}} ) {
+        foreach my $init ( keys %{$r_timeBin->{'init'}} ) {
+            foreach my $app ( keys %{$r_timeBin->{'init'}->{$init}} ) {
+                my $r_bin = $r_timeBin->{'init'}->{$init}->{$app};
+                printf TIME_BCP "%d\t%s\t%d\t%d\t%d\t%d\t%d\n",
+                $siteId, $r_timeBin->{'time'},
+                $r_initIdMap->{$init}, $r_appIdMap->{$app},
+                $r_bin->{'command'}, $r_bin->{'numsess'}, $r_bin->{'numne'};
+            }
+        }
+    }
+    close TIME_BCP;
+
+    my $neBcpFile = "$tmpDir/eam_cmd_ne.bcp";
+    open NE_BCP, ">$neBcpFile" or die "Cannot open $neBcpFile";
+    foreach my $neName ( keys %{$r_cmdStats->{'byNE'}} ) {
+        my $neId = $r_neIdMap->{$neName};
+        foreach my $init ( keys %{$r_cmdStats->{'byNE'}->{$neName}} ) {
+            my $initId = $r_initIdMap->{$init};
+            my $r_NeStats = $r_cmdStats->{'byNE'}->{$neName}->{$init};
+            foreach my $cmd ( keys %{$r_NeStats} ) {
+                my $cmdId = $r_cmdIdMap->{$cmd};
+                printf NE_BCP "%d\t%s\t%d\t%d\t%d\t%d\n", $siteId, $fromDate, $neId, $initId,  $cmdId, $r_NeStats->{$cmd};
+            }
+        }
+    }
+    close NE_BCP;
+
+
+    dbDo($dbh, "DELETE FROM eam_cmd_time WHERE siteid = $siteId AND time BETWEEN '$fromStr' AND '$toStr'");
+    dbDo($dbh, "LOAD DATA LOCAL INFILE \'$timeBcpFile\' INTO TABLE eam_cmd_time") or die "Failed to load data";
+
+    dbDo($dbh, "DELETE FROM eam_cmd_ne WHERE siteid = $siteId AND date = '$fromDate'");
+    dbDo($dbh, "LOAD DATA LOCAL INFILE \'$neBcpFile\' INTO TABLE eam_cmd_ne") or die "Failed to load data";
+
+    $dbh->disconnect();
+}

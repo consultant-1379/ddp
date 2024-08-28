@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_crud_nbi">
+    <reference table="sites" condition="enm_cm_crud_nbi.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_crud_nbi.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+
+  <where>sites.name = '%site%' AND enm_cm_crud_nbi.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(getBaseOnlyCount)" label="Single-GET Requests"/>
+  <column db="SUM(getBaseOtherAllCount)" label="Multi-GET Requests"/>
+  <column db="SUM(deleteCount)" label="DELETE Requests"/>
+  <column db="SUM(patch3gppJPatchCount)" label="PATCH-3GPP-J+P Requests"/>
+  <column db="SUM(patchJPatchCount)" label="PATCH-J+P Requests"/>
+  <column db="SUM(postCount)" label="POST Requests"/>
+  <column db="SUM(putCreateCount)" label="PUT-Create Requests"/>
+  <column db="SUM(putModifyCount)" label="PUT-Modify Requests"/>
+
+</modelledtable>

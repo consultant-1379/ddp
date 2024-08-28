@@ -1,0 +1,3309 @@
+[
+    {
+        "eventTime": "2021-05-07T11:09:51.316512Z",
+        "reportingInstance": "default-scheduler-ieatrcxb5913",
+        "firstTimestamp": null,
+        "lastTimestamp": null,
+        "source": {},
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-b5dks",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "resourceVersion": "2569677",
+            "uid": "8e8905c9-0100-459a-8cfb-1f9214090b73"
+        },
+        "action": "Binding",
+        "message": "Successfully assigned enm420/accesscontrol-5cbc6db77f-b5dks to ieatrcxb5934",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-b5dks.167cc44ac282e053",
+            "namespace": "enm420",
+            "resourceVersion": "2569700",
+            "creationTimestamp": "2021-05-07T11:09:51Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:reportingInstance": {},
+                        "f:regarding": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:eventTime": {},
+                        "f:note": {},
+                        "f:action": {},
+                        "f:reportingController": {}
+                    },
+                    "apiVersion": "events.k8s.io/v1",
+                    "manager": "kube-scheduler",
+                    "time": "2021-05-07T11:09:51Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-b5dks.167cc44ac282e053",
+            "uid": "e7870780-95ec-4ed1-991f-dcff859944b8"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:42Z",
+        "lastTimestamp": "2021-05-07T11:11:42Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Pulling",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-b5dks",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569695",
+            "uid": "8e8905c9-0100-459a-8cfb-1f9214090b73"
+        },
+        "message": "Pulling image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\"",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-b5dks.167cc464ad87e298",
+            "namespace": "enm420",
+            "resourceVersion": "2573986",
+            "creationTimestamp": "2021-05-07T11:11:42Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:42Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-b5dks.167cc464ad87e298",
+            "uid": "ba3b4196-4af7-468a-b8be-108802ec46db"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:43Z",
+        "lastTimestamp": "2021-05-07T11:11:43Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-b5dks",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569695",
+            "uid": "8e8905c9-0100-459a-8cfb-1f9214090b73"
+        },
+        "message": "Successfully pulled image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\" in 1.170726622s",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-b5dks.167cc464f3502a0d",
+            "namespace": "enm420",
+            "resourceVersion": "2574014",
+            "creationTimestamp": "2021-05-07T11:11:43Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:43Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-b5dks.167cc464f3502a0d",
+            "uid": "7797261e-5ae5-4764-8ea6-45b7244feb6a"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:43Z",
+        "lastTimestamp": "2021-05-07T11:11:43Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Created",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-b5dks",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569695",
+            "uid": "8e8905c9-0100-459a-8cfb-1f9214090b73"
+        },
+        "message": "Created container accesscontrol-wait",
+        "type": "Normal",
+        "_pod_info": {
+            "status": {
+                "initContainerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol-wait",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                        "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container@sha256:00cedba4d55ad4875abdc562596c9a723cf601ad8932382b1ebb95a5b8fe1929",
+                        "state": {
+                            "running": {
+                                "startedAt": "2021-05-07T11:11:44Z"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {},
+                        "containerID": "docker://c3000b0ad3cd7b560954fe1540faef42d435f9e00f955224111c9d688518d8a9"
+                    }
+                ],
+                "hostIP": "131.160.130.1",
+                "qosClass": "Burstable",
+                "containerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control:1.9.0-27",
+                        "imageID": "",
+                        "state": {
+                            "waiting": {
+                                "reason": "PodInitializing"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {}
+                    },
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol-httpd",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control-httpd:1.9.0-27",
+                        "imageID": "",
+                        "state": {
+                            "waiting": {
+                                "reason": "PodInitializing"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {}
+                    },
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol-monitoring",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-monitoring-eap6:1.9.0-26",
+                        "imageID": "",
+                        "state": {
+                            "waiting": {
+                                "reason": "PodInitializing"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {}
+                    }
+                ],
+                "podIP": "192.168.188.39",
+                "startTime": "2021-05-07T11:09:51Z",
+                "podIPs": [
+                    {
+                        "ip": "192.168.188.39"
+                    }
+                ],
+                "phase": "Pending",
+                "conditions": [
+                    {
+                        "status": "False",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z",
+                        "reason": "ContainersNotInitialized",
+                        "lastProbeTime": null,
+                        "message": "containers with incomplete status: [accesscontrol-wait]",
+                        "type": "Initialized"
+                    },
+                    {
+                        "status": "False",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z",
+                        "reason": "ContainersNotReady",
+                        "lastProbeTime": null,
+                        "message": "containers with unready status: [accesscontrol accesscontrol-monitoring accesscontrol-httpd]",
+                        "type": "Ready"
+                    },
+                    {
+                        "status": "False",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z",
+                        "reason": "ContainersNotReady",
+                        "lastProbeTime": null,
+                        "message": "containers with unready status: [accesscontrol accesscontrol-monitoring accesscontrol-httpd]",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "PodScheduled",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z"
+                    }
+                ]
+            },
+            "kind": "Pod",
+            "spec": {
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "serviceAccountName": "default",
+                "schedulerName": "default-scheduler",
+                "enableServiceLinks": true,
+                "serviceAccount": "default",
+                "priority": 0,
+                "terminationGracePeriodSeconds": 30,
+                "restartPolicy": "Always",
+                "affinity": {
+                    "podAntiAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": [
+                            {
+                                "labelSelector": {
+                                    "matchExpressions": [
+                                        {
+                                            "operator": "In",
+                                            "values": [
+                                                "accesscontrol"
+                                            ],
+                                            "key": "app"
+                                        }
+                                    ]
+                                },
+                                "topologyKey": "kubernetes.io/hostname"
+                            }
+                        ]
+                    }
+                },
+                "volumes": [
+                    {
+                        "configMap": {
+                            "name": "gpaccesscontrol",
+                            "defaultMode": 420
+                        },
+                        "name": "gp"
+                    },
+                    {
+                        "name": "data",
+                        "persistentVolumeClaim": {
+                            "claimName": "data"
+                        }
+                    },
+                    {
+                        "name": "smrs",
+                        "persistentVolumeClaim": {
+                            "claimName": "smrs"
+                        }
+                    },
+                    {
+                        "name": "mdt",
+                        "persistentVolumeClaim": {
+                            "claimName": "mdt"
+                        }
+                    },
+                    {
+                        "name": "custom",
+                        "persistentVolumeClaim": {
+                            "claimName": "custom"
+                        }
+                    },
+                    {
+                        "name": "dumps",
+                        "persistentVolumeClaim": {
+                            "claimName": "hcdumps"
+                        }
+                    },
+                    {
+                        "name": "batch",
+                        "persistentVolumeClaim": {
+                            "claimName": "batch"
+                        }
+                    },
+                    {
+                        "name": "norollback",
+                        "persistentVolumeClaim": {
+                            "claimName": "norollback"
+                        }
+                    },
+                    {
+                        "name": "configmgt",
+                        "persistentVolumeClaim": {
+                            "claimName": "configmgt"
+                        }
+                    },
+                    {
+                        "name": "upgind",
+                        "persistentVolumeClaim": {
+                            "claimName": "upgind"
+                        }
+                    },
+                    {
+                        "name": "pmic1",
+                        "persistentVolumeClaim": {
+                            "claimName": "pm1"
+                        }
+                    },
+                    {
+                        "name": "pmic2",
+                        "persistentVolumeClaim": {
+                            "claimName": "pm2"
+                        }
+                    },
+                    {
+                        "name": "pmlinks",
+                        "persistentVolumeClaim": {
+                            "claimName": "pmlinks"
+                        }
+                    },
+                    {
+                        "secret": {
+                            "defaultMode": 420,
+                            "secretName": "default-token-bfjvm"
+                        },
+                        "name": "default-token-bfjvm"
+                    }
+                ],
+                "tolerations": [
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready"
+                    },
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable"
+                    }
+                ],
+                "preemptionPolicy": "PreemptLowerPriority",
+                "initContainers": [
+                    {
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol-wait",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                        "volumeMounts": [
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "command": [
+                            "/bin/sh",
+                            "-c",
+                            "bash /var/tmp/check_service.sh -s gossiprouter-cache,gossiprouter-remoting,jms01,postgres,sps,sso"
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {}
+                    }
+                ],
+                "imagePullSecrets": [
+                    {
+                        "name": "csar-secret"
+                    }
+                ],
+                "containers": [
+                    {
+                        "livenessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 600,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control:1.9.0-27",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/gp",
+                                "name": "gp"
+                            },
+                            {
+                                "mountPath": "/ericsson/tor/data",
+                                "name": "data"
+                            },
+                            {
+                                "mountPath": "/ericsson/tor/smrs",
+                                "name": "smrs"
+                            },
+                            {
+                                "mountPath": "/etc/opt/ericsson/ERICmodeldeployment",
+                                "name": "mdt"
+                            },
+                            {
+                                "mountPath": "/ericsson/custom",
+                                "name": "custom"
+                            },
+                            {
+                                "mountPath": "/ericsson/enm/dumps",
+                                "name": "dumps"
+                            },
+                            {
+                                "mountPath": "/ericsson/batch",
+                                "name": "batch"
+                            },
+                            {
+                                "mountPath": "/ericsson/tor/no_rollback",
+                                "name": "norollback"
+                            },
+                            {
+                                "mountPath": "/ericsson/config_mgt",
+                                "name": "configmgt"
+                            },
+                            {
+                                "mountPath": "/ericsson/configuration_management/UpgradeIndependence",
+                                "name": "upgind"
+                            },
+                            {
+                                "mountPath": "/ericsson/pmic1",
+                                "name": "pmic1"
+                            },
+                            {
+                                "mountPath": "/ericsson/pmic2",
+                                "name": "pmic2"
+                            },
+                            {
+                                "mountPath": "/ericsson/symvol",
+                                "name": "pmlinks"
+                            },
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            },
+                            {
+                                "name": "JBOSS_LOG_LEVEL",
+                                "value": "INFO"
+                            },
+                            {
+                                "valueFrom": {
+                                    "fieldRef": {
+                                        "fieldPath": "status.podIP",
+                                        "apiVersion": "v1"
+                                    }
+                                },
+                                "name": "ENM_JBOSS_JGROUPS_BIND_ADDRESS"
+                            },
+                            {
+                                "name": "POSTGRES_SERVICE",
+                                "value": "postgres"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "readinessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 120,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "ports": [
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 1636
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 4320
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 4447
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 7999
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 8080
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 8085
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 8445
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 9990
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 9999
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 12987
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 9600
+                            }
+                        ],
+                        "resources": {
+                            "requests": {
+                                "cpu": "600m",
+                                "memory": "3296Mi"
+                            },
+                            "limits": {
+                                "cpu": "2",
+                                "memory": "3596Mi"
+                            }
+                        }
+                    },
+                    {
+                        "livenessProbe": {
+                            "tcpSocket": {
+                                "port": 9600
+                            },
+                            "timeoutSeconds": 15,
+                            "initialDelaySeconds": 600,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol-monitoring",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-monitoring-eap6:1.9.0-26",
+                        "volumeMounts": [
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "SERVICENAME",
+                                "value": "accesscontrol"
+                            },
+                            {
+                                "name": "SGNAME",
+                                "value": "accesscontrol"
+                            },
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {
+                            "requests": {
+                                "cpu": "50m",
+                                "memory": "200Mi"
+                            },
+                            "limits": {
+                                "cpu": "200m",
+                                "memory": "300Mi"
+                            }
+                        }
+                    },
+                    {
+                        "livenessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 120,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol-httpd",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control-httpd:1.9.0-27",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/ericsson/tor/data",
+                                "name": "data"
+                            },
+                            {
+                                "mountPath": "/etc/opt/ericsson/ERICmodeldeployment",
+                                "name": "mdt"
+                            },
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "UI_PRES_SERVER",
+                                "value": "ieatenm5420-1.athtem.eei.ericsson.se"
+                            },
+                            {
+                                "name": "web_host_default",
+                                "value": "ieatenm5420-1.athtem.eei.ericsson.se"
+                            },
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "readinessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 60,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "resources": {
+                            "requests": {
+                                "cpu": "250m",
+                                "memory": "400Mi"
+                            },
+                            "limits": {
+                                "cpu": "500m",
+                                "memory": "1000Mi"
+                            }
+                        }
+                    }
+                ],
+                "nodeName": "ieatrcxb5934"
+            },
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "accesscontrol-5cbc6db77f-b5dks",
+                "labels": {
+                    "pod-template-hash": "5cbc6db77f",
+                    "app": "accesscontrol",
+                    "app.kubernetes.io/instance": "eric-enm-stateless-integration-enm420",
+                    "app.kubernetes.io/version": "eric-enmsg-access-control-1.9.0-27",
+                    "app.kubernetes.io/name": "accesscontrol"
+                },
+                "namespace": "enm420",
+                "ownerReferences": [
+                    {
+                        "kind": "ReplicaSet",
+                        "name": "accesscontrol-5cbc6db77f",
+                        "apiVersion": "apps/v1",
+                        "controller": true,
+                        "blockOwnerDeletion": true,
+                        "uid": "20d75cab-7068-482f-8b30-64e0c0fc7a7b"
+                    }
+                ],
+                "resourceVersion": "2574045",
+                "generateName": "accesscontrol-5cbc6db77f-",
+                "creationTimestamp": "2021-05-07T11:09:51Z",
+                "managedFields": [
+                    {
+                        "fieldsV1": {
+                            "f:metadata": {
+                                "f:generateName": {},
+                                "f:labels": {
+                                    "f:app": {},
+                                    "f:app.kubernetes.io/version": {},
+                                    "f:app.kubernetes.io/instance": {},
+                                    ".": {},
+                                    "f:app.kubernetes.io/name": {},
+                                    "f:pod-template-hash": {}
+                                },
+                                "f:ownerReferences": {
+                                    "k:{\"uid\":\"20d75cab-7068-482f-8b30-64e0c0fc7a7b\"}": {
+                                        "f:apiVersion": {},
+                                        "f:blockOwnerDeletion": {},
+                                        "f:uid": {},
+                                        "f:name": {},
+                                        "f:kind": {},
+                                        ".": {},
+                                        "f:controller": {}
+                                    },
+                                    ".": {}
+                                }
+                            },
+                            "f:spec": {
+                                "f:volumes": {
+                                    "k:{\"name\":\"upgind\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"mdt\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"smrs\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"data\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"custom\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"batch\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"configmgt\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"norollback\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"pmic2\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"gp\"}": {
+                                        "f:configMap": {
+                                            "f:defaultMode": {},
+                                            "f:name": {},
+                                            ".": {}
+                                        },
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    ".": {},
+                                    "k:{\"name\":\"pmlinks\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"pmic1\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"dumps\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    }
+                                },
+                                "f:securityContext": {},
+                                "f:enableServiceLinks": {},
+                                "f:imagePullSecrets": {
+                                    "k:{\"name\":\"csar-secret\"}": {
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:schedulerName": {},
+                                "f:affinity": {
+                                    "f:podAntiAffinity": {
+                                        "f:requiredDuringSchedulingIgnoredDuringExecution": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:containers": {
+                                    "k:{\"name\":\"accesscontrol-httpd\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:volumeMounts": {
+                                            "k:{\"mountPath\":\"/ericsson/tor/data\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/etc/opt/ericsson/ERICmodeldeployment\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:livenessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {
+                                            "f:limits": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            "f:requests": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"UI_PRES_SERVER\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"web_host_default\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {},
+                                        "f:readinessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        }
+                                    },
+                                    "k:{\"name\":\"accesscontrol\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:volumeMounts": {
+                                            "k:{\"mountPath\":\"/ericsson/tor/no_rollback\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/gp\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/configuration_management/UpgradeIndependence\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/tor/data\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/etc/opt/ericsson/ERICmodeldeployment\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/custom\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/pmic1\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "k:{\"mountPath\":\"/ericsson/pmic2\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/enm/dumps\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/config_mgt\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/batch\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/tor/smrs\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/symvol\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            }
+                                        },
+                                        "f:ports": {
+                                            "k:{\"containerPort\":9990,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":4320,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":4447,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":7999,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":9999,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":1636,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":9600,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "k:{\"containerPort\":8445,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":8080,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":12987,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":8085,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            }
+                                        },
+                                        "f:livenessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {
+                                            "f:limits": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            "f:requests": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"ENM_JBOSS_JGROUPS_BIND_ADDRESS\"}": {
+                                                "f:valueFrom": {
+                                                    "f:fieldRef": {
+                                                        "f:apiVersion": {},
+                                                        "f:fieldPath": {},
+                                                        ".": {}
+                                                    },
+                                                    ".": {}
+                                                },
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"JBOSS_LOG_LEVEL\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"POSTGRES_SERVICE\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {},
+                                        "f:readinessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        }
+                                    },
+                                    "k:{\"name\":\"accesscontrol-monitoring\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:livenessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:tcpSocket": {
+                                                "f:port": {},
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            "f:periodSeconds": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {
+                                            "f:limits": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            "f:requests": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"SERVICENAME\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"SGNAME\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    }
+                                },
+                                "f:restartPolicy": {},
+                                "f:dnsPolicy": {},
+                                "f:initContainers": {
+                                    "k:{\"name\":\"accesscontrol-wait\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:command": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:name": {},
+                                        "f:resources": {},
+                                        "f:terminationMessagePolicy": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:terminationGracePeriodSeconds": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kube-controller-manager",
+                        "time": "2021-05-07T11:09:51Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    },
+                    {
+                        "fieldsV1": {
+                            "f:status": {
+                                "f:hostIP": {},
+                                "f:containerStatuses": {},
+                                "f:podIP": {},
+                                "f:initContainerStatuses": {},
+                                "f:podIPs": {
+                                    "k:{\"ip\":\"192.168.188.39\"}": {
+                                        "f:ip": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:conditions": {
+                                    "k:{\"type\":\"ContainersReady\"}": {
+                                        "f:status": {},
+                                        "f:message": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    },
+                                    "k:{\"type\":\"Ready\"}": {
+                                        "f:status": {},
+                                        "f:message": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    },
+                                    "k:{\"type\":\"Initialized\"}": {
+                                        "f:status": {},
+                                        "f:message": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    }
+                                },
+                                "f:startTime": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kubelet",
+                        "time": "2021-05-07T11:11:45Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    }
+                ],
+                "selfLink": "/api/v1/namespaces/enm420/pods/accesscontrol-5cbc6db77f-b5dks",
+                "uid": "8e8905c9-0100-459a-8cfb-1f9214090b73"
+            }
+        },
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-b5dks.167cc464f5c213ed",
+            "namespace": "enm420",
+            "resourceVersion": "2574017",
+            "creationTimestamp": "2021-05-07T11:11:43Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:43Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-b5dks.167cc464f5c213ed",
+            "uid": "c86f0250-06e7-4586-a1af-5f1dac20817e"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:44Z",
+        "lastTimestamp": "2021-05-07T11:11:44Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Started",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-b5dks",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569695",
+            "uid": "8e8905c9-0100-459a-8cfb-1f9214090b73"
+        },
+        "message": "Started container accesscontrol-wait",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-b5dks.167cc464ffc6204e",
+            "namespace": "enm420",
+            "resourceVersion": "2574021",
+            "creationTimestamp": "2021-05-07T11:11:44Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:44Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-b5dks.167cc464ffc6204e",
+            "uid": "49c33f84-5c79-4724-be65-b9a7e4e822e6"
+        }
+    },
+    {
+        "eventTime": "2021-05-07T11:09:51.597136Z",
+        "reportingInstance": "default-scheduler-ieatrcxb5913",
+        "firstTimestamp": null,
+        "lastTimestamp": null,
+        "source": {},
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-lwkrb",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "resourceVersion": "2569749",
+            "uid": "9664e18b-c666-4428-b2ef-9a52a063c2fd"
+        },
+        "action": "Binding",
+        "message": "Successfully assigned enm420/accesscontrol-5cbc6db77f-lwkrb to ieatrcxb5931",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-lwkrb.167cc44ad33cdc40",
+            "namespace": "enm420",
+            "resourceVersion": "2569751",
+            "creationTimestamp": "2021-05-07T11:09:51Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:reportingInstance": {},
+                        "f:regarding": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:eventTime": {},
+                        "f:note": {},
+                        "f:action": {},
+                        "f:reportingController": {}
+                    },
+                    "apiVersion": "events.k8s.io/v1",
+                    "manager": "kube-scheduler",
+                    "time": "2021-05-07T11:09:51Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-lwkrb.167cc44ad33cdc40",
+            "uid": "67a9bade-bd04-4d70-9cca-32841586ccc8"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:49Z",
+        "lastTimestamp": "2021-05-07T11:11:49Z",
+        "source": {
+            "host": "ieatrcxb5931",
+            "component": "kubelet"
+        },
+        "reason": "Pulling",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-lwkrb",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569750",
+            "uid": "9664e18b-c666-4428-b2ef-9a52a063c2fd"
+        },
+        "message": "Pulling image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\"",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-lwkrb.167cc466579ca00a",
+            "namespace": "enm420",
+            "resourceVersion": "2574116",
+            "creationTimestamp": "2021-05-07T11:11:49Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:49Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-lwkrb.167cc466579ca00a",
+            "uid": "a1c51caf-c178-444d-b484-e3272640fa73"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:55Z",
+        "lastTimestamp": "2021-05-07T11:11:55Z",
+        "source": {
+            "host": "ieatrcxb5931",
+            "component": "kubelet"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-lwkrb",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569750",
+            "uid": "9664e18b-c666-4428-b2ef-9a52a063c2fd"
+        },
+        "message": "Successfully pulled image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\" in 6.110578649s",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-lwkrb.167cc467c3d4e7f6",
+            "namespace": "enm420",
+            "resourceVersion": "2574206",
+            "creationTimestamp": "2021-05-07T11:11:55Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:55Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-lwkrb.167cc467c3d4e7f6",
+            "uid": "43be1005-4743-4f2f-81e2-622b8b268205"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:55Z",
+        "lastTimestamp": "2021-05-07T11:11:55Z",
+        "source": {
+            "host": "ieatrcxb5931",
+            "component": "kubelet"
+        },
+        "reason": "Created",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-lwkrb",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569750",
+            "uid": "9664e18b-c666-4428-b2ef-9a52a063c2fd"
+        },
+        "message": "Created container accesscontrol-wait",
+        "type": "Normal",
+        "_pod_info": {
+            "status": {
+                "initContainerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol-wait",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                        "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container@sha256:00cedba4d55ad4875abdc562596c9a723cf601ad8932382b1ebb95a5b8fe1929",
+                        "state": {
+                            "running": {
+                                "startedAt": "2021-05-07T11:11:56Z"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {},
+                        "containerID": "docker://0907173a8ca1b4ca6edcaff18b1348007a2ba9a76f6a68ede25b34894163873f"
+                    }
+                ],
+                "hostIP": "131.160.129.254",
+                "qosClass": "Burstable",
+                "containerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control:1.9.0-27",
+                        "imageID": "",
+                        "state": {
+                            "waiting": {
+                                "reason": "PodInitializing"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {}
+                    },
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol-httpd",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control-httpd:1.9.0-27",
+                        "imageID": "",
+                        "state": {
+                            "waiting": {
+                                "reason": "PodInitializing"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {}
+                    },
+                    {
+                        "restartCount": 0,
+                        "name": "accesscontrol-monitoring",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-monitoring-eap6:1.9.0-26",
+                        "imageID": "",
+                        "state": {
+                            "waiting": {
+                                "reason": "PodInitializing"
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {}
+                    }
+                ],
+                "podIP": "192.168.237.186",
+                "startTime": "2021-05-07T11:09:51Z",
+                "podIPs": [
+                    {
+                        "ip": "192.168.237.186"
+                    }
+                ],
+                "phase": "Pending",
+                "conditions": [
+                    {
+                        "status": "False",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z",
+                        "reason": "ContainersNotInitialized",
+                        "lastProbeTime": null,
+                        "message": "containers with incomplete status: [accesscontrol-wait]",
+                        "type": "Initialized"
+                    },
+                    {
+                        "status": "False",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z",
+                        "reason": "ContainersNotReady",
+                        "lastProbeTime": null,
+                        "message": "containers with unready status: [accesscontrol accesscontrol-monitoring accesscontrol-httpd]",
+                        "type": "Ready"
+                    },
+                    {
+                        "status": "False",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z",
+                        "reason": "ContainersNotReady",
+                        "lastProbeTime": null,
+                        "message": "containers with unready status: [accesscontrol accesscontrol-monitoring accesscontrol-httpd]",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "PodScheduled",
+                        "lastTransitionTime": "2021-05-07T11:09:51Z"
+                    }
+                ]
+            },
+            "kind": "Pod",
+            "spec": {
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "serviceAccountName": "default",
+                "schedulerName": "default-scheduler",
+                "enableServiceLinks": true,
+                "serviceAccount": "default",
+                "priority": 0,
+                "terminationGracePeriodSeconds": 30,
+                "restartPolicy": "Always",
+                "affinity": {
+                    "podAntiAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": [
+                            {
+                                "labelSelector": {
+                                    "matchExpressions": [
+                                        {
+                                            "operator": "In",
+                                            "values": [
+                                                "accesscontrol"
+                                            ],
+                                            "key": "app"
+                                        }
+                                    ]
+                                },
+                                "topologyKey": "kubernetes.io/hostname"
+                            }
+                        ]
+                    }
+                },
+                "volumes": [
+                    {
+                        "configMap": {
+                            "name": "gpaccesscontrol",
+                            "defaultMode": 420
+                        },
+                        "name": "gp"
+                    },
+                    {
+                        "name": "data",
+                        "persistentVolumeClaim": {
+                            "claimName": "data"
+                        }
+                    },
+                    {
+                        "name": "smrs",
+                        "persistentVolumeClaim": {
+                            "claimName": "smrs"
+                        }
+                    },
+                    {
+                        "name": "mdt",
+                        "persistentVolumeClaim": {
+                            "claimName": "mdt"
+                        }
+                    },
+                    {
+                        "name": "custom",
+                        "persistentVolumeClaim": {
+                            "claimName": "custom"
+                        }
+                    },
+                    {
+                        "name": "dumps",
+                        "persistentVolumeClaim": {
+                            "claimName": "hcdumps"
+                        }
+                    },
+                    {
+                        "name": "batch",
+                        "persistentVolumeClaim": {
+                            "claimName": "batch"
+                        }
+                    },
+                    {
+                        "name": "norollback",
+                        "persistentVolumeClaim": {
+                            "claimName": "norollback"
+                        }
+                    },
+                    {
+                        "name": "configmgt",
+                        "persistentVolumeClaim": {
+                            "claimName": "configmgt"
+                        }
+                    },
+                    {
+                        "name": "upgind",
+                        "persistentVolumeClaim": {
+                            "claimName": "upgind"
+                        }
+                    },
+                    {
+                        "name": "pmic1",
+                        "persistentVolumeClaim": {
+                            "claimName": "pm1"
+                        }
+                    },
+                    {
+                        "name": "pmic2",
+                        "persistentVolumeClaim": {
+                            "claimName": "pm2"
+                        }
+                    },
+                    {
+                        "name": "pmlinks",
+                        "persistentVolumeClaim": {
+                            "claimName": "pmlinks"
+                        }
+                    },
+                    {
+                        "secret": {
+                            "defaultMode": 420,
+                            "secretName": "default-token-bfjvm"
+                        },
+                        "name": "default-token-bfjvm"
+                    }
+                ],
+                "tolerations": [
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready"
+                    },
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable"
+                    }
+                ],
+                "preemptionPolicy": "PreemptLowerPriority",
+                "initContainers": [
+                    {
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol-wait",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                        "volumeMounts": [
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "command": [
+                            "/bin/sh",
+                            "-c",
+                            "bash /var/tmp/check_service.sh -s gossiprouter-cache,gossiprouter-remoting,jms01,postgres,sps,sso"
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {}
+                    }
+                ],
+                "imagePullSecrets": [
+                    {
+                        "name": "csar-secret"
+                    }
+                ],
+                "containers": [
+                    {
+                        "livenessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 600,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control:1.9.0-27",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/gp",
+                                "name": "gp"
+                            },
+                            {
+                                "mountPath": "/ericsson/tor/data",
+                                "name": "data"
+                            },
+                            {
+                                "mountPath": "/ericsson/tor/smrs",
+                                "name": "smrs"
+                            },
+                            {
+                                "mountPath": "/etc/opt/ericsson/ERICmodeldeployment",
+                                "name": "mdt"
+                            },
+                            {
+                                "mountPath": "/ericsson/custom",
+                                "name": "custom"
+                            },
+                            {
+                                "mountPath": "/ericsson/enm/dumps",
+                                "name": "dumps"
+                            },
+                            {
+                                "mountPath": "/ericsson/batch",
+                                "name": "batch"
+                            },
+                            {
+                                "mountPath": "/ericsson/tor/no_rollback",
+                                "name": "norollback"
+                            },
+                            {
+                                "mountPath": "/ericsson/config_mgt",
+                                "name": "configmgt"
+                            },
+                            {
+                                "mountPath": "/ericsson/configuration_management/UpgradeIndependence",
+                                "name": "upgind"
+                            },
+                            {
+                                "mountPath": "/ericsson/pmic1",
+                                "name": "pmic1"
+                            },
+                            {
+                                "mountPath": "/ericsson/pmic2",
+                                "name": "pmic2"
+                            },
+                            {
+                                "mountPath": "/ericsson/symvol",
+                                "name": "pmlinks"
+                            },
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            },
+                            {
+                                "name": "JBOSS_LOG_LEVEL",
+                                "value": "INFO"
+                            },
+                            {
+                                "valueFrom": {
+                                    "fieldRef": {
+                                        "fieldPath": "status.podIP",
+                                        "apiVersion": "v1"
+                                    }
+                                },
+                                "name": "ENM_JBOSS_JGROUPS_BIND_ADDRESS"
+                            },
+                            {
+                                "name": "POSTGRES_SERVICE",
+                                "value": "postgres"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "readinessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 120,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "ports": [
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 1636
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 4320
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 4447
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 7999
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 8080
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 8085
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 8445
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 9990
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 9999
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 12987
+                            },
+                            {
+                                "protocol": "TCP",
+                                "containerPort": 9600
+                            }
+                        ],
+                        "resources": {
+                            "requests": {
+                                "cpu": "600m",
+                                "memory": "3296Mi"
+                            },
+                            "limits": {
+                                "cpu": "2",
+                                "memory": "3596Mi"
+                            }
+                        }
+                    },
+                    {
+                        "livenessProbe": {
+                            "tcpSocket": {
+                                "port": 9600
+                            },
+                            "timeoutSeconds": 15,
+                            "initialDelaySeconds": 600,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol-monitoring",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-monitoring-eap6:1.9.0-26",
+                        "volumeMounts": [
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "SERVICENAME",
+                                "value": "accesscontrol"
+                            },
+                            {
+                                "name": "SGNAME",
+                                "value": "accesscontrol"
+                            },
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {
+                            "requests": {
+                                "cpu": "50m",
+                                "memory": "200Mi"
+                            },
+                            "limits": {
+                                "cpu": "200m",
+                                "memory": "300Mi"
+                            }
+                        }
+                    },
+                    {
+                        "livenessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 120,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "accesscontrol-httpd",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enmsg-access-control-httpd:1.9.0-27",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/ericsson/tor/data",
+                                "name": "data"
+                            },
+                            {
+                                "mountPath": "/etc/opt/ericsson/ERICmodeldeployment",
+                                "name": "mdt"
+                            },
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "UI_PRES_SERVER",
+                                "value": "ieatenm5420-1.athtem.eei.ericsson.se"
+                            },
+                            {
+                                "name": "web_host_default",
+                                "value": "ieatenm5420-1.athtem.eei.ericsson.se"
+                            },
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "readinessProbe": {
+                            "timeoutSeconds": 15,
+                            "exec": {
+                                "command": [
+                                    "/opt/ericsson/vmmonitord/bin/ocf_monitor.py",
+                                    "--exec_agents"
+                                ]
+                            },
+                            "initialDelaySeconds": 60,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "failureThreshold": 2
+                        },
+                        "resources": {
+                            "requests": {
+                                "cpu": "250m",
+                                "memory": "400Mi"
+                            },
+                            "limits": {
+                                "cpu": "500m",
+                                "memory": "1000Mi"
+                            }
+                        }
+                    }
+                ],
+                "nodeName": "ieatrcxb5931"
+            },
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "accesscontrol-5cbc6db77f-lwkrb",
+                "labels": {
+                    "pod-template-hash": "5cbc6db77f",
+                    "app": "accesscontrol",
+                    "app.kubernetes.io/instance": "eric-enm-stateless-integration-enm420",
+                    "app.kubernetes.io/version": "eric-enmsg-access-control-1.9.0-27",
+                    "app.kubernetes.io/name": "accesscontrol"
+                },
+                "namespace": "enm420",
+                "ownerReferences": [
+                    {
+                        "kind": "ReplicaSet",
+                        "name": "accesscontrol-5cbc6db77f",
+                        "apiVersion": "apps/v1",
+                        "controller": true,
+                        "blockOwnerDeletion": true,
+                        "uid": "20d75cab-7068-482f-8b30-64e0c0fc7a7b"
+                    }
+                ],
+                "resourceVersion": "2574238",
+                "generateName": "accesscontrol-5cbc6db77f-",
+                "creationTimestamp": "2021-05-07T11:09:51Z",
+                "managedFields": [
+                    {
+                        "fieldsV1": {
+                            "f:metadata": {
+                                "f:generateName": {},
+                                "f:labels": {
+                                    "f:app": {},
+                                    "f:app.kubernetes.io/version": {},
+                                    "f:app.kubernetes.io/instance": {},
+                                    ".": {},
+                                    "f:app.kubernetes.io/name": {},
+                                    "f:pod-template-hash": {}
+                                },
+                                "f:ownerReferences": {
+                                    "k:{\"uid\":\"20d75cab-7068-482f-8b30-64e0c0fc7a7b\"}": {
+                                        "f:apiVersion": {},
+                                        "f:blockOwnerDeletion": {},
+                                        "f:uid": {},
+                                        "f:name": {},
+                                        "f:kind": {},
+                                        ".": {},
+                                        "f:controller": {}
+                                    },
+                                    ".": {}
+                                }
+                            },
+                            "f:spec": {
+                                "f:volumes": {
+                                    "k:{\"name\":\"upgind\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"mdt\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"smrs\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"data\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"custom\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"batch\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"configmgt\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"norollback\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"pmic2\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"gp\"}": {
+                                        "f:configMap": {
+                                            "f:defaultMode": {},
+                                            "f:name": {},
+                                            ".": {}
+                                        },
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    ".": {},
+                                    "k:{\"name\":\"pmlinks\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"pmic1\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"dumps\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    }
+                                },
+                                "f:securityContext": {},
+                                "f:enableServiceLinks": {},
+                                "f:imagePullSecrets": {
+                                    "k:{\"name\":\"csar-secret\"}": {
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:schedulerName": {},
+                                "f:affinity": {
+                                    "f:podAntiAffinity": {
+                                        "f:requiredDuringSchedulingIgnoredDuringExecution": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:containers": {
+                                    "k:{\"name\":\"accesscontrol-httpd\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:volumeMounts": {
+                                            "k:{\"mountPath\":\"/ericsson/tor/data\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/etc/opt/ericsson/ERICmodeldeployment\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:livenessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {
+                                            "f:limits": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            "f:requests": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"UI_PRES_SERVER\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"web_host_default\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {},
+                                        "f:readinessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        }
+                                    },
+                                    "k:{\"name\":\"accesscontrol\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:volumeMounts": {
+                                            "k:{\"mountPath\":\"/ericsson/tor/no_rollback\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/gp\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/configuration_management/UpgradeIndependence\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/tor/data\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/etc/opt/ericsson/ERICmodeldeployment\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/custom\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/pmic1\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "k:{\"mountPath\":\"/ericsson/pmic2\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/enm/dumps\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/config_mgt\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/batch\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/tor/smrs\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/ericsson/symvol\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            }
+                                        },
+                                        "f:ports": {
+                                            "k:{\"containerPort\":9990,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":4320,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":4447,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":7999,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":9999,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":1636,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":9600,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "k:{\"containerPort\":8445,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":8080,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":12987,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"containerPort\":8085,\"protocol\":\"TCP\"}": {
+                                                "f:containerPort": {},
+                                                "f:protocol": {},
+                                                ".": {}
+                                            }
+                                        },
+                                        "f:livenessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {
+                                            "f:limits": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            "f:requests": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"ENM_JBOSS_JGROUPS_BIND_ADDRESS\"}": {
+                                                "f:valueFrom": {
+                                                    "f:fieldRef": {
+                                                        "f:apiVersion": {},
+                                                        "f:fieldPath": {},
+                                                        ".": {}
+                                                    },
+                                                    ".": {}
+                                                },
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"JBOSS_LOG_LEVEL\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"POSTGRES_SERVICE\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {},
+                                        "f:readinessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:exec": {
+                                                "f:command": {},
+                                                ".": {}
+                                            },
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            ".": {},
+                                            "f:periodSeconds": {}
+                                        }
+                                    },
+                                    "k:{\"name\":\"accesscontrol-monitoring\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:livenessProbe": {
+                                            "f:successThreshold": {},
+                                            "f:failureThreshold": {},
+                                            "f:tcpSocket": {
+                                                "f:port": {},
+                                                ".": {}
+                                            },
+                                            ".": {},
+                                            "f:timeoutSeconds": {},
+                                            "f:initialDelaySeconds": {},
+                                            "f:periodSeconds": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {
+                                            "f:limits": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            "f:requests": {
+                                                "f:memory": {},
+                                                "f:cpu": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"SERVICENAME\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"SGNAME\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    }
+                                },
+                                "f:restartPolicy": {},
+                                "f:dnsPolicy": {},
+                                "f:initContainers": {
+                                    "k:{\"name\":\"accesscontrol-wait\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:command": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:name": {},
+                                        "f:resources": {},
+                                        "f:terminationMessagePolicy": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:terminationGracePeriodSeconds": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kube-controller-manager",
+                        "time": "2021-05-07T11:09:51Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    },
+                    {
+                        "fieldsV1": {
+                            "f:status": {
+                                "f:hostIP": {},
+                                "f:containerStatuses": {},
+                                "f:podIP": {},
+                                "f:initContainerStatuses": {},
+                                "f:podIPs": {
+                                    "k:{\"ip\":\"192.168.237.186\"}": {
+                                        "f:ip": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:conditions": {
+                                    "k:{\"type\":\"ContainersReady\"}": {
+                                        "f:status": {},
+                                        "f:message": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    },
+                                    "k:{\"type\":\"Ready\"}": {
+                                        "f:status": {},
+                                        "f:message": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    },
+                                    "k:{\"type\":\"Initialized\"}": {
+                                        "f:status": {},
+                                        "f:message": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    }
+                                },
+                                "f:startTime": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kubelet",
+                        "time": "2021-05-07T11:11:57Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    }
+                ],
+                "selfLink": "/api/v1/namespaces/enm420/pods/accesscontrol-5cbc6db77f-lwkrb",
+                "uid": "9664e18b-c666-4428-b2ef-9a52a063c2fd"
+            }
+        },
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-lwkrb.167cc467c6075cd8",
+            "namespace": "enm420",
+            "resourceVersion": "2574207",
+            "creationTimestamp": "2021-05-07T11:11:55Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:55Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-lwkrb.167cc467c6075cd8",
+            "uid": "7aae7203-9979-4623-9777-35e2a97c6b07"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:11:56Z",
+        "lastTimestamp": "2021-05-07T11:11:56Z",
+        "source": {
+            "host": "ieatrcxb5931",
+            "component": "kubelet"
+        },
+        "reason": "Started",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "accesscontrol-5cbc6db77f-lwkrb",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{accesscontrol-wait}",
+            "resourceVersion": "2569750",
+            "uid": "9664e18b-c666-4428-b2ef-9a52a063c2fd"
+        },
+        "message": "Started container accesscontrol-wait",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f-lwkrb.167cc467d0d540cf",
+            "namespace": "enm420",
+            "resourceVersion": "2574210",
+            "creationTimestamp": "2021-05-07T11:11:56Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:11:56Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f-lwkrb.167cc467d0d540cf",
+            "uid": "88bb738b-1f3e-43dd-bc51-d2cdb8ca82d7"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:09:51Z",
+        "lastTimestamp": "2021-05-07T11:09:51Z",
+        "source": {
+            "component": "replicaset-controller"
+        },
+        "reason": "SuccessfulCreate",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "ReplicaSet",
+            "name": "accesscontrol-5cbc6db77f",
+            "namespace": "enm420",
+            "apiVersion": "apps/v1",
+            "resourceVersion": "2569610",
+            "uid": "20d75cab-7068-482f-8b30-64e0c0fc7a7b"
+        },
+        "message": "Created pod: accesscontrol-5cbc6db77f-b5dks",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f.167cc44ac231a6ef",
+            "namespace": "enm420",
+            "resourceVersion": "2570437",
+            "creationTimestamp": "2021-05-07T11:09:56Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:09:56Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f.167cc44ac231a6ef",
+            "uid": "2a22689f-43fb-4465-be8c-ff8416a2af3c"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:09:51Z",
+        "lastTimestamp": "2021-05-07T11:09:51Z",
+        "source": {
+            "component": "replicaset-controller"
+        },
+        "reason": "SuccessfulCreate",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "ReplicaSet",
+            "name": "accesscontrol-5cbc6db77f",
+            "namespace": "enm420",
+            "apiVersion": "apps/v1",
+            "resourceVersion": "2569610",
+            "uid": "20d75cab-7068-482f-8b30-64e0c0fc7a7b"
+        },
+        "message": "Created pod: accesscontrol-5cbc6db77f-lwkrb",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol-5cbc6db77f.167cc44ad2f9b017",
+            "namespace": "enm420",
+            "resourceVersion": "2570557",
+            "creationTimestamp": "2021-05-07T11:09:57Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:09:57Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5cbc6db77f.167cc44ad2f9b017",
+            "uid": "d0cd8781-8b0d-4526-97b8-1c4b5605f1ee"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:09:51Z",
+        "lastTimestamp": "2021-05-07T11:09:51Z",
+        "source": {
+            "component": "nginx-ingress-controller"
+        },
+        "reason": "CREATE",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Ingress",
+            "name": "accesscontrol",
+            "namespace": "enm420",
+            "apiVersion": "networking.k8s.io/v1beta1",
+            "resourceVersion": "2569519",
+            "uid": "cc14442a-ab44-48e0-a804-319e0bc03245"
+        },
+        "message": "Ingress enm420/accesscontrol",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol.167cc44abe681506",
+            "namespace": "enm420",
+            "resourceVersion": "2569815",
+            "creationTimestamp": "2021-05-07T11:09:52Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "nginx-ingress-controller",
+                    "time": "2021-05-07T11:09:52Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol.167cc44abe681506",
+            "uid": "21fc0d69-772b-419f-856c-be603f6409e2"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:09:51Z",
+        "lastTimestamp": "2021-05-07T11:09:51Z",
+        "source": {
+            "component": "nginx-ingress-controller"
+        },
+        "reason": "CREATE",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Ingress",
+            "name": "accesscontrol",
+            "namespace": "enm420",
+            "apiVersion": "networking.k8s.io/v1beta1",
+            "resourceVersion": "2569519",
+            "uid": "cc14442a-ab44-48e0-a804-319e0bc03245"
+        },
+        "message": "Ingress enm420/accesscontrol",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol.167cc44abe6b0c1d",
+            "namespace": "enm420",
+            "resourceVersion": "2569816",
+            "creationTimestamp": "2021-05-07T11:09:52Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "nginx-ingress-controller",
+                    "time": "2021-05-07T11:09:52Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol.167cc44abe6b0c1d",
+            "uid": "0fd37374-5b29-4691-9992-b322c38262fa"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:09:51Z",
+        "lastTimestamp": "2021-05-07T11:09:51Z",
+        "source": {
+            "component": "deployment-controller"
+        },
+        "reason": "ScalingReplicaSet",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Deployment",
+            "name": "accesscontrol",
+            "namespace": "enm420",
+            "apiVersion": "apps/v1",
+            "resourceVersion": "2569439",
+            "uid": "7d43fb22-c814-4b19-afb1-2ea82487eb7e"
+        },
+        "message": "Scaled up replica set accesscontrol-5cbc6db77f to 2",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol.167cc44ac002321b",
+            "namespace": "enm420",
+            "resourceVersion": "2569716",
+            "creationTimestamp": "2021-05-07T11:09:51Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:09:51Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol.167cc44ac002321b",
+            "uid": "4df2ff7a-e417-45ad-b801-70a674706bbb"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:10:23Z",
+        "lastTimestamp": "2021-05-07T11:10:23Z",
+        "source": {
+            "component": "nginx-ingress-controller"
+        },
+        "reason": "UPDATE",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Ingress",
+            "name": "accesscontrol",
+            "namespace": "enm420",
+            "apiVersion": "networking.k8s.io/v1beta1",
+            "resourceVersion": "2572262",
+            "uid": "cc14442a-ab44-48e0-a804-319e0bc03245"
+        },
+        "message": "Ingress enm420/accesscontrol",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol.167cc452380dfef1",
+            "namespace": "enm420",
+            "resourceVersion": "2572264",
+            "creationTimestamp": "2021-05-07T11:10:23Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "nginx-ingress-controller",
+                    "time": "2021-05-07T11:10:23Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol.167cc452380dfef1",
+            "uid": "e66413f4-b750-4cf8-bdcc-397d21728b58"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:10:23Z",
+        "lastTimestamp": "2021-05-07T11:10:23Z",
+        "source": {
+            "component": "nginx-ingress-controller"
+        },
+        "reason": "UPDATE",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Ingress",
+            "name": "accesscontrol",
+            "namespace": "enm420",
+            "apiVersion": "networking.k8s.io/v1beta1",
+            "resourceVersion": "2572262",
+            "uid": "cc14442a-ab44-48e0-a804-319e0bc03245"
+        },
+        "message": "Ingress enm420/accesscontrol",
+        "type": "Normal",
+        "metadata": {
+            "name": "accesscontrol.167cc452380f4629",
+            "namespace": "enm420",
+            "resourceVersion": "2572265",
+            "creationTimestamp": "2021-05-07T11:10:23Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "nginx-ingress-controller",
+                    "time": "2021-05-07T11:10:23Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol.167cc452380f4629",
+            "uid": "3a0bace5-8872-4329-8c6b-4ce7e5a1196b"
+        }
+    }
+]
+

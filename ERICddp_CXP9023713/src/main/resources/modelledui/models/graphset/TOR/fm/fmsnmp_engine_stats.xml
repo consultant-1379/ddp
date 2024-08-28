@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_mssnmpfm_instr">
+      <reference table="sites" condition="enm_mssnmpfm_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_mssnmpfm_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="srvIds"/>
+    <where>sites.name = '%s' AND enm_mssnmpfm_instr.serverid IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="numOfSupervisedNodes" type="sb" forcelegend="true">
+      <title value="Nodes Supervised"/>
+      <column db="numOfSupervisedNodes" label="Nodes Supervised"/>
+    </graph>
+    <graph name="numOfSuspendedNodes" type="sb" forcelegend="true">
+      <title value="Nodes Suspended"/>
+      <column db="numOfSuspendedNodes" label="Nodes Suspended"/>
+    </graph>
+    <graph name="numOfHBFailureNodes" type="sb" forcelegend="true">
+      <title value="HB Failure Nodes"/>
+      <column db="numOfHBFailureNodes" label="HB Failure Nodes"/>
+    </graph>
+    <graph name="syncAlarmCommand" type="sb" forcelegend="true">
+      <title value="Alarm Synchronizations"/>
+      <column db="syncAlarmCommand" label="Alarm Synchronizations"/>
+    </graph>
+    <graph name="processingAlarmTime" type="sb" forcelegend="true">
+      <title value="Processing Time(msec)"/>
+      <column db="processingAlarmTime" label="Processing Time(msec)"/>
+    </graph>
+    <graph name="trapsReceived" type="sb" forcelegend="true">
+      <title value="Traps"/>
+      <column db="trapsReceived" label="Traps"/>
+    </graph>
+    <graph name="alarmsReceived" type="sb" forcelegend="true">
+      <title value="Alarms"/>
+      <column db="alarmsReceived" label="Alarms"/>
+    </graph>
+    <graph name="trapsForwarded" type="sb" forcelegend="true">
+      <title value="Traps"/>
+      <column db="trapsForwarded" label="Traps"/>
+    </graph>
+    <graph name="alarmsForwarded" type="sb" forcelegend="true">
+      <title value="Alarms"/>
+      <column db="alarmsForwarded" label="Alarms"/>
+    </graph>
+    <graph name="alarmProcessingSuccess" type="sb" forcelegend="true">
+      <title value="Success"/>
+      <column db="alarmProcessingSuccess" label="Success"/>
+    </graph>
+    <graph name="alarmProcessingPing" type="sb" forcelegend="true">
+      <title value="Ping"/>
+      <column db="alarmProcessingPing" label="Ping"/>
+    </graph>
+    <graph name="multiEventProcessed" type="sb" forcelegend="true">
+      <title value="Processed"/>
+      <column db="multiEventProcessed" label="Processed"/>
+    </graph>
+    <graph name="multiEventReordered" type="sb" forcelegend="true">
+      <title value="Reordered"/>
+      <column db="multiEventReordered" label="Reordered"/>
+    </graph>
+    <graph name="multiEventFailed" type="sb" forcelegend="true">
+      <title value="Failed"/>
+      <column db="multiEventFailed" label="Failed"/>
+    </graph>
+    <graph name="trapsDiscarded" type="sb" forcelegend="true">
+      <title value="Discarded"/>
+      <column db="trapsDiscarded" label="Discarded"/>
+    </graph>
+    <graph name="trapsForwardedFailures" type="sb" forcelegend="true">
+      <title value="Forwarded Failures"/>
+      <column db="trapsForwardedFailures" label="Forwarded Failures"/>
+    </graph>
+    <graph name="alarmsProcessingFailures" type="sb" forcelegend="true">
+      <title value="Processing"/>
+      <column db="alarmsProcessingFailures" label="Processing"/>
+    </graph>
+    <graph name="alarmProcessingLossOfTrap" type="sb" forcelegend="true">
+      <title value="Loss Of Trap"/>
+      <column db="alarmProcessingLossOfTrap" label="Loss Of Trap"/>
+    </graph>
+    <graph name="alarmProcessingDiscarded" type="sb" forcelegend="true">
+      <title value="Discarded"/>
+      <column db="alarmProcessingDiscarded" label="Discarded"/>
+    </graph>
+    <graph name="alarmProcessingInvalidRecordType" type="sb" forcelegend="true">
+      <title value="Invalid Record Type"/>
+      <column db="alarmProcessingInvalidRecordType" label="Invalid Record Type"/>
+    </graph>
+    <graph name="alarmsProcessingNotSupported" type="sb" forcelegend="true">
+      <title value="Not Supported"/>
+      <column db="alarmsProcessingNotSupported" label="Not Supported"/>
+    </graph>
+    <graph name="forwardedProcessedAlarmFailures" type="sb" forcelegend="true">
+      <title value="Forwarded Processed"/>
+      <column db="forwardedProcessedAlarmFailures" label="Forwarded Processed"/>
+    </graph>
+    <graph name="snmpInTraps" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Input Traps"/>
+      <column db="snmpInTraps" label="Snmp Input Traps"/>
+    </graph>
+    <graph name="snmpTrapInASNParseErrs" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp ASN Parse error"/>
+      <column db="snmpTrapInASNParseErrs" label="Snmp ASN Parse error"/>
+    </graph>
+    <graph name="snmpTrapInBadVersions" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Trap in Bad Version"/>
+      <column db="snmpTrapInBadVersions" label="Snmp Trap in Bad Version"/>
+    </graph>
+    <graph name="decryptionErrors" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Decryption Errors"/>
+      <column db="decryptionErrors" label="Snmp Decryption Errors"/>
+    </graph>
+    <graph name="notInTimeWindows" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Not In TimeWindows"/>
+      <column db="notInTimeWindows" label="Snmp Not In TimeWindows"/>
+    </graph>
+    <graph name="unknownEngineIDs" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Unknown EngineIDs"/>
+      <column db="unknownEngineIDs" label="Snmp Unknown EngineIDs"/>
+    </graph>
+    <graph name="unknownUserNames" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Unknown User Names"/>
+      <column db="unknownUserNames" label="Snmp Unknown User Names"/>
+    </graph>
+    <graph name="unsupportedSecLevels" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Unsupported Security Levels"/>
+      <column db="unsupportedSecLevels" label="Snmp Unsupported Security Levels"/>
+    </graph>
+    <graph name="wrongDigests" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Snmp Wrong Digests"/>
+      <column db="wrongDigests" label="Snmp Wrong Digests"/>
+    </graph>
+    <graph name="numberOfConnections" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Snmp Internal Connections"/>
+      <column db="numberOfConnections" label="Number of Snmp Internal Connections"/>
+    </graph>
+    <graph name="destinationDiscarded" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Destination Discarded"/>
+      <column db="noOfSnmpTargetDestinationDiscarded" label="Destination Discarded"/>
+    </graph>
+    <graph name="destinationSent" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Destination Sent"/>
+      <column db="noOfSnmpTargetDestinationSent" label="Destination Sent"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="lowLevelCounters">
+      <member>snmpInTraps</member>
+      <member>snmpTrapInASNParseErrs</member>
+      <member>snmpTrapInBadVersions</member>
+      <member>decryptionErrors</member>
+      <member>notInTimeWindows</member>
+      <member>unknownEngineIDs</member>
+      <member>unknownUserNames</member>
+      <member>unsupportedSecLevels</member>
+      <member>wrongDigests</member>
+      <member>numberOfConnections</member>
+    </group>
+    <group name="alarmProcFail">
+      <member>alarmsProcessingFailures</member>
+      <member>alarmProcessingLossOfTrap</member>
+      <member>alarmProcessingDiscarded</member>
+      <member>alarmProcessingInvalidRecordType</member>
+      <member>alarmsProcessingNotSupported</member>
+      <member>forwardedProcessedAlarmFailures</member>
+    </group>
+    <group name="trapIssue">
+      <member>trapsDiscarded</member>
+      <member>trapsForwardedFailures</member>
+    </group>
+    <group name="nodesOperation">
+      <member>numOfSupervisedNodes</member>
+      <member>numOfSuspendedNodes</member>
+      <member>numOfHBFailureNodes</member>
+    </group>
+    <group name="overall">
+      <member>syncAlarmCommand</member>
+      <member>processingAlarmTime</member>
+    </group>
+    <group name="received">
+      <member>trapsReceived</member>
+      <member>alarmsReceived</member>
+    </group>
+    <group name="forwarded">
+      <member>trapsForwarded</member>
+      <member>alarmsForwarded</member>
+    </group>
+    <group name="alarmsProc">
+      <member>alarmProcessingSuccess</member>
+      <member>alarmProcessingPing</member>
+    </group>
+    <group name="multiEventProc">
+      <member>multiEventProcessed</member>
+      <member>multiEventReordered</member>
+      <member>multiEventFailed</member>
+    </group>
+    <group name="destination">
+      <member>destinationSent</member>
+      <member>destinationDiscarded</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

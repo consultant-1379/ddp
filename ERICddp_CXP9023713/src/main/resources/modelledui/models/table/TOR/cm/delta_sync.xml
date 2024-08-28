@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_com_ecim_delta_syncs">
+    <reference table="sites" condition="enm_com_ecim_delta_syncs.siteid = sites.id"/>
+    <reference table="servers" condition="enm_com_ecim_delta_syncs.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_com_ecim_delta_syncs.neid = enm_ne.id"/>
+    <reference table="ne_types" condition="ne_types.id = enm_ne.netypeid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverids"/>
+  <where>sites.name = '%site%' AND enm_com_ecim_delta_syncs.endtime BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_com_ecim_delta_syncs.serverid IN (%serverids%)</where>
+
+  <column db="starttime" label="Start Time" formatter="ddpFormatTime"/>
+  <column db="endtime" label="End Time" formatter="ddpFormatTime"/>
+  <column db="enm_ne.name" label="Network Element"/>
+  <column db="ne_types.name" label="NE Type"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="IFNULL(TIMEDIFF( endtime, starttime ), 'NA')" label="Duration (hh:mm:ss)" formatter="ddpFormatTime"/>
+  <column db="n_mo_created" label="Total MOs Created"/>
+  <column db="n_mo_updated" label="Total MOs Updated"/>
+  <column db="n_mo_deleted" label="Total MOs Deleted"/>
+
+</modelledtable>

@@ -1,0 +1,46 @@
+#!/bin/bash
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+DATA_FILE=$1
+MC=$2
+DASH_DATE=$3
+OUTPUT_FILE=$4
+
+TERM_SIZE_OPT=""
+SIZE_LINE="set size 1,1"
+if [ ! -z "$5" ] ; then
+    SIZE_LINE="set size $5"
+    TERM_SIZE=$(echo $5 | awk -F, '{printf "%d,%d", (640 * $1), (480 * $2)}')
+    TERM_SIZE_OPT="size ${TERM_SIZE}"
+fi
+
+GRAPH_FILE=$6
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+
+cat ${DATA_FILE} | grep " ${MC} " | ${ANALYSIS_BIN}/server/parseInstr > ${TMP_DIR}/data.txt
+
+gnuplot <<EOF	
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set format x "%H:%M"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set terminal jpeg medium ${TERM_SIZE_OPT}
+set output "${OUTPUT_FILE}"
+set title "Memory Usage (MB)"
+plot "${TMP_DIR}/data.txt" using 1:2 title 'Total' with lines, "${TMP_DIR}/data.txt" using 1:3 title 'Used' with lines
+EOF
+
+if [ ! -z "${GRAPH_FILE}" ] ; then
+    echo "tsc;second;Total;Used" > ${GRAPH_FILE}
+    GRAPH_DATE=`echo ${DASH_DATE} | awk -F\- '{printf("20%02d-%02d-%02d", $3, $2, $1)}'`
+    cat ${TMP_DIR}/data.txt | sed "s/^${DASH_DATE}/${GRAPH_DATE}/" >> ${GRAPH_FILE}
+    echo >> ${GRAPH_FILE}
+    echo "plot;tsc;Heap Usage;Time;MB" >> ${GRAPH_FILE}
+fi

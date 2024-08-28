@@ -1,0 +1,640 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsTime;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $NOT_STARTED = 0;
+our $STARTED = 1;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+our %dateCache = ();
+
+main();
+
+sub main
+{
+    my ($dlog,$dataFile,$plotFile,$deleteFile,$site,$date);
+    my $result = GetOptions(
+			    "dlog=s" => \$dlog,
+			    "data=s" => \$dataFile,
+			    "plot=s" => \$plotFile,
+	                    "delete=s" => \$deleteFile,
+	                    "site=s" => \$site,
+	                    "date=s" => \$date,
+			    "debug=s" => \$DEBUG	
+			    );
+    ($result == 1) or die "Invalid args";
+
+    my @loading = ();
+    my @deletion = ();
+    readDispatcherLog($dlog,\@loading,\@deletion);
+    processLoading(\@loading,$dataFile,$plotFile,$date);
+
+    if ( $deleteFile )
+    {
+	processDeletion(\@deletion,$deleteFile);
+    }
+}
+
+sub processDeletion
+{
+    my ( $r_deletion, $deleteFile ) = @_;
+
+    my @objs = ( 'smpcDelete', 'bscDelete', 'tcpoolDelete', 'trcDelete', 'cellDelete', 'cellrelDelete' );
+
+    #      Oct 20 2007 05:10:00 0
+    open TABLE, ">$deleteFile" or die "Cannot open $deleteFile";
+    print TABLE "<table border=\"1\"><tr> <th>Cycle Start Time</th> <th>Suspect</th>";
+    foreach my $obj ( @objs )
+    {
+	my ($colHeader) = $obj =~ /^(.*)Delete$/;
+	printf TABLE " <th>%s</th>", $colHeader;
+    }
+    print TABLE "\n";
+
+    foreach my $r_DeleteCycle ( @{$r_deletion} )
+    {
+	my $suspect = 0;
+	if ( exists $r_DeleteCycle->{'suspect'} )
+	{
+	    $suspect = $r_DeleteCycle->{'suspect'};
+	}
+	print TABLE " <tr> <td>", $r_DeleteCycle->{'cycle'}, "</td> <td>", $suspect, "</td>";
+
+	foreach my $obj ( @objs )
+	{
+	    my $duration = "NA";
+	    if ( exists $r_DeleteCycle->{'obj'}->{$obj}->{'end'} )
+	    {
+		my $durationSec = parseTime($r_DeleteCycle->{'obj'}->{$obj}->{'end'}, $TIME_MON_DYYYY_HMS) - 
+		    parseTime($r_DeleteCycle->{'obj'}->{$obj}->{'start'}, $TIME_MON_DYYYY_HMS);
+		$duration = sprintf("%02d:%02d:%02d", int ($durationSec / 3600), int ( ($durationSec % 3600) / 60 ), $durationSec % 60);
+	    }
+	    print TABLE " <td>$duration</td>";
+	}
+	print TABLE "</tr>\n";
+    }
+    print TABLE "</table>\n";
+    close TABLE;
+}
+
+sub processLoading
+{
+    my ($r_loading,$data,$plotFile,$date) = @_;
+
+    my @unusableSamples = ();
+    my @repairedSamples = ();
+
+    my ($year,$month,$day) = $date =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})$/;
+    my $midNight = timelocal(0,0,0,$day,$month-1,$year - 1900);
+    
+    my @hourlyTotals = ();
+    my $hourIndex = 0; my $hourStart = $midNight; my $hourEnd = $midNight + 3600;
+
+    if ( $plotFile )
+    {
+	open PLOT, ">$plotFile" or die "Cannot open plotFile $plotFile";
+	print PLOT "tb\n";
+    }
+
+    my $cycleIndex = -1;
+    for my $r_cycle ( @{$r_loading} )
+    {
+	$cycleIndex++;
+	if ( $DEBUG > 10 ) { print Dumper("processLoading: processing cycleIndex=$cycleIndex", $r_cycle); }
+
+	if ( ! exists $r_cycle->{'suspect'} )
+	{
+	    if ( ! exists $r_cycle->{'BCP'}->[0] )
+	    {
+		if ( $DEBUG > 4 ) { print Dumper("processLoading: BCP start missing, this sample", $r_cycle); }
+
+		if ( ($cycleIndex > 0) && ($r_cycle->{'pollerid'} == $r_loading->[$cycleIndex]->{'pollerid'}) )
+		{
+		    if ( $DEBUG > 4 ) { print Dumper("processLoading: Using Load end from previos sample", $r_loading->[$cycleIndex-1]); }
+
+		    $r_cycle->{'BCP'}->[0] = $r_loading->[$cycleIndex-1]->{'Loading'}->[1];
+		    $r_cycle->{'fixed'} = 1;
+		}
+		else
+		{
+		    $r_cycle->{'suspect'} = "Missing Data: No BCP Start Time";
+		}
+	    }
+
+	    if ( ! exists $r_cycle->{'Loading'}->[1] )
+	    {
+		if ( $DEBUG > 4 ) { print Dumper("processLoading: Load end missing, this sample", $r_cycle); }
+
+		if ( ($cycleIndex < $#{$r_loading}) && ($r_cycle->{'pollerid'} == $r_loading->[$cycleIndex+1]->{'pollerid'}) )
+		{
+		    if ( $DEBUG > 4 ) { print Dumper("processLoading: Using BCP start from next sample", $r_loading->[$cycleIndex+1]); }
+		    
+		    $r_cycle->{'Loading'}->[1] = $r_loading->[$cycleIndex+1]->{'BCP'}->[0];
+		    $r_cycle->{'fixed'} = 1;
+		}
+		else
+		{
+		    $r_cycle->{'suspect'} = "Missing Data: No Loading End Time";
+		}
+	    }
+	}
+
+	if ( exists $r_cycle->{'suspect'} )
+	{
+	    push @unusableSamples, $r_cycle;
+	}
+	else
+	{
+	    if ( exists $r_cycle->{'fixed'} )
+	    {
+		push @repairedSamples, $r_cycle;
+	    }
+
+	    my $starttime = $r_cycle->{'BCP'}->[0];
+	    if ( defined $r_cycle->{'starttime'} )
+	    {
+		$starttime = $r_cycle->{'starttime'};
+	    }
+	    
+	    my $endtime = $r_cycle->{'Loading'}->[1];
+	    
+
+	    my $startTimeNum = parseTime( $starttime, $TIME_YYYYMDHMS );
+	    my $endTimeNum = parseTime( $endtime, $TIME_YYYYMDHMS );
+
+	    if ( $startTimeNum > $endTimeNum )
+	    {
+		print Dumper("processLoading: Corrupt cycleIndex=$cycleIndex startTimeNum>endTimeNum ", $r_cycle);
+		exit 1;
+	    }
+
+
+	    #my $bcptime = difftime( $r_cycle->{'BCP'}->[0], $r_cycle->{'BCP'}->[1] );
+	    #my $loadtime = difftime( $r_cycle->{'Loading'}->[0], $r_cycle->{'Loading'}->[1] );
+
+	    my $numrows = $r_cycle->{'rows'};
+	    my $duration = $endTimeNum - $startTimeNum;
+
+	    if ( $startTimeNum >= $midNight )
+	    {
+		if ( $startTimeNum >= $hourStart )
+		{
+		    while ( ($startTimeNum > $hourEnd) && ($hourIndex < 24) )
+		    {
+			$hourIndex++;
+			$hourStart += 3600;
+			$hourEnd   += 3600;
+			if ( $DEBUG > 5 ) { print "processLoading: Moving to hour $hourIndex starttime=$starttime\n"; }
+		    }
+
+		    if ( $hourIndex < 24 )
+		    {
+			if ( $DEBUG > 6 ) { print "processLoading: Adding load cycle starttime=$starttime endtime=$endtime duration=$duration to hourIndex=$hourIndex totalDur=", $hourlyTotals[$hourIndex]->{'duration'}, "\n"; }
+
+			if ( ($startTimeNum + $duration) <= $hourEnd )
+			{
+			    $hourlyTotals[$hourIndex]->{'duration'} += $duration;
+			    $hourlyTotals[$hourIndex]->{'rows'} += $numrows;
+			}
+			else
+			{
+			    my $overFlow = ($startTimeNum + $duration) - $hourEnd;
+			    my $fraction = ($duration - $overFlow) / $duration;
+			    
+			    if ( $DEBUG > 6 ) { print "processLoading: load cycle spans hour boundary, starttime=$starttime duration=$duration overFlow=$overFlow fraction=$fraction\n"; }
+			    my $rowsThisHour = int ( ($numrows * $fraction) + 0.5 );
+			    my $timeThisHour = $duration - $overFlow;
+			    if ( $DEBUG > 6 ) { print "processLoading: Adding load rowsThisHour=$rowsThisHour timeThisHour=$timeThisHour to hourIndex=$hourIndex\n"; }
+			    $hourlyTotals[$hourIndex]->{'duration'} += $timeThisHour;
+			    $hourlyTotals[$hourIndex]->{'rows'} += $rowsThisHour;
+			    
+			    if ( ($hourIndex + 1) < 24 )
+			    {
+				my $rowsNextHour = $numrows - $rowsThisHour;
+				if ( $DEBUG > 6 ) { print "processLoading: Adding overFlow=$overFlow rowsNextHour=$rowsNextHour to hourIndex=", ($hourIndex+1), "\n"; }
+				$hourlyTotals[$hourIndex+1]->{'duration'} += $overFlow;
+				$hourlyTotals[$hourIndex]->{'rows'} += $rowsNextHour;
+			    }
+			}
+
+			if ( $hourlyTotals[$hourIndex]->{'duration'} > 3600 )
+			{
+			    if ( $DEBUG > - 0 ) { print "processLoading: WARN: Exceeded 3600 duration for hourIndex=$hourIndex starttime=$starttime ", $hourlyTotals[$hourIndex]->{'duration'}, "\n"; }
+			}
+
+
+
+		    }
+		}
+		else
+		{
+		    if ( $DEBUG > 7 ) { print "processLoading: Disgarding sample with starttime=$starttime (before midnight)\n"; }
+		}
+	    }			
+
+
+	    if ( $plotFile )
+	    {
+		printf PLOT "%s %d %d\n", $starttime, $numrows, ($duration * 1000); 
+	    }		 
+	}
+    }
+
+    open DATA, ">$data" or die "Cannot open $data";
+    $hourIndex = 0;
+    for ( $hourIndex = 0; $hourIndex <= $#hourlyTotals; $hourIndex++ )
+    {
+	printf DATA "%s %d %d\n",
+	formatTime( $midNight + ($hourIndex*3600), $TIME_YYYYMDHMS ),
+	int ( ($hourlyTotals[$hourIndex]->{'duration'} / 60) + 0.5 ),
+	$hourlyTotals[$hourIndex]->{'rows'};
+    }
+    close DATA;
+
+    if ( $plotFile )
+    {
+	print PLOT "\nplot;tbl;Loading;Time;Number of Rows\n";
+	close PLOT;
+    }
+
+    if ( $DEBUG > 2 )
+    {
+	printf "processLoading: num unusableSamples = %d out of a total of %d\n", ($#unusableSamples + 1), ($#{$r_loading} + 1);
+	foreach my $r_cycle ( @unusableSamples )
+	{
+	    print Dumper("Ignoring suspect sample", $r_cycle);
+	}
+
+	printf "processLoading: num repairedSamples = %d out of a total of %d\n", ($#repairedSamples + 1), ($#{$r_loading} + 1);
+	foreach my $r_cycle ( @repairedSamples )
+	{
+	    print Dumper("Repaired sample", $r_cycle);
+	}
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("processLoading: hourlyTotals" , \@hourlyTotals); }
+}
+
+
+sub readDispLine
+{
+    my $line = <DIS_LOG>;
+    if ( $DEBUG > 9 ) { print "readDispLine: line=$line"; }
+    return $line;
+}
+
+sub parseLoadTask
+{
+    my ($timestampStr,$task,$state, $line, $r_loading) = @_;
+
+    if ( $DEBUG > 5 ) { print "processLoadTask: found $timestampStr $task $state\n"; }
+
+    if ( $task ne 'sdm_csdLoad' )
+    {
+	my $formattedTimeStr = formatTime( parseTime( $timestampStr, $TIME_UNIX_DATE ), $TIME_YYYYMDHMS );
+	if ( $state eq 'Started...' )
+	{
+	    $state = 0;
+	}
+	elsif ( $state eq 'Finished.' )
+	{
+	    $state = 1;
+	}
+	
+	if ( $DEBUG > 5 ) { print "processLoadTask: processing $task $state $timestampStr\n"; }
+
+	# If we've hit a cycle start without the "Start  db_poller 22397,CSD"
+	if ( $#{$r_loading} == -1 )
+	{
+	    if ( $task eq 'BCP' && $state == 0 )
+	    {
+		my $r_cycle = {
+		    'pollerid'  => 0,				
+		    'starttime' => $formattedTimeStr,
+		    'fixed'     => 1
+		};
+		$r_cycle->{$task}->[$state] = $formattedTimeStr;
+		push @{$r_loading}, $r_cycle;					    
+	    }
+	}
+	else
+	{
+	    if ( exists $r_loading->[$#{$r_loading}]->{$task}->[$state] )
+	    {
+		if ( $DEBUG > 5 ) { print Dumper("processLoadTask: value already exists in cycle $task $state $timestampStr", $r_loading->[$#{$r_loading}]); }
+		
+		if ( $task eq 'BCP' && $state == 0 )
+		{
+		    if ( $DEBUG > 4 ) { print "processLoadTask: Start db_poller missing, creating new cycle\n"; }
+		    
+		    $r_loading->[$#{$r_loading}]->{'Loading'}->[1] = $formattedTimeStr;
+		    $r_loading->[$#{$r_loading}]->{'fixed'} = 1;
+		    
+		    my $r_cycle = {
+			'pollerid'  => $r_loading->[$#{$r_loading}]->{'pollerid'},				
+			'starttime' => $formattedTimeStr,
+			'fixed'     => 1
+		    };
+		    $r_cycle->{$task}->[$state] = $formattedTimeStr;
+		    push @{$r_loading}, $r_cycle;					    
+		}
+		else
+		{
+		    $r_loading->[$#{$r_loading}]->{'suspect'} = "Sequence error Value already set: $line";
+		}
+	    }
+	    elsif ( $task eq 'Loading' && ( ! exists $r_loading->[$#{$r_loading}]->{'BCP'} ) )
+	    {
+		$r_loading->[$#{$r_loading}]->{'suspect'} = "Sequence error Loading before BCP: $line";
+	    }		    
+	    if ( $task eq 'BCP' && exists $r_loading->[$#{$r_loading}]->{'Loading'} )
+	    {
+		$r_loading->[$#{$r_loading}]->{'suspect'} = "Sequence error BCP after Loading: $line";
+	    }
+	    else
+	    {
+		$r_loading->[$#{$r_loading}]->{$task}->[$state] = $formattedTimeStr;
+	    }
+	}
+    }
+
+}
+
+sub readDispatcherLog
+{
+    my($dlog,$r_loading,$r_deletion) = @_;
+
+    open DIS_LOG, $dlog or die "Cannot open dispatcher log $dlog";
+    
+    #my @loading = ();
+
+    while ( my $line = readDispLine() )
+    {
+	if ( $DEBUG > 9 ) { print "readDispatcherLog: line = $line"; }
+
+	if ( $line =~ /^\S{3,3} (\S{3,3}\s+\d+\s+[\d:]{8,8}\s+\S+\s+\d{4,4})\. SDM (\S+) (\S+)/ )
+	{
+	    my ($timestamp,$task,$state) = ($1,$2,$3,$4,$5,$6);
+	    parseLoadTask($timestamp,$task,$state,$line,$r_loading);
+	}
+	elsif ( $line =~ /^sdm_bcp: copied (\d+) row\(s\) into bufferdb/ )
+	{
+	    my $numrows = $1;
+	    if ( $#{$r_loading} != -1 )
+	    {
+		$r_loading->[$#{$r_loading}]->{'rows'} += $numrows;
+	    }
+	}
+	elsif ( $line =~ /^Start  db_poller (\d+)/ )
+	{
+	    #Start  db_poller 22397,CSD
+	    #Result of Poller
+	    #BCP
+
+	    my $thisPollerId = $1;
+
+	    if ( $DEBUG > 3 ) { print "readDispatcherLog: found db_poller start $thisPollerId\n"; }
+
+
+	    my $r_cycle = {
+		'pollerid' => $thisPollerId
+		};
+	    
+	    if ( $#{$r_loading} != -1 )
+	    {
+		# Check previous cycle where we didn't find any data to load
+		if ( (! exists $r_loading->[$#{$r_loading}]->{'BCP'}) && 
+		     (! exists $r_loading->[$#{$r_loading}]->{'Loading'} ) )
+		{
+		    my $r_emptyCycle = pop @{$r_loading};
+		    if ( $DEBUG > 3 ) { print "readDispatcherLog: removing empty load cycle\n"; }
+		}
+		else
+		{
+		    if ( exists $r_loading->[$#{$r_loading}]->{'pollerid'} )
+		    {
+			if ( $r_loading->[$#{$r_loading}]->{'pollerid'} == $thisPollerId )
+			{
+			    $r_cycle->{'starttime'} = $r_loading->[$#{$r_loading}]->{'Loading'}->[1];
+			}
+		    }
+		}
+	    }
+	    push @{$r_loading}, $r_cycle;		
+	}
+	elsif ( $line =~ /^\s+rEsUlT;FINNISHED/ )
+	{
+	    if ( $DEBUG > 3 ) { print Dumper("readDispatcherLog: found cycle finish line, curr_cycle", $r_loading->[$#{$r_loading}]); }
+		
+	    # Last cycle where we didn't find any data to load
+	    if ( (! exists $r_loading->[$#{$r_loading}]->{'BCP'}) && 
+		 (! exists $r_loading->[$#{$r_loading}]->{'Loading'} ) )
+	    {
+		my $r_emptyCycle = pop @{$r_loading};
+		if ( $DEBUG > 3 ) { print "readDispatcherLog: removing empty load cycle\n"; }
+	    }
+	}
+
+	#----> sdm_gsm_data_delete.sh - cellrelDelete  Oct 21 2007 18:10:21
+	elsif ( $line =~ /^[\<\>-]+ sdm_gsm_data_[delete|parallel_delete]/ )
+	{
+	    processDeleteLine($line,$r_deletion);
+	}
+	# --> sdm_gsm_cell_delete.sh FIX for cellDelete with PID 1944 - STARTED....  Nov 23 2007 06:10:18 
+	#<-- sdm_gsm_cell_delete.sh FIX for cellDelete with PID 1944 - ENDED......  Nov 23 2007 06:13:06 
+	elsif ( $line =~ /^([\<\>-]+) sdm_gsm_cell_delete.sh.*\.+\s+(.*) / )
+	{
+	    my ($enterExit,$timeStr)  = ($1,$2);
+	    my $fakeLine = sprintf("%s sdm_gsm_data_delete.sh - cellDelete  %s", $enterExit, $timeStr);
+	    processDeleteLine($fakeLine,$r_deletion);
+	}
+
+    }
+    close DIS_LOG;
+
+
+    if ( $DEBUG > 3 ) { print Dumper("readDispatcherLog: loading", $r_loading ); }
+    if ( $DEBUG > 3 ) { print Dumper("readDispatcherLog: delete", $r_deletion ); }
+
+}
+
+sub processDeleteLine
+{
+    my ( $line, $r_deletion ) = @_;
+
+    my $r_DeleteCycle;
+    if ( $#{$r_deletion} > -1 )
+    {
+	$r_DeleteCycle = $r_deletion->[$#{$r_deletion}];
+    }
+
+    my ( $state, $script, $obj, $timestamp ) = $line =~ /^(\S+) (\S+) - (\S+)\s+(\S{3,3}\s{1,2}\d{1,2} \d{4,4}\s{1,2}\d{1,2}:\d{2,2}:\d{2,2})/;
+    if ( defined $state )
+    {
+	if ( $DEBUG > 3 ) { print "processDeleteLine found deletion line, state, script, obj, timestamp = \"$state\", \"$script\", \"$obj\", \"$timestamp\"\n"; }	    
+	if ( $state =~ /^-/ )
+	{
+	    if ( $DEBUG > 4 ) { print "processDeleteLine: started $script\n"; }
+
+	    if ( $script eq "sdm_gsm_data_parallel_delete.sh" ) 
+	    {
+		my $cycleTime = roundTime($timestamp);
+		if ( $DEBUG > 3 ) { print "processDeleteLine: start new cycle $cycleTime\n"; }		
+		if ( $DEBUG > 4 && (defined $r_DeleteCycle) ) { print Dumper("processDeleteLine: prev DeleteCycle", $r_DeleteCycle); }
+
+		$r_DeleteCycle = {
+		    'start' => $timestamp,
+		    'cycle' => $cycleTime
+		};
+		push @{$r_deletion}, $r_DeleteCycle;
+	    }
+	    elsif ( $script eq "sdm_gsm_data_delete.sh" )
+	    {
+		if ( $r_DeleteCycle )
+		{
+		    my $cycleTime = roundTime($timestamp);
+		    if ( $r_DeleteCycle->{'cycle'} eq $cycleTime )
+		    {
+			$r_DeleteCycle->{'obj'}->{$obj}->{'start'} = $timestamp;
+		    }
+		    else
+		    {
+			if ( $DEBUG > 3 ) { print "processDeleteLine: WARN start outside current cycleTime ", $r_DeleteCycle->{'cycle'}, " for $obj at $timestamp\n"; }
+
+			if ( parseTime($timestamp,$TIME_MON_DYYYY_HMS) > parseTime($r_DeleteCycle->{'cycle'}, $TIME_MON_DYYYY_HMS) )
+			{
+			    print "processDeleteLine: ERROR Creating new r_DeleteCycle as $timestamp > ", $r_DeleteCycle->{'cycle'}, "\n"; 
+			    $r_DeleteCycle = {
+				'cycle' => $cycleTime,
+				'suspect' => 1
+			    };
+			    push @{$r_deletion}, $r_DeleteCycle;
+			    
+			    $r_DeleteCycle->{'obj'}->{$obj}->{'start'} = $timestamp;
+			}				
+			else
+			{
+			    my $found = 0;
+			    for ( my $i = ($#{$r_deletion} - 1); (($i >= 0) && ($found == 0)); $i-- )
+			    {
+				if ( $DEBUG > 6 ) { print Dumper("processDeleteLine: checking  sample $i", $r_deletion->[$i]); }
+				
+				if ( $r_deletion->[$i]->{'cycle'} eq $cycleTime )
+				{
+				    print "processDeleteLine: WARN Assuming cycle of ", $r_deletion->[$i]->{'cycle'}, " for $obj start at $timestamp\n";
+				    $r_deletion->[$i]->{'obj'}->{$obj}->{'start'} = $timestamp;
+				    $found = 1;
+				}
+			    }			  
+			    if ( ! $found  ) { print "processDeleteLine: ERROR Cannot find start cycle for $obj at $timestamp\n"; }		    
+			}
+		    }
+		}
+	    }
+	}
+	elsif ( ($state =~ /^\</) && (defined $r_DeleteCycle) )
+	{
+	    if ( $DEBUG > 4 ) { print "processDeleteLine: ended $script\n"; }
+
+	    if ( $script eq "sdm_gsm_data_delete.sh" )
+	    {
+		if ( exists $r_DeleteCycle->{'obj'}->{$obj} )
+		{
+		    $r_DeleteCycle->{'obj'}->{$obj}->{'end'} = $timestamp;
+		}
+		else
+		{
+		    if ( $DEBUG > 3  ) { print "processDeleteLine: WARN Cannot find start sample for $obj at $timestamp\n"; }		    
+
+		    my $found = 0;
+		    for ( my $i = ($#{$r_deletion} - 1); (($i >= 0) && ($found ==0)); $i-- )
+		    {
+			if ( $DEBUG > 6 ) { print Dumper("processDeleteLine: checking sample $i", $r_deletion->[$i]); }
+
+			if ( exists $r_deletion->[$i]->{'obj'}->{$obj} &&
+			     (! exists $r_deletion->[$i]->{'obj'}->{$obj}->{'end'}) )
+			{			    
+			    print "processDeleteLine: WARN Assuming cycle of ", $r_deletion->[$i]->{'cycle'}, " for $obj end at $timestamp\n";
+			    $r_deletion->[$i]->{'obj'}->{$obj}->{'end'} = $timestamp;
+			    $found = 1;
+			}
+		    }
+			  
+		    if ( ! $found  ) { print "processDeleteLine: ERROR Cannot find start sample for $obj at $timestamp\n"; }		    
+		}
+	    }
+	}
+    }
+    else
+    {
+	my ( $state, $script, $timestamp ) = $line =~ /^(\S+) (\S+) -   (\S{3,3}\s{1,2}\d{1,2} \d{4,4}\s{1,2}\d{1,2}:\d{2,2}:\d{2,2})/;
+	if ( defined $state )
+	{
+	    if ( $state =~ /^-/ )	    
+	    {
+		$line = readDispLine();
+		if ( $line =~ /^Cannot run more than one instance/ )
+		{
+		    $line = readDispLine();
+		    #Check the Process id = nmsadm   22409  0.0  0.0 1512  624 ?        S 19:10:14  0:00 /bin/ksh /bin/ksh /opt/ericsson/sdmb/etc/sdm_gsm_data_delete.sh cellDelete
+		    if ( $line =~ / ([\d:]+)\s+[\d:]+ \/bin.*sdm_gsm_data_delete.sh (\S+)/ )
+		    {
+			my ($startTime,$obj) = ($1,$2);
+			if ( $DEBUG > 3 ) { print "readDispatcherLog: matched hanging delete startTime=$startTime obj=$obj\n"; }
+		    }
+		}   
+	    }
+	}
+	else
+	{
+	    print "ERROR: Cound not parse deletion line $line";
+	}
+    }
+}
+
+sub centerTime
+{
+    my ($timeStr, $duration) = @_;
+
+    
+    my $time = parseTime($timeStr,$TIME_YYYYMDHMS);
+    my $cenTime = $time + int ($duration/2);
+    return formatTime($cenTime, $TIME_YYYYMDHMS );
+}
+
+sub roundTime
+{
+    my ($timestamp) = @_;
+
+    my ( $cycleTime ) = $timestamp =~ /^(.*)\d:\d{2,2}$/;
+    $cycleTime .= "0:00";
+
+    return $cycleTime;
+}
+

@@ -1,0 +1,263 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use StatsCommon;
+use POSIX qw(strftime);
+
+
+our $DEBUG = 0;
+our %shortNames = ();
+
+
+sub readData($$) {
+    my ($inputFile,$sqlDate) = @_;
+
+    open INPUT, $inputFile or die "Failed to open $inputFile";
+    my $currCmd;
+
+    my ($year,$month,$day) = $sqlDate =~ /^(\d{4})-(\d{2})-(\d{2})/;
+    my $cronToday = strftime("%b %e", 0, 0, 0, $day,
+                             $month - 1,
+                             $year - 1900);
+    # We're having problems where the cron log contains > a year's log
+    # so the current date (Month Day) appears more then once (for different
+    # year. (The date doesn't include the year). To detect this, we look to
+    # see if the log contains any entries for the day after tomorrow and
+    # if so dump any parsed entries on the assumation that they are for
+    # previous years
+    my $time = parseTime($sqlDate . " 00:00:00", $StatsTime::TIME_SQL );
+    my $dayAfterTomorrow = formatTime($time + (24*60*60*2),$StatsTime::TIME_SQL);
+    my ($dayAfterTomorrowYear,$dayAfterTomorrowMonth,$dayAfterTomorrowDay) =
+        formatTime($time + (24*60*60*2),$StatsTime::TIME_SQL) =~ /^(\d{4})-(\d{2})-(\d{2})/;
+    my $cronDayAfterTomorrow = strftime("%b %e", 0, 0, 0, $dayAfterTomorrowDay,
+                                        $dayAfterTomorrowMonth - 1,
+                                        $dayAfterTomorrowYear - 1900);
+    if ( $DEBUG > 2 ) { print "readData: cronToday=$cronToday cronDayAfterTomorrow=$cronDayAfterTomorrow\n"; }
+
+    my $r_activeJobs = {};
+    my $r_allJobs = [];
+	
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "readData: line=$line";
+        }
+
+        if ( $line =~ /^([<>]{1,1})\s+(.*)/ ) {
+            my ($flag,$text) = ($1,$2);
+            if ( $DEBUG > 8 ) {
+                print "readData: flag=$flag text=$text\n";
+            }
+
+            if ( $flag eq '>' && ($text =~ /^CMD: (.*)/ ) ) {
+                $currCmd = $1;
+                if ( $DEBUG > 7 ) {
+                    print "readData: currCmd=$currCmd\n";
+                }
+            } elsif ( $text =~ /^(\S+)\s+(\d+)\s+\S+\s+\S{3,3}\s+(\S{3,3})\s+(\d+)\s+([\d:]+)\s+(\d{4,4})\s*(.*)/ ) {
+                my ($userid,$pid,$month,$mday,$time,$year,$remainder) = ($1,$2,$3,$4,$5,$6,$7);
+                $time = parseTime($month . " " . $mday . " " . $time . " TZ " . $year,
+                                  $StatsTime::TIME_UNIX_DATE );
+                if ( $DEBUG > 7 ) {
+                    print "readData: userid=$userid pid=$pid time=$time flag=$flag\n";
+                }
+
+                if ( $flag eq '>' ) {
+                    if ( defined $currCmd ) {
+                        if ( exists $r_activeJobs->{$pid} ) {
+                            print "WARNING: New start found for pid $pid while active job " . $r_activeJobs->{$pid}->{'cmd'} . "\n";
+                        }
+                        my $r_cronjob = {
+                            'pid'   => $pid,
+                            'cmd'   => $currCmd,
+                            'user'  => $userid,
+                            'start' => $time
+                        };
+                        if ( $DEBUG > 6 ) {
+                            print Dumper("readData: new r_cronjob", $r_cronjob);
+                        }
+
+                        $r_activeJobs->{$pid} = $r_cronjob;
+                        push @{$r_allJobs}, $r_cronjob;
+
+                        $currCmd = undef;
+                    } else {
+                        if ( $DEBUG > 1 ) {
+                            print "readData: ignoring job start proc line, currCmd not set\n";
+                        }
+                    }
+                } elsif ( $flag eq '<' ) {
+                    if ( exists $r_activeJobs->{$pid} ) {
+                        my $r_cronjob = delete $r_activeJobs->{$pid};
+                        # Confirm it's the same job, check the userids match
+                        if ( $r_cronjob->{'user'} eq $userid ) {
+                            $r_cronjob->{'end'} = $time;
+                            my $returnCode = 0;
+                            if ( $remainder =~ /^rc=(\d+)/ ) {
+                                $returnCode = $1;
+                            }
+                            $r_cronjob->{'rc'} = $returnCode;
+
+                            if ( $DEBUG > 6 ) {
+                                print Dumper("readData: completed r_cronjob", $r_cronjob);
+                            }
+                        } else {
+                            print "WARNING: Conflicting userid found: line = $line";
+                            print Dumper("Active cronjob", $r_cronjob);
+                        }
+                    } else {
+                        if ( $DEBUG ) {
+                            print "readData: no active job for pid $pid\n";
+                        }
+                    }
+                }
+            }
+            ###
+            # TDDDCDDP-53: Cater for the /var/log/cron format. Less information here [BG 2013-03-01]
+            ###
+        } elsif ($line =~ /([A-Z][a-z][a-z])\s+([0-9]{1,2}) ([0-9][0-9]\:[0-9][0-9]\:[0-9][0-9]) (\S+) ([A-Za-z]*)\[([0-9]+)\]\: \((\S+)\) (\S+) \((.*)\)(.*)/) {
+            my ($month, $dd, $timeOfDay, $hostname, $operation, $pid, $userid, $action, $currCmd, $rest) = ($1, $2, $3, $3, $5, $6, $7, $8, $9, $10);
+
+            if ( $action eq "CMD" ) {
+                my $thisCronDate = sprintf("%s %2d", $month, $dd);
+                if ( $DEBUG > 6 ) { print "readData: thisCronDate=$thisCronDate timeOfDay=$timeOfDay\n"; }
+                if ( $thisCronDate eq $cronToday ) {
+                    my $time = parseTime($sqlDate . " " . $timeOfDay, $StatsTime::TIME_SQL );
+                    my $r_cronjob = {
+                        'pid'   => $pid,
+                        'cmd'   => $currCmd,
+                        'user'  => $userid,
+                        'start' => $time,
+                        'end' => $time,
+                        'rc' => 0
+                    };
+                    if ( $DEBUG > 6 ) { print Dumper("readData: new r_cronjob", $r_cronjob); }
+                    push @{$r_allJobs}, $r_cronjob;
+                } elsif ( $thisCronDate eq $cronDayAfterTomorrow ) {
+                    if ( $#{$r_allJobs} > -1 ) {
+                        print "WARNING: Data detected for day after tomorrow, clearing existing jobs\n";
+                        $#{$r_allJobs} = -1;
+                    }
+                }
+            }
+        } elsif ( $DEBUG ) {
+            print "readData: invalid line $line";
+        }
+    }
+
+    if ( $DEBUG > 3 ) {
+        print Dumper("readData: allJobs", $r_allJobs);
+    }
+    if ( $DEBUG > 3 ) {
+        print Dumper("readData: activeJobs", $r_activeJobs);
+    }
+
+    return $r_allJobs;
+}
+
+sub storeData($$$$) {
+    my ($site,$server,$date,$r_data) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId( $dbh, $siteId, $server );
+
+    my @allProcList = keys %{$r_data};
+    my $r_procIdMap = getIdMap($dbh,"process_names","id","name",\@allProcList);
+
+    my $bcpFileName = writeBcp($date, $serverId, $r_procIdMap, $r_data);
+
+    dbDo($dbh, "DELETE FROM crontabs WHERE serverid = $serverId AND date = '$date'"),
+	or die "Failed to remove old data";    
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE crontabs FIELDS TERMINATED BY ',' (date,serverid,process_name_id,execs)")
+        or die "Failed to load data";
+
+    $dbh->disconnect;
+}
+
+sub getShortName($) {
+    my ($cmd) = @_;
+    if ( length($cmd) > 255 ) {
+        $cmd = substr($cmd, 0, 254);
+    }
+    my $result = $shortNames{$cmd};
+    if ( ! defined $result ) {
+        $result = jpsShortName($cmd);
+        $shortNames{$cmd} = $result;
+    }
+
+    return $result;
+}
+
+sub writeBcp($$$$) {
+    my ($date,$serverId,$r_procIdMap,$r_data) = @_;
+
+    my $bcpFileName = getBcpFileName("crontabs");
+
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+
+    while ( my ($cmd, $execs) = each %{$r_data} ) {
+        printf BCP "%s,%d,%d,%d\n",
+            $date, $serverId, $r_procIdMap->{$cmd}, $execs;
+    }
+    close BCP;
+
+    return $bcpFileName;
+}
+
+sub filterJobs($) {
+    my ($r_data) = @_;
+
+    my @filteredList = ();
+    foreach my $r_cronjob ( @{$r_data} ) {
+        if ( $r_cronjob->{'cmd'} =~ /\/bin\/ddc / ||
+                 $r_cronjob->{'cmd'} =~ /\/sa1 / ) {
+            if ( $DEBUG > 6 ) { print "filterJobs: dropping " . $r_cronjob->{'cmd'} . "\n"; }
+        } else {
+            push @filteredList, $r_cronjob;
+        }
+    }
+
+    return \@filteredList;
+}
+
+sub countJobs($) {
+    my ($r_data) = @_;
+
+    my %counts = ();
+    foreach my $r_cronjob ( @{$r_data} ) {
+	$counts{getShortName($r_cronjob->{'cmd'})}++;
+    }
+    return \%counts;
+}
+
+sub main() {
+    my ($inputFile,$site,$server,$sqlDate);
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$sqlDate,
+        "debug=s" => \$DEBUG,
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_allJobsData =  readData($inputFile,$sqlDate);
+    my $r_filteredData = filterJobs($r_allJobsData);
+    my $r_jobCounts = countJobs($r_filteredData);    
+    if ( %{$r_jobCounts} ) {
+        storeData($site, $server, $sqlDate, $r_jobCounts);
+    }
+}
+
+main();

@@ -1,0 +1,215 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+
+sub splitLine($) {
+    my ($line) = @_;
+
+    my @parts = split /\|/, $line;
+    foreach ( my $index = 0; $index <= $#parts; $index++ ) {
+        $parts[$index] =~ s/^\s+//;
+        $parts[$index] =~ s/\s+$//;
+    }
+
+    return \@parts;
+}
+
+sub parseDatabase($) {
+    my ($inFile) = @_;
+
+    my @samples = ();
+    my $r_sample = undef;
+    my $r_columns = undef;
+    open INPUT, $inFile or die "Cannot open $inFile";
+    while ( my $line = <INPUT> ) {
+	if ( $DEBUG > 9 ) { print "parseDatabase: line=$line"; }
+
+        chop $line;
+        if ( $line =~ /^[\d:]{12,12}$/ ) {
+            my $timestamp = $line;
+            if ( $DEBUG > 6 ) { print "parseDatabase: timestamp=$timestamp\n"; }
+            $r_sample = {
+                'timestamp' => formatTime( parseTime($timestamp, $StatsTime::TIME_DDMMYY_HM),
+                                           $StatsTime::TIME_SQL ),
+                'stats' => []
+            };
+            push @samples, $r_sample;
+            $line = <INPUT>;
+            chop $line;
+            $r_columns = splitLine($line);
+            if ( $DEBUG > 6 ) { print Dumper("parseTime: r_columns", $r_columns); }
+            <INPUT>; # Skip Header
+        } elsif ( $line =~ /^\s+\d+\s+\|/ ) {
+            my $r_statsParts = splitLine($line);
+            my %statValues = ();
+            for ( my $index = 0; $index <= $#{$r_columns}; $index++ ) {
+                $statValues{$r_columns->[$index]} = $r_statsParts->[$index];
+            }
+            push @{$r_sample->{'stats'}}, \%statValues;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseDatabase: samples", \@samples); }
+
+    return \@samples;
+}
+
+sub deltaStats($) {
+    my ($r_rawstats) = @_;
+
+    my @nonDeltaCounters = ( 'numbackends' );
+    my @deltaCounters = ( 'xact_commit', 'xact_rollback', 'blks_read', 'blks_hit',
+                          'tup_returned', 'tup_fetched', 'tup_inserted', 'tup_updated', 'tup_deleted',
+                          'conflicts', 'temp_files', 'temp_bytes', 'deadlocks' );
+
+    my %deltaStats = ();
+    my %lastValues = ();
+    foreach my $r_sample ( @{$r_rawstats} ) {
+        foreach my $r_row ( @{$r_sample->{'stats'}} ) {
+            my $r_statsForDB = $deltaStats{$r_row->{'datname'}};
+            if ( ! defined $r_statsForDB ) {
+                $r_statsForDB = [];
+                $deltaStats{$r_row->{'datname'}} = $r_statsForDB;
+            }
+
+            my %dbStatsSample = ( 'timestamp' => $r_sample->{'timestamp'} );
+            push @{$r_statsForDB}, \%dbStatsSample;
+
+            foreach my $nonDeltaCounter ( @nonDeltaCounters ) {
+                $dbStatsSample{$nonDeltaCounter} = $r_row->{$nonDeltaCounter};
+            }
+
+            my $r_lastValues = $lastValues{$r_row->{'datname'}};
+            if ( defined $r_lastValues ) {
+                foreach my $deltaCounter ( @deltaCounters ) {
+                    my $delta = $r_row->{$deltaCounter} - $r_lastValues->{$deltaCounter};
+                    if ( $delta < 0 ) {
+                        $delta = $r_row->{$deltaCounter};
+                    }
+                    $dbStatsSample{$deltaCounter} = $delta;
+                }
+            }
+            $lastValues{$r_row->{'datname'}} = $r_row;
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("deltaStats: " ,\%deltaStats); }
+
+    return \%deltaStats;
+}
+
+sub storeStats($$$$$) {
+    my ($site, $date, $r_statsForDB, $r_dbSizes, $server) = @_;
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $query;
+    my $serverId = '\N';
+
+    if ( defined $server ) {
+        $serverId = getServerId($dbh, $siteId, $server);
+        $query = "serverid=$serverId";
+    } else {
+        $query = "serverid IS NULL";
+    }
+
+    dbDo($dbh,"DELETE FROM enm_postgres_stats_db WHERE siteid = $siteId AND $query  AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'")
+       or die "Failed to remove old data";
+
+    my @dbList = keys %{$r_statsForDB};
+    my $r_dbIdMap = getIdMap($dbh, "enm_postgres_names", "id", "name",  \@dbList );
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = "$tmpDir/enm_postgres_stats_db.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    my @columns = ( 'numbackends', 'blks_hit' ,'blks_read' ,'conflicts' ,'deadlocks', 'temp_bytes' ,'temp_files' ,
+                    'tup_deleted' ,'tup_fetched' ,'tup_inserted' ,'tup_returned' ,'tup_updated' ,
+                    'xact_commit' ,'xact_rollback' );
+    foreach my $db ( @dbList ) {
+        my $dbId = $r_dbIdMap->{$db};
+        foreach my $r_sample ( @{$r_statsForDB->{$db}} ) {
+            if ( $DEBUG > 8 ) { print Dumper("storeStats: r_sample for $db", $r_sample); }
+            my @row = ( $r_sample->{'timestamp'}, $siteId, $dbId, $serverId );
+            foreach my $column ( @columns ) {
+                if ( exists $r_sample->{$column} ) {
+                    push @row, $r_sample->{$column};
+                } else {
+                    push @row, '\N';
+                }
+            }
+            print BCP join("\t",@row), "\n";
+        }
+    }
+    close BCP;
+
+    dbDo( $dbh, sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE enm_postgres_stats_db (time,siteid,dbid,serverid,%s)",
+                        $bcpFileName,join(",", @columns)))
+        or die "Failed to load data in $bcpFileName into enm_postgres_stats_db";
+
+    if ( defined $r_dbSizes ) {
+        dbDo($dbh,"DELETE FROM enm_postgres_dbsize WHERE siteid = $siteId AND date = '$date'")
+            or die "Failed to remove old data";
+        while ( my ($dbName,$dbSize) = each %{$r_dbSizes} ) {
+            dbDo($dbh,sprintf("INSERT INTO enm_postgres_dbsize (date,siteid,dbid,sizemb) VALUES ('%s',%d,%d,%d)",
+                              $date,$siteId,$r_dbIdMap->{$dbName},
+                              int(($dbSize/(1024*1024))+0.5))
+                ) or die "Insert failed for $dbName $dbSize";
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+sub readDbSize($) {
+    my ($inFile) = @_;
+
+    my %results = ();
+    open INPUT, $inFile or die "Cannot open $inFile";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^(\S+)\|(\d+)$/ ) {
+            $results{$1}  = $2;
+        }
+    }
+    close INPUT;
+
+    return \%results;
+}
+
+sub main() {
+    my ($site, $date, $dbFile, $server, $dbSizeFile);
+    my $result = GetOptions("date=s" => \$date,
+        "site=s" => \$site,
+        "dbfileinput=s" => \$dbFile,
+        "dbsizeinput=s"=>\$dbSizeFile,
+        "server=s" => \$server,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_stats = parseDatabase($dbFile);
+    my $r_statsByDB = deltaStats($r_stats);
+
+    my $r_dbSizes = undef;
+    if ( defined $dbSizeFile && -r $dbSizeFile ) {
+        $r_dbSizes = readDbSize($dbSizeFile);
+    }
+    storeStats($site, $date, $r_statsByDB, $r_dbSizes, $server);
+}
+main();

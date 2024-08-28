@@ -1,0 +1,662 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use File::Basename;
+
+use StatsDB;
+use NameTable;
+use StatsCommon;
+use StatsTime;
+
+use lib dirname($0);
+use FixProcNames;
+
+our $topN = 5;
+
+our $DEBUG=0;
+our $host = "";
+our $omc = "";
+
+our $MIN_LINES_IN_SECTION = 10;
+
+our %multiProc =
+    (
+     "dataserver" => 1,
+     "pms.segmentmc.SegmentMCServer" => 1,
+     "RSDSegServer" => 1,
+     "oracleems" => 1,
+     "cif.na.server.NotificationServer" => 1 # In versions of jps which don't give the id of the NA treat both as multiple instances of the same
+    );
+
+our %MAPPED_PROC_NAMES = ();
+
+sub readJpsLog
+{
+    my ($inputFile,$r_samples,$incrFile) = @_;
+
+    my $currHour = 0;
+    my $sampleDeltaTime = 0;
+    my ($r_prevList,$r_prevTime);
+
+    open JPS_LOG, $inputFile or die "Cannot open jps log file $inputFile";
+
+    my $isIncremental = 0;
+    if ( defined $incrFile && -r $incrFile ) {
+        my $dumperOutput;
+        do {
+            local $/ = undef;
+            open my $fh, "<", $incrFile or die "could not open $incrFile: $!";
+            $dumperOutput = <$fh>;
+            close $fh;
+        };
+        my $VAR1;
+        eval($dumperOutput);
+        $r_prevList = $VAR1->{'r_prevList'};
+        $r_prevTime = $VAR1->{'r_prevTime'};
+        $currHour = $VAR1->{'currHour'};
+        $sampleDeltaTime = $VAR1->{'sampleDeltaTime'};
+
+        my $offSet = $VAR1->{'offSet'};
+        if ($offSet) {
+            $isIncremental = 1;
+            if ( $DEBUG > 0 ) { print "readJpsLog: isIncremental=1 seeking to $offSet\n"; }
+            seek JPS_LOG, $offSet, 0;
+        } else {
+            print "Invalid offset $offSet\n";
+        }
+    }
+
+    my @jpsLines = <JPS_LOG>;
+    close JPS_LOG;
+
+    while ( my $line = shift @jpsLines )
+    {
+        # Protect against corrupt files, e.g.
+        #  7757  4-09:13       06  0.0      50    30     79     3^@^@^@...
+        if ( length($line) > 2048 ) {
+            print "WARN: Invalid line\n";
+            next;
+        }
+
+        if ( $DEBUG > 9 ) { print "readJpsLog: line=$line"; }
+
+        if ( $line =~ /^(\d{6,6}):(\d{2,2}):(\d{2,2})$/ )
+        {
+            my ($date,$hour,$min) = ($1,$2,$3);
+            if ( $DEBUG > 6 ) { print "readJpsLog: added sampleTime $hour:$min\n"; }
+
+            my $r_currTime = "$hour:$min";
+
+            if ( defined $r_prevTime )
+            {
+                my ($prevHour,$prevMin) = $r_prevTime =~ /^(\d+):(\d+)$/;
+                $sampleDeltaTime = ( ($hour * 60) + $min ) - ( ($prevHour * 60) + $prevMin);
+
+                if ( $hour < $currHour )
+                {
+                    print "Time has wrapped, closing log\n";
+                    @jpsLines = ();
+                    next;
+                }
+                $currHour = $hour;
+            }
+
+            # Now validate that there's enough remaining lines for there to be valid content
+            if ( $#jpsLines < $MIN_LINES_IN_SECTION) {
+                print "Incomplete section, closing log\n";
+                @jpsLines = ();
+                next;
+            }
+
+            #
+            # Get number of processes in the section
+            #
+            $line = shift @jpsLines;
+            my ($numProc) = $line =~ /^Total = (\d+)$/;
+
+            #
+            # Find the header line i.e.
+            # PID      ELPSD      CPU CPU%    MEM  #THDS #FD    RSS   CMD
+            #
+            while ( $line && ($line !~ /^PID/) )
+            {
+                $line = shift @jpsLines;
+            }
+
+            #
+            # Figure out which format this section has
+            #
+            my $format = 0;
+            if ( $line =~ /PSS/ ) {
+                $format = 5;
+            } elsif ( $line =~ /UID/ )
+            {
+                $format = 4;
+            }
+            elsif ( $line =~ /PPID/ )
+            {
+                $format = 3;
+            }
+            elsif ( $line =~ /RSS/ )
+            {
+                $format = 2;
+            }
+            elsif ( $line =~ /MEM   CMD/ )
+            {
+                $format = 2;
+            }
+            elsif ( $line =~ /\#FD/ )
+            {
+                $format = 1;
+            }
+            if ( $DEBUG > 4 ) { print "readJpsLog: processing section format = $format\n"; }
+
+            # Skip the ---- line
+            shift @jpsLines;
+
+
+            #
+            # Extract the process for this section
+            #
+            my $r_currList = readSection(\@jpsLines,$format,$numProc);
+
+            #
+            # Calculate how much CPU was used
+            #
+            if ( defined $r_prevList )
+            {
+                deltaCpu($r_currList,$r_prevList,$sampleDeltaTime);
+            }
+
+            my $r_sample = {
+                'timestamp' => $r_currTime,
+                'process'   => {}
+            };
+
+            my @statNames = ( 'cpu', 'mem', 'thrs', 'fd', 'rss', 'pss' );
+            foreach my $r_proc ( @{$r_currList} )
+            {
+                if ( exists $r_sample->{'process'}->{$r_proc->{'cmd'}} ) {
+                    # Aggregate processes with the same name
+                    if ( $DEBUG > 7 ) { print "readJps: multi-proc $r_proc->{'cmd'}\n"; }
+                    foreach my $name ( @statNames )
+                    {
+                        if ( ! ( ($name eq 'mem' || $name eq 'rss') &&
+                                 ($r_proc->{'cmd'} eq 'dataserver' || $r_proc->{'cmd'} eq 'oracleems' || $r_proc->{'cmd'} eq 'oracleeoems')) ) {
+                            # CPU is a delta to the previous value, so if we don't have a previous value
+                            # we'll store a NULL (HL58974)
+                            if ($name ne 'cpu' || $sampleDeltaTime != 0) {
+                                $r_sample->{'process'}->{$r_proc->{'cmd'}}->{$name} += $r_proc->{$name};
+                            } elsif ($name eq 'cpu' && $sampleDeltaTime == 0) {
+                                $r_sample->{'process'}->{$r_proc->{'cmd'}}->{$name} = "\\N";
+                            }
+                        }
+                    }
+                    $r_sample->{'process'}->{$r_proc->{'cmd'}}->{'nproc'}++;
+                } else {
+                    $r_sample->{'process'}->{$r_proc->{'cmd'}} = {};
+                    foreach my $name ( @statNames ) {
+                        # CPU is a delta to the previous value, so if we don't have a previous value
+                        # we'll store a NULL (HL58974)
+                        if ($name ne 'cpu' || $sampleDeltaTime != 0) {
+                            $r_sample->{'process'}->{$r_proc->{'cmd'}}->{$name} = $r_proc->{$name};
+                        } else {
+                            $r_sample->{'process'}->{$r_proc->{'cmd'}}->{$name} = "\\N";
+                        }
+                    }
+                    $r_sample->{'process'}->{$r_proc->{'cmd'}}->{'nproc'} = 1;
+                }
+                $r_sample->{'process'}->{$r_proc->{'cmd'}}->{'sample_interval'} =  $sampleDeltaTime * 60;
+            }
+            push @{$r_samples}, $r_sample;
+
+
+            $r_prevList = $r_currList;
+            $r_prevTime = $r_currTime;
+        }
+    }
+
+    if ( $DEBUG > 5 )
+    {
+        print Dumper("readJpsLog: samples", $r_samples);
+    }
+
+    if ( defined $incrFile ) {
+        my @fileStats = stat $inputFile;
+        my $fileSize = $fileStats[7];
+        my %incrData = (
+            'r_prevList' => $r_prevList,
+            'r_prevTime' => $r_prevTime,
+            'currHour' => $currHour,
+            'sampleDeltaTime' => $sampleDeltaTime,
+            'offSet' => $fileSize,
+            );
+
+        # Set indent to zero to shrink the size of the output
+        my $defaultIndent = $Data::Dumper::Indent;
+        $Data::Dumper::Indent = 0;
+        my $incrDataStr = Dumper(\%incrData);
+        $Data::Dumper::Indent = $defaultIndent;
+
+        open INC, ">$incrFile";
+        print INC $incrDataStr;
+        close INC;
+    }
+
+    return $isIncremental;
+}
+
+sub deltaCpu
+{
+    my ($r_currList,$r_prevList,$sampleDeltaTime) = @_;
+
+    my %prevMap = ();
+    foreach my $r_proc ( @{$r_prevList} )
+    {
+        $prevMap{$r_proc->{'pid'} . " " . $r_proc->{'cmd'}} = $r_proc;
+    }
+
+    foreach my $r_proc ( @{$r_currList} )
+    {
+        if ( exists $prevMap{$r_proc->{'pid'} . " " . $r_proc->{'cmd'}} )
+        {
+            my $r_prevProc = $prevMap{$r_proc->{'pid'} . " " . $r_proc->{'cmd'}};
+            $r_proc->{'cpu'} = $r_proc->{'cputime'} - $r_prevProc->{'cputime'};
+        }
+        else
+        {
+            $r_proc->{'cpu'} = $r_proc->{'cputime'};
+        }
+    }
+}
+
+
+sub readSection
+{
+    my ($r_JpsLines,$format,$numProc) = @_;
+    my @proc = ();
+
+    for ( my $i = 0; $i < $numProc; $i++ )
+    {
+        my ($pid, $elpsd, $cpuTime, $mem, $thrs, $fd,$cmd,$rss,$ppid,$uid,$gid,$pss);
+
+        my $line = shift @{$r_JpsLines};
+        # Protect against corrupt files, e.g.
+        #  7757  4-09:13       06  0.0      50    30     79     3^@^@^@...
+        if ( length($line) > 2048 ) {
+            print "WARN: Invalid line\n";
+            next;
+        }
+
+        if ( $DEBUG > 7 ) { print "readSection: line = $line"; }
+
+        # If theres a new format make sure to update analyseNA as well!
+        if ( $format == 5 ) {
+            ($pid, $cpuTime, $mem, $thrs, $fd,$rss,$pss,$ppid,$uid,$gid,$cmd) = $line =~
+                /^\s*(\d+)\s+\S+\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+([-\d]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/;
+        } elsif ( $format == 4 )
+        {
+            ($pid, $cpuTime, $mem, $thrs, $fd,$rss,$ppid,$uid,$gid,$cmd) = $line =~
+                /^\s*(\d+)\s+\S+\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+([-\d]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/;
+        }
+        elsif ( $format == 3 )
+        {
+            ($pid, $cpuTime, $mem, $thrs, $fd,$rss,$ppid,$cmd) = $line =~
+                /^\s*(\d+)\s+\S+\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+([-\d]+)\s+(\d+)\s+(\d+)\s+(.*)$/;
+        }
+        elsif ( $format == 2 )
+        {
+            ($pid, $elpsd, $cpuTime, $mem, $thrs, $fd,$rss,$cmd) = $line =~
+                /^\s*(\d+)\s+(\S+)\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+([-\d]+)\s+(\d+)\s+(.*)$/;
+        }
+        elsif ( $format == 1 )
+        {
+            ($pid, $elpsd, $cpuTime, $mem, $thrs, $fd,$cmd) = $line =~
+                /^\s*(\d+)\s+(\S+)\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+([-\d]+)\s+(.*)$/;
+            $rss = 0;
+        }
+        else
+        {
+            ($pid, $elpsd, $cpuTime, $mem, $thrs, $cmd) = $line =~
+                /^\s*(\d+)\s+(\S+)\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+(.*)$/;
+            $rss = 0;
+            $fd = 0;
+        }
+        if ( $DEBUG > 6 ) { print "readSection: pid, elpsd, cpuTime, mem, thrs, fd, rss, cmd = $pid, $elpsd, $cpuTime, $mem, $thrs, $fd, $cmd, $rss\n"; }
+
+        if ( $fd < 0 )
+        {
+            $fd = 0;
+            $rss = 0;
+        }
+
+        if ( $cmd eq 'com.ericsson.oss.services.eps.core.main.EpsApplication' )
+        {
+            $cmd = $cmd." "."[".$pid."]";
+        }
+
+        if ( ! $cmd )
+        {
+            if ( $DEBUG ) { print "Failed to parse $line"; }
+
+            if ( $line =~ /^\d{6,6}:\d{2,2}:\d{2,2}$/ )
+            {
+                if ( $DEBUG ) { print "numProc=$numProc i=$i\n"; }
+
+                unshift @{$r_JpsLines}, $line;
+                $i = $numProc;
+            }
+            next;
+        }
+
+        my $cpuTimeInMins = parseProcTime($cpuTime);
+        my $elpsdInMins = parseProcTime($elpsd);
+
+        #
+        # Cache the short names in to MAPPED_PROC_NAMES,
+        # speed up processing a lot as getShortName should
+        # now only get called one for each unique $cmd
+        # Reduced time to for readJpsLog from ~ 20 seconds
+        # to ~ half a second
+        #
+        my $shortName = $MAPPED_PROC_NAMES{$cmd};
+        if ( ! defined $shortName )
+        {
+            $shortName = getShortName($cmd);
+            $MAPPED_PROC_NAMES{$cmd} = $shortName;
+        }
+        $cmd = $shortName;
+
+        if ( ! defined $pss ) {
+            $pss = 0;
+        }
+
+        my $r_Process = {
+            "cputime" => $cpuTimeInMins,
+            "mem"     => $mem,
+            "thrs"    => $thrs,
+            "fd"      => $fd,
+            "rss"     => $rss,
+            "pss"     => $pss,
+            "elpsd"   => $elpsdInMins,
+            'cmd'     => $cmd,
+            'pid'     => $pid,
+            'ppid'    => $ppid
+        };
+
+        if ( $DEBUG > 8 ) { print Dumper("readSection: r_Process ", $r_Process); };
+        push @proc, $r_Process;
+    }
+
+    return \@proc;
+}
+
+sub aggregateSmallProc
+{
+    my ( $r_samples, $os ) = @_;
+
+    my %procMax = ();
+    my $orgProcCount = 0;
+
+    # Set the threads for "small" processes
+    # Defaults for Solaris
+
+    # 24 * 4 samples in full day
+    my $numSamples = $#{$r_samples} + 1;
+    my $cpuThreshold = 50 * ($numSamples/96);
+    my $memKey = 'mem';
+    my $memThreshold = 10;
+    my $threadThreshold = 50;
+    my $fdThreshold = 20;
+    if ( $os eq 'Linux' ) {
+        $memKey = 'rss';
+        $memThreshold = 150;
+        $fdThreshold = 100;
+    }
+    if ( $DEBUG > 5 ) { print "aggregateSmallProc: os=$os memKey=$memKey memThreshold=$memThreshold fdThreshold=$fdThreshold\n"; }
+
+    foreach my $r_sample ( @{$r_samples} )
+    {
+        foreach my $cmd ( keys %{$r_sample->{'process'}} )
+        {
+            if ( ! exists $procMax{$cmd} )
+            {
+                $orgProcCount++;
+                $procMax{$cmd} = {
+                    'count'=> 0,
+                    'cpu' =>  0,
+                    $memKey =>  0,
+                    'thrs' => 0,
+                    'fd' =>   0
+                };
+            }
+
+            $procMax{$cmd}->{'count'}++;
+            $procMax{$cmd}->{'cpu'} += $r_sample->{'process'}->{$cmd}->{'cpu'};
+            for my $key ( $memKey, 'thrs', 'fd' )
+            {
+                if ( $r_sample->{'process'}->{$cmd}->{$key} >= $procMax{$cmd}->{$key} )
+                {
+                    $procMax{$cmd}->{$key} = $r_sample->{'process'}->{$cmd}->{$key};
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("aggregateSmallProc: procMax", \%procMax); }
+
+    my $aggProcCount = 0;
+    my $loopAgain = 0; # don't need to loop again, as we haven't (yet) met any negligable processes
+    foreach my $cmd ( keys %procMax )
+    {
+        if ( $DEBUG > 5 ) { print Dumper("aggregateSmallProc: processing $cmd", $procMax{$cmd}); }
+        #
+        # See if process meet the criteria to be counted individually,
+        # otherwise just add them to the '[AGGREGATED]' cateory
+        #
+        if ( $procMax{$cmd}->{'cpu'}  < $cpuThreshold &&
+             $procMax{$cmd}->{$memKey}  < $memThreshold &&
+             $procMax{$cmd}->{'thrs'} < $threadThreshold &&
+             $procMax{$cmd}->{'fd'}   < $fdThreshold )
+        {
+            $aggProcCount++;
+            if ( $DEBUG > 4 ) { print "aggregateSmallProc: aggregating $cmd\n"; }
+            my @splitCmd = split(/ /, $cmd);
+            my $aggCmd;
+            if ($splitCmd[1] eq "[AGG]") {
+                # we already aggregated this, and it is still negligable
+                # so bunch it together with the rest of the negligable processes
+                $aggCmd = "[AGGREGATED]";
+                $loopAgain = 0; # this must be our second loop.
+            } else {
+                $aggCmd = $splitCmd[0] . " [AGG]";
+                $loopAgain = 1; # looks like we should loop again
+            }
+            if ( $DEBUG > 4 ) { print "aggregateSmallProc: aggCmd=$aggCmd\n"; }
+
+            foreach my $r_sample ( @{$r_samples} )
+            {
+                if (! exists ($r_sample->{'process'}->{$aggCmd}->{'nproc'} ) ) {
+                    $r_sample->{'process'}->{$aggCmd}->{'nproc'} = 0;
+                }
+                if ( exists $r_sample->{'process'}->{$cmd} )
+                {
+                    if ( $DEBUG > 6 ) { print "aggregateSmallProc: aggregating sample @ $r_sample->{'timestamp'}\n"; }
+
+                    foreach my $key ( 'cpu', 'mem', 'thrs', 'fd', 'rss' )
+                    {
+                        $r_sample->{'process'}->{$aggCmd}->{$key} += $r_sample->{'process'}->{$cmd}->{$key};
+                    }
+                    if ( exists $r_sample->{'process'}->{$cmd}->{'nproc'} ) {
+                        if ( $DEBUG > 4 ) { print "nproc = " . $r_sample->{'process'}->{$aggCmd}->{'nproc'} . " ; adding " . $r_sample->{'process'}->{$cmd}->{'nproc'} . "\n"; }
+                        $r_sample->{'process'}->{$aggCmd}->{'nproc'} += $r_sample->{'process'}->{$cmd}->{'nproc'};
+                    } else {
+                        if ( $DEBUG > 4 ) { print "nproc = " . $r_sample->{'process'}->{$aggCmd}->{'nproc'} . " ; incrementing\n"; }
+                        $r_sample->{'process'}->{$aggCmd}->{'nproc'}++;
+                    }
+                    delete $r_sample->{'process'}->{$cmd};
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 2 ) { print "aggregateSmallProc: aggregated $aggProcCount of $orgProcCount processes\n"; }
+    if ( $DEBUG > 5 ) { print Dumper("aggregateSmallProc: r_sample", $r_samples); }
+    if ( $DEBUG > 2 ) { print "aggregateSmallProc: loopAgain: " . $loopAgain . "\n"; }
+    if ( $loopAgain != 0) {
+        aggregateSmallProc($r_samples, $os);
+    }
+}
+
+
+sub storeStats
+{
+    my ($site,$date, $server, $bcpFile, $r_samples, $isIncremental) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 1 ) { print "storeStats: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+
+    my %procNames = ();
+    foreach my $r_sample ( @{$r_samples} )
+    {
+        foreach my $cmd ( keys %{$r_sample->{'process'}} )
+        {
+            $procNames{$cmd}++;
+        }
+    }
+    my @procNameList = keys %procNames;
+    my $r_procIdMap = getIdMap($dbh, "process_names", "id", "name", \@procNameList );
+
+    if ( $isIncremental == 0 ) {
+        dbDo($dbh, "DELETE FROM proc_stats WHERE serverid = $serverId AND time BETWEEN \'$date 00:00:00\' AND \'$date 23:59:59\'");
+    }
+
+    my $bcpFile = getBcpFileName("proc_stats");
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $r_sample ( @{$r_samples} )
+    {
+        my $time = sprintf("%s %s:00", $date, $r_sample->{'timestamp'});
+        foreach my $cmd ( keys %{$r_sample->{'process'}} )
+        {
+            my $r_procData = $r_sample->{'process'}->{$cmd};
+            my $procId = $r_procIdMap->{$cmd};
+            defined $procId or die "Could not find procId for $cmd";
+
+            my $cpuValue = 'NULL';
+            if ( defined $r_procData->{'cpu'} )
+            {
+                $cpuValue = $r_procData->{'cpu'};
+            }
+
+            # Postgres uses shared memory which screws up the RSS value, so use the PSS
+            # value if we have it
+            my $rss = $r_procData->{'rss'};
+            if ( $cmd eq '[POSTGRES]' && $r_procData->{'pss'} > 0 ) {
+                $rss = $r_procData->{'pss'};
+            }
+
+            printf BULK_INSERT "%s\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n", $time, $siteId, $serverId, $procId,
+            $cpuValue, $r_procData->{'mem'}, $r_procData->{'thrs'},
+            $r_procData->{'fd'}, $rss, $r_procData->{'nproc'}, $r_procData->{'sample_interval'};
+        }
+    }
+    close BULK_INSERT;
+
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE proc_stats") or die "Cannot load $bcpFile";
+
+    $dbh->disconnect;
+}
+
+sub getShortName
+{
+    my ($cmd) = @_;
+    return jpsShortName($cmd,$host,$omc);
+}
+
+sub parseProcTime
+{
+    my ($Time) = @_;
+
+    my ($Days,$Hours,$Mins);
+    if ( $Time =~ /-/ )
+    {
+        ($Days,$Hours,$Mins) = $Time =~ /^(\d+)-(\d+):(\d+)$/;
+    }
+    elsif ( $Time =~ /:/ )
+    {
+        $Days = 0;
+        ($Hours,$Mins) = $Time =~ /^(\d+):(\d+)$/;
+    }
+    else
+    {
+        $Days = 0;
+        $Hours = 0;
+        $Mins = $Time;
+    }
+    my $TimeInMins = ($Days * 24 * 60) + ($Hours * 60) + $Mins;
+
+    if ( $DEBUG > 9 ) { print "parseProcTime: Time=$Time Days=$Days Hour=$Hours Mins=$Mins\n"; }
+    return $TimeInMins;
+}
+
+sub main
+{
+    my ($fixNames,$inputFile,$outdir, $cmdFile,$dataFile,$segName,$site,$sqlDate,$server,$bcpFile,
+	$incrFile, $exitFile, $cleandays);
+    my $os = "Linux";
+    my $result = GetOptions("input=s"     => \$inputFile,
+                            "segname=s"   => \$segName,
+                            "host=s"      => \$host,
+                            "site=s"      => \$site,
+                            "sqldate=s"   => \$sqlDate,
+                            "server=s"    => \$server,
+                            "omc=s"       => \$omc,
+                            "incr=s"      => \$incrFile,
+                            "os=s"        => \$os,
+                            "fixnames=s"  => \$fixNames,
+                            "bcp=s"       => \$bcpFile,
+                            "exit=s"      => \$exitFile,
+                            "cleandays=n" => \$cleandays,
+                            "debug=s"     => \$DEBUG
+        );
+
+    setStatsDB_Debug($DEBUG);
+    setStatsCommon_Debug($DEBUG);
+
+
+    my @samples = ();
+
+    if ( $segName )
+    {
+        my $segCsName = "cif.cs.ConfigurationServer ". $segName . "_CS";
+        my $segObeName = "obe ". $segName . "_CS";
+        my $segCleanBeName = "cleanbe ". $segName . "_CS";
+
+        if ( $DEBUG > 2 ) { print "main: segCsName=$segCsName segObeName=$segObeName segCleanBeName=$segCleanBeName\n"; }
+        jpsAddShortName($segCsName, "CsSeg");
+        jpsAddShortName($segObeName, "obe SegCs");
+        jpsAddShortName($segCleanBeName, "cleanbe SegCs");
+    }
+
+    if ( $fixNames ) {
+        my $fixResult = FixProcNames::fix( $fixNames, $exitFile, $cleandays );
+        exit $fixResult;
+    } else {
+        my $isIncremental = readJpsLog($inputFile,\@samples,$incrFile);
+        aggregateSmallProc( \@samples, $os );
+        if ( $site )
+        {
+            storeStats($site,$sqlDate,$server,$bcpFile,\@samples,$isIncremental);
+        }
+    }
+}
+
+main();

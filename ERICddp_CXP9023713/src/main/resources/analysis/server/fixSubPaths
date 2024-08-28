@@ -1,0 +1,121 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($inputFile,$outFile,$vxdiskFile);
+    my $result = GetOptions(
+	"vxdisk=s" => \$vxdiskFile,
+	"in=s" => \$inputFile,
+	"out=s" => \$outFile,
+	"debug=s" => \$DEBUG,
+	);
+    ($result == 1) or die "Invalid args"; 
+    
+    my $r_diskInfo = readDisks($vxdiskFile);
+    my $r_inputSubPathGrps = readInput($inputFile);
+    writeOutput($r_diskInfo,$r_inputSubPathGrps,$outFile);
+}
+
+sub writeOutput($$$) {
+    my ($r_diskInfo,$r_inputSubPathGrps,$outputFile) = @_;
+
+    open OUTPUT,">$outputFile" or die "Cannot open $outputFile";
+    print OUTPUT "NAME         STATE[A]   PATH-TYPE[M] DMPNODENAME  ENCLR-NAME   CTLR   ATTRS\n";
+    print OUTPUT "================================================================================\n";
+
+    foreach my $r_pathGroup ( @{$r_inputSubPathGrps} ) {
+	if ( $DEBUG > 7 ) { print Dumper("writeOutput: r_pathGroup", $r_pathGroup); } 
+
+	my $r_thisDisk;
+	foreach my $r_path ( @{$r_pathGroup} ) {
+	    if ( exists $r_diskInfo->{$r_path->{'name'}} ) {
+		$r_thisDisk = $r_diskInfo->{$r_path->{'name'}};
+		if ( $DEBUG > 6 ) { print Dumper("writeOutput: $r_path->{'name'} matched diskInfo", $r_thisDisk); }
+	    }
+	}
+
+	if ( defined $r_thisDisk ) { 
+	    foreach my $r_path ( @{$r_pathGroup} ) { 
+		printf OUTPUT "%s %s %s %s %s %s %s %s\n", 
+		$r_path->{'name'}, $r_path->{'state'},
+		$r_path->{'type'}, $r_thisDisk->{'osname'},
+		$r_path->{'enclr-name'}, $r_path->{'cltl'},
+		$r_path->{'attrs'}; 
+	    } 
+	} else { 
+	    print Dumper("WARNING: No matching diskInfo for group", $r_pathGroup);
+	}
+    } 
+    close OUTPUT; 
+}
+
+sub readInput($) {
+    my ($inputFile) = @_;
+
+    my @pathGroups = ();
+    my $r_currGroup;
+    open INPUT, $inputFile or die "Cannot open input subpaths file $inputFile";
+    while ( my $line = <INPUT> ) {
+	if ( $line =~ /^NAME/ ) {
+	    $r_currGroup = [];
+	    push @pathGroups, $r_currGroup;
+	} elsif ( $line =~ /(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/ ) {
+	    my $r_path = { 
+		'name' => $1,
+		'state' => $2,
+		'type' =>  $3,
+		'ctrl' =>  $4,
+		'enclr-type' => $5,
+		'enclr-name' => $6,
+		'attrs' => $7,
+	    };
+	    push @{$r_currGroup}, $r_path;
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("readInput: pathGroups", @pathGroups ); }
+
+    return \@pathGroups;
+}
+
+
+sub readDisks($) {
+    my ($inputFile) = @_;
+
+    my %diskInfo = ();
+    open INPUT, $inputFile or die "Cannot open vxdisk list file $inputFile";
+    <INPUT>; # Skip header
+    # DEVICE       TYPE           DISK        GROUP        STATUS               OS_NATIVE_NAME   ATTR        
+    while ( my $line = <INPUT> ) {
+	if ( $DEBUG > 9 ) { print "readDisks: line=$line"; }
+	chop $line;
+	my @fields = split(/\s+/, $line);
+	if ( $DEBUG > 7 ) { print Dumper("readDisks: fields", \@fields); }
+
+	$diskInfo{$fields[0]} = {
+	    'disk'   => $fields[2],
+	    'dg'     => $fields[3],
+	    'osname' => $fields[5]
+	};
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("readDisks: diskInfo", \%diskInfo); }
+    
+    return \%diskInfo;
+}
+
+
+

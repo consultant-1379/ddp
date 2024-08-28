@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Seconds"
+>
+  <title value="Full Realignments Success Duration"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="enm_ncmagent_instr">
+        <reference table="sites" condition="enm_ncmagent_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_ncmagent_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="fullRealignmentsSuccessDuration" label="Duration"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

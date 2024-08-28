@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ ylabel="Count"
+ forcelegend="true"
+>
+  <title value="Registration Requests"/>
+  <queries>
+    <query timecol="time" multiseries="servers.hostname">
+      <dbtables main="enm_domainproxy_v2_instr">
+        <reference table="sites" condition="enm_domainproxy_v2_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_domainproxy_v2_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="numberOfRegistrationRequests" label="registrationRequests"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

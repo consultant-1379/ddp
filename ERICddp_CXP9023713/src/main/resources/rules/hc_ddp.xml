@@ -1,0 +1,140 @@
+<?xml version='1.0'?>
+<report>
+  <ruleinst>
+    <rulename>cpuHealthDDP</rulename>
+    <threshold name='avgcpu' value="70"/>
+    <threshold name='avgiowait' value="25"/>
+    <threshold name='maxiowait' value="70"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>cpuLoad</rulename>
+    <parameter name='MAX_CPU' value="90"/>
+    <parameter name='COUNT_PER_INTERVAL' value="4"/>
+    <threshold name='intervalCount' value="16" warn="6"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>NAS</rulename>
+    <threshold name='FreeSpace' value = "5000000"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>DataUsed</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>/data Filesystem Usage</desc>
+    <filter operation="and">
+      <condition name="filesystem" value="^data$" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value = "94" warn="89"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>dataDbFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>/data/db Filesystem Usage</desc>
+    <filter operation="and">
+      <condition name="filesystem" value="^data/db$" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value = "94" warn="89"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpServerRootFilesystemUsage</rulename>
+    <ruledef>LocalFilesystemUsage</ruledef>
+    <desc>DDP Server Root Filesystem Usage</desc>
+    <filter operation="and">
+      <condition name="filesystem" value="^mapper/rhel-root$" type="like"/>
+    </filter>
+    <threshold name='pc_usage' value = "94" warn="89"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>LookupUsedDefault</rulename>
+    <ruledef>LookupUsed</ruledef>
+    <filter operation="and">
+      <condition name="table" value="^eam_" type="notlike"/>
+    </filter>
+    <threshold name="used" value = "85" warn="75"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>LookupUsedFiltered</rulename>
+    <ruledef>LookupUsed</ruledef>
+    <desc>Lookup tables % Used (Low Priority)</desc>
+    <filter operation="and">
+      <condition name="table" value="^eam_" type="like"/>
+    </filter>
+    <threshold name="used" value = "98"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>LookupIncDefault</rulename>
+    <ruledef>LookupInc</ruledef>
+    <desc>Lookup Table 24HR % Increase</desc>
+    <threshold name="inc" value = "10" warn="5"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ProcDelayToday</rulename>
+    <threshold name="proc_delay" value = "7200" warn="4200"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ProcDuration</rulename>
+    <threshold name="proc_time" value = "5400" warn="3600"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>sqlPlotParamSize</rulename>
+    <threshold name="rowcount" value = "3000"/>
+    <threshold name="maxId" value = "4000"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>sqlPlotParamSizeDailyInc</rulename>
+    <ruledef>LookupInc</ruledef>
+    <desc>sql_plot_param 24HR % Increase</desc>
+    <filter operation="and">
+      <condition name="name" value="^sql_plot_param$" type="like"/>
+    </filter>
+    <threshold  name="inc" value = "3" warn="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddp_certs</rulename>
+    <ruledef>ddp_certs</ruledef>
+    <desc>DDP Certificate Expiry</desc>
+    <threshold  name="daysremaining" value = "1" warn="30"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>longRunningQueries</rulename>
+    <ruledef>longRunningQueries</ruledef>
+    <desc>Long Running Queries</desc>
+    <threshold  name="count" value = "1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>ddpFileWaitingCount</rulename>
+    <ruledef>ddpFileWaitingCount</ruledef>
+    <desc>DDC Files Waiting To Process</desc>
+    <threshold  name="count" value = "50"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>emc_alerts</rulename>
+    <threshold name='count' value="1"/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>maintenance_duration</rulename>
+    <threshold name='duration' value='14400'/>
+  </ruleinst>
+
+  <ruleinst>
+    <rulename>repl_delay</rulename>
+    <threshold name='delay' value='1200'/>
+  </ruleinst>
+
+</report>

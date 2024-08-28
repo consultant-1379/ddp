@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="elasticsearch_tp">
+    <reference table="sites" condition="elasticsearch_tp.siteid = sites.id"/>
+    <reference table="elasticsearch_tp_names" condition="elasticsearch_tp.tpid = elasticsearch_tp_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="servicetype"/>
+  <param name="serverid"/>
+  <where>sites.name = '%site%' AND elasticsearch_tp.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND  elasticsearch_tp.servicetype = '%servicetype%' AND elasticsearch_tp.serverid IN (%serverid%)</where>
+
+  <groupby>
+    <column db="elasticsearch_tp_names.name"/>
+  </groupby>
+
+  <column db="elasticsearch_tp_names.id" label="Thread Pool" id="name" visible="false"/>
+  <column db="elasticsearch_tp_names.name" label="Thread Pool"/>
+  <column db="SUM(completed)" label="Total Completed"/>
+  <column db="SUM(rejected)" label="Total Rejected"/>
+  <column db="MAX(active)" label="Max Active"/>
+  <column db="MAX(queue)" label="Max Queue"/>
+
+  <ctxmenu keycol="name" targettype="url" multiselect="true">
+    <item id="threadpool" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="msosssnmpfm"/>
+  </services>
+
+  <table name="enm_fm_eci_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.eci.fm.instrumentation.eci-lightsoft-fm-handlers:type=EciStatisticsExt$">
+      <metric source="alarmsReceived" target="alarmsReceived" delta="true"/>
+      <metric source="alarmProcessingSuccess" target="alarmProcessingSuccess" delta="true"/>
+      <metric source="alarmProcessingPing" target="alarmProcessingPing" delta="true"/>
+      <metric source="alarmsProcessingFailures" target="alarmsProcessingFailures" delta="true"/>
+      <metric source="alarmProcessingLossOfTrap" target="alarmProcessingLossOfTrap" delta="true"/>
+      <metric source="alarmProcessingDiscarded" target="alarmProcessingDiscarded" delta="true"/>
+      <metric source="alarmProcessingInvalidRecordType" target="alarmProcessingInvalidRecordType" delta="true"/>
+      <metric source="alarmsProcessingNotSupported" target="alarmsProcessingNotSupported" delta="true"/>
+      <metric source="alarmsForwarded" target="alarmsForwarded" delta="true"/>
+      <metric source="forwardedProcessedAlarmFailures" target="forwardedProcessedAlarmFailures" delta="true"/>
+      <metric source="syncAlarmCommand" target="syncAlarmCommand" delta="true"/>
+      <metric source="processingAlarmTime" target="processingAlarmTime"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.fm.service.instrumentation.snmp-fm-engine:type=SnmpEngineStatistics$">
+      <metric source="trapsDiscarded" target="trapsDiscarded" delta="true"/>
+      <metric source="trapsForwarded" target="trapsForwarded" delta="true"/>
+      <metric source="trapsForwardedFailures" target="trapsForwardedFailures" delta="true"/>
+      <metric source="trapsReceived" target="trapsReceived" delta="true"/>
+      <metric source="numOfSupervisedNodes" target="numOfSupervisedNodes" delta="true"/>
+      <metric source="numOfSuspendedNodes" target="numOfSuspendedNodes" delta="true"/>
+      <metric source="numOfHBFailureNodes" target="numOfHBFailureNodes" delta="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>
+

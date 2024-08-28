@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mscm"/>
+  </services>
+
+  <table name="enm_cm_med_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.nms.mediation.component.moci.instrumentation.sync-node-moci-handler-code:type=SyncNodeInstrumentation$">
+      <metric source="topologySyncInvocations" target="topologySyncInvocations" delta="true" filteridle="true"/>
+      <metric source="attributeSyncInvocations" target="attributeSyncInvocations" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedSyncs" target="numberOfFailedSyncs" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.nms.mediation.component.dps.instrumentation.inbound-dps-handler-code:type=DpsHandlerInstrumentation$">
+      <metric source="dpsInvocationAttributeSync" target="dpsInvocationAttributeSync" delta="true" filteridle="true"/>
+      <metric source="dpsInvocationController" target="dpsInvocationController" delta="true" filteridle="true"/>
+      <metric source="dpsInvocationTopologySync" target="dpsInvocationTopologySync" delta="true" filteridle="true"/>
+      <metric source="dpsCounterForSuccessfulSync" target="dpsCounterForSuccessfulSync" delta="true" filteridle="true"/>
+      <metric source="dpsNumberOfFailedSyncs" target="dpsNumberOfFailedSyncs" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.nms.mediation.component.dps.instrumentation.inbound-dps-handler-code:type=DeltaDpsHandlerInstrumentation$">
+      <metric source="dpsSuccessfulDeltaSync" target="dpsSuccessfulDeltaSync" delta="true" filteridle="true"/>
+      <metric source="dpsFailedDeltaSync" target="dpsFailedDeltaSync" delta="true" filteridle="true"/>
+      <metric source="dpsDeltaInvocationAttributeSync" target="dpsDeltaInvocationAttributeSync" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.nms.mediation.component.dps.instrumentation.inbound-dps-handler-code:type=MimSwitchInstrumentation$">
+      <metric source="numberOfSuccessfulMibUpgrade" target="numberOfSuccessfulMibUpgrade" delta="true" filteridle="true"/>
+      <metric source="numberOfFailedMibUpgrade" target="numberOfFailedMibUpgrade" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

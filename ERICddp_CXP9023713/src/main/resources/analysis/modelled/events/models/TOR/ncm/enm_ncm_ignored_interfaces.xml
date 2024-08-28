@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_ncm_ignored_interfaces">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="misconfiguredMoId" reftable="mo_names"/>
+    <keycol name="interfaceId" reftable="ncm_interfaces"/>
+  </table>
+
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <events>
+    <!--NCM_AGENT.IGNORED_INTERFACES {"node":"ML-6352-195","interface":"LAN-1/1/2","_Thread":"default-threads - 49","compliance":"SWITCH_PORT_CONFIG_MO_MISSING","misconfiguredMo":"Interface=LAN-1/1/2"}-->
+    <event name="NCM_AGENT.IGNORED_INTERFACES_disabled">
+      <metric source="host" target="serverid"/>
+      <metric source="node" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="interface" target="interfaceId"/>
+      <metric source="misconfiguredMo" target="misconfiguredMoId"/>
+      <metric source="compliance" target="compliance"/>
+    </event>
+  </events>
+</modelledevents>

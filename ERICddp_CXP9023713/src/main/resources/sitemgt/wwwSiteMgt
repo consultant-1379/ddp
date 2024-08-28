@@ -1,0 +1,32 @@
+#!/bin/sh
+
+DIR=`dirname $0`
+SITEMGT_DIR=`cd ${DIR}; pwd`
+
+while getopts f:w:p:c:o: name
+  do
+  case $name in
+      f) FTP_ACCOUNT="${OPTARG}";;
+      w) WEB_DIR="${OPTARG}";;
+      p) PASSWD="${OPTARG}";;
+      c) CREATOR="${OPTARG}";;
+      o) OWNER="${OPTARG}";;
+  esac
+done
+
+TIMESTAMP=`date +%Y-%m-%d:%H:%m:%S`
+
+LOG_FILE=/data/stats/addsite.log
+
+CMD="${SITEMGT_DIR}/addSite -f ${FTP_ACCOUNT} -w ${WEB_DIR} -p ${PASSWD}"
+echo "$TIMESTAMP $CREATOR $OWNER ${CMD}" >> /data/stats/addsite.log
+echo "Creating account for site ${WEB_DIR} with FTP user/passwd of ${FTP_ACCOUNT}/${PASSWD}"
+
+/usr/bin/sudo -u statsadm ${CMD} 2>&1 | tee -a /data/stats/addsite.log
+
+if [ $? -eq 0 ] ; then
+    echo "Done"
+else
+    echo "Failed"
+fi
+      

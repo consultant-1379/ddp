@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_fm_nbi_lifecycle_instr">
+    <reference table="sites" condition="enm_fm_nbi_lifecycle_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_fm_nbi_lifecycle_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_fm_nbi_lifecycle_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(totalIncidentsSentToFm)" label="totalIncidentsSentToFm"/>
+  <column db="SUM(pmOnlyIncidentsSentToFm)" label="pmOnlyIncidentsSentToFm"/>
+  <column db="SUM(fmOnlyIncidentsSentTOFm)" label="fmOnlyIncidentsSentTOFm"/>
+  <column db="SUM(fmAndPmIncidentsSentToFm)" label="fmAndPmIncidentsSentToFm"/>
+
+</modelledtable>

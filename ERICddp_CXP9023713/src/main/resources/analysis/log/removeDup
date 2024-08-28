@@ -1,0 +1,56 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Time::Local;
+
+our $DEBUG = 0;
+my ($input,$output);
+my $result = GetOptions(
+			"input=s"  => \$input,
+			"output=s"  => \$output,
+			"debug" => \$DEBUG
+			);
+($result == 1) or die "Invalid args"; 
+
+open INPUT, $input or die "Cannot open $input";
+open OUTPUT, ">$output" or die "Cannot open $output";
+
+my ($lastEventTime);
+my $skipDup = 0;
+while ( my $line = <INPUT> )
+{
+    if ( $line =~ /^\d+/ )    
+    {
+	my ($year,$month,$day,$hour,$min,$sec,$logMsg) = $line =~
+	    /^(\d{4,4})-(\d{2,2})-(\d{2,2}) (\d{2,2}):(\d{2,2})\.(\d{2,2}) (.*)/;    
+	my $eventTime = timelocal($sec, $min, $hour, $day, $month - 1, $year);
+
+	if ( ! $skipDup )
+	{
+	    print OUTPUT $line;
+	    $lastEventTime = $eventTime;
+	}
+	else
+	{
+	    if ( $eventTime <= $lastEventTime )
+	    {
+		if ( $DEBUG ) { print "Skipped older event $line"; }
+	    }
+	    else
+	    {
+		print OUTPUT $line;
+		$lastEventTime = $eventTime;
+		$skipDup = 0;
+	    }
+	}		
+    }
+    elsif ( $line =~ /^LastEventID/ )
+    {
+	$skipDup = 1;
+    }
+}
+
+close INPUT;
+close OUTPUT;
+

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Events In Pipeline"/>
+ <queries>
+  <query timecol="time" multiseries="event_type_names.name">
+   <dbtables main="ecson_pm_events_cell_pipeline">
+    <reference table="sites" condition="ecson_pm_events_cell_pipeline.siteid = sites.id"/>
+    <reference table="event_type_names" condition="ecson_pm_events_cell_pipeline.typeid = event_type_names.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_pm_events_cell_pipeline.events" label="Events In Pipeline"/>
+  </query>
+ </queries>
+ <size width="650" height="400"/>
+</modelledgraph>

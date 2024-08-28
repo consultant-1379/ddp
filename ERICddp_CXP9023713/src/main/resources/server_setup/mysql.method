@@ -1,0 +1,94 @@
+#!/bin/bash
+
+. /lib/svc/share/smf_include.sh
+
+getproparg() {
+    val=`svcprop -p $1 $SMF_FMRI`
+    [ -n "$val" ] && echo $val
+}
+
+MYSQLBIN=/opt/mysql/mysql/bin
+MY_CNF=$(getproparg mysql/defaults-file)
+
+
+if [ -z $SMF_FMRI ]; then
+    echo "SMF framework variables are not initialized."
+    exit $SMF_EXIT_ERR
+fi
+
+if [ -z "${MY_CNF}" ] ; then
+    echo "mysql/defaults-file property not set"
+    exit $SMF_EXIT_ERR_CONFIG
+fi
+
+PIDFILE=$(egrep '^pid-file=' ${MY_CNF} | awk -F= '{print $2}')
+if [ -z "${PIDFILE}" ] ; then
+    echo "ERROR Failed to extract pid-file from ${MY_CNF}"
+    exit $SMF_EXIT_ERR
+fi
+echo "PIDFILE=${PIDFILE}"
+               
+mysql_start() {
+    CMD="${MYSQLBIN}/mysqld_safe --defaults-file=${MY_CNF}"
+    echo "$CMD"
+    ${CMD} &
+
+    COUNT=0
+    while [ $COUNT -le 20 ]; do
+        if [ ! -r "${PIDFILE}" ]; then
+	    COUNT=$(expr ${COUNT} + 1)
+	    sleep 1
+        else
+	    break
+        fi
+    done
+    
+    if [ -r ${PIDFILE} ] ; then
+        echo $rc_success
+    else
+        echo $rc_failed
+        echo "Timeout starting MySQL"
+    fi
+}
+
+mysql_stop() {
+    if [ -r ${PIDFILE} ]; then
+        PID=$(cat ${PIDFILE})
+        if [ -n "${PID}" ]; then
+            kill ${PID} >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                COUNT=0
+                while [ $COUNT -le 20 ]; do
+                    if [ -r "${PIDFILE}" ]; then
+			COUNT=$(expr ${COUNT} + 1)
+			sleep 1
+                    else
+			break
+                    fi
+                done
+            fi
+	    if [ -r ${PIDFILE} ] ; then
+                echo $rc_failed
+                echo "Timeout occurred while shutting down MySQL server..."
+            else
+                echo $rc_success
+            fi
+        fi
+    fi
+}
+
+case "$1" in
+    'start')
+        mysql_start
+        ;;
+
+    'stop')
+        mysql_stop
+        ;;
+
+       \*)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+esac
+
+exit $SMF_EXIT_OK

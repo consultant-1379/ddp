@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_fmsnmp_nodestatus">
+    <reference table="sites" condition="enm_fmsnmp_nodestatus.siteid = sites.id"/>
+    <reference table="servers" condition="enm_fmsnmp_nodestatus.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_fmsnmp_nodestatus.neid = enm_ne.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_fmsnmp_nodestatus.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time" label="Time"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_ne.name" label="Node Name"/>
+  <column db="nodeEngineId" label="EngineId"/>
+  <column db="prevStatus" label="Previous Status"/>
+  <column db="newStatus" label="New Status"/>
+  <column db="CASE WHEN hbEventSent = 0 THEN 'FALSE' ELSE 'TRUE' END" label="HB Event Sent"/>
+  <column db="CASE WHEN syncReqSent = 0 THEN 'FALSE' ELSE 'TRUE' END" label="Sync Request Sent"/>
+
+</modelledtable>

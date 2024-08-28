@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="autoidservice"/>
+    <service name="autocellmgt"/>
+  </services>
+
+  <table name="enm_saidserv_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.autocellid.ejb.instrumentation.autocellid-services:type=InstrumentationMetrics$">
+      <metric source="dpsAttributeChangedEventCount" target="dpsAttributeChangedEventCount" delta="true"/>
+      <metric source="dpsEUtranCellPciChangesCount" target="dpsEUtranCellPciChangesCount" delta="true"/>
+      <metric source="dpsEventNotProcessedCount" target="dpsEventNotProcessedCount" delta="true"/>
+      <metric source="dpsObjectCreatedEventCount" target="dpsObjectCreatedEventCount" delta="true"/>
+      <metric source="dpsObjectDeletedEventCount" target="dpsObjectDeletedEventCount" delta="true"/>
+      <metric source="numberOfCellsNotProposed" target="numberOfCellsNotProposed" delta="true"/>
+      <metric source="numberOfCellsResolved" target="numberOfCellsResolved" delta="true"/>
+      <metric source="numberOfCheckConflicts" target="numberOfCheckConflicts" delta="true"/>
+      <metric source="numberOfHighPriorityNetworkSyncEvents" target="numberOfHighPriorityNetworkSyncEvents" delta="true"/>
+      <metric source="numberOfHistoricalConflictReportsCount" target="numberOfHistoricalConflictReportsCount" delta="true"/>
+      <metric source="numberOfHistoricalExcludedResultsReportsCount" target="numberOfHistoricalExcludedResultsReportsCount" delta="true"/>
+      <metric source="numberOfHistoricalPCIResolveResultsCount" target="numberOfHistoricalPCIResolveResultsCount" delta="true"/>
+      <metric source="numberOfLowPriorityNetworkSyncEvents" target="numberOfLowPriorityNetworkSyncEvents" delta="true"/>
+      <metric source="numberOfUniqueCellsConflicting" target="numberOfUniqueCellsConflicting" delta="true"/>
+      <metric source="numberOfCellsProposed" target="numberOfConflictsResolved" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

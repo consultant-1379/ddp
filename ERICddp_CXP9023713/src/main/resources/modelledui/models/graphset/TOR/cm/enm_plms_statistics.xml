@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_plms_statistics">
+      <reference table="sites" condition="enm_plms_statistics.siteid = sites.id"/>
+      <reference table="servers" condition="enm_plms_statistics.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="inst"/>
+    <where>sites.name = '%s' AND servers.hostname = "%s"</where>
+  </query>
+
+  <graphs>
+    <graph name="totalNumberOfDiscoveredLinks" type="sb" ylabel="count" forcelegend="true">
+      <title value="Discovery State"/>
+      <column db="totalNumberOfDiscoveredLinks" label="Number Of Discovered Links"/>
+      <column db="totalNumberOfNotDiscoveredLinks" label="Number Of Not Discovered Links"/>
+    </graph>
+    <graph name="totalNumberOfDefinedLinks" type="sb" ylabel="count" forcelegend="true">
+      <title value="Link-State"/>
+      <column db="totalNumberOfDefinedLinks" label="Number Of Defined Links"/>
+      <column db="totalNumberOfUndefinedLinks" label="Number Of Undefined Links"/>
+      <column db="totalNumberOfPendingLinks" label="Number Of Pending Links"/>
+    </graph>
+    <graph name="totalNumberOfPhysicalLinks" type="sb" ylabel="count" forcelegend="true">
+      <title value="Link Type"/>
+      <column db="totalNumberOfPhysicalLinks" label="Number Of Physical Links"/>
+      <column db="totalNumberOfLogicalLinks" label="Number Of Logical Links"/>
+      <column db="totalNumberOfUnKnownLinks" label="Number Of UnKnown Links"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="PLMDiscoveryStateLinkStatistics">
+      <member>totalNumberOfDiscoveredLinks</member>
+    </group>
+    <group name="PLMLinkStateLinkStatistics">
+      <member>totalNumberOfDefinedLinks</member>
+    </group>
+    <group name="PLMLinkTypeLinkStatistics">
+      <member>totalNumberOfPhysicalLinks</member>
+    </group>
+    <group name="PLMNumberofLinksStatistics">
+      <member>totalNumberOfLinks</member>
+    </group>
+  </groups>
+</modelledgraphset>

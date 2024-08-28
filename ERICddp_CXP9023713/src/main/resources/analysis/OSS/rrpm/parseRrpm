@@ -1,0 +1,367 @@
+#!/usr/bin/env perl
+
+########################################
+# LIBRARIES
+########################################
+use warnings;
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+
+########################################
+# Declare variables
+my ($DEBUG);
+our (%rrpm);
+our ($dir,$dashDate,$site,$siteid);
+
+########################################
+# Initialize variables
+$DEBUG=0;
+
+########################################
+# MAIN
+########################################
+main();
+exit 0;
+
+########################################
+# SUBROUTINES
+########################################
+sub main {
+    # Get input parameters
+    my $result = GetOptions(
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    if($DEBUG > 6) { print "DIR: $dir\nSITE: $site\nDATE: $dashDate\n"; }
+
+    # Get Site ID
+    my $dbh=connect_db();
+    $siteid=getSiteId($dbh, $site);
+
+    # Get list of rrpm files
+    my @files=`ls $dir/*_instrumentation.txt`;
+
+    my @projectNameList;
+
+    # Build up list of projectNames from FileName
+    foreach my $myfile (@files) {
+        my ($projectName) = $myfile =~ m/$dir\/(\w+)_instrumentation.txt/;
+        push(@projectNameList,$projectName );
+    }
+
+    # Get the IdMap for rrpm_project_names
+    my $r_idMap = getIdMap($dbh, "rrpm_project_names", "id", "name", \@projectNameList);
+    if($DEBUG > 1) { print Dumper $r_idMap; }
+
+    # Map of the field names in the instr input data to the corresponding field names in statsdb
+    # We have a mapping for each dataset table rrpm_opd, rrpm_ppcd, rrpm_ppd, rrpm_prd, rrpm_kd, rrpm_rrd.
+    my %dbFieldMap;
+
+    #rrpm_opd
+    $dbFieldMap{'rrpm_opd'}->{'Project'} = 'nameid';
+    $dbFieldMap{'rrpm_opd'}->{'NumberNodesSuccessful'} = 'numberNodesSuccessful';
+    $dbFieldMap{'rrpm_opd'}->{'NumberNodes'} = 'numberNodes';
+    $dbFieldMap{'rrpm_opd'}->{'ProjectDuration'} = 'projectDuration';
+    $dbFieldMap{'rrpm_opd'}->{'NumberKPIROPs'} = 'numberKPIROPs';
+    $dbFieldMap{'rrpm_opd'}->{'NumberCells'} = 'numberCells';
+    $dbFieldMap{'rrpm_opd'}->{'NumberNeighbourRNCs'} = 'numberNeighbourRNC';
+    $dbFieldMap{'rrpm_opd'}->{'ProjectName'} = 'projectName';
+    $dbFieldMap{'rrpm_opd'}->{'ProjectEndTime'} = 'projectEndTime';
+    $dbFieldMap{'rrpm_opd'}->{'NumberRelation'} = 'numberRelation';
+    $dbFieldMap{'rrpm_opd'}->{'NumberNodesFailed'} = 'numberNodesFailed';
+    $dbFieldMap{'rrpm_opd'}->{'NumberNodesRemoved'} = 'numberNodesRemoved';
+    $dbFieldMap{'rrpm_opd'}->{'LockingPolicy'} = 'lockingPolicy';
+    $dbFieldMap{'rrpm_opd'}->{'ProjectStartTime'} = 'projectStartTime';
+
+    #rrpm_ppcd
+    $dbFieldMap{'rrpm_ppcd'}->{'Project'} = 'nameid';
+    $dbFieldMap{'rrpm_ppcd'}->{'PreCheckName'} = 'preCheckName';
+    $dbFieldMap{'rrpm_ppcd'}->{'PreCheckStartTime'} = 'preCheckStartTime';
+    $dbFieldMap{'rrpm_ppcd'}->{'PreCheckEndTime'} = 'preCheckEndTime';
+    $dbFieldMap{'rrpm_ppcd'}->{'PreCheckDuration'} = 'preCheckDuration';
+
+    #rrpm_ppd
+    $dbFieldMap{'rrpm_ppd'}->{'Project'} = 'nameid';
+    $dbFieldMap{'rrpm_ppd'}->{'PhaseStartTime'} = 'PhaseStartTime';
+    $dbFieldMap{'rrpm_ppd'}->{'DPEnabled'} = 'DPEnabled';
+    $dbFieldMap{'rrpm_ppd'}->{'PhaseName'} = 'PhaseName';
+    $dbFieldMap{'rrpm_ppd'}->{'NumberRBSFailed'} = 'NumberRBSFailed';
+    $dbFieldMap{'rrpm_ppd'}->{'PhaseDuration'} = 'PhaseDuration';
+    $dbFieldMap{'rrpm_ppd'}->{'PhaseEndTime'} = 'PhaseEndTime';
+    $dbFieldMap{'rrpm_ppd'}->{'NumberRBSProcessed'} = 'NumberRBSProcessed';
+
+    #rrpm_prd
+    $dbFieldMap{'rrpm_prd'}->{'Project'} = 'nameid';
+    $dbFieldMap{'rrpm_prd'}->{'NumberEUtranFreqRelationsDeleted'} = 'NumberEUtranFreqRelationsDeleted';
+    $dbFieldMap{'rrpm_prd'}->{'RBSName'} = 'RBSName';
+    $dbFieldMap{'rrpm_prd'}->{'NumberInterUtranRelationsDeleted'} = 'NumberInterUtranRelationsDeleted';
+    $dbFieldMap{'rrpm_prd'}->{'ManageTargetRBSDuration'} = 'ManageTargetRBSDuration';
+    $dbFieldMap{'rrpm_prd'}->{'NumberCells'} = 'NumberCells';
+    $dbFieldMap{'rrpm_prd'}->{'NumberIntraUtranRelationsCreated'} = 'NumberIntraUtranRelationsCreated';
+    $dbFieldMap{'rrpm_prd'}->{'RBSType'} = 'RBSType';
+    $dbFieldMap{'rrpm_prd'}->{'UnManageSourceRBSDuration'} = 'UnManageSourceRBSDuration';
+    $dbFieldMap{'rrpm_prd'}->{'RemoveSourceRBSDuration'} = 'RemoveSourceRBSDuration';
+    $dbFieldMap{'rrpm_prd'}->{'NumberInterUtranRelationsCreated'} = 'NumberInterUtranRelationsCreated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberGSMRelationsDeleted'} = 'NumberGSMRelationsDeleted';
+    $dbFieldMap{'rrpm_prd'}->{'AddTargetRBSDuration'} = 'AddTargetRBSDuration';
+    $dbFieldMap{'rrpm_prd'}->{'NumberInterOSSUtranRelationsDeleted'} = 'NumberInterOSSUtranRelationsDeleted';
+    $dbFieldMap{'rrpm_prd'}->{'NumberCoverageRelationsDeleted'} = 'NumberCoverageRelationsDeleted';
+    $dbFieldMap{'rrpm_prd'}->{'SourceRNC'} = 'SourceRNC';
+    $dbFieldMap{'rrpm_prd'}->{'TargetRNC'} = 'TargetRNC';
+    $dbFieldMap{'rrpm_prd'}->{'NumberGSMRelationsCreated'} = 'NumberGSMRelationsCreated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberEUtranFreqRelationsCreated'} = 'NumberEUtranFreqRelationsCreated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberIntraUtranRelationsUpdated'} = 'NumberIntraUtranRelationsUpdated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberCoverageRelationsCreated'} = 'NumberCoverageRelationsCreated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberInterOSSUtranRelationsCreated'} = 'NumberInterOSSUtranRelationsCreated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberInterUtranRelationsUpdated'} = 'NumberInterUtranRelationsUpdated';
+    $dbFieldMap{'rrpm_prd'}->{'NumberIntraUtranRelationsDeleted'} = 'NumberIntraUtranRelationsDeleted';
+    $dbFieldMap{'rrpm_prd'}->{'RBSStatus'} = 'RBSStatus';
+
+   #rrpm_kd
+    $dbFieldMap{'rrpm_kd'}->{'Project'} = 'nameid';
+    $dbFieldMap{'rrpm_kd'}->{'KPIName'} = 'kpiName';
+
+    #rrpm_rrd
+    $dbFieldMap{'rrpm_rrd'}->{'Project'} = 'nameid';
+    $dbFieldMap{'rrpm_rrd'}->{'RemoveRBSDuration'} = 'RemoveRBSDuration';
+    $dbFieldMap{'rrpm_rrd'}->{'RBSName'} = 'RBSName';
+    $dbFieldMap{'rrpm_rrd'}->{'RemoveRBSStartTime'} = 'RemoveRBSStartTime';
+    $dbFieldMap{'rrpm_rrd'}->{'PhaseRemoved'} = 'PhaseRemoved';
+    $dbFieldMap{'rrpm_rrd'}->{'RemoveRBSEndTime'} = 'RemoveRBSEndTime';
+
+    # Set the field Order
+    my %dbFieldOrder = (
+        "rrpm_opd" => ['nameid','numberNodesSuccessful','numberNodes','projectDuration','numberKPIROPs','numberCells','numberNeighbourRNC','projectName', 'projectEndTime','numberRelation','numberNodesFailed','numberNodesRemoved','lockingPolicy','projectStartTime'],
+        "rrpm_ppcd" => ['nameid','preCheckName', 'preCheckStartTime', 'preCheckEndTime', 'preCheckDuration'],
+        "rrpm_ppd" => ['nameid','PhaseStartTime','DPEnabled','PhaseName','NumberRBSFailed','PhaseDuration','PhaseEndTime','NumberRBSProcessed'],
+        "rrpm_prd" => ['nameid','NumberEUtranFreqRelationsDeleted','RBSName','NumberInterUtranRelationsDeleted','ManageTargetRBSDuration','NumberCells','NumberIntraUtranRelationsCreated','RBSType','UnManageSourceRBSDuration','RemoveSourceRBSDuration','NumberInterUtranRelationsCreated','NumberGSMRelationsDeleted','AddTargetRBSDuration','NumberInterOSSUtranRelationsDeleted','NumberCoverageRelationsDeleted','SourceRNC','TargetRNC','NumberGSMRelationsCreated','NumberEUtranFreqRelationsCreated','NumberIntraUtranRelationsUpdated','NumberCoverageRelationsCreated','NumberInterOSSUtranRelationsCreated','NumberInterUtranRelationsUpdated','NumberIntraUtranRelationsDeleted','RBSStatus'],
+        "rrpm_kd" => ['nameid','kpiName',],
+        "rrpm_rrd" => ['nameid','RemoveRBSDuration','RBSName','RemoveRBSStartTime','PhaseRemoved','RemoveRBSEndTime']
+    );
+
+    # Parse RRPM file(s)
+    my $retval=parseRrpmFile($dir,\@files,\%dbFieldMap,$r_idMap);
+
+    # Store RRPM Values in database
+    if( $retval==0 ) {
+        storeRrpmValues(\%dbFieldOrder);
+    }else{
+        print "RRPM: No instrumentation files found in  $dir\n";
+    }
+
+    if($DEBUG > 9) { print Dumper("rrpm", \%rrpm); }
+}
+
+
+### PARSE FILE ###
+sub parseRrpmFile {
+    my ($myDir,$r_files,$r_dbFieldMap,$r_idMap) = @_;
+
+    # Declare variables
+    my (@overallProjData,@projPhaseData,@projRbsData);
+    my (@removedRbsData,@projPreCheckData,@kpiData);
+    my (%sections);
+    my ($key,$rrpm_merged);
+
+    # Exit if no rrpm instrumentation files exist
+    ##if( $#files < 0 ) { return -1; }
+
+    # Collate file contents into a single temporary file
+    foreach my $myfile (@$r_files) {
+        chomp($myfile);
+        my ($projectName) = $myfile =~ m/$myDir\/(\w+)_instrumentation.txt/;
+
+        # Slurp lines from temp file to array
+        open(FILE, "<$myfile") or die "ERROR: Failed to open file - $myfile\n";
+        my @lines=<FILE>;
+        close(FILE);
+
+        # Parse file and split into arrays for each section
+        # For section "PhaseName", "RBSName.*;RBSType", "RBSName.*;PhaseRemove", "PreCheckName" and "KPIName"
+        # append the ProjectName ID so we can associate the data with each Project for drill down within PHP.
+        foreach (@lines) {
+           if( /^$/ || /^-+/ ) { next; }
+           else {
+               if( /^ProjectName/ ) { push(@overallProjData, "Project=$r_idMap->{$projectName};" . $_); }
+               elsif( /^PhaseName/ ) { push(@projPhaseData, "Project=$r_idMap->{$projectName};" . $_); }
+               elsif( /^RBSName.*;RBSType/ ) { push(@projRbsData, "Project=$r_idMap->{$projectName};" . $_); }
+               elsif( /^RBSName.*;PhaseRemoved/ ) { push(@removedRbsData, "Project=$r_idMap->{$projectName};" . $_); }
+               elsif( /^PreCheckName/ ) { push(@projPreCheckData, "Project=$r_idMap->{$projectName};" . $_); }
+               elsif( /^KPIName/ ) { push(@kpiData, "Project=$r_idMap->{$projectName};" . $_); }
+           }
+        }
+    }
+
+    # Save parameters to hash
+    # overallProjData
+    parseRrpmArray("rrpm_opd", \@overallProjData, $r_dbFieldMap);
+    # projPhaseData
+    parseRrpmArray("rrpm_ppd", \@projPhaseData, $r_dbFieldMap);
+    # projRbsData
+    parseRrpmArray("rrpm_prd", \@projRbsData, $r_dbFieldMap);
+    # removedRbsData
+    parseRrpmArray("rrpm_rrd", \@removedRbsData, $r_dbFieldMap);
+    # projPreCheckData
+    parseRrpmArray("rrpm_ppcd", \@projPreCheckData, $r_dbFieldMap);
+    # kpiData
+    parseRrpmArray("rrpm_kd", \@kpiData, $r_dbFieldMap);
+
+    # Return code
+    return 0;
+}
+
+### PARSE RRPM ARRAY ###
+sub parseRrpmArray {
+    my ($hash, $r_array, $r_dbFieldMap) = @_;
+
+    # Initialize variables
+    my $i=0;
+
+    # Parse each line in input array
+    foreach my $line (@$r_array) {
+        chomp($line);
+        my @valArr= split(/;/, $line);
+
+        foreach my $pair (@valArr) {
+            my @param = split(/=/, $pair);
+            $rrpm{$hash}[$i]{$r_dbFieldMap->{$hash}{$param[0]}}=$param[1];
+        }
+        $i++;
+    }
+    $i = undef;
+
+    # Return hash containing RRPM values
+    return %rrpm;
+}
+
+sub storeRrpmValues {
+    my ($r_dbFieldOrder) = @_;
+
+    # Declare variables
+    my @arr = ();
+    my (@opd_arr,@ppcd_arr,@rrd_arr,@prd_arr,@ppd_arr,@kd_arr);
+    my ($ppdfile,$prdfile,$rrdfile,$ppcdfile,$opdfile,$kdfile);
+
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    # Set BCP import file names
+    $ppdfile="$tmpDir/ppd_import.bcp";
+    $prdfile="$tmpDir/prd_import.bcp";
+    $rrdfile="$tmpDir/rrd_import.bcp";
+    $ppcdfile="$tmpDir/ppcd_import.bcp";
+    $opdfile="$tmpDir/opd_import.bcp";
+    $kdfile="$tmpDir/kd_import.bcp";
+
+    # Set Import Data reference hash
+    my %importdata= (
+        "rrpm_opd" => $opdfile,
+        "rrpm_ppcd" => $ppcdfile,
+        "rrpm_rrd" => $rrdfile,
+        "rrpm_prd" => $prdfile,
+        "rrpm_ppd" => $ppdfile,
+        "rrpm_kd" => $kdfile
+    );
+
+    # Open BCP import files in write mode
+    open(PPDIMPORT, ">$ppdfile");
+    open(PRDIMPORT, ">$prdfile");
+    open(RRDIMPORT, ">$rrdfile");
+    open(PPCDIMPORT, ">$ppcdfile");
+    open(OPDIMPORT, ">$opdfile");
+    open(KDIMPORT, ">$kdfile");
+
+    # Iterate thru rrpm hash and write lines to relevant BCP Import files
+    foreach my $key ( keys %rrpm ) {
+        # Iterate thru hash key instance
+        foreach my $arrval ( $rrpm{$key} ) {
+            # Iterate thru anonymous array instances
+            foreach my $subarr ( @{$arrval} ) {
+                if($key eq "rrpm_opd") {
+                    print OPDIMPORT "$siteid\t$dashDate";
+                    foreach my $field (@{$r_dbFieldOrder->{'rrpm_opd'}}) {
+                        print OPDIMPORT "\t$subarr->{$field}";
+                    }
+                    print OPDIMPORT "\n";
+                }
+
+                if($key eq "rrpm_ppcd") {
+                    print PPCDIMPORT "$siteid\t$dashDate";
+                    foreach my $field (@{$r_dbFieldOrder->{'rrpm_ppcd'}}) {
+                        print PPCDIMPORT "\t$subarr->{$field}";
+                    }
+                    print PPCDIMPORT "\n";
+                }
+
+                if($key eq "rrpm_rrd") {
+                    print RRDIMPORT "$siteid\t$dashDate";
+                    foreach my $field (@{$r_dbFieldOrder->{'rrpm_rrd'}}) {
+                        print RRDIMPORT "\t$subarr->{$field}";
+                    }
+                    print RRDIMPORT "\n";
+                }
+
+                if($key eq "rrpm_prd") {
+                    print PRDIMPORT "$siteid\t$dashDate";
+                    foreach my $field (@{$r_dbFieldOrder->{'rrpm_prd'}}) {
+                        print PRDIMPORT "\t$subarr->{$field}";
+                    }
+                    print PRDIMPORT "\n";
+                }
+
+                if($key eq "rrpm_ppd") {
+                    print PPDIMPORT "$siteid\t$dashDate";
+                    foreach my $field (@{$r_dbFieldOrder->{'rrpm_ppd'}}) {
+                        print PPDIMPORT "\t$subarr->{$field}";
+                    }
+                    print PPDIMPORT "\n";
+                }
+
+                if($key eq "rrpm_kd") {
+                    print KDIMPORT "$siteid\t$dashDate";
+                    foreach my $field (@{$r_dbFieldOrder->{'rrpm_kd'}}) {
+                        print KDIMPORT "\t$subarr->{$field}";
+                    }
+                    print KDIMPORT "\n";
+                }
+            }
+        }
+    }
+
+    # Close BCP Import files
+    close(PPDIMPORT);
+    close(PRDIMPORT);
+    close(RRDIMPORT);
+    close(PPCDIMPORT);
+    close(OPDIMPORT);
+    close(KDIMPORT);
+
+    # Load data into tables
+    foreach my $table ( keys %importdata ) {
+        # Set delete command to delete data for date
+        my $sql = "DELETE FROM $table WHERE siteid = " . $siteid .
+            " AND date = '" . $dashDate. "'";
+
+        my $dbh = connect_db();
+        dbDo($dbh,$sql);
+        dbDo($dbh,"LOAD DATA LOCAL INFILE \'$importdata{$table}\' INTO TABLE $table");
+        $dbh->disconnect;
+
+        if($DEBUG > 9) { print "$table BCP FILE: " . $importdata{$table} . "\n"; }
+        unlink($importdata{$table});
+    }
+}
+
+########################################
+# END OF SCRIPT
+########################################
+
+

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_netan_pma_details">
+    <reference table="sites" condition="eniq_netan_pma_details.siteid = sites.id"/>
+    <reference table="eniq_aggregated_counter_table_name_id_mapping" condition="eniq_aggregated_counter_table_name_id_mapping.id = eniq_netan_pma_details.tableId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_netan_pma_details.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND eniq_aggregated_counter_table_name_id_mapping.tableName != '' AND eniq_aggregated_counter_table_name_id_mapping.tableName IS NOT NULL </where>
+  <groupby>
+    <column db="eniq_aggregated_counter_table_name_id_mapping.tableName"/>
+    <column db="DATE(time)"/>
+  </groupby>
+  <order columnid="numberOfTimes" direction="DESC"/>
+
+  <column db="DISTINCT(eniq_aggregated_counter_table_name_id_mapping.tableName)" label="Table Name"/>
+  <column db="COUNT(eniq_aggregated_counter_table_name_id_mapping.tableName)" label="Number Of Times Accessed" id="numberOfTimes"/>
+
+</modelledtable>

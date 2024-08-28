@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_pm_file_del_stats_instr">
+      <reference table="sites" condition="enm_pm_file_del_stats_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_pm_file_del_stats_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="filter"/>
+    <where>sites.name = '%s' AND enm_pm_file_del_stats_instr.filter = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="expiredFilesCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Total Files to be Deleted"/>
+      <column db="expiredFilesCount" label="Total Files to be Deleted"/>
+    </graph>
+    <graph name="filesDeletedCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Total File Count"/>
+      <column db="filesDeletedCount" label="Total File Count"/>
+    </graph>
+    <graph name="filesDeletedTime" type="tsc" ylabel="Time(ms)" forcelegend="true">
+      <title value="Total Deletion Time"/>
+      <column db="filesDeletedTime" label="Total Deletion Time"/>
+    </graph>
+    <graph name="filesDeletionFailedCount" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Failed File Deletion Count"/>
+      <column db="filesDeletionFailedCount" label="Failed File Deletion Count"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="all">
+      <member>expiredFilesCount</member>
+      <member>filesDeletedCount</member>
+      <member>filesDeletedTime</member>
+      <member>filesDeletionFailedCount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

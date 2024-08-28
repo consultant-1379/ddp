@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_mspmip_instr">
+      <reference table="sites" condition="enm_mspmip_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_mspmip_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="noOfCollectedBulkPmFilesBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Collected Bulk Files"/>
+      <column db="noOfCollectedBulkPmFilesBulk15m" label="Number Of Collected Bulk Files"/>
+    </graph>
+    <graph name="noOfRecoveredBulkPmFilesBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Recovered Bulk Files"/>
+      <column db="noOfRecoveredBulkPmFilesBulk15m" label="Number Of Recovered Bulk Files"/>
+    </graph>
+    <graph name="numberOfUploadRequestFailuresBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Upload Request Failures"/>
+      <column db="numberOfUploadRequestFailuresBulk15m" label="Number Of Upload Request Failures"/>
+    </graph>
+    <graph name="numberOfSuccessfulRequestsBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Successful Upload Requests"/>
+      <column db="numberOfSuccessfulRequestsBulk15m" label="Number Of Successful Upload Requests"/>
+    </graph>
+    <graph name="numberOfProcessingFlowFailuresBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Processing Flow Failures"/>
+      <column db="numberOfProcessingFlowFailuresBulk15m" label="Number Of Processing Flow Failures"/>
+    </graph>
+    <graph name="numberOfSuccessfulRecoveryRequestsBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Successful Recovery Requests"/>
+      <column db="numberOfSuccessfulRecoveryRequestsBulk15m" label="Number Of Successful Recovery Requests"/>
+    </graph>
+    <graph name="numberOfFailedRecoveryRequestsBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Failed Recovery Requests"/>
+      <column db="numberOfFailedRecoveryRequestsBulk15m" label="Number Of Failed Recovery Requests"/>
+    </graph>
+    <graph name="minProcessingHandlerTimeBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Min Processing Handler Time"/>
+      <column db="minProcessingHandlerTimeBulk15m" label="Min Processing Handler Time"/>
+    </graph>
+    <graph name="maxProcessingHandlerTimeBulk15m" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Max Processing Handler Time"/>
+      <column db="maxProcessingHandlerTimeBulk15m" label="Max Processing Handler Time"/>
+    </graph>
+    <graph name="noOfCollectedBulkPmFilesBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Collected Bulk Files"/>
+      <column db="noOfCollectedBulkPmFilesBulk24h" label="Number Of Collected Bulk Files"/>
+    </graph>
+    <graph name="noOfRecoveredBulkPmFilesBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Recovered Bulk Files"/>
+      <column db="noOfRecoveredBulkPmFilesBulk24h" label="Number Of Recovered Bulk Files"/>
+    </graph>
+    <graph name="numberOfUploadRequestFailuresBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Upload Request Failures"/>
+      <column db="numberOfUploadRequestFailuresBulk24h" label="Number Of Upload Request Failures"/>
+    </graph>
+    <graph name="numberOfSuccessfulRequestsBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Successful Upload Requests"/>
+      <column db="numberOfSuccessfulRequestsBulk24h" label="Number Of Successful Upload Requests"/>
+    </graph>
+    <graph name="numberOfProcessingFlowFailuresBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number Of Processing Flow Failures"/>
+      <column db="numberOfProcessingFlowFailuresBulk24h" label="Number Of Processing Flow Failures"/>
+    </graph>
+    <graph name="minProcessingHandlerTimeBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Min Processing Handler Time"/>
+      <column db="minProcessingHandlerTimeBulk24h" label="Min Processing Handler Time"/>
+    </graph>
+    <graph name="maxProcessingHandlerTimeBulk24h" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Max Processing Handler Time"/>
+      <column db="maxProcessingHandlerTimeBulk24h" label="Max Processing Handler Time"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="bulkPm15m">
+      <member>noOfCollectedBulkPmFilesBulk15m</member>
+      <member>noOfRecoveredBulkPmFilesBulk15m</member>
+      <member>minProcessingHandlerTimeBulk15m</member>
+      <member>maxProcessingHandlerTimeBulk15m</member>
+      <member>numberOfUploadRequestFailuresBulk15m</member>
+      <member>numberOfSuccessfulRequestsBulk15m</member>
+      <member>numberOfProcessingFlowFailuresBulk15m</member>
+      <member>numberOfSuccessfulRecoveryRequestsBulk15m</member>
+      <member>numberOfFailedRecoveryRequestsBulk15m</member>
+    </group>
+    <group name="bulkPm24h">
+      <member>noOfCollectedBulkPmFilesBulk24h</member>
+      <member>noOfRecoveredBulkPmFilesBulk24h</member>
+      <member>minProcessingHandlerTimeBulk24h</member>
+      <member>maxProcessingHandlerTimeBulk24h</member>
+      <member>numberOfUploadRequestFailuresBulk24h</member>
+      <member>numberOfSuccessfulRequestsBulk24h</member>
+      <member>numberOfProcessingFlowFailuresBulk24h</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

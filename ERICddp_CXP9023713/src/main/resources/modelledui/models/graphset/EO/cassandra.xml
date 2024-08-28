@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="eo_cassandra_stats">
+      <reference table="sites" condition="eo_cassandra_stats.siteid = sites.id"/>
+      <reference table="servers" condition="eo_cassandra_stats.serverid = servers.id"/>
+    </dbtables>
+
+    <param name="site"/>
+    <param name="Instance"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s ) </where>
+  </query>
+
+  <graphs>
+
+    <graph name="CAS_Read_Latency" type="tsc" forcelegend="true">
+      <title value="CAS Read Latency"/>
+      <column db="casReadLatency" label="CAS Read Latency"/>
+    </graph>
+
+    <graph name="CAS_Write_Latency" type="tsc">
+      <title value="CAS Write Latency"/>
+      <column db="casWriteLatency" label="CAS Write Latency"/>
+    </graph>
+
+    <graph name="CAS_Read_Timeouts" type="tsc">
+      <title value="CAS Read Timeouts"/>
+      <column db="casReadTimeouts" label="CAS Read Timeouts"/>
+    </graph>
+
+    <graph name="CAS_Write_Timeouts" type="tsc">
+      <title value="CAS Write Timeouts"/>
+      <column db="casWriteTimeouts" label="CAS Write Timeouts"/>
+    </graph>
+
+    <graph name="CAS_Read_Failures" type="tsc">
+      <title value="CAS Read Failures"/>
+      <column db="casReadFailures" label="CAS Read Failures"/>
+    </graph>
+
+    <graph name="CAS_Write_Failures" type="tsc">
+      <title value="CAS Write Failures"/>
+      <column db="casWriteFailures" label="CAS Write Failures"/>
+    </graph>
+
+    <graph name="CAS_Read_Unavailables" type="tsc">
+      <title value="CAS Read Unavailables"/>
+      <column db="casReadUnavailables" label="CAS Read Unavailables"/>
+    </graph>
+
+    <graph name="CAS_Write_Unavailables" type="tsc">
+      <title value="CAS Write Unavailables"/>
+      <column db="casWriteUnavailables" label="CAS Write Unavailables"/>
+    </graph>
+
+    <graph name="Read_Latency" type="tsc">
+      <title value="Read Latency"/>
+      <column db="readLatency" label="Read Latency"/>
+    </graph>
+
+    <graph name="Write_Latency" type="tsc">
+      <title value="Write Latency"/>
+      <column db="writeLatency" label="Write Latency"/>
+    </graph>
+
+    <graph name="Read_Timeouts" type="tsc">
+      <title value="Read Timeouts"/>
+      <column db="readTimeouts" label="Read Timeouts"/>
+    </graph>
+
+    <graph name="Write_Timeouts" type="tsc">
+      <title value="Write Timeouts"/>
+      <column db="writeTimeouts" label="Write Timeouts"/>
+    </graph>
+
+    <graph name="Read_Failures" type="tsc">
+      <title value="Read Failures"/>
+      <column db="readFailures" label="Read Failures"/>
+    </graph>
+
+    <graph name="Write_Failures" type="tsc">
+      <title value="Write Failures"/>
+      <column db="writeFailures" label="Write Failures"/>
+    </graph>
+
+    <graph name="Read_Unavailables" type="tsc">
+      <title value="Read Unavailables"/>
+      <column db="readUnavailables" label="Read Unavailables"/>
+    </graph>
+
+    <graph name="Write_Unavailables" type="tsc">
+      <title value="Write Unavailables"/>
+      <column db="writeUnavailables" label="Write Unavailables"/>
+    </graph>
+
+    <graph name="Host_Timeouts" type="tsc" forcelegend="true">
+      <title value="Host Timeouts"/>
+      <column db="hostTimeouts" label="Host Timeouts"/>
+    </graph>
+
+    <graph name="CompletedTasks_MemtableFlushWriter" type="tsc">
+      <title value="CompletedTasks MemtableFlushWriter"/>
+      <column db="completedTasksMemtableFlushWriter" label="CompletedTasks MemtableFlushWriter"/>
+    </graph>
+
+    <graph name="CompletedTasks_Mutation" type="tsc">
+      <title value="CompletedTasks Mutation"/>
+      <column db="completedTasksMutation" label="CompletedTasks Mutation"/>
+    </graph>
+
+    <graph name="CompletedTasks_Read" type="tsc">
+      <title value="CompletedTasks Read"/>
+      <column db="completedTasksRead" label="CompletedTasks Read"/>
+    </graph>
+
+    <graph name="TotalBlockedTasks_CompactionExecutor" type="tsc">
+      <title value="TotalBlockedTasks CompactionExecutor"/>
+      <column db="totalBlockedTasksCompactionExecutor" label="TotalBlockedTasks CompactionExecutor"/>
+    </graph>
+
+    <graph name="TotalBlockedTasks_MemtableFlushWriter" type="tsc">
+      <title value="TotalBlockedTasks MemtableFlushWriter"/>
+      <column db="totalBlockedTasksMemtableFlushWriter" label="TotalBlockedTasks MemtableFlushWriter"/>
+    </graph>
+
+    <graph name="TotalBlockedTasks_MutationStage" type="tsc">
+      <title value="TotalBlockedTasks MutationStage"/>
+      <column db="totalBlockedTasksMutationStage" label="TotalBlockedTasks MutationStage"/>
+    </graph>
+
+    <graph name="TotalBlockedTasks_ReadStage" type="tsc">
+      <title value="TotalBlockedTasks ReadStage"/>
+      <column db="totalBlockedTasksReadStage" label="TotalBlockedTasks ReadStage"/>
+    </graph>
+
+    <graph name="CommitLog_Waiting_On_Segment_Allocation" type="tsc">
+      <title value="Waiting On Segment Allocation"/>
+      <column db="commitLogWaitingOnSegmentAllocation" label="Waiting On Segment Allocation"/>
+    </graph>
+
+    <graph name="Dropped_Read" type="tsc">
+      <title value="Dropped Read"/>
+      <column db="droppedRead" label="Dropped Read"/>
+    </graph>
+
+    <graph name="Dropped_Mutations" type="tsc">
+      <title value="Dropped Mutations"/>
+      <column db="droppedMutations" label="Dropped Mutations"/>
+    </graph>
+
+    <graph name="Storage_Exceptions" type="tsc">
+      <title value="Storage Exceptions"/>
+      <column db="storageExceptions" label="Storage Exceptions"/>
+    </graph>
+
+    <graph name="Storage_Load" type="tsc">
+      <title value="Storage Load"/>
+      <column db="storageLoad" label="Storage Load"/>
+    </graph>
+
+    <graph name="Total_Hints" type="tsc">
+      <title value="Total Hints"/>
+      <column db="totalHints" label="Total Hints"/>
+    </graph>
+
+    <graph name="Client_Connected_Native_Clients" type="tsc">
+      <title value="Connected Native Clients"/>
+      <column db="clientConnectedNativeClients" label="Connected Native Clients"/>
+    </graph>
+
+    <graph name="Pending_Compactions" type="tsc">
+      <title value="Pending Compactions"/>
+      <column db="pendingCompactions" label="Pending Compactions"/>
+    </graph>
+
+    <graph name="Pending_Flushes" type="tsc">
+      <title value="Pending Flushes"/>
+      <column db="pendingFlushes" label="Pending Flushes"/>
+    </graph>
+
+    <graph name="Total_Compactions" type="tsc">
+      <title value="Total Compactions"/>
+      <column db="totalCompactions" label="Total Compactions"/>
+    </graph>
+
+  </graphs>
+
+  <groups>
+    <group name="ht">
+      <member>Host_Timeouts</member>
+    </group>
+
+    <group name="dm">
+      <member>Dropped_Read</member>
+      <member>Dropped_Mutations</member>
+    </group>
+
+    <group name="cnc">
+      <member>Client_Connected_Native_Clients</member>
+    </group>
+
+    <group name="cf">
+      <member>Pending_Compactions</member>
+      <member>Pending_Flushes</member>
+      <member>Total_Compactions</member>
+    </group>
+
+    <group name="tp">
+      <member>CompletedTasks_MemtableFlushWriter</member>
+      <member>CompletedTasks_Mutation</member>
+      <member>CompletedTasks_Read</member>
+      <member>TotalBlockedTasks_CompactionExecutor</member>
+      <member>TotalBlockedTasks_MemtableFlushWriter</member>
+      <member>TotalBlockedTasks_MutationStage</member>
+      <member>TotalBlockedTasks_ReadStage</member>
+    </group>
+
+    <group name="cl">
+      <member>CommitLog_Waiting_On_Segment_Allocation</member>
+    </group>
+
+    <group name="st">
+      <member>Storage_Exceptions</member>
+      <member>Storage_Load</member>
+      <member>Total_Hints</member>
+    </group>
+
+    <group name="cr">
+      <member>Read_Latency</member>
+      <member>Write_Latency</member>
+      <member>Read_Timeouts</member>
+      <member>Write_Timeouts</member>
+      <member>Read_Failures</member>
+      <member>Write_Failures</member>
+      <member>Read_Unavailables</member>
+      <member>Write_Unavailables</member>
+    </group>
+
+    <group name="ccr">
+      <member>CAS_Read_Latency</member>
+      <member>CAS_Write_Latency</member>
+      <member>CAS_Read_Timeouts</member>
+      <member>CAS_Write_Timeouts</member>
+      <member>CAS_Read_Failures</member>
+      <member>CAS_Write_Failures</member>
+      <member>CAS_Read_Unavailables</member>
+      <member>CAS_Write_Unavailables</member>
+    </group>
+  </groups>
+</modelledgraphset>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_pm_orphan_file_del_stats">
+    <reference table="sites" condition="enm_pm_orphan_file_del_stats.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="filter"/>
+  <where>sites.name = '%site%' AND enm_pm_orphan_file_del_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'  AND filter = '%filter%'</where>
+
+  <groupby rollup="true">
+    <column db="enm_pm_orphan_file_del_stats.type"/>
+  </groupby>
+
+  <column db="CONCAT( enm_pm_orphan_file_del_stats.filter, ':', enm_pm_orphan_file_del_stats.type)" label="id" id="id" visible="false"/>
+  <column db="enm_pm_orphan_file_del_stats.type" label="Subscription Type"/>
+  <column db="SUM(deletedFiles)" label="Deleted Files count"/>
+  <column db="SEC_TO_TIME(ROUND(SUM(timeToDelete)/1000))" label="Time Taken to Delete(HH:MM:SS)" formatter="ddpFormatTime"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="true">
+    <item id="filterOfdsByType" label="Show detail for selected type for the last 7 days"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

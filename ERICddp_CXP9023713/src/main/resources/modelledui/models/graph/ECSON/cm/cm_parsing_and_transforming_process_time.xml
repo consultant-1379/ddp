@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Time (millisec)"
+>
+ <title value="Total Processing Time"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="ecson_cm_data_loader">
+    <reference table="sites" condition="ecson_cm_data_loader.siteid = sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_cm_data_loader.parsingTransformingProcessTime" label="Total Processing Time"/>
+  </query>
+ </queries>
+ <size width="630" height="400"/>
+</modelledgraph>

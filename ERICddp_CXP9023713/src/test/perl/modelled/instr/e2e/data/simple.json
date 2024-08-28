@@ -1,0 +1,2 @@
+{ "version": 1 }
+{"Labels":{"__name__":"simple_source","instance":"1.1.1.1:9690","namespace":"test","pod":"simple-abcd","service":"eric-pm-node-exporter"},"Timestamps":[1669737500000,1669737560000],"Values":[1.0,2.0]}

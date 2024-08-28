@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_pmic_rest_nbi">
+      <reference table="sites" condition="enm_pmic_rest_nbi.siteid = sites.id"/>
+      <reference table="servers" condition="enm_pmic_rest_nbi.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="requestType"/>
+    <where>sites.name = '%s' AND enm_pmic_rest_nbi.requestType = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="totalRequestRecieved" type="sb" ylabel="Count">
+      <title value="Total Request Received"/>
+      <column db="totalRequestRecieved" label="Total Request Received"/>
+    </graph>
+    <graph name="totalFailedHttpResponse" type="sb" ylabel="Count">
+      <title value="Total Failed HTTP Response"/>
+      <column db="totalFailedHttpResponse" label="Total Failed HTTP Response"/>
+    </graph>
+    <graph name="totalTimeTakenToRespondRequest" type="sb" ylabel="Millisec">
+      <title value="Total Time Taken To Respond Request"/>
+      <column db="totalTimeTakenToRespondRequest" label="Total Time Taken To Respond Request"/>
+    </graph>
+  </graphs>
+
+
+  <groups>
+    <group name="pmicrestnbi">
+      <member>totalRequestRecieved</member>
+      <member>totalFailedHttpResponse</member>
+      <member>totalTimeTakenToRespondRequest</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

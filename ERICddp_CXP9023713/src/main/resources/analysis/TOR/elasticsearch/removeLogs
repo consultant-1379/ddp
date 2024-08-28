@@ -1,0 +1,13 @@
+#!/bin/bash
+
+ELASTICSEARCH_RETENTION=$1
+
+SITE_LIST=$(ls /data/stats/tor)
+for SITE in ${SITE_LIST} ; do
+    DIR_LIST=$(find /data/stats/tor/${SITE}/analysis -maxdepth 1 -type d -name '??????' -mtime +${ELASTICSEARCH_RETENTION})
+    for DIR in ${DIR_LIST} ; do
+    	if [ -d ${DIR}/enmlogs ] ; then
+	    find ${DIR}/enmlogs -type f -name '*.csv.gz' -delete
+	fi
+    done	
+done

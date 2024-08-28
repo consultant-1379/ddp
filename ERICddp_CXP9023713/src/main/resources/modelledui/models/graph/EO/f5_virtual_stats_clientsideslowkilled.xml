@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="ClientSide SlowKilled"/>
+ <queries>
+  <query timecol="time" multiseries="f5_virtual_names.name">
+  <dbtables main="f5_virtual_stats">
+   <reference table="sites" condition="f5_virtual_stats.siteid = sites.id"/>
+   <reference table="f5_virtual_names" condition="f5_virtual_stats.virtualid = f5_virtual_names.id"/>
+  </dbtables>
+
+   <param name="site"/>
+   <param name="virtualids"/>
+   <where>sites.name = '%s' AND f5_virtual_names.id IN ( %s )</where>
+   <column db="f5_virtual_stats.clientsideslowkilled" label="ClientSide SlowKilled"/>
+  </query>
+ </queries>
+ <size width="600" height="240"/>
+</modelledgraph>
+

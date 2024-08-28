@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+######################################################################
+#       Description ---------   parseRollingSnapshot -----------
+#       This script parses the Rolling Snapshot LOG file for DDP
+#       and store data to Db
+#       @author - Shraddha Jain (xshajin)
+#       usage  parseRollingSnapshot --logfile ${LogFile} --site ${SITE} --server ${HOSTNAME}
+######################################################################
+use XML::Simple;
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use Time::Local;
+use Time::HiRes qw(gettimeofday);
+use POSIX qw(strftime);
+use Date::Parse;
+use StatsDB;
+use StatsTime;
+use strict;
+use warnings;
+
+## Script variables
+our $DEBUG = 0;
+our $site = "";
+our $server = "";
+our $siteId = "";
+our $serverId = "";
+our $dbh = "";
+our $rollingSnapshotLogFile = "";
+our @allRollingSnapTimes = ();
+
+## Variable representing database table name for rolling snapshot
+our $rollingSnapDbTable = "rolling_snapshot_backup_metrics";
+
+sub main {
+    my $result = GetOptions(
+       "logFile=s" => \$rollingSnapshotLogFile,
+       "site=s"    => \$site,
+       "server=s"  => \$server,
+       "debug=s"   => \$DEBUG,
+       );
+    ( $result == 1 ) or die "Invalid options";
+    ( -r $rollingSnapshotLogFile ) or die "Cannot read log file $rollingSnapshotLogFile";
+
+    my $r_rollingSnapshotData = parseRollingSnapshotData($rollingSnapshotLogFile);
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    $serverId = getServerId($dbh,$siteId,$server);
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG>1){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    loadDb($r_rollingSnapshotData);
+    if($DEBUG>1){
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds: ${endTime}-${startTime}\n";
+    }
+}
+
+########## SUB ROUTINES #################
+
+sub parseRollingSnapshotData {
+    my($logFile) = @_;
+    open rollSnapBackupLOG, "<$logFile" or die "Can't open file to read $logFile\n";
+    while( my $line = <rollSnapBackupLOG>){
+        if ( my ($backupTimeStamp) = $line =~ /^(\d+\.\d+\.\d+\_\d+:\d+:\d+).*Rolling Snapshot successfully created on ENIQ Server/){
+            my  $rollSnapDateTime = convertDateToSqlFormat($backupTimeStamp);
+            if ( $DEBUG > 2 ) {print $line;}
+            push @allRollingSnapTimes, $rollSnapDateTime;
+        }
+    }
+    if ( $DEBUG > 3 ) {print Dumper(@allRollingSnapTimes)};
+    return \@allRollingSnapTimes;
+}
+
+sub loadDb {
+    my ($r_rollingSnapshotData) = @_;
+    my $bcpFile = createBCP($r_rollingSnapshotData);
+    my $loadDataQuery = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $rollingSnapDbTable";
+    removeOldData();
+    dbDo($dbh,$loadDataQuery) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+sub createBCP {
+    my ($r_rollingSnapshotData) = @_;
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "${tmpDir}/${rollingSnapDbTable}_metrics.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    foreach my $rollingSnapshotDate (@{$r_rollingSnapshotData}) {
+        printf BCP "%s\t%s\t%s\n", $siteId, $serverId, $rollingSnapshotDate;
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($firstRollSnapDateTime, $lastRollSnapDateTime) = getRollingSnapshotStartEndTime();
+    my $deleteSql = "
+        DELETE
+        FROM
+         $rollingSnapDbTable
+        WHERE
+         siteid = $siteId  AND
+         serverid= $serverId AND
+         successful_roll_snap_time BETWEEN '$firstRollSnapDateTime' AND '$lastRollSnapDateTime'
+        ";
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub getRollingSnapshotStartEndTime {
+    my $firstRollSnapDateTime = $allRollingSnapTimes[0];
+    my $lastRollSnapDateTime = $allRollingSnapTimes[-1];
+    return ($firstRollSnapDateTime, $lastRollSnapDateTime);
+}
+
+main();

@@ -1,0 +1,201 @@
+#!/bin/bash
+
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+DATADIR=$1
+ANALYSIS_OUTPUT=$2
+DASH_DATE=$3
+
+SITE=$4
+SQL_DATE=$5
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ -z "${INCR_DIR}" ] ; then
+    INCR_DIR=${TMP_DIR}
+fi
+
+if [ ! -d ${ANALYSIS_OUTPUT}/fm ] ; then
+    mkdir ${ANALYSIS_OUTPUT}/fm
+fi
+OUTPUTDIR=${ANALYSIS_OUTPUT}/fm
+
+
+DATE=`echo ${DASH_DATE} | sed 's/-//g'`
+#If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+# Add this dir to the perl include path
+export PERL5OPT="${PERL5OPT} -I${ANALYSIS_BIN}/fm"
+
+if [ -d ${TMP_DIR}/events ] ; then
+    EVENTS_FILE=${TMP_DIR}/events/1f1
+
+    EVENTS_FILE_1Z1=${TMP_DIR}/events/1z1
+    DELETE_EVENTS_FILE=0
+else
+    EVENTS_FILE=${TMP_DIR}/1f1.events
+    EVENTS_FILE_1Z1=${TMP_DIR}/1z1.events
+    DELETE_EVENTS_FILE=1
+    cat ${DATADIR}/OSS/all.events | ${ANALYSIS_BIN}/events/filterEvents -p 1f1 > ${EVENTS_FILE}
+    cat ${DATADIR}/OSS/all.events | ${ANALYSIS_BIN}/events/filterEvents -p 1z1 > ${EVENTS_FILE_1Z1}
+fi
+
+ONRM_ME=""
+if [ -r ${DATADIR}/OSS/onrm_me.txt ] ; then
+    # Need to have managedElementType to be of any use
+    head ${DATADIR}/OSS/onrm_me.txt | grep managedElementType >> /dev/null
+    if [ $? -eq 0 ] ; then
+	ONRM_ME="--onrm_me ${DATADIR}/OSS/onrm_me.txt"
+    fi
+fi
+
+if [ -s ${EVENTS_FILE} ] ; then
+    cat > ${TMP_DIR}/alive.sql <<EOF
+SELECT ROUND(AVG(alive)) 
+ FROM hires_nead_stat,sites 
+ WHERE 
+  sites.name = "$SITE" AND sites.id = hires_nead_stat.siteid AND 
+  hires_nead_stat.time BETWEEN "${SQL_DATE} 00:00:00" AND "${SQL_DATE} 23:59:59"
+EOF
+    ALIVE_COUNT=`${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/alive.sql | tail --lines=1`
+
+    ARG_1Z1=""
+    NUM_LINES=0
+    if [ -r ${EVENTS_FILE_1Z1} ] ; then
+	NUM_LINES=`wc -l ${EVENTS_FILE_1Z1} | awk '{print $1}'`
+	if [ $NUM_LINES -gt 0 ] ; then
+	    ARG_1Z1="--1z1 ${EVENTS_FILE_1Z1}"
+	fi
+    fi
+
+    ARG_TZ=""
+    if [ -r ${DATADIR}/OSS/tz.txt ]; then 
+	UTC_HOUR=`cat ${DATADIR}/OSS/tz.txt | awk -F:: '{print $3}'`
+	LOCAL_HOUR=`cat ${DATADIR}/OSS/tz.txt | awk -F:: '{print $2}'`
+	TZOFFSET=`expr ${LOCAL_HOUR} - ${UTC_HOUR}`
+	if [ $TZOFFSET -gt 12 ] ; then
+            TZOFFSET=`expr ${TZOFFSET} - 24`
+	fi
+	ARG_TZ="--tzoffset ${TZOFFSET}"
+    fi
+
+    ARG_ALARMLOG=""
+    if [ -r ${DATADIR}/OSS/alarmlog.txt ] ; then
+	ALARMLOG="--alarmlog ${DATADIR}/OSS/alarmlog.txt"
+    fi
+
+    run ${ANALYSIS_BIN}/fm/getAlarmStats --events ${EVENTS_FILE} --outputdir ${OUTPUTDIR} --alive ${ALIVE_COUNT} \
+	--alarmlist ${DATADIR}/OSS/alarmList.txt --site ${SITE} --sqldate ${SQL_DATE} \
+	--incr ${INCR_DIR}/getAlarmStats.incr \
+	${ONRM_ME} ${ARG_1Z1} ${ARG_TZ} ${ARG_ALARMLOG}
+
+    if [ -s ${TMP_DIR}/hb_data.txt ] ; then
+	NUM_DISCONNECTED=`egrep -c '1$' ${TMP_DIR}/hb_data.txt`
+	NUM_CONNECTED=`egrep -c '4$' ${TMP_DIR}/hb_data.txt`
+    
+	PLOT_STR=""
+	if [ ${NUM_CONNECTED} -gt 0 ] ; then
+	    PLOT_STR="\"${TMP_DIR}/hb_data.txt\" index 0 using 1:2  title \"Connect\" with points pointtype 1"
+	fi
+	
+	if [ ${NUM_DISCONNECTED} -gt 0 ] ; then
+	    if [ -z "${PLOT_STR}" ] ; then
+		INDEX=0
+	    else
+		PLOT_STR="${PLOT_STR},"
+		INDEX=1
+	    fi
+	    PLOT_STR="${PLOT_STR} \"${TMP_DIR}/hb_data.txt\" index ${INDEX} using 1:2  title \"Disconnect\" with points pointtype 2"
+	fi
+	
+	cat > ${TMP_DIR}/fm_hb_cmd.txt <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DASH_DATE}:00:00:00":"${DASH_DATE}:23:59:59" ]
+set format x "%H:%M"
+set key left
+set size 1,0.5
+set title 'FM Heartbeat Events' 
+set terminal jpeg
+set output "${OUTPUTDIR}/hb.jpg"
+
+plot ${PLOT_STR}
+exit
+EOF
+	
+	gnuplot ${TMP_DIR}/fm_hb_cmd.txt
+    fi
+fi
+
+
+
+if [ ${DELETE_EVENTS_FILE} -eq 1 ] ; then
+    /bin/rm -f ${EVENTS_FILE} 
+    /bin/rm -f ${EVENTS_FILE_1Z1}
+fi
+
+ALARM_LIST_SIZE=0
+if [ -r ${DATADIR}/OSS/alarmList.txt ]; then
+    run ${ANALYSIS_BIN}/fm/formatAlarmList --input ${DATADIR}/OSS/alarmList.txt --output ${OUTPUTDIR}/alarmListTable.html
+    ALARM_LIST_SIZE=`egrep -c "^ 1f1" ${DATADIR}/OSS/alarmList.txt`
+fi
+
+if [ -d ${DATADIR}/verifyal ]; then
+    ${ANALYSIS_BIN}/fm/parseVerifyAl ${DATADIR}/verifyal ${OUTPUTDIR}/alarmVerification.html
+else
+    echo "<p>Feature not enabled on this server</p>" > ${OUTPUTDIR}/alarmVerification.html
+fi
+
+TIME_SEC=0
+if [ -r ${DATADIR}/OSS/alarmList.stat ] ; then     
+    TIME_MSEC=`cat ${DATADIR}/OSS/alarmList.stat | awk '{print $2}'`
+    if [ ! -z "${TIME_MSEC}" ] ; then
+	TIME_SEC=`expr ${TIME_MSEC} / 1000`
+    fi
+fi
+
+cat > ${TMP_DIR}/alarm_list.sql <<EOF
+SET @siteid=(SELECT id FROM sites WHERE sites.name = "${SITE}");
+DELETE FROM getalarmlist WHERE siteid = @siteid AND getalarmlist.date = "${SQL_DATE}"; 
+INSERT INTO getalarmlist (date,siteid,duration,size) VALUES ( "${SQL_DATE}", @siteid, ${TIME_SEC}, ${ALARM_LIST_SIZE} )
+EOF
+${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/alarm_list.sql
+rm ${TMP_DIR}/alarm_list.sql
+
+if [ -r ${DATADIR}/instr.cfg ] ; then
+    egrep '^JMX,FM_DistributionServer' ${DATADIR}/instr.cfg > /dev/null
+    if [ $? -eq 0 ] ; then
+        grep 'JMX_FM_DistributionServer' ${DATADIR}/instr.txt | grep -v ERROR | awk '{print $1, $2, $3, $5 * 1024, ($5 - $4) * 1024 }' > ${TMP_DIR}/fmdist_heap.txt
+    fi
+elif [ -r ${DATADIR}/instr/instr.cfg ] ; then
+    egrep '^jmx,FM_DistributionServer-jvm-memory' ${DATADIR}/instr/instr.cfg > /dev/null
+    if [ $? -eq 0 ] ; then
+        # 25-06-09 00:33:28.184 FM_DistributionServer-jvm-memory 0 28942336 8388608 1070268416 14949432 24248320 8552448 100663296 24142592
+        # <date> <time> <mc> ObjectPendingFinalizationCount committed init max used committed init max used                         
+        grep 'FM_DistributionServer-jvm-memory' ${DATADIR}/instr/instr.txt | grep -v ERROR | awk '{print $1, $2, "JMX_FM_DistributionServer", $8, ($5 - $8) }' > ${TMP_DIR}/fmdist_heap.txt
+    fi
+fi
+
+if [ -f ${TMP_DIR}/fmdist_heap.txt ] ; then
+    NUM_LINES=`grep -v ERROR ${TMP_DIR}/fmdist_heap.txt | wc -l | awk '{print $1}'`
+    if [ ${NUM_LINES} -gt 0 ] ; then
+	${ANALYSIS_BIN}/server/plotHeap ${TMP_DIR}/fmdist_heap.txt JMX_FM_DistributionServer ${DASH_DATE} ${OUTPUTDIR}/fmdist_heap.jpg 1,0.5 
+    else
+	echo "WARN: No data available to plot heap for DistributionServer"
+    fi
+fi
+
+if [ -r ${DATADIR}/OSS/alarmlog.txt ] ; then
+    run ${ANALYSIS_BIN}/fm/parseAlarmLog --log ${DATADIR}/OSS/alarmlog.txt --site ${SITE}
+fi
+
+#${ANALYSIS_BIN}/fm/loadStat --site ${SITE} --date ${DASH_DATE} --duration ${TIME_SEC} 
+

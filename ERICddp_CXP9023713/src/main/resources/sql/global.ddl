@@ -1,0 +1,4 @@
+GRANT FILE ON *.* TO 'statsadm'@'localhost' IDENTIFIED BY '_sadm';
+
+CREATE DATABASE tmp;
+GRANT SELECT, INSERT, CREATE TEMPORARY TABLES ON tmp.* TO statsusr IDENTIFIED BY '_susr';

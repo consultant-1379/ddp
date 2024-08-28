@@ -1,0 +1,200 @@
+#!/usr/bin/perl
+####################################################################################
+#  Description --------- parseSIM -----------
+#  This script parses the SIM log files for DDP
+#  and store data to Db
+#  @author - ANAM PARGAL and VISHAL KARELIA
+#  usage parseSim --dir ${DIR} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+#####################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $siteId;
+our $dir;
+our $site;
+our $server;
+our $date;
+our $DEBUG = 0;
+our $threadHash = {};
+our $errorHash = {};
+our @nodeList = ();
+our @pluginList = ();
+our $node_id_map;
+our $plugin_id_map;
+our $simTable = "sim_stats";
+our $simErrorTable = "sim_error";
+
+sub main {
+    my $result = GetOptions(
+        "dir=s"    => \$dir,
+        "site=s"   => \$site,
+        "server=s" => \$server,
+        "date=s"   => \$date,
+        "debug=s"  => \$DEBUG
+        );
+    ( -d $dir ) or die "Cannot locate directory $dir";
+    my ($beginTime,$endTime);
+    if($DEBUG > 0) {
+        $beginTime=getCurrentTimeInMilliseconds();
+    }
+    parseSimLogDir();
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    $node_id_map = getIdMap($dbh, "sim_node", "id", "node", \@nodeList);
+    $plugin_id_map = getIdMap($dbh, "sim_plugin", "id", "plugin", \@pluginList);
+    my ($bcpFileSimStats,$bcpFileSimError) = createBcpFile();
+    loadDb($bcpFileSimStats,$bcpFileSimError);
+    $dbh->disconnect();
+    if($DEBUG > 0) {
+        $endTime=getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$beginTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$beginTime)."\n";
+    }
+}
+########## SUB ROUTINES #######################################
+sub parseSimLogDir() {
+    opendir(my $sim_dir, $dir) || die "can't opendir $dir: $!";
+    my @files = grep { $_ =~ /sim/ } readdir($sim_dir);
+    closedir $sim_dir;
+    @files = sort { $b cmp $a } @files;
+    foreach my $file ( @files ) {
+        open FILE, "<$dir/$file" or die "Can't open file to read $file\n";
+        while ( my $line = <FILE> ){
+            my $DATE = (split /\s+/,$line)[0];
+            if ( $DATE eq $date ) {
+                if ( $line =~ /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[(.*)\] .* ROP: (.*) - (.*)/ ) {
+                    my $record = {
+                        'start_time' => (split /,/,$1)[0],
+                        'node'       => $3,
+                        'plugin'     => $4
+                    };
+                    if ( ! exists $threadHash->{$2} ) {
+                        my @metricArray = ();
+                        $threadHash->{$2} = \@metricArray;
+                    }
+                    push $threadHash->{$2}, $record;
+                    push @nodeList, $3;
+                    push @pluginList, $4;
+                }
+                elsif ( $line =~ /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[(.*)\] .* Successfully collected: \[(.*)\]/ ) {
+                    if ( exists $threadHash->{$2} ) {
+                        my $metricArray = $threadHash->{$2};
+                        my $highest_index = $#{$metricArray};
+                        my $record = ${$metricArray}[$highest_index];
+                        if ( ! exists $record->{'stop_time'} ) {
+                            $record->{'stop_time'} = (split /,/,$1)[0];
+                            my @list_of_files = (split /,/,$3);
+                            $record->{'no_of_files'} =$#list_of_files + 1;
+                        }
+                    }
+                }
+                elsif ( $line =~ /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[(.*)\] ERROR (.*) - (.*)/ ) {
+                    my $exception_value = '';
+                    my $pos = tell FILE;
+                    my $exception_line = <FILE>;
+                    if ( defined $exception_line && $exception_line ne '' ) {
+                        chomp($exception_line);
+                        if( $exception_line =~ /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})/ ) {
+                            seek( FILE , $pos , 0 );
+                        }
+                        else {
+                            $exception_value = $exception_line;
+                        }
+                    }
+                    my  $record = {
+                        'time'         => $1,
+                        'class_name'   => $3,
+                        'error_reason' => $4,
+                        'exception'    => $exception_value
+                    };
+                    if ( ! exists $errorHash->{$2} ) {
+                        my @metricArray = ();
+                        $errorHash->{$2} = \@metricArray;
+                    }
+                    push $errorHash->{$2}, $record;
+                }
+            }
+        }
+        close FILE;
+    }
+    if($DEBUG >= 1) {
+        print Dumper("Thread hashamp : ", $threadHash);
+        print Dumper("Error hashamp :  ", $errorHash);
+    }
+}
+
+sub createBcpFile {
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $simStatsBcpFile = "$tmpDir/simBCPFile1";
+    my $simErrorBcpFile = "$tmpDir/simBCPFile2";
+    open BCP1, ">$simStatsBcpFile" or die "Cannot open BCP File.";
+    foreach my $key ( keys $threadHash ) {
+        foreach my $recordList (@{$threadHash->{$key}}) {
+            if ( (defined $recordList->{'stop_time'}) && ($recordList->{'no_of_files'} > 0) )  {
+                printf BCP1 "%s|%s|%d|%d|%d|%d\n",
+                    $recordList->{'start_time'},
+                    $recordList->{'stop_time'},
+                    $siteId,
+                    $recordList->{'no_of_files'},
+                    $node_id_map->{$recordList->{'node'}},
+                    $plugin_id_map->{$recordList->{'plugin'}};
+            }
+        }
+    }
+    close BCP1;
+    open BCP2, ">$simErrorBcpFile" or die "Cannot open BCP File.";
+    foreach my $key ( keys $errorHash ) {
+        foreach my $errorList (@{$errorHash->{$key}}) {
+            printf BCP2 "%d|%s|%s|%s|%s\n",
+                $siteId,
+                $errorList->{'time'},
+                $errorList->{'class_name'},
+                $errorList->{'error_reason'},
+                $errorList->{'exception'};
+        }
+    }
+    close BCP2;
+    return $simStatsBcpFile,$simErrorBcpFile;
+}
+
+sub loadDb {
+    my ($bcpFileSimStats,$bcpFileSimError)= @_;
+    my $loadSql1 = "LOAD DATA LOCAL INFILE \'$bcpFileSimStats\' INTO TABLE $simTable FIELDS TERMINATED BY \'|\'";
+    my $loadSql2 = "LOAD DATA LOCAL INFILE \'$bcpFileSimError\' INTO TABLE $simErrorTable FIELDS TERMINATED BY \'|\'";
+    removeOldData();
+    if ($DEBUG >= 3) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql1\n";
+        print "$loadSql2\n";
+    }
+    dbDo($dbh,$loadSql1) or die "Failed to load Data".$dbh->errstr."\n";
+    dbDo($dbh,$loadSql2) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFileSimStats,$bcpFileSimError);
+}
+
+sub removeOldData {
+    my $deleteSql1 = "DELETE FROM $simTable WHERE siteid = $siteId AND start_time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    my $deleteSql2 = "DELETE FROM $simErrorTable WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ($DEBUG >= 2) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql1\n";
+        print "$deleteSql2\n";
+    }
+    dbDo($dbh,$deleteSql1) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh,$deleteSql2) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main();

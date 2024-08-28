@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_ncmagent_instr">
+      <reference table="sites" condition="enm_ncmagent_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_ncmagent_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="openedSessions" type="sb" ylabel="Count">
+      <title value="Opened Node CLI Sessions"/>
+      <column db="openedSessions" label="Opened Node CLI Sessions"/>
+    </graph>
+    <graph name="openSessionFailures" type="sb" ylabel="Count">
+      <title value="Opened Node CLI Session Failures"/>
+      <column db="openSessionFailures" label="Opened Node CLI Session Failures"/>
+    </graph>
+    <graph name="executedCommands" type="sb" ylabel="Count">
+      <title value="Executed Node CLI Commands"/>
+      <column db="executedCommands" label="Executed Node CLI Commands"/>
+    </graph>
+    <graph name="failedCommands" type="sb" ylabel="Count">
+      <title value="Failed Node CLI Commands"/>
+      <column db="failedCommands" label="Failed Node CLI Commands"/>
+    </graph>
+    <graph name="closedSessions" type="sb" ylabel="Count">
+      <title value="Closed Node CLI Sessions"/>
+      <column db="closedSessions" label="Closed Node CLI Sessions"/>
+    </graph>
+    <graph name="closeSessionFailures" type="sb" ylabel="Count">
+      <title value="Close Node CLI Session Failures"/>
+      <column db="closeSessionFailures" label="Close Node CLI Session Failures"/>
+    </graph>
+    <graph name="skippedCommands" type="sb" ylabel="Count">
+      <title value="Skipped Node CLI Commands"/>
+      <column db="skippedCommands" label="Skipped Node CLI Commands"/>
+    </graph>
+    <graph name="addNodeReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Add Node Events received"/>
+      <column db="addNodeReceivedEvents" label="Number of Add Node Events received"/>
+    </graph>
+    <graph name="addNodeSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Add Node Events processed"/>
+      <column db="addNodeSentEvents" label="Number of Add Node Events processed"/>
+    </graph>
+    <graph name="deleteNodeReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Delete Node Events received"/>
+      <column db="deleteNodeReceivedEvents" label="Number of Delete Node Events received"/>
+    </graph>
+    <graph name="deleteNodeSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of Delete Node Events processed"/>
+      <column db="deleteNodeSentEvents" label="Number of Delete Node Events processed"/>
+    </graph>
+    <graph name="cmSyncResumedReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Link Up received Events"/>
+      <column db="cmSyncResumedReceivedEvents" label="Node Link Up received Events"/>
+    </graph>
+    <graph name="nodeLinkUpSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Link Up sent Events"/>
+      <column db="nodeLinkUpSentEvents" label="Node Link Up sent Events"/>
+    </graph>
+    <graph name="lostCmSyncReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Link Down received Events"/>
+      <column db="lostCmSyncReceivedEvents" label="Node Link Down received Events"/>
+    </graph>
+    <graph name="nodeLinkDownSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Link Down sent Events"/>
+      <column db="nodeLinkDownSentEvents" label="Node Link Down sent Events"/>
+    </graph>
+    <graph name="managementStopReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Management Stop received Events"/>
+      <column db="managementStopReceivedEvents" label="Node Management Stop received Events"/>
+    </graph>
+    <graph name="managementStartSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Management Start sent Events"/>
+      <column db="managementStartSentEvents" label="Node Management Start sent Events"/>
+    </graph>
+    <graph name="managementStartReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Management Start received Events"/>
+      <column db="managementStartReceivedEvents" label="Node Management Start received Events"/>
+    </graph>
+    <graph name="managementStopSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Management Stop sent Events"/>
+      <column db="managementStopSentEvents" label="Node Management Stop sent Events"/>
+    </graph>
+    <graph name="nodeChangedReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Node Changed Events received"/>
+      <column db="nodeChangedReceivedEvents" label="Node Changed Events received"/>
+    </graph>
+    <graph name="nodeDisalignSentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Disalignment Events sent to NCM"/>
+      <column db="nodeDisalignSentEvents" label="Disalignment Events sent to NCM"/>
+    </graph>
+    <graph name="unrmReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="UNRM Events received"/>
+      <column db="unrmReceivedEvents" label="UNRM Events received"/>
+    </graph>
+    <graph name="unrmEventsProcessingDuration" type="sb" ylabel="Count" forcelegend="true">
+      <title value="UNRM Events processing duration"/>
+      <column db="unrmEventsProcessingDuration" label="UNRM Events processing duration"/>
+    </graph>
+    <graph name="r6kReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="R6k Events received"/>
+      <column db="r6kReceivedEvents" label="R6k Events received"/>
+    </graph>
+    <graph name="r6kEventsProcessingDuration" type="sb" ylabel="Count" forcelegend="true">
+      <title value="R6k Events processing duration"/>
+      <column db="r6kEventsProcessingDuration" label="R6k Events processing duration"/>
+    </graph>
+    <graph name="tcimNodeChangedReceivedEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Number of TCIM Changed Events received"/>
+      <column db="tcimNodeChangedReceivedEvents" label="Number of TCIM Changed Events received"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="cli">
+      <member>openedSessions</member>
+      <member>closedSessions</member>
+      <member>openSessionFailures</member>
+      <member>closeSessionFailures</member>
+      <member>executedCommands</member>
+      <member>failedCommands</member>
+      <member>skippedCommands</member>
+    </group>
+    <group name="nodeEvents">
+      <member>addNodeReceivedEvents</member>
+      <member>addNodeSentEvents</member>
+      <member>deleteNodeReceivedEvents</member>
+      <member>deleteNodeSentEvents</member>
+      <member>cmSyncResumedReceivedEvents</member>
+      <member>nodeLinkUpSentEvents</member>
+      <member>lostCmSyncReceivedEvents</member>
+      <member>nodeLinkDownSentEvents</member>
+      <member>managementStopReceivedEvents</member>
+      <member>managementStopSentEvents</member>
+      <member>managementStartSentEvents</member>
+      <member>managementStartReceivedEvents</member>
+      <member>nodeChangedReceivedEvents</member>
+      <member>nodeDisalignSentEvents</member>
+      <member>unrmReceivedEvents</member>
+      <member>unrmEventsProcessingDuration</member>
+      <member>r6kReceivedEvents</member>
+      <member>r6kEventsProcessingDuration</member>
+      <member>tcimNodeChangedReceivedEvents</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

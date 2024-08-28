@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="rttflow"/>
+  </services>
+
+  <table name="enm_eba_rttflow">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^rttflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Written$">
+      <metric source="Count" target="numberOfEventFilesWritten" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rttflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Rewritten$">
+      <metric source="Count" target="numberOfEventFilesRewritten" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rttflow\d+-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Total_number_of_output_events$">
+      <metric source="Count" target="totalNumberOfOutputEvents" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^(rttflow\d+)-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Processed_Event_Rate_per_Second$">
+      <metric source="Count" target="processedEventratePerSecond" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rtt-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Written$">
+      <metric source="Count" target="numberOfEventFilesWritten" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rtt-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Number_Of_Event_Files_Rewritten$">
+      <metric source="Count" target="numberOfEventFilesRewritten" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^rtt-eps\d+-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Total_number_of_output_events$">
+      <metric source="Count" target="totalNumberOfOutputEvents" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^(rtt-eps\d+)-com.ericsson.component.aia.services.eps.core.statistics.rtt-eps\d+:name=com.ericsson.oss.services.pm.gsmeba.rpmo.adapter.OutputFileAdapter.Processed_Event_Rate_per_Second$">
+      <metric source="Count" target="processedEventratePerSecond" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>
+

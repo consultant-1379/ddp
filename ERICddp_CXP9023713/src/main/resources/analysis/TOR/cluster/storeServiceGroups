@@ -1,0 +1,162 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+
+sub store($$$$) {
+    my ($site, $date, $r_serverToServiceGroup, $r_torServList) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    storeSgMap($dbh, $siteId, $date, $r_serverToServiceGroup);
+    storeTorSrvList($dbh, $siteId, $date, $r_torServList);
+
+    $dbh->disconnect();
+}
+
+sub storeTorSrvList($$$$) {
+    my ($dbh, $siteId, $date, $r_torServList) = @_;
+    dbDo($dbh,"DELETE FROM server_availability WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to delete old data from server_availability";
+
+    my $r_serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId );
+
+    foreach my $server ( @{$r_torServList} ) {
+        my $serverId = $r_serverIdMap->{$server};
+        if ( ! defined $serverId ) {
+            $serverId = createServer( $dbh, $siteId, $server, 'ENM_VM');
+        }
+
+        dbDo(
+            $dbh,
+            sprintf(
+                "INSERT INTO server_availability (date,siteid,serverid) VALUES ('%s', %d, %d)",
+                $date,
+                $siteId,
+                $serverId
+            )
+        ) or die "Failed to insert into server_availability (siteId:$siteId, date:$date, serverId:$serverId)";
+    }
+}
+
+sub storeSgMap($$$$) {
+    my ($dbh, $siteId, $date, $r_serverToServiceGroup) = @_;
+
+    my %allServiceGroupMap = ();
+    while ( my ($server,$r_serviceGroups) = each %{$r_serverToServiceGroup} ) {
+        foreach my $serviceGroup ( @{$r_serviceGroups} ) {
+            $allServiceGroupMap{$serviceGroup} = 1;
+        }
+    }
+    my @allServiceGroups = keys %allServiceGroupMap;
+    my $r_svcIdMap = getIdMap($dbh, "enm_servicegroup_names", "id", "name",  \@allServiceGroups );
+    my $r_serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId );
+
+    dbDo($dbh,"DELETE FROM enm_servicegroup_instances WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to delete old data for enm_servicegroup_instances";
+    while ( my ($server,$r_serviceGroups) = each %{$r_serverToServiceGroup} ) {
+        my $serverId = $r_serverIdMap->{$server};
+        if ( ! defined $serverId ) {
+            $serverId = createServer( $dbh, $siteId, $server, 'ENM_VM');
+            $r_serverIdMap->{$server} = $serverId;
+        }
+        foreach my $serviceGroup ( @{$r_serviceGroups} ) {
+            if ( $DEBUG > 4 ) { print "store: processing server $server serviceGroup $serviceGroup\n"; }
+            dbDo($dbh,sprintf("INSERT INTO enm_servicegroup_instances (siteid,date,serviceid,serverid) VALUES (%d,'%s',%d,%d)",
+                              $siteId,
+                              $date,
+                              $r_svcIdMap->{$serviceGroup},
+                              $serverId)
+                ) or die "Failed to insert server $server serviceGroup $serviceGroup";
+        }
+    }
+}
+
+sub getServerDirs($$) {
+    my ( $dir, $r_serverDirs ) = @_;
+
+    opendir(my $dh, $dir) || die "can't opendir instr dir: $!";
+    while ( my $entry = readdir($dh) ) {
+        if ( $DEBUG > 4 ) { print "getServiceGroupMap: checking dir $entry\n"; }
+        if ( $entry =~ /(\S+)_TOR$/ ) {
+            $r_serverDirs->{$1} = $dir . "/" . $entry;
+        }
+    }
+    closedir $dh;
+}
+
+sub getServiceGroupMap($$) {
+    my ($date, $r_serverDirs) = @_;
+
+    my $dateDir = formatTime(parseTime($date . " 00:00:00",$StatsTime::TIME_SQL),
+                             $StatsTime::TIME_DDMMYY);
+
+    my %serverToServiceGroup = ();
+    while ( my ($server,$dir) = each %{$r_serverDirs} ) {
+        my $serverGroupFile = $dir . "/" . $dateDir . "/TOR/SERVICE_GROUP";
+        if ( -r $serverGroupFile ) {
+            my @serviceGroups = ();
+            open INPUT, $serverGroupFile or die "Cannot open $serverGroupFile";
+            while ( my $line = <INPUT> ) {
+                chop $line;
+                push @serviceGroups, $line;
+            }
+            close INPUT;
+            if ( $#serviceGroups > -1 ) {
+                $serverToServiceGroup{$server} = \@serviceGroups;
+            }
+        }
+
+    }
+    if ( $DEBUG > 3 ) { print Dumper("getServiceGroupMap: serverToServiceGroup", \%serverToServiceGroup); }
+
+    return \%serverToServiceGroup;
+}
+
+sub getTorServList($$) {
+    my ($date, $r_serverDirs) = @_;
+    #Create a list of tor_servers for today
+    #To be used in TOR/makeStats initial phase
+    my @torServList;
+    foreach my $key ( keys %{$r_serverDirs} ) {
+        push(@torServList, $key);
+    }
+    return \@torServList;
+}
+
+sub main() {
+    my ($dir,$site,$date);
+    my $result = GetOptions(
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my %serverDirs = ();
+    getServerDirs($dir, \%serverDirs);
+    if ( $DEBUG > 3 ) { print Dumper("serverDirs:", \%serverDirs); }
+
+    my $r_serverToServiceGroup = getServiceGroupMap($date, \%serverDirs);
+    my $r_torServList = getTorServList($date, \%serverDirs);
+
+    if ( defined $site ) {
+        store($site, $date, $r_serverToServiceGroup, $r_torServList);
+    }
+}
+
+main();

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_saidserv_instr">
+    <reference table="sites" condition="enm_saidserv_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_saidserv_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_saidserv_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(enm_saidserv_instr.dpsAttributeChangedEventCount)" label="Attribute Changed Notifications"/>
+  <column db="SUM(enm_saidserv_instr.dpsEventNotProcessedCount)" label="Notification Not Processed"/>
+  <column db="SUM(enm_saidserv_instr.dpsObjectCreatedEventCount)" label="Object Created Notification"/>
+  <column db="SUM(enm_saidserv_instr.dpsObjectDeletedEventCount)" label="Object Deleted Notification"/>
+  <column db="SUM(enm_saidserv_instr.numberOfHighPriorityNetworkSyncEvents)" label="High Priority Network Sync Events"/>
+  <column db="SUM(enm_saidserv_instr.numberOfLowPriorityNetworkSyncEvents)" label="Low Priority Network Sync Events"/>
+  <column db="SUM(enm_saidserv_instr.numberOfCheckConflicts)" label="Detected Conflicts"/>
+  <column db="SUM(enm_saidserv_instr.numberOfUniqueCellsConflicting)" label="Unique Cells Conflicting"/>
+  <column db="SUM(enm_saidserv_instr.numberOfConflictsResolved)" label="Cells Proposed"/>
+  <column db="SUM(enm_saidserv_instr.numberOfCellsNotProposed)" label="Cells Not Proposed"/>
+  <column db="SUM(enm_saidserv_instr.numberOfCellsResolved)" label="Cells Resolved"/>
+  <column db="SUM(enm_saidserv_instr.numberOfHistoricalConflictReportsCount)" label="Number Of Historical Conflict ReportsCount"/>
+  <column db="SUM(enm_saidserv_instr.numberOfHistoricalExcludedResultsReportsCount)" label="Number Of Historical Excluded Results ReportsCount"/>
+  <column db="SUM(enm_saidserv_instr.numberOfHistoricalPCIResolveResultsCount)" label="Number Of Historical PCI Resolve ResultsCount"/>
+  <column db="SUM(enm_saidserv_instr.dpsEUtranCellPciChangesCount)" label="PCI Changes Notification Count"/>
+
+</modelledtable>

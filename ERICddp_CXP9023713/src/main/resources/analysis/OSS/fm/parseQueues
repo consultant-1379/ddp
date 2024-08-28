@@ -1,0 +1,95 @@
+#!/usr/bin/env perl
+# This script parses the CPU data as collected by kstat via the instr2
+# utility. 
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $site;
+our $date;
+our $DEBUG = 0;
+our $bcpFile;
+our $serverName;
+
+sub parseData {
+    my $queueFile = shift;
+    my $foundServer = 0;
+    my $foundClient = 0;
+    my $currentTime;
+    my %data = ();
+    open QUEUEFILE, $queueFile or die "Could not open " . $queueFile . ": " . $!;
+    while ( my $line = <QUEUEFILE> ) {
+        if ($line =~ /^([0-3][0-9])([0-1][0-9])([0-9][0-9]):([0-2][0-9]):([0-3][0-9])$/) {
+            my $day = $1; my $mon = $2; my $year = $3; my $hr = $4; my $min = $5;
+            $currentTime = "20" . $year . "-" . $mon . "-" . $day . " " . $hr . ":" . $min . ":00";
+            $foundServer = 0;
+            $foundClient = 0;
+            next;
+        }
+        if ($line =~ /^ SERVER \((\S+)\)$/) {
+            $serverName = $1;
+            if ($DEBUG > 9) { print "Got server: " . $serverName . "\n"; }
+            $foundServer = 1;
+            $foundClient = 0;
+            next;
+        }
+        if ($line =~ /^ CLIENT COUNTERS$/) {
+            $foundClient = 1;
+            next;
+        }
+        if ($line =~ /^\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+.*([- ])([0-9]+)\s+([0-9]+)$/
+                && $foundServer == 1 && $foundClient == 0) {
+            if ($DEBUG > 9) { print "Got " . $1 . " " . $2 . $3 . " " . $4 . "\n"; }
+            my $topQ = $3;
+            my $currQ = $4;
+            if ($2 =~ /^-$/) { $topQ = $topQ * -1; }
+            my %curData = (
+                "top_q" => $topQ,
+                "curr_q" => $currQ
+            );
+            $data{$currentTime} = \%curData;
+            next;
+        }
+    }
+    close QUEUEFILE;
+    return \%data;
+}
+
+sub main {
+    my ($queueFile);
+    my $result = GetOptions (
+        "queueFile=s" => \$queueFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    my $r_data = parseData($queueFile);
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    my $doLoad = 1;
+    if ( defined $bcpFile ) {
+        $doLoad = 0;
+    } else {
+        $bcpFile = $tmpDir . "/queue_stats.bcp";
+    }
+    my @serverName = ($serverName);
+    my $r_nameMap = getIdMap($dbh, "fm_server_names", "id", "name", \@serverName);
+    open BCPFILE, ">$bcpFile" or die "Could not open BCP file " . $bcpFile . ": " . $!;
+    foreach my $ts (keys %{$r_data}) {
+        my %data = %{$r_data->{$ts}};
+    }
+
+    $dbh->disconnect;
+}
+
+main;

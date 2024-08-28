@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="test" timecol="date">
+  </table>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="servicegroup"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="metricA" type="sum"/>
+    </aggregations>
+  </aggregate>
+  
+  <events>
+      <event name="EventTypeA">
+        <metric source="servicegroup" target="servicegroup"/>
+        <metric source="metricA" target="metricA"/>
+      </event>
+  </events>
+</modelledevents>

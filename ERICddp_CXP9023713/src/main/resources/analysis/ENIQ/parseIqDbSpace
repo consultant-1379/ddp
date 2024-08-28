@@ -1,0 +1,62 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($file,$site,$date);
+    my $result = GetOptions(
+        "file=s"   => \$file,
+        "site=s"  => \$site,
+        "date=s"  => \$date,
+        "debug=s" => \$DEBUG
+    );			    
+    ($result == 1) or die "Invalid args";
+
+    open IN, $file or die "Cannot open $file";
+    my @dbSpaces = ();
+    while ( my $line = <IN> ) { 
+	if ( $DEBUG > 9 ) { print "main: line=$line"; }
+	if ( $line =~ /^;/ ) {
+	    chop $line;
+	    my @fields = split(/;/, $line);
+	    if ( $DEBUG > 8 ) { print Dumper("main: fields", @fields); }
+
+	    my ($size,$sizeUnit) = $fields[6] =~ /^([\d\.]+)(T|G)$/;
+	    if ( $sizeUnit eq "T" ) {
+		$size = $size * 1024;
+	    }
+	    push @dbSpaces, { 'name' => uc($fields[1]),
+			      'used' => $fields[5],
+			      'size' => $size,
+			      'files' => $fields[8] };
+	}
+    }
+    close IN;
+    if ( $DEBUG > 3 ) { print Dumper("main: dbSpaces", \@dbSpaces); } 
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    dbDo($dbh, "DELETE FROM iq_dbspaces WHERE siteid = $siteId AND date = '$date'") 
+	or die "Failed to remove old data";
+
+    foreach my $r_dbSpace ( @dbSpaces ) {
+	dbDo($dbh, sprintf("INSERT INTO iq_dbspaces (siteid,date,space,size,used,files) VALUES (%d,'%s','%s',%d,%d,%d)",
+			   $siteId, $date, $r_dbSpace->{'name'}, $r_dbSpace->{'size'}, $r_dbSpace->{'used'}, $r_dbSpace->{'files'}) )
+	    or die "Failed to insert data";    
+    }
+
+    $dbh->disconnect();
+}

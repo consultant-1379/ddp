@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ncm_node_realignment">
+    <reference table="sites" condition="enm_ncm_node_realignment.siteid = sites.id"/>
+    <reference table="servers" condition="enm_ncm_node_realignment.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_ne.id = enm_ncm_node_realignment.neid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ncm_node_realignment.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time - INTERVAL ROUND(duration/1000) SECOND" label="Start Time" formatter="ddpFormatTime"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_ne.name" label="Network Element"/>
+  <column db="duration" label="Duration(msec)"/>
+  <column db="ncmNodeId" label="NcmNodeId"/>
+  <column db="jobId" label="JobId"/>
+  <column db="status" label="Status"/>
+  <column db="info" label="Info"/>
+
+</modelledtable>

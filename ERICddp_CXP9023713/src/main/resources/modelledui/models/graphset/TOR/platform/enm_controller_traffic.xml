@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_ingress_controller_traffic">
+      <reference table="sites" condition="enm_ingress_controller_traffic.siteid = sites.id"/>
+      <reference table="servers" condition="enm_ingress_controller_traffic.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="Instance"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="totalConnection" type="tsc" forcelegend="true">
+      <title value="Total Connections"/>
+      <column db="totalConnection" label = "Total Connections"/>
+    </graph>
+    <graph name="bytesRead" type="tsc" forcelegend="true">
+      <title value="Bytes Read"/>
+      <column db="bytesRead" label = "Bytes Read"/>
+    </graph>
+    <graph name="bytesWrite" type="tsc" forcelegend="true">
+      <title value="Bytes Written"/>
+      <column db="bytesWrite" label = "Bytes Written"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="controller">
+      <member>totalConnection</member>
+      <member>bytesRead</member>
+      <member>bytesWrite</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

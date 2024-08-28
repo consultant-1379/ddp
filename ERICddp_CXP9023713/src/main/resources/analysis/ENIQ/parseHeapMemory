@@ -1,0 +1,104 @@
+#!/usr/bin/env perl
+
+###################################################################################################################################################
+# Description ---------   parseHeapMemory -------------------
+# This script parses the heap memory usage logs for engine and scheduler in ENIQ Stats and stores data to Db
+# @author - ANKIT SINGH (xankadi)
+# usage ${ANALYSIS_BIN}/parseHeapMemory --schedulerHeap {LOGFILE} --engineHeap {LOGFILE} --site {SITE} --date {SQL_DATE}
+###################################################################################################################################################
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+our $date;
+
+main();
+
+sub main {
+    my ($schedulerHeapFile, $engineHeapFile, $site);
+    my $result = GetOptions (
+        "schedulerHeap=s" => \$schedulerHeapFile,
+        "engineHeap=s"    => \$engineHeapFile,
+        "site=s"          => \$site,
+        "date=s"          => \$date,
+        "debug=s"         => \$DEBUG
+    );
+
+    ( -r $schedulerHeapFile ) or die "Cannot read log file $schedulerHeapFile";
+    ( -r $engineHeapFile ) or die "Cannot read log file $engineHeapFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if( $DEBUG > 1 ) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    my $bcpSchdulerHeap = parseHeapUsageData($schedulerHeapFile, "scheduler");
+    my $bcpEngineHeap = parseHeapUsageData($engineHeapFile, "engine");
+    removeOldData();
+    loadDb($bcpSchdulerHeap, $bcpEngineHeap);
+    $dbh->disconnect();
+    if( $DEBUG > 1 ) {
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseHeapUsageData {
+    my ($logFile, $heapType) = @_;
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    my $bcpFile = "$tmpDir/${heapType}_heap.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open $bcpFile";
+    open FILE, "<$logFile" or die "Cannot open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        my ($time, $heapValue) = $line =~ /.*\s+(\d{2}:\d{2})\s+:(.*)/g;
+        my $timeWithSec = "$time" . ":00";
+        my $dateTime = "$date" . " $timeWithSec";
+        printf BCP "%s|%d|%s\n",
+        $dateTime, $siteId, $heapValue;
+    }
+    close BCP;
+    close FILE;
+    if ($DEBUG > 2) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $bcpFile");
+    }
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my $deleteSchedulerHeapSql = "DELETE FROM eniq_scheduler_heap_memory WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    my $deleteEngineHeapSql = "DELETE FROM eniq_engine_heap_memory WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 3 ) {
+        print "SQL query for removal of old data of Scheduler Heap: $deleteSchedulerHeapSql \n";
+        print "SQL query for removal of old data of Engine Heap: $deleteEngineHeapSql \n";
+    }
+    dbDo($dbh, $deleteSchedulerHeapSql) or die "Failed to delete old data".$dbh->errstr."\n";
+    dbDo($dbh, $deleteEngineHeapSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($bcpschedulerheap, $bcpengineheap) = @_;
+    my $loadSchedulerSql = "LOAD DATA LOCAL INFILE \'$bcpschedulerheap\' INTO TABLE eniq_scheduler_heap_memory FIELDS TERMINATED BY \'|\'";
+    my $loadEngineSql = "LOAD DATA LOCAL INFILE \'$bcpengineheap\' INTO TABLE eniq_engine_heap_memory FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 4 ) {
+        print "SQL query for inserting data of Dwhdb: $loadSchedulerSql \n";
+        print "SQL query for inserting data of repdb: $loadEngineSql \n";
+    }
+    dbDo($dbh, $loadSchedulerSql) or die "Failed to load Data".$dbh->errstr."\n";
+    dbDo($dbh, $loadEngineSql) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpschedulerheap, $bcpengineheap);
+}

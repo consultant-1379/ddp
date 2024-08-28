@@ -1,0 +1,113 @@
+#!/usr/bin/perl
+
+
+###################################################################################################################################################
+# Description ---------   parseOcsSystemBo --------------------
+# This script parses the ocs System Bo logs and store data to DB for DDP
+# @author - POOJA NAGAJE (zpoonag)
+# usage parseOcsSystemBo --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($dbh, $site, $siteId, $server, $serverId, $logFile, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my ($r_parsedData, $r_processNameList, $r_pathList, $r_descList) = parseData($logFile);
+    my $processNameIdMap = getIdMap($dbh, "eniq_bo_process_name_id_mapping", "id", "processName", $r_processNameList);
+    my $pathIdMap = getIdMap($dbh, "eniq_bo_path_id_mapping", "id", "pathName", $r_pathList);
+    my $descIdMap = getIdMap($dbh, "eniq_bo_desc_id_mapping", "id", "description", $r_descList);
+    my $table = "eniq_ocs_system_bo";
+    my $bcpFile = createBcpFile($r_parsedData, $siteId, $serverId, $processNameIdMap, $pathIdMap, $descIdMap);
+    removeOldData($dbh, $table, $siteId, $serverId, $date);
+    loadDb($dbh, $bcpFile, $table);
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($logFile) = @_;
+    my @systemBoParsedData = ();
+    my @processNameList = ();
+    my @pathList = ();
+    my @descList = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( $line =~ /^"(\d+-\d+-\d+-\d+\:\d+:\d+)"\s+"(\d+)"\s+"(\w+)"\s+"(\d+-\d+-\d+-\d+:\d+:\d+)"\s+"(.*)"\s+"(\d+)"\s+"(\d+.\d+)"\s+"(.*)"/ ) {
+            my %systemBoData = (
+                time => $1,
+                pid => $2,
+                processName => $3,
+                processStartTime => $4,
+                description => $5,
+                cpu => $6,
+                ws => $7,
+                path => $8
+            );
+            push (@systemBoParsedData, \%systemBoData);
+            push (@processNameList, $3);
+            push (@pathList, $8);
+            push (@descList, $5);
+        }
+    }
+    close FILE;
+    return (\@systemBoParsedData, \@processNameList, \@pathList, \@descList);
+}
+
+sub createBcpFile($$$$$$) {
+    my ($r_parsedData, $siteId, $serverId, $processNameIdMap, $pathMap, $descIdMap) = @_;
+    my $ocsSystemBoBcpFile = getBcpFileName("ocs_system_bo");
+    open BCP, ">$ocsSystemBoBcpFile" or die "Cannot open BCPFile $ocsSystemBoBcpFile";
+    foreach my $data_element ( @$r_parsedData ) {
+        printf BCP "%s|%d|%d|%d|%d|%d|%d|%s|%d|%d\n",
+            $data_element->{time},
+            $siteId,
+            $serverId,
+            $data_element->{pid},
+            $processNameIdMap->{$data_element->{'processName'}},
+            $pathMap->{$data_element->{'path'}},
+            $descIdMap->{$data_element->{'description'}},
+            $data_element->{processStartTime},
+            $data_element->{cpu},
+            $data_element->{ws};
+    }
+    close BCP;
+    return $ocsSystemBoBcpFile;
+}
+
+sub removeOldData($$$$$) {
+    my ($dbh, $table, $siteId, $serverId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 1 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

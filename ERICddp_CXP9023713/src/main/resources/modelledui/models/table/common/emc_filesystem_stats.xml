@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="emc_filesystem_stats">
+    <reference table="emc_filesystem" condition="emc_filesystem_stats.fsid = emc_filesystem.id"/>
+  </dbtables>
+
+  <param name="sysid"/>
+  <param name="date"/>
+  <where>emc_filesystem_stats.sysid = %sysid% AND emc_filesystem_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND emc_filesystem.name NOT LIKE 'SP %'</where>
+
+  <groupby>
+    <column db="emc_filesystem_stats.fsid"/>
+  </groupby>
+
+  <column db="emc_filesystem_stats.fsid" label="fsid" id="fsid" visible="false"/>
+  <column db="emc_filesystem.name" label="Name"/>
+  <column db="ROUND(AVG(clientreadkb/1024),1)" label="Client Read (MB/s)"/>
+  <column db="ROUND(AVG(clientwritekb/1024),1)" label="Client Write (MB/s)"/>
+  <column db="ROUND(AVG(clientreads), 0)" label="Client Reads/s"/>
+  <column db="ROUND(AVG(clientwrites), 0)" label="Client Writes/s"/>
+  <column db="ROUND(AVG(clientread_srvt), 0)" label="Avg Client Read Time (usec)"/>
+  <column db="ROUND(AVG(clientwrite_srvt), 0)" label="Avg Client Write Time (usec)"/>
+  <column db="ROUND(AVG(readkb/1024),1)" label="Read (MB/s)"/>
+  <column db="ROUND(AVG(writekb/1024),1)" label="Write (MB/s)"/>
+  <column db="ROUND(AVG(readiops), 0)" label="Read IO/s"/>
+  <column db="ROUND(AVG(writeiops), 0)" label="Write IO/s"/>
+
+  <ctxmenu keycol="fsid" targettype="url" multiselect="true">
+    <item id="fs" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="elasticsearch_filesystem">
+      <reference table="sites" condition="elasticsearch_filesystem.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="servicetype"/>
+    <param name="serverid"/>
+    <where>sites.name = '%s' AND elasticsearch_filesystem.servicetype = '%s' AND elasticsearch_filesystem.serverid IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="filesystem_data_available_bytes" type="tsc" ylabel="MB" forcelegend="true">
+      <title value="Available Space (MB)"/>
+      <column db="fsAvailableMBytes" label = "Available Space"/>
+    </graph>
+    <graph name="filesystem_data_free_bytes" type="tsc" ylabel="MB" forcelegend="true">
+      <title value="Free Space (MB)"/>
+      <column db="fsFreeMBytes" label = "Free Space"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="filesystem">
+      <member>filesystem_data_available_bytes</member>
+      <member>filesystem_data_free_bytes</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_cm_resource_requests" timecol="time">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="cellserv"/>
+  </services>
+
+  <events>
+    <!--  REPARENT_SERVICE {\"executionTime\":57141,\"requestResource\":\"determine-candidate-cells\",\"requestTechnologyType\":\"WCDMA\",\"responseSize\":500,\"responseStatus\":\"COMPLETED\",\"requestSize\":102,\"requestIncludeMscOperations\":false,\"_Thread\":\"EJB async - 7\"}","timestamp":"2021-10-01T07:28:52.316+01:00"}-->
+    <event name="REPARENT_SERVICE">
+      <metric source="host" target="serverid"/>
+      <metric source="requestResource" target="requestResource"/>
+      <metric source="requestTechnologyType" target="requestTechnologyType"/>
+      <metric source="requestIncludeMscOperations" target="requestIncludeMscOperations"/>
+      <metric source="requestSize" target="requestSize"/>
+      <metric source="responseStatus" target="responseStatus"/>
+      <metric source="responseSize" target="responseSize"/>
+      <metric source="executionTime" target="executionTime"/>
+    </event>
+  </events>
+</modelledevents>

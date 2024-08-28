@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cm_energy_flow_tasks" timecol="time">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="sevserv"/>
+  </services>
+
+  <events>
+    <event name="SEV.ENERGY_FLOW.TASK">
+      <metric source="host" target="serverid"/>
+      <metric source="totalTimeTaken" target="totalTimeTaken"/>
+      <metric source="task" target="task"/>
+    </event>
+    <event name="SEV.ENERGY_REPORT.USER_SESSION">
+      <metric source="host" target="serverid"/>
+      <metric source="totalTimeTaken" target="totalTimeTaken"/>
+      <property name="task" xsi:type="fixedproperty" value="ENERGY_REPORT"/>
+    </event>
+    <event name="SEV.ENERGY_FLOW.USER_SESSION">
+      <metric source="host" target="serverid"/>
+      <metric source="totalTimeTaken" target="totalTimeTaken"/>
+      <property name="task" xsi:type="fixedproperty" value="ENERGY_FLOW"/>
+    </event>
+  </events>
+</modelledevents>

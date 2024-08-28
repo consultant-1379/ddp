@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_comecim_tcim_status">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="mscm"/>
+    <service name="comecimmscm"/>
+    <service name="mscmip"/>
+    <service name="mssnmpcm"/>
+    <service name="servicemanagement"/>
+  </services>
+
+  <events>
+    <!--2021-09-16T12:21:54.623+01:00@svc-3-ipsmserv@JBOSS@[com.ericsson.oss.itpf.EVENT_DATA_LOGGER] TCIM.TCIM_STATE_CHANGE_LOG {"reason":"Node is added in ENM","networkElement":"MINI-LINK-Indoor-Sec2","tcimState":"CREATED","_Thread":"Thread-46 (HornetQ-client-global-threads-1599914180)"}-->
+    <event name="TCIM.TCIM_STATE_CHANGE_LOG">
+      <metric source="tcimState" target="tcimState"/>
+      <metric source="host" target="serverid"/>
+      <metric source="reason" target="reason"/>
+      <metric source="networkElement" target="neid" filtervalue="^[^=,]+$"/>
+    </event>
+  </events>
+</modelledevents>

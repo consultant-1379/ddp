@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_cm_loader_mos">
+  <reference table="sites" condition="ecson_cm_loader_mos.siteid = sites.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_cm_loader_mos.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="ecson_cm_loader_mos.exportjobid"/>
+ </groupby>
+
+ <column db="ecson_cm_loader_mos.exportjobid" label="Exported Job"/>
+ <column db="SUM(ecson_cm_loader_mos.number_invalid_mos)" label="Invalid MO's"/>
+ <column db="SUM(ecson_cm_loader_mos.number_processed_mos)" label="Processed MO's"/>
+ <column db="SUM(number_invalid_parsed_nodes)" label="Invalid Parsed Nodes"/>
+
+</modelledtable>

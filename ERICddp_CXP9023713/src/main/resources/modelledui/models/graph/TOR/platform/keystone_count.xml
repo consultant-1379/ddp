@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Count"
+>
+ <title value="keystoneApiCount"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="enm_api_counters">
+       <reference table="sites" condition="enm_api_counters.siteid = sites.id"/>
+       <reference table="servers" condition="enm_api_counters.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="keystoneApiCount" label="keystoneApiCount"/>
+  </query>
+ </queries>
+ <size width="640" height="320"/>
+</modelledgraph>
+

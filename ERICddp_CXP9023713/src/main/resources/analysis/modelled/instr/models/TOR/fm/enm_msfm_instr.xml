@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="msfm"/>
+  </services>
+
+  <table name="enm_msfm_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.alarm.instrumentation.impl.cpp-alarm-event-resource-adaptor:type=MediationInstrumentatedBean$">
+      <metric source="totalAlarmCountSendFromMediation" target="cpp_totalAlarmCountSendFromMediation" delta="true"/>
+      <metric source="failedAlarmCountSendFromMediation" target="cpp_failedAlarmCountSendFromMediation" delta="true"/>
+      <metric source="nodesUnderSupervision" target="cpp_nodesUnderSupervision"/>
+      <metric source="nodeUnderNodeSuspendedState" target="cpp_nodeUnderNodeSuspendedState"/>
+      <metric source="nodesUnderHeartBeatFailure" target="cpp_nodesUnderHeartBeatFailure"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

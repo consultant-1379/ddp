@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_transport_ims_core_node_details">
+    <reference table="sites" condition="eniq_transport_ims_core_node_details.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_transport_ims_core_node_details.date = '%date%'</where>
+
+  <column db="eniq_transport_ims_core_node_details.nodeType" label="Node Type"/>
+  <column db="eniq_transport_ims_core_node_details.nodeTypeCount" label="Count"/>
+  <column db="eniq_transport_ims_core_node_details.technology" label="Technology"/>
+
+</modelledtable>

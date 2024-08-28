@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_aim_grouping_instr">
+      <reference table="sites" condition="enm_aim_grouping_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_aim_grouping_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="totalGroupsCreated_GB" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalGroupsCreated_GB"/>
+      <column db="totalGroupsCreated_GB"/>
+    </graph>
+    <graph name="totalGroupingProcessTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalGroupingProcessTime"/>
+      <column db="totalGroupingProcessTime" label="totalGroupingProcessTime"/>
+    </graph>
+    <graph name="totalReshufflesExecuted" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalReshufflesExecuted"/>
+      <column db="totalReshufflesExecuted"/>
+    </graph>
+    <graph name="eventsReceivedToProcess" type="sb" ylabel="Count" forcelegend="true">
+      <title value="eventsReceivedToProcess"/>
+      <column db="eventsReceivedToProcess"/>
+    </graph>
+    <graph name="eventsProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="eventsProcessed"/>
+      <column db="eventsProcessed"/>
+    </graph>
+    <graph name="eventsDroppedDueToTimeOut" type="sb" ylabel="Count" forcelegend="true">
+      <title value="eventsDroppedDueToTimeOut"/>
+      <column db="eventsDroppedDueToTimeOut"/>
+    </graph>
+    <graph name="totalGroupsCreated_IB" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalGroupsCreated_IB"/>
+      <column db="totalGroupsCreated_IB"/>
+    </graph>
+    <graph name="totalProcessingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalProcessingTime"/>
+      <column db="totalProcessingTime" label="totalProcessingTime" />
+    </graph>
+    <graph name="totalGroupsReceivedToBeProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalGroupsReceivedToBeProcessed"/>
+      <column db="totalGroupsReceivedToBeProcessed"/>
+    </graph>
+    <graph name="totalIncidentsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsCreated"/>
+      <column db="totalIncidentsCreated"/>
+    </graph>
+    <graph name="totalIncidentsReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsReceived"/>
+      <column db="totalIncidentsReceived"/>
+    </graph>
+    <graph name="totalUnionBatchProcessTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalUnionBatchProcessTime"/>
+      <column db="totalUnionBatchProcessTime" label="totalUnionBatchProcessTime"/>
+    </graph>
+    <graph name="totalEventsInsideIncidentsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalEventsInsideIncidentsCreated"/>
+      <column db="totalEventsInsideIncidentsCreated"/>
+    </graph>
+    <graph name="failedPublishTransactions" type="sb" ylabel="Count" forcelegend="true">
+      <title value="failedPublishTransactions"/>
+      <column db="failedPublishTransactions"/>
+    </graph>
+    <graph name="combinedDimensionKeysSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="combinedDimensionKeysSize"/>
+      <column db="combinedDimensionKeysSize"/>
+    </graph>
+    <graph name="totalCombinedDKRequestsToBatchRestService" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCombinedDKRequestsToBatchRestService"/>
+      <column db="totalCombinedDKRequestsToBatchRestService"/>
+    </graph>
+    <graph name="totalSingleDKRequestsToRestService" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalSingleDKRequestsToRestService"/>
+      <column db="totalSingleDKRequestsToRestService"/>
+    </graph>
+    <graph name="totalCombinedDKRequestsToSingleRestService" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCombinedDKRequestsToSingleRestService"/>
+      <column db="totalCombinedDKRequestsToSingleRestService"/>
+    </graph>
+    <graph name="totalTimeGettingCombinedDimensionKeys" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeGettingCombinedDimensionKeys"/>
+      <column db="totalTimeGettingCombinedDimensionKeys"/>
+    </graph>
+    <graph name="totalTimeCalculatingConfidence" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeCalculatingConfidence"/>
+      <column db="totalTimeCalculatingConfidence" label="totalTimeCalculatingConfidence"/>
+    </graph>
+    <graph name="totalTimeCalculatingGroupConfidence" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeCalculatingGroupConfidence"/>
+      <column db="totalTimeCalculatingGroupConfidence"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="totalGroupsCreated_GB">
+      <member>totalGroupsCreated_GB</member>
+    </group>
+    <group name="totalGroupingProcessTime">
+      <member>totalGroupingProcessTime</member>
+    </group>
+    <group name="totalReshufflesExecuted">
+      <member>totalReshufflesExecuted</member>
+    </group>
+    <group name="eventsReceivedToProcess">
+      <member>eventsReceivedToProcess</member>
+    </group>
+    <group name="eventsProcessed">
+      <member>eventsProcessed</member>
+    </group>
+    <group name="eventsDroppedDueToTimeOut">
+      <member>eventsDroppedDueToTimeOut</member>
+    </group>
+    <group name="totalGroupsCreated_IB">
+      <member>totalGroupsCreated_IB</member>
+    </group>
+    <group name="totalProcessingTime">
+      <member>totalProcessingTime</member>
+    </group>
+    <group name="totalGroupsReceivedToBeProcessed">
+      <member>totalGroupsReceivedToBeProcessed</member>
+    </group>
+    <group name="totalIncidentsCreated">
+      <member>totalIncidentsCreated</member>
+    </group>
+    <group name="totalIncidentsReceived">
+      <member>totalIncidentsReceived</member>
+    </group>
+    <group name="totalUnionBatchProcessTime">
+      <member>totalUnionBatchProcessTime</member>
+    </group>
+    <group name="totalEventsInsideIncidentsCreated">
+      <member>totalEventsInsideIncidentsCreated</member>
+    </group>
+    <group name="failedPublishTransactions">
+      <member>failedPublishTransactions</member>
+    </group>
+    <group name="combinedDimensionKeysSize">
+      <member>combinedDimensionKeysSize</member>
+    </group>
+    <group name="totalCombinedDKRequestsToBatchRestService">
+      <member>totalCombinedDKRequestsToBatchRestService</member>
+    </group>
+    <group name="totalSingleDKRequestsToRestService">
+      <member>totalSingleDKRequestsToRestService</member>
+    </group>
+    <group name="totalCombinedDKRequestsToSingleRestService">
+      <member>totalCombinedDKRequestsToSingleRestService</member>
+    </group>
+    <group name="totalTimeGettingCombinedDimensionKeys">
+      <member>totalTimeGettingCombinedDimensionKeys</member>
+    </group>
+    <group name="totalTimeCalculatingConfidence">
+      <member>totalTimeCalculatingConfidence</member>
+    </group>
+    <group name="totalTimeCalculatingGroupConfidence">
+      <member>totalTimeCalculatingGroupConfidence</member>
+    </group>
+    <group name="all">
+      <member>totalGroupsCreated_GB</member>
+      <member>totalGroupingProcessTime</member>
+      <member>totalReshufflesExecuted</member>
+      <member>eventsReceivedToProcess</member>
+      <member>eventsProcessed</member>
+      <member>eventsDroppedDueToTimeOut</member>
+      <member>totalGroupsCreated_IB</member>
+      <member>totalProcessingTime</member>
+      <member>totalGroupsReceivedToBeProcessed</member>
+      <member>totalIncidentsCreated</member>
+      <member>totalIncidentsReceived</member>
+      <member>totalUnionBatchProcessTime</member>
+      <member>totalEventsInsideIncidentsCreated</member>
+      <member>failedPublishTransactions</member>
+      <member>combinedDimensionKeysSize</member>
+      <member>totalCombinedDKRequestsToBatchRestService</member>
+      <member>totalSingleDKRequestsToRestService</member>
+      <member>totalCombinedDKRequestsToSingleRestService</member>
+      <member>totalTimeGettingCombinedDimensionKeys</member>
+      <member>totalTimeCalculatingConfidence</member>
+      <member>totalTimeCalculatingGroupConfidence</member>
+    </group>
+    <group name="grNonMain">
+      <member>totalGroupsCreated_GB</member>
+      <member>totalGroupingProcessTime</member>
+      <member>totalGroupsCreated_IB</member>
+      <member>totalProcessingTime</member>
+      <member>totalIncidentsCreated</member>
+      <member>totalUnionBatchProcessTime</member>
+      <member>combinedDimensionKeysSize</member>
+    </group>
+    <group name="allMain">
+      <member>totalGroupingProcessTime</member>
+      <member>totalProcessingTime</member>
+      <member>totalUnionBatchProcessTime</member>
+      <member>totalTimeCalculatingConfidence</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

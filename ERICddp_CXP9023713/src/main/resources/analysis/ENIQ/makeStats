@@ -1,0 +1,854 @@
+#!/bin/bash
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 date site statsroot"
+    exit 1
+fi
+
+SITE=$2
+STATS_ROOT=$3
+
+ANALYSIS_TYPE=$4
+if [ "${ANALYSIS_TYPE}" != "FULL" ] ; then
+    echo "INFO: Ignoring ANALYSIS_TYPE=${ANALYSIS_TYPE}"
+    exit 0
+fi
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+COREDUMP_LOG_FILES=""
+DASH_DATE=${1}
+DATE=`echo ${1} | sed 's/-//g'`
+
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+REQUIRED_DATE=`echo ${SQL_DATE} | sed 's/-//g'`
+DATE_PATTERN=`echo ${SQL_DATE} | sed 's/-/_/g'`
+
+#If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+log "Start ENIQ"
+ANALYSIS_OUTPUT=${STATS_ROOT}/${SITE}/analysis/${DATE}
+DATADIR=${STATS_ROOT}/${SITE}/data/${DATE}
+DATADIRS_FILE=${DATADIR}/server_datadirs.txt
+
+if [ -f ${DATADIR}/ENIQ/eniq_status ] ; then
+    ENIQ_STATUS=$(grep "^ENIQ_STATUS " ${DATADIR}/ENIQ/eniq_status | sed 's/ENIQ_STATUS //')
+else
+    ENIQ_STATUS="NA"
+fi
+run ${ANALYSIS_BIN}/sql/setEniqVer --site ${SITE} --date ${SQL_DATE} --sw "${ENIQ_STATUS}"
+
+if [ ! -d ${ANALYSIS_OUTPUT}/ENIQ ] ; then
+    mkdir ${ANALYSIS_OUTPUT}/ENIQ
+fi
+
+log "Parse Duration"
+DURATION_FILE=${DATADIR}/ENIQ/duration.log
+if [ -f "${DURATION_FILE}" ] ; then
+    # is this an old file (R2A01) or the "fixed" one with the SETTYPE collected?
+    NFIELDS=$(head -1 ${DURATION_FILE} | awk -F\; '{print NF}')
+    # if $NFIELDS is less than 7 we'll get an empty settype
+    if [ ! -z "${NFIELDS}" ] && [ $NFIELDS -gt 6 ] ; then
+        run ${ANALYSIS_BIN}/ENIQ/parseDuration --site ${SITE} --date ${SQL_DATE} --log ${DURATION_FILE}
+    fi
+fi
+
+# ENIQ 12: WP00155 - Diagnostic Data: collect and present collection and processing times for event files
+# CR: 42/109 18-FCP 103 8147/14 A [2012-02-02 eronkeo]
+log "Parse Collection Events"
+COLLECTION_EVENTS_FILE=${DATADIR}/ENIQ/collection_events.log
+if [ -r "${COLLECTION_EVENTS_FILE}" ] ; then
+    run ${ANALYSIS_BIN}/ENIQ/parseEvents --site ${SITE} --date ${SQL_DATE} --log ${COLLECTION_EVENTS_FILE}
+fi
+
+if [ -r ${DATADIR}/ENIQ/rnc_loaded.log ] ; then
+    log "Parse RNC / RBS Loaded"
+    RNC_LOADED=${DATADIR}/ENIQ/rnc_loaded.log
+    RBS_LOADED=${DATADIR}/ENIQ/rbs_loaded.log
+    run ${ANALYSIS_BIN}/ENIQ/parseLoaded --rncloaded ${RNC_LOADED} --rbsloaded ${RBS_LOADED} --site ${SITE}
+fi
+
+if [ -r ${DATADIR}/ENIQ/statsAdapterTotals.log ] ; then
+    log "Parse Stats Adapter logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseStats --site ${SITE} --date ${SQL_DATE} -parsetotals ${DATADIR}/ENIQ/statsAdapterTotals.log \
+    --parsesessions ${DATADIR}/ENIQ/statsAdapterSession.log --loadsessions ${DATADIR}/ENIQ/statsLoaderSession.log \
+    --aggsessions ${DATADIR}/ENIQ/statsAggregatorSession.log
+fi
+
+if [ -r ${DATADIR}/ENIQ/events.loaded ] ; then
+    log "Parse Events Loaded"
+    run ${ANALYSIS_BIN}/ENIQ/parseEventsLoaded --data ${DATADIR}/ENIQ/events.loaded --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/ENIQ/streaming ] ; then
+    log "Parse Event Streaming logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseStreamInstr --dir ${DATADIR}/ENIQ/streaming --site ${SITE}
+fi
+
+if [ -r ${DATADIR}/ENIQ/wfexec.log ] ; then
+    log "Parse MZ Workflow exec logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseWfExec --dir ${DATADIR}/ENIQ --site ${SITE}
+fi
+
+if [ -r ${DATADIR}/ENIQ/wfinstr.log ] ; then
+    log "Parse MZ Workflow Instr logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseWfData --dir ${DATADIR}/ENIQ --site ${SITE} --date ${SQL_DATE}
+fi
+
+log "Analyse IQ monitor data"
+HOSTNAME=$(tail -1 ${DATADIR}/server/hostname | awk '{print $2}' | awk -F\. '{print $1}')
+IQ_MON_FILES=$(find ${DATADIR}/ENIQ -type f -name 'dwhdb.*main-ddc_*')
+for file in $IQ_MON_FILES ; do
+    run ${ANALYSIS_BIN}/ENIQ/parseIqMon --input ${file} --site ${SITE} --server ${HOSTNAME}
+done
+
+if [ -r ${DATADIR}/ENIQ/iqdbspace.txt ] ; then
+    run ${ANALYSIS_BIN}/ENIQ/parseIqDbSpace --site ${SITE} --date ${SQL_DATE} --file ${DATADIR}/ENIQ/iqdbspace.txt
+fi
+
+if [ -d ${DATADIR}/ENIQ/eniq_events_servers ] ; then
+    log "Analysing ENIQ Servers"
+
+    if [ ! -d ${ANALYSIS_OUTPUT}/servers ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/servers
+    fi
+
+    for SERVER in $(ls ${DATADIR}/ENIQ/eniq_events_servers) ; do
+        TARDIR=${DATADIR}/ENIQ/eniq_events_servers/${SERVER}
+        TARFILE=${TARDIR}/DDC_Data_${DATE}.tar.gz
+        if [ -f "${TARFILE}" ] ; then
+            cd ${TARDIR}
+            tar xzf ${TARFILE}
+            if [ $? -ne 0 ] ; then
+                log "ERROR: could not extract ${TARFILE}"
+            fi
+            rm -f ${TARFILE}
+        fi
+        HOST_DIR=${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}
+        MATCHED_TYPE=OTHER
+        if [ -d ${HOST_DIR} ] ; then
+            # process this server
+            if [ -f ${HOST_DIR}/ENIQ/eniq_reader_type ] ; then
+                TYPE=`cat ${HOST_DIR}/ENIQ/eniq_reader_type`
+                case ${TYPE} in
+                    "dwh_reader_1") MATCHED_TYPE="READER_1" ;;
+                    "dwh_reader_2") MATCHED_TYPE="READER_2" ;;
+                esac
+            fi
+
+            if [ -f ${HOST_DIR}/ENIQ/eniq_server_type ] ; then
+                TYPE=$(cat ${HOST_DIR}/ENIQ/eniq_server_type)
+                case ${TYPE} in
+                    "eniq_ui") MATCHED_TYPE="ENIQ_UI" ;;
+                    "eniq_coordinator") MATCHED_TYPE="ENIQ_COORDINATOR" ;;
+                    "eniq_mz") MATCHED_TYPE="ENIQ_MZ" ;;
+                    "eniq_iqr") MATCHED_TYPE="ENIQ_IQR" ;;
+                    "eniq_iqw") MATCHED_TYPE="ENIQ_IQW" ;;
+                    # DEFTLITP-664: LTE Event Statistics
+                    "eniq_es") MATCHED_TYPE="ENIQ_ES" ;;
+                    # ENIQ 13 WP00011: CEP Mediation monitoring
+                    "eniq_cep") MATCHED_TYPE="ENIQ_CEP" ;;
+                    # HQ63006: SON Coordinator server type
+                    "son_coordinator") MATCHED_TYPE="SON_COORDINATOR" ;;
+                    "eniq_stats") MATCHED_TYPE="ENIQ_STATS" ;;
+                    "stats_coordinator") MATCHED_TYPE="STATS_COORDINATOR" ;;
+                    "stats_engine") MATCHED_TYPE="STATS_ENGINE" ;;
+                    "stats_iqr") MATCHED_TYPE="STATS_IQR" ;;
+                esac
+            fi
+        fi
+
+        # move certain files into the correct directory
+        for file in jps.log cron.log ; do
+            [ -f ${HOST_DIR}/${file} ] && mv ${HOST_DIR}/${file} ${HOST_DIR}/server/${file}
+        done
+
+        TYPE=${MATCHED_TYPE}
+        log "Analysing ${SERVER} - type ${TYPE}"
+
+        # A seperate INCR_DIR is required for every server
+        SAVE_INCR_DIR=${INCR_DIR}
+        export INCR_DIR=${INCR_DIR}/${SERVER}
+        if [ ! -d ${INCR_DIR} ] ; then
+            mkdir ${INCR_DIR}
+        fi
+        run ${ANALYSIS_BIN}/server/analyseServer -i ${HOST_DIR}/server -o ${ANALYSIS_OUTPUT}/servers \
+            -s ${SITE} -d ${SQL_DATE} -t ${TYPE} -a ${DATADIR}
+        export INCR_DIR=${SAVE_INCR_DIR}
+
+        IQ_MON_FILES=$(find ${HOST_DIR}/ENIQ -type f -name 'dwhdb.*main-ddc_*')
+        if [ ! -z "${IQ_MON_FILES}" ] ; then
+            log "Analysing IQ Data for ${SERVER}"
+            for file in $IQ_MON_FILES ; do
+                run ${ANALYSIS_BIN}/ENIQ/parseIqMon --input ${file} --site ${SITE} --server ${SERVER}
+            done
+        fi
+
+        # HO71175 - EE 11.3 DDP not displaying collected data for glassfish & MzExecContext from remote servers [2011-11-29 eronkeo]
+        if [ -d ${HOST_DIR}/instr ] ; then
+            run ${ANALYSIS_BIN}/server/processGenericInstr -d ${HOST_DIR} -s ${HOST_DIR}/server -a ${DASH_DATE} -e ${SITE}
+
+            if [ -f ${HOST_DIR}/instr/glassfish2.xml ] ; then
+                log "Analysing Success Aggregation JMX data"
+                run ${ANALYSIS_BIN}/ENIQ/parseSuccAggrJMX --cfg ${HOST_DIR}/instr/glassfish2.xml --data ${HOST_DIR}/instr.txt --site ${SITE} --server ${SERVER}
+            fi
+        fi
+        if [ -d ${HOST_DIR}/plugin_data/OMBS_Backup ] ; then
+            LOG_FILES=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/OMBS_Backup/ -type f -name 'prep_eniq_backup.log*')
+            for file in $LOG_FILES ; do
+                run ${ANALYSIS_BIN}/ENIQ/parseOMBSBackup --logfile ${file} --site ${SITE} --server ${SERVER}
+            done
+        fi
+        if [ -d ${HOST_DIR}/plugin_data/Rolling_Snapshot ] ; then
+            LOG_FILES=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/Rolling_Snapshot/ -type f -name 'prep_roll_snap.log*')
+            for file in $LOG_FILES ; do
+                run ${ANALYSIS_BIN}/ENIQ/parseRollingSnapshot --logfile ${file} --site ${SITE} --server ${SERVER}
+                run ${ANALYSIS_BIN}/ENIQ/parseFSSnapshotUtilization --logfile ${file} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+            done
+        fi
+        if [ -f ${HOST_DIR}/plugin_data/osMemoryProfile/os_memory_profile_${SQL_DATE}.txt ] ; then
+            run ${ANALYSIS_BIN}/ENIQ/parseOsMemoryProfile --logfile ${HOST_DIR}/plugin_data/osMemoryProfile/os_memory_profile_${SQL_DATE}.txt  --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+        fi
+        if [ -f ${HOST_DIR}/plugin_data/osMemoryProfile/os_rhel_memory_profile_${SQL_DATE}.txt ] ; then
+            run ${ANALYSIS_BIN}/ENIQ/parseOsMemoryProfileRhel --logfile ${HOST_DIR}/plugin_data/osMemoryProfile/os_rhel_memory_profile_${SQL_DATE}.txt  --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+        fi
+        if [ -d ${HOST_DIR}/plugin_data/diskHardError ] ; then
+            LOG_FILE=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/diskHardError/ -type f -name 'harderror_list_*.txt')
+            run ${ANALYSIS_BIN}/ENIQ/parseDiskErrorDetails --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER}
+        fi
+        if [ -d ${HOST_DIR}/plugin_data/dmesgHardwareFault ] ; then
+            LOG_FILE=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/dmesgHardwareFault/ -type f -name 'dmesg_hardware_fault_*.txt')
+            run ${ANALYSIS_BIN}/ENIQ/parseDmesg --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+        fi
+        if [ -f ${HOST_DIR}/plugin_data/sybase_iq/sybaseIQ_instr_${SQL_DATE}.txt ] ; then
+            run ${ANALYSIS_BIN}/ENIQ/parseSybaseIq --logfile ${HOST_DIR}/plugin_data/sybase_iq/sybaseIQ_instr_${SQL_DATE}.txt  --site ${SITE} --server ${SERVER}
+        fi
+        if [ -d ${HOST_DIR}/plugin_data/faultyHardware ] ; then
+            LOG_FILE=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/faultyHardware/ -type f -name 'faultyHardware_*.txt')
+            run ${ANALYSIS_BIN}/ENIQ/parseFaultyHardwareDetails --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER}
+        fi
+        if [ -f ${HOST_DIR}/plugin_data/snapshot_criteria/snapshot_criteria_status_${SQL_DATE}.txt ] ; then
+            run ${ANALYSIS_BIN}/ENIQ/parseSnapshotCriteriaLog --logfile ${DATADIR}/plugin_data/snapshot_criteria/snapshot_criteria_status_${SQL_DATE}.txt  --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+        fi
+
+        ENIQ_SMF_RESTART_LOG=${HOST_DIR}/plugin_data/eniqSmfRestart/eniqServiceRestart_${SQL_DATE}.txt
+        if [ -f ${ENIQ_SMF_RESTART_LOG} ] ; then
+            run ${ANALYSIS_BIN}/ENIQ/parseSMFRestartLogs --logfile ${ENIQ_SMF_RESTART_LOG} --site ${SITE} --server ${SERVER}  --date ${SQL_DATE}
+        fi
+
+        ENIQ_SERVICE_RESTART_LOG=${HOST_DIR}/plugin_data/eniqServiceRestart/eniqServiceRestart-${SQL_DATE}.txt
+        if [ -f ${ENIQ_SERVICE_RESTART_LOG} ] ; then
+            run ${ANALYSIS_BIN}/ENIQ/parseSMFRestartLogs --logfile ${ENIQ_SERVICE_RESTART_LOG} --site ${SITE} --server ${SERVER}  --date ${SQL_DATE}
+        fi
+
+        if [ -f ${HOST_DIR}/plugin_data/coredump_details/coredump_details_${SQL_DATE}.txt ] ; then
+            COREDUMP_LOG_FILES+="--logfile ${HOST_DIR}/plugin_data/coredump_details/coredump_details_${SQL_DATE}.txt "
+        fi
+        if [ -f ${HOST_DIR}/plugin_data/coredump_details/coredump_path_${SQL_DATE}.txt ] ; then
+            COREDUMP_LOG_FILES+="--logfile ${HOST_DIR}/plugin_data/coredump_details/coredump_path_${SQL_DATE}.txt "
+        fi
+
+        FRH_CONTROLLER_LOG=${HOST_DIR}/plugin_data/FRHController/controller.log
+        if [ -f ${FRH_CONTROLLER_LOG} ] ; then
+            log "Analysing FRH Controller Backlog."
+            run ${ANALYSIS_BIN}/ENIQ/parseFRHController --site ${SITE} --date ${SQL_DATE} --logfile ${FRH_CONTROLLER_LOG}
+        fi
+
+        if [ -d ${HOST_DIR}/plugin_data/lun_mpath_iq_header_mapping ] ; then
+            log "Analysing MPath Log File"
+            MPATH_LOG_FILE=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/lun_mpath_iq_header_mapping/ -type f -name 'mpath_not_correct_*.txt')
+            if [ -f ${MPATH_LOG_FILE} ] ; then
+                run ${ANALYSIS_BIN}/ENIQ/parseDDPReport --logfile ${MPATH_LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE} --type "mpath"
+            fi
+            log "Analysing IQ Header Log File"
+            IQHEADER_LOG_FILE=$(find ${DATADIR}/ENIQ/eniq_events_servers/${SERVER}/${DATE}/plugin_data/lun_mpath_iq_header_mapping/ -type f -name 'IQ_header_not_correct_*.txt')
+            if [ -f ${IQHEADER_LOG_FILE} ] ; then
+                run ${ANALYSIS_BIN}/ENIQ/parseDDPReport --logfile ${IQHEADER_LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE} --type "iq_header"
+            fi
+        fi
+    done
+fi
+
+if [ -d ${DATADIR}/plugin_data/glassfish_domain1 ] ; then
+    log "Analysing Glassfish Access data"
+    run ${ANALYSIS_BIN}/ENIQ/parseGlassfishInstr --logdir ${DATADIR}/plugin_data/glassfish_domain1/ --schemaroot ${ANALYSIS_BIN}/ENIQ/Schema/ --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/backlog_monitoring ] ; then
+    log "Analysing Backlog data"
+    LOG_FILES=$(find ${DATADIR}/plugin_data/backlog_monitoring/ -type f -name 'engine-????_*')
+    for file in $LOG_FILES ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseBacklogMonitoringInstr --logfile ${file} --schema ${ANALYSIS_BIN}/ENIQ/Schema/backlogMonitoringSchema.xml --site ${SITE} --date ${SQL_DATE}
+    done
+fi
+
+if [ -d ${DATADIR}/plugin_data/OMBS_Backup ] ; then
+    log "Analysing OMBS backlog data"
+    LOG_FILES=$(find ${DATADIR}/plugin_data/OMBS_Backup/ -type f -name 'prep_eniq_backup.log*')
+    for file in $LOG_FILES ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseOMBSBackup --logfile ${file} --site ${SITE} --server ${HOSTNAME}
+    done
+fi
+
+if [ -f ${DATADIR}/plugin_data/osMemoryProfile/os_memory_profile_${SQL_DATE}.txt ] ; then
+    log "Analysing OS Memory profile details"
+    run ${ANALYSIS_BIN}/ENIQ/parseOsMemoryProfile --logfile ${DATADIR}/plugin_data/osMemoryProfile/os_memory_profile_${SQL_DATE}.txt  --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/osMemoryProfile/os_rhel_memory_profile_${SQL_DATE}.txt ] ; then
+    log "Analysing OS Memory profile details for RHEL"
+    run ${ANALYSIS_BIN}/ENIQ/parseOsMemoryProfileRhel --logfile ${DATADIR}/plugin_data/osMemoryProfile/os_rhel_memory_profile_${SQL_DATE}.txt  --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/Rolling_Snapshot ] ; then
+    log "Analysing Rolling Snapshot data"
+    LOG_FILES=$(find ${DATADIR}/plugin_data/Rolling_Snapshot/ -type f -name 'prep_roll_snap.log*')
+    for file in $LOG_FILES ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseRollingSnapshot --logfile ${file} --site ${SITE} --server ${HOSTNAME}
+        run ${ANALYSIS_BIN}/ENIQ/parseFSSnapshotUtilization --logfile ${file} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+    done
+fi
+
+if [ -d ${DATADIR}/plugin_data/diskHardError ] ; then
+    log "Analysing hardware errors for disk's."
+    LOG_FILE=$(find ${DATADIR}/plugin_data/diskHardError/ -type f -name 'harderror_list_*.txt')
+    run ${ANALYSIS_BIN}/ENIQ/parseDiskErrorDetails --logfile ${LOG_FILE} --site ${SITE} --server ${HOSTNAME}
+fi
+
+if [ -d ${DATADIR}/plugin_data/dmesgHardwareFault ] ; then
+    log "Analysing Dmesg Hardware Error."
+    LOG_FILE=$(find ${DATADIR}/plugin_data/dmesgHardwareFault/ -type f -name 'dmesg_hardware_fault_*.txt')
+    run ${ANALYSIS_BIN}/ENIQ/parseDmesg --logfile ${LOG_FILE} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/faultyHardware ] ; then
+    log "Analysing Faulty hardware data for fmadm faulty command"
+    LOG_FILE=$(find ${DATADIR}/plugin_data/faultyHardware/ -type f -name 'faultyHardware_*.txt')
+    run ${ANALYSIS_BIN}/ENIQ/parseFaultyHardwareDetails --logfile ${LOG_FILE} --site ${SITE} --server ${HOSTNAME}
+fi
+
+if [ -d ${DATADIR}/plugin_data/sybase_iq ] ; then
+    log "Analysing SAP IQ data"
+    LOG_FILES=$(find ${DATADIR}/plugin_data/sybase_iq/ -type f -name 'sybaseIQ_instr_*')
+    for file in $LOG_FILES ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseSybaseIq --logfile ${file} --site ${SITE} --server ${HOSTNAME}
+    done
+    log "Analysing SAP IQ version patch details."
+    if [ -f ${DATADIR}/plugin_data/sybase_iq/iq_version ] ; then
+        run ${ANALYSIS_BIN}/ENIQ/parseIqVersionPatch --logfile ${DATADIR}/plugin_data/sybase_iq/iq_version --site ${SITE} --date ${SQL_DATE}
+    fi
+fi
+
+if [ -f ${DATADIR}/plugin_data/transportIMSCoreNode/transport_ims_core_node_info.log ] ; then
+    log "Analysing Transport IMS and Core Node details"
+    run ${ANALYSIS_BIN}/ENIQ/parseTransportIMSCoreNodeDetails --logfile ${DATADIR}/plugin_data/transportIMSCoreNode/transport_ims_core_node_info.log  --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/ddp_report/ddp.report ] ; then
+    log "Analysing DDP Report Log File"
+    run ${ANALYSIS_BIN}/ENIQ/parseDDPReport --logfile ${DATADIR}/plugin_data/ddp_report/ddp.report --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE} --type "ddp_report"
+fi
+
+if [ -d ${DATADIR}/plugin_data/lun_mpath_iq_header_mapping ] ; then
+    log "Analysing MPath Log File"
+    MPATH_LOG_FILE=$(find ${DATADIR}/plugin_data/lun_mpath_iq_header_mapping/ -type f -name 'mpath_not_correct_*.txt')
+    if [ -f ${MPATH_LOG_FILE} ] ; then
+        run ${ANALYSIS_BIN}/ENIQ/parseDDPReport --logfile ${MPATH_LOG_FILE} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE} --type "mpath"
+    fi
+    log "Analysing IQ Header Log File"
+    IQHEADER_LOG_FILE=$(find ${DATADIR}/plugin_data/lun_mpath_iq_header_mapping/ -type f -name 'IQ_header_not_correct_*.txt')
+    if [ -f ${IQHEADER_LOG_FILE} ] ; then
+        run ${ANALYSIS_BIN}/ENIQ/parseDDPReport --logfile ${IQHEADER_LOG_FILE} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE} --type "iq_header"
+    fi
+fi
+
+if [ -d ${DATADIR}/plugin_data/Database_Connection ] ; then
+    log "Analysing database connection."
+    REPDB_LOG_FILE=$(find ${DATADIR}/plugin_data/Database_Connection/ -type f -name 'repdbCount-????-*.log')
+    DWHDB_LOG_FILE=$(find ${DATADIR}/plugin_data/Database_Connection/ -type f -name 'dwhdbCount-????-*.log')
+    run ${ANALYSIS_BIN}/ENIQ/parseDwhdbRepdbCount --repdbCount ${REPDB_LOG_FILE} --dwhdbCount ${DWHDB_LOG_FILE} --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/heapMemory ] ; then
+    log "Analysing ENIQ certificate information and Heap memory statistics for engine and scheduler"
+    run ${ANALYSIS_BIN}/ENIQ/parseHeapMemory --schedulerHeap ${DATADIR}/plugin_data/heapMemory/schedulerHeap-${SQL_DATE}.log --engineHeap ${DATADIR}/plugin_data/heapMemory/engineHeap-${SQL_DATE}.log --site ${SITE} --date ${SQL_DATE}
+    LOG_FILE="${DATADIR}/plugin_data/heapMemory/Certificate_Expiry_${SQL_DATE}.log"
+    if [ -f ${LOG_FILE} ] ; then
+        run ${ANALYSIS_BIN}/ENIQ/parseWindowsCertificate --logfile ${LOG_FILE} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+        run ${ANALYSIS_BIN}/ENIQ/createEniqServer --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE} --type "ENIQ"
+    fi
+fi
+
+if [ -d ${DATADIR}/unity ] ; then
+    log "Analysing Unity/UnityXT certificate expiry information"
+    if [ -r ${DATADIR}/unity/hostname.txt ] && [  -s ${DATADIR}/unity/hostname.txt ] ; then
+        UNITY_HOSTNAME=$(cat ${DATADIR}/unity/hostname.txt | head --lines=1 | awk '{print $1}')
+        if [ ! -z ${UNITY_HOSTNAME} ] ; then
+            run ${ANALYSIS_BIN}/server/createServer --site ${SITE} --host ${UNITY_HOSTNAME} --type "ACCESSNAS"
+            run ${ANALYSIS_BIN}/ENIQ/createEniqServer --site ${SITE} --server ${UNITY_HOSTNAME} --date ${SQL_DATE} --type "ACCESSNAS"
+            LOG_FILE="${DATADIR}/unity/unityCertificateExpiryDetails.txt"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${ANALYSIS_BIN}/ENIQ/parseWindowsCertificate --logfile ${LOG_FILE} --site ${SITE} --server ${UNITY_HOSTNAME} --date ${SQL_DATE}
+            fi
+        fi
+    fi
+fi
+
+if [ -d ${DATADIR}/plugin_data/installed_techpacks ] ; then
+    log "Analysing techpack details log"
+    LOG_FILES=$(find ${DATADIR}/plugin_data/installed_techpacks/ -type f -name 'techpack_list_*.txt')
+    for file in $LOG_FILES ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseTechpackDetails --logfile ${file} --site ${SITE}
+    done
+fi
+
+if [ -d ${DATADIR}/plugin_data/rhel_patch_version ] ; then
+    log "Analysing rhel version log and patch version log"
+    run ${ANALYSIS_BIN}/ENIQ/parseRhelPatchVersionLog --dir ${DATADIR}/plugin_data/rhel_patch_version --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/radioNode ] ; then
+    log "Analysing cell count log and node count log for Radionode"
+    run ${ANALYSIS_BIN}/ENIQ/parseRadioNodeCellCountDetails --dir ${DATADIR}/plugin_data/radioNode --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/counterTool ] ; then
+    log "Analysing Aggregated Accessed Counter log"
+    LOG_FILES=$(find ${DATADIR}/plugin_data/counterTool/ -type f -name '*_aggregated.log')
+    for file in $LOG_FILES ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseAggregatedCounter --logfile ${file} --site ${SITE} --date ${SQL_DATE}
+    done
+    log "Analysing Aggregation failed date of counterTools"
+    run ${ANALYSIS_BIN}/ENIQ/parseAggregationFailCounterDate --logFile ${DATADIR}/plugin_data/counterTool/failed_Aggregation_date.txt --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/fc_switch_port_alarm ]; then
+    log "Analysing Switch Ports log"
+    run ${ANALYSIS_BIN}/ENIQ/parseFCSwitchPortAlarm --logFile ${DATADIR}/plugin_data/fc_switch_port_alarm/hwmonitor_monitor_${REQUIRED_DATE}_0.log --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/file_lookup_service ]; then
+    log "Analysing ENIQ STATS File Lookup Service(FLS) master slave server details and symlink creation logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseFlsApplicationLogs --dir ${DATADIR}/plugin_data/file_lookup_service --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/snapshot_criteria/snapshot_criteria_status_${SQL_DATE}.txt ] ; then
+    log "Analysing snapshot criteria log"
+    run ${ANALYSIS_BIN}/ENIQ/parseSnapshotCriteriaLog --logfile ${DATADIR}/plugin_data/snapshot_criteria/snapshot_criteria_status_${SQL_DATE}.txt  --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+ENIQ_SMF_RESTART_LOGS=${DATADIR}/plugin_data/eniqSmfRestart/eniqServiceRestart_${SQL_DATE}.txt
+if [ -f ${ENIQ_SMF_RESTART_LOGS} ] ; then
+    log "Analysing ENIQ SMF restart logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseSMFRestartLogs --logfile ${ENIQ_SMF_RESTART_LOGS} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+ENIQ_SERVICE_RESTART_LOGS=${DATADIR}/plugin_data/eniqServiceRestart/eniqServiceRestart-${SQL_DATE}.txt
+if [ -f ${ENIQ_SERVICE_RESTART_LOGS} ] ; then
+    log "Analysing ENIQ Service restart logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseSMFRestartLogs --logfile ${ENIQ_SERVICE_RESTART_LOGS} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/loaderAggregatorSetFailure ]; then
+    log "Analysing ENIQ STATS loader aggregator failed set log and also Loader set log with delimiter error and IBS error"
+    run ${ANALYSIS_BIN}/ENIQ/parseLoaderAggregatorFailureSet --dir ${DATADIR}/plugin_data/loaderAggregatorSetFailure --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/ltees_counter_management ] ; then
+    log "Analysing LTEES Counter Management Logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseLteesCountersLog --dir ${DATADIR}/plugin_data/ltees_counter_management --site ${SITE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/database_consistency_check ] ; then
+    if [ -f ${DATADIR}/plugin_data/database_consistency_check/dbcheck.env ] ; then
+        log "Analysing DBCC status"
+        run ${ANALYSIS_BIN}/ENIQ/parseDBCCStatus  --logfile ${DATADIR}/plugin_data/database_consistency_check/dbcheck.env  --site ${SITE} --date ${SQL_DATE}
+    fi
+    log "Analysing DBCC table logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseDBCCTableCheck --dir ${DATADIR}/plugin_data/database_consistency_check --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/plugin_data/om_patch_media_info ] ; then
+    log "Analysing OM and Patch media logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseOMPatchDetails --dir ${DATADIR}/plugin_data/om_patch_media_info --site ${SITE} --date ${SQL_DATE}
+fi
+
+EDE_COMPONENT_DIR_PATH=$(find ${DATADIR}/plugin_data/ -type d -name '*_CSV')
+if [[ ! -z $EDE_COMPONENT_DIR_PATH  ]]; then
+    log "Analysing EDE's OutputDetailsLogs, FDNWiseOutputDetails Logs and EventWiseOutputDetails Logs"
+    for ede_component in $EDE_COMPONENT_DIR_PATH; do
+        [[ "$ede_component" =~ ^.*\/(.*)_CSV$ ]]
+        EDE_INSTANCE_NAME=${BASH_REMATCH[1]}
+        LOG_FILES=$(find ${ede_component}/ -type f -name 'OutputDetails*')
+        for file in $LOG_FILES ; do
+            run ${ANALYSIS_BIN}/ENIQ/parseEDEOutputDetailsLogs --logfile ${file} --instance ${EDE_INSTANCE_NAME}  --site ${SITE} --date ${SQL_DATE}
+        done
+        LOG_FILES=$(find ${ede_component}/ -type f -name 'FDNWiseOutputDetails*')
+        for file in $LOG_FILES ; do
+            run ${ANALYSIS_BIN}/ENIQ/parseEdeFdnWiseOutputDetailsLogs --logfile ${file} --instance ${EDE_INSTANCE_NAME} --site ${SITE} --date ${SQL_DATE}
+        done
+        LOG_FILES=$(find ${ede_component}/ -type f -name 'EventWiseOutputDetails_*.csv')
+        for file in $LOG_FILES ; do
+            run ${ANALYSIS_BIN}/ENIQ/parseEventDistribution --logfile ${file} --instance ${EDE_INSTANCE_NAME} --site ${SITE} --date ${SQL_DATE}
+        done
+    done
+fi
+
+EDE_COMPONENT_DIR_PATH=$(find ${DATADIR}/plugin_data/ -type d -name '*_scriptLogs')
+if [[ ! -z $EDE_COMPONENT_DIR_PATH  ]]; then
+    log "Analysing EDE's Linked files log"
+    for ede_component in $EDE_COMPONENT_DIR_PATH; do
+        [[ "$ede_component" =~ ^.*\/(.*)_scriptLogs$ ]]
+        EDE_INSTANCE_NAME=${BASH_REMATCH[1]}
+        run ${ANALYSIS_BIN}/ENIQ/parseEDELinkFiles --logdir ${ede_component} --instance ${EDE_INSTANCE_NAME} --site ${SITE}
+    done
+fi
+
+LOGICAL_DRIVE_PARSER="${ANALYSIS_BIN}/ENIQ/parseLogicalDrives"
+WINDOWS_CERTIFICATE_PARSER="${ANALYSIS_BIN}/ENIQ/parseWindowsCertificate"
+BIS_SYSTEM_PATH="${DATADIR}/plugin_data/bis_system"
+HARDWARE_PARSER="${ANALYSIS_BIN}/ENIQ/parseHardwareDetails"
+WINDOWS_INTERFACE_PARSER="${ANALYSIS_BIN}/ENIQ/parseWindowsInterfaceStats"
+if [ -d ${BIS_SYSTEM_PATH} ] ; then
+    log "Analysing BIS Server"
+    if [ -r ${BIS_SYSTEM_PATH}/hostname.tsv ] && [ -s ${BIS_SYSTEM_PATH}/hostname.tsv ] ; then
+        BIS_HOSTNAME=$(cat ${BIS_SYSTEM_PATH}/hostname.tsv | head --lines=1 | awk '{print $2}' | awk -F\. '{print $1}' | tr '[:upper:]' '[:lower:]')
+        BIS_IP_ADDRESS=$(cat ${BIS_SYSTEM_PATH}/hostname.tsv | head --lines=1 | awk '{print $1}')
+        if [ ! -z BIS_HOSTNAME ] && [ ! -z BIS_IP_ADDRESS ] ; then
+            run ${ANALYSIS_BIN}/server/createServer --site ${SITE} --host ${BIS_HOSTNAME} --type "BIS"
+            run ${ANALYSIS_BIN}/ENIQ/createEniqServer --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE} --type "BIS"
+            # Parse BIS system logs
+            BIS_PARSER="${ANALYSIS_BIN}/ENIQ/parseNetAnSystemLogs"
+            BIS_BO_PARSER="${ANALYSIS_BIN}/ENIQ/parseSystemBo"
+            BIS_BO_PARSER_ALL="${ANALYSIS_BIN}/ENIQ/parseSystemBoAll"
+            BIS_BO_VERSION_PARSER="${ANALYSIS_BIN}/ENIQ/parseBisBoVesion"
+
+            LOG_FILE="${BIS_SYSTEM_PATH}/Processor_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "% Processor Time,% User Time" --table windows_processor_details --site ${SITE} --server ${BIS_HOSTNAME}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/System_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "Processor Queue Length,Processes" --table windows_system_details --site ${SITE} --server ${BIS_HOSTNAME}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/Memory_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "Available MBytes" --table windows_memory_details --site ${SITE} --server ${BIS_HOSTNAME}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/Physical_Disk_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "Avg. Disk Queue Length,Disk Reads/sec,Disk Writes/sec,% Idle Time" --table windows_physicaldisk_details --site ${SITE} --server ${BIS_HOSTNAME}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/System_BO_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_BO_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/Hardware_Details_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${HARDWARE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/System_All_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_BO_PARSER_ALL} --logfile ${LOG_FILE} --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/Drive_Info_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${LOGICAL_DRIVE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/System_Certificate_expiry_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${WINDOWS_CERTIFICATE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/BO_Version_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${BIS_BO_VERSION_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${BIS_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${BIS_SYSTEM_PATH}/Memory_Related_Counters_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${WINDOWS_INTERFACE_PARSER} --logfile ${LOG_FILE}  --columns "MDL Read Hits %,\\\MDL Reads/sec,% Usage Peak,% Processor Time,
+                % User Time,Elapsed Time,IO Data Bytes/sec,IO Data Operations/sec,IO Other Bytes/sec,IO Other Operations/sec,IO Read Bytes/sec,
+                IO Read Operations/sec,IO Write Bytes/sec,IO Write Operations/sec" --site ${SITE} --server ${BIS_HOSTNAME}
+            fi
+            BIS_APPLICATION_PATH="${DATADIR}/plugin_data/bis_application"
+            if [ -d ${BIS_APPLICATION_PATH} ] ; then
+                # Parse BIS application logs
+                BIS_APPLICATION_PARSER="${ANALYSIS_BIN}/ENIQ/parseBisApplicationLogs"
+                LOG_FILE="${BIS_APPLICATION_PATH}/ActiveUsers${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_active_users_list --site ${SITE} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${BIS_APPLICATION_PATH}/ReportInstances${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_report_instances --site ${SITE} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${BIS_APPLICATION_PATH}/ReportList${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_report_list --site ${SITE} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${BIS_APPLICATION_PATH}/ReportRefreshTime${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_report_refresh_time --site ${SITE} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${BIS_APPLICATION_PATH}/UserList${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_users_list --site ${SITE} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${BIS_APPLICATION_PATH}/SchedulingInfo${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                   run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_scheduling_info --site ${SITE} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${BIS_APPLICATION_PATH}/PromptInfo${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_APPLICATION_PARSER} --logfile ${LOG_FILE} --table bis_prompt_info --site ${SITE} --date ${SQL_DATE}
+                fi
+            fi
+        else
+            log "ERROR: Unable to fetch IP and Hostname, aborting processing for BIS Server."
+        fi
+    else
+        log "ERROR: Unable to read file ${BIS_SYSTEM_PATH}/hostname.tsv, aborting processing for BIS Server."
+    fi
+fi
+
+NETANSEVER_SYSTEM_PATH="${DATADIR}/plugin_data/netanserver_systems"
+if [ -d ${NETANSEVER_SYSTEM_PATH} ] ; then
+    log "Analysing NetAnServer"
+    if [ -r ${NETANSEVER_SYSTEM_PATH}/hostname.tsv ] && [ -s ${NETANSEVER_SYSTEM_PATH}/hostname.tsv ] ; then
+        NETANSEVER_HOSTNAME=$(cat ${NETANSEVER_SYSTEM_PATH}/hostname.tsv | head --lines=1 | awk '{print $2}' | awk -F\. '{print $1}' | tr '[:upper:]' '[:lower:]')
+        NETANSEVER_IP_ADDRESS=$(cat ${NETANSEVER_SYSTEM_PATH}/hostname.tsv | head --lines=1 | awk '{print $1}')
+        if [ ! -z NETANSEVER_HOSTNAME ] && [ ! -z NETANSEVER_IP_ADDRESS ] ; then
+            run ${ANALYSIS_BIN}/server/createServer --site ${SITE} --host ${NETANSEVER_HOSTNAME} --type "NetAnServer"
+            run ${ANALYSIS_BIN}/ENIQ/createEniqServer --site ${SITE} --server ${NETANSEVER_HOSTNAME} --date ${SQL_DATE} --type "NetAnServer"
+            # Parse Netanserver system logs
+            NETANSEVER_PARSER="${ANALYSIS_BIN}/ENIQ/parseNetAnSystemLogs"
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/Processor_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${NETANSEVER_PARSER} --logfile ${LOG_FILE} --columns "% Processor Time,% User Time" --table windows_processor_details --site ${SITE} --server ${NETANSEVER_HOSTNAME}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/System_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${NETANSEVER_PARSER} --logfile ${LOG_FILE} --columns "Processor Queue Length,Processes" --table windows_system_details --site ${SITE} --server ${NETANSEVER_HOSTNAME}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/Memory_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${NETANSEVER_PARSER} --logfile ${LOG_FILE} --columns "Available MBytes" --table windows_memory_details --site ${SITE} --server ${NETANSEVER_HOSTNAME}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/Physical_Disk_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${NETANSEVER_PARSER} --logfile ${LOG_FILE} --columns "Avg. Disk Queue Length,Disk Reads/sec,Disk Writes/sec,% Idle Time" --table windows_physicaldisk_details --site ${SITE} --server ${NETANSEVER_HOSTNAME}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/Hardware_Details_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${HARDWARE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${NETANSEVER_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/Drive_Info_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${LOGICAL_DRIVE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${NETANSEVER_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/System_Certificate_expiry_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${WINDOWS_CERTIFICATE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${NETANSEVER_HOSTNAME} --date ${SQL_DATE}
+            fi
+            LOG_FILE="${NETANSEVER_SYSTEM_PATH}/Memory_Related_Counters_${REQUIRED_DATE}.tsv"
+            if [ -f ${LOG_FILE} ] ; then
+                run ${WINDOWS_INTERFACE_PARSER} --logfile ${LOG_FILE}  --columns "MDL Read Hits %,\\\MDL Reads/sec,% Usage Peak,% Processor Time,
+                % User Time,Elapsed Time,IO Data Bytes/sec,IO Data Operations/sec,IO Other Bytes/sec,IO Other Operations/sec,
+                IO Read Bytes/sec,IO Read Operations/sec,IO Write Bytes/sec,IO Write Operations/sec" --site ${SITE} --server ${NETANSEVER_HOSTNAME}
+            fi
+            NETANSEVER_APPLICATION_PATH="${DATADIR}/plugin_data/netanserver_applications"
+            if [ -d ${NETANSEVER_APPLICATION_PATH} ] ; then
+                LOG_FILE="${NETANSEVER_APPLICATION_PATH}/userAuditLog${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${ANALYSIS_BIN}/ENIQ/parseNetAnUserAuditLog --logfile ${LOG_FILE} --site ${SITE}
+                fi
+                LOG_FILE="${NETANSEVER_APPLICATION_PATH}/UserSessionStatisticsLog${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${ANALYSIS_BIN}/ENIQ/parseNetAnApplicationLogs --logfile ${LOG_FILE} --table netanserver_user_session_statistics_details --columns "TimeStamp,UserName,OpenFileCount,LoggedInDuration,ServiceId" --site ${SITE}
+                fi
+                LOG_FILE="${NETANSEVER_APPLICATION_PATH}/OpenFilesStatisticsLog${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${ANALYSIS_BIN}/ENIQ/parseNetAnApplicationLogs --logfile ${LOG_FILE} --table netanserver_open_file_statistics_details --columns "TimeStamp,FilePath,ServiceId" --site ${SITE}
+                fi
+                LOG_FILE="${NETANSEVER_APPLICATION_PATH}/AuditLog${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${ANALYSIS_BIN}/ENIQ/parseNetAnAuditLog --logfile ${LOG_FILE} --site ${SITE}
+                fi
+                LOG_FILE="${NETANSEVER_APPLICATION_PATH}/Backup_restore${REQUIRED_DATE}.txt"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${ANALYSIS_BIN}/ENIQ/parseOMBSBackup --logfile ${LOG_FILE} --site ${SITE} --server ${NETANSEVER_HOSTNAME} --type Netan
+                fi
+            fi
+        else
+            log "ERROR: Unable to fetch IP and Hostname, aborting processing for NetAnServer."
+        fi
+    else
+        log "ERROR: Unable to read file ${NETANSEVER_SYSTEM_PATH}/hostname.tsv, aborting processing for NetAnServer."
+    fi
+fi
+
+NETANSEVER_FEATURE_PATH="${DATADIR}/plugin_data/netanserver_features"
+if [ -d ${NETANSEVER_FEATURE_PATH} ] ; then
+    log "Analysing NetAnServer Feature logs"
+    run ${ANALYSIS_BIN}/ENIQ/parseNetanPMDetails --dir ${DATADIR}/plugin_data/netanserver_features --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/backlog_monitoring/engine-${DATE_PATTERN}.log ] ; then
+    log "Analysing engine log."
+    run ${ANALYSIS_BIN}/ENIQ/parseIngress --logfile ${DATADIR}/plugin_data/backlog_monitoring/engine-${DATE_PATTERN}.log  --site ${SITE} --date ${SQL_DATE}
+fi
+
+SIM_DIR=${DATADIR}/plugin_data/sim
+if [ -d ${SIM_DIR} ] ; then
+    log "Analysing SIM."
+    run ${ANALYSIS_BIN}/ENIQ/parseSim --dir ${SIM_DIR} --site ${SITE} --server ${HOSTNAME} --date ${SQL_DATE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/coredump_details/coredump_details_${SQL_DATE}.txt ] ; then
+    COREDUMP_LOG_FILES+="--logfile ${DATADIR}/plugin_data/coredump_details/coredump_details_${SQL_DATE}.txt "
+fi
+if [ -f ${DATADIR}/plugin_data/coredump_details/coredump_path_${SQL_DATE}.txt ] ; then
+    COREDUMP_LOG_FILES+="--logfile ${DATADIR}/plugin_data/coredump_details/coredump_path_${SQL_DATE}.txt "
+fi
+log "Analysing coredump details."
+run ${ANALYSIS_BIN}/ENIQ/parseGenericCoreDump $COREDUMP_LOG_FILES --site ${SITE} --date ${SQL_DATE}
+
+if [ -d ${DATADIR}/plugin_data/upgrade_time ] ; then
+    log "Analysing ENIQ Events Upgraded features' details."
+    run ${ANALYSIS_BIN}/ENIQ/parseUpgradeTime --dir ${DATADIR}/plugin_data/upgrade_time --site ${SITE} --date ${SQL_DATE}
+fi
+
+# There can be multiple EDE instances containing controller log file.
+EDE_DIR_PATH=$(find ${DATADIR}/plugin_data/ -type d -name '*_log')
+if [[ ! -z ${EDE_DIR_PATH}  ]]; then
+    log "Analysing EDE's Controller logs"
+    for ede_component in $EDE_DIR_PATH; do
+        [[ "$ede_component" =~ ^.*\/(.*)_log$ ]]
+        EDE_INSTANCE_NAME=${BASH_REMATCH[1]}
+        LOG_FILE=$(find ${ede_component}/ -type f -name '*_controller.log')
+        run ${ANALYSIS_BIN}/ENIQ/parseEDEControllerLog --logfile ${LOG_FILE} --instance ${EDE_INSTANCE_NAME} --site ${SITE} --date ${SQL_DATE}
+    done
+fi
+
+if [ -f ${DATADIR}/plugin_data/coredump/coredump_${SQL_DATE}.txt ] ; then
+    log "Analysing coredump details."
+    run ${ANALYSIS_BIN}/ENIQ/parseCoredump --logfile ${DATADIR}/plugin_data/coredump/coredump_${SQL_DATE}.txt  --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -d ${DATADIR}/remotehosts ] ; then
+    log "Analysing SFS storage details."
+    LOG_FILE=$(find ${DATADIR}/remotehosts -type f -name 'storage_fs_list.txt')
+    for file in $LOG_FILE ; do
+        run ${ANALYSIS_BIN}/ENIQ/parseSfsLog --logfile ${file} --table eniq_sfs_storage_fs_details --date ${SQL_DATE} --site ${SITE}
+    done
+fi
+
+if [ -f ${DATADIR}/plugin_data/lteesLatencyLog/ltees_latency.txt ] ; then
+    log "Analysing LTEES latency calculation details."
+    run ${ANALYSIS_BIN}/ENIQ/parseLteesLatencyCalculation --logfile ${DATADIR}/plugin_data/lteesLatencyLog/ltees_latency.txt --site ${SITE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/sapIqLargeMemory/sapiq_large_memory_${SQL_DATE}.txt ] ; then
+    log "Analysing SAP IQ Large Memory details."
+    run ${ANALYSIS_BIN}/ENIQ/parseSapIqLargeMemory --logfile ${DATADIR}/plugin_data/sapIqLargeMemory/sapiq_large_memory_${SQL_DATE}.txt --site ${SITE}
+fi
+
+if [ -f ${DATADIR}/plugin_data/sfsSnapCacheStatus/sfsSnapCacheStatus_${SQL_DATE}.txt ] ; then
+    log "Analysing SFS snap cache status log."
+    run ${ANALYSIS_BIN}/ENIQ/parseSfsLog --logfile ${DATADIR}/plugin_data/sfsSnapCacheStatus/sfsSnapCacheStatus_${SQL_DATE}.txt  --table eniq_sfs_snap_cache_status --date ${SQL_DATE} --site ${SITE}
+fi
+
+ocs_directories=("ADDS_system_logs" "CCS_system_logs" "VDA_system_logs" "ocs_without_citrix_system")
+for ocs_directory in "${ocs_directories[@]}"
+do
+    if [ ${ocs_directory} == "ocs_without_citrix_system" ] ; then
+        OCS_SYSTEM_PATH="${DATADIR}/plugin_data/${ocs_directory}"
+    else
+        OCS_SYSTEM_PATH="${DATADIR}/plugin_data/OCS/${ocs_directory}"
+    fi
+    if [ -d ${OCS_SYSTEM_PATH} ] ; then
+        log "Analysing OCS Server"
+        if [ -r ${OCS_SYSTEM_PATH}/hostname.tsv ] && [ -s ${OCS_SYSTEM_PATH}/hostname.tsv ] ; then
+            OCS_HOSTNAME=$(cat ${OCS_SYSTEM_PATH}/hostname.tsv | head --lines=1 | awk '{print $2}' | awk -F\. '{print $1}' | tr '[:upper:]' '[:lower:]')
+            OCS_IP_ADDRESS=$(cat ${OCS_SYSTEM_PATH}/hostname.tsv | head --lines=1 | awk '{print $1}')
+            if [ ! -z OCS_HOSTNAME ] && [ ! -z OCS_IP_ADDRESS ] ; then
+                if [ ${ocs_directory} == "ADDS_system_logs" ] ; then
+                    type="OCS_ADDS"
+                elif [ ${ocs_directory} == "CCS_system_logs" ] ; then
+                    type="OCS_CCS"
+                elif [ ${ocs_directory} == "VDA_system_logs" ] ; then
+                    type="OCS_VDA"
+                else
+                    type="OCS_WITHOUT_CITRIX"
+                fi
+                run ${ANALYSIS_BIN}/server/createServer --site ${SITE} --host ${OCS_HOSTNAME} --type "OCS"
+                run ${ANALYSIS_BIN}/ENIQ/createEniqServer  --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE} --type ${type}
+                # Parse OCS system logs
+                BIS_PARSER="${ANALYSIS_BIN}/ENIQ/parseNetAnSystemLogs"
+                HARDWARE_PARSER="${ANALYSIS_BIN}/ENIQ/parseHardwareDetails"
+                LIC_USAGE_PARSER="${ANALYSIS_BIN}/ENIQ/parseLicenseUsages"
+                SYSTEM_BO_PARSER="${ANALYSIS_BIN}/ENIQ/parseOcsSystemBo"
+                SYSTEM_BO_ALL_PARSER="${ANALYSIS_BIN}/ENIQ/parseOcsSystemBoAll"
+                PUBLISHED_APPLICATION_INFO_PARSER="${ANALYSIS_BIN}/ENIQ/parsePublishedApplicationInfo"
+                LOG_FILE="${OCS_SYSTEM_PATH}/Processor_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "% Processor Time,% User Time" --table ocs_processor_details --site ${SITE} --server ${OCS_HOSTNAME}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/System_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "Processor Queue Length,Processes" --table ocs_system_details --site ${SITE} --server ${OCS_HOSTNAME}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/Memory_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "Available MBytes" --table ocs_memory_details --site ${SITE} --server ${OCS_HOSTNAME}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/Physical_Disk_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${BIS_PARSER} --logfile ${LOG_FILE} --columns "Avg. Disk Queue Length,Disk Reads/sec,Disk Writes/sec,% Idle Time" --table ocs_physicaldisk_details --site ${SITE} --server ${OCS_HOSTNAME}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/Hardware_Details_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${HARDWARE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/Drive_Info_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${LOGICAL_DRIVE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/System_Certificate_expiry_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${WINDOWS_CERTIFICATE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/License_Info_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${LIC_USAGE_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/System_BO_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${SYSTEM_BO_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/System_All_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${SYSTEM_BO_ALL_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/Memory_Related_Counters_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${WINDOWS_INTERFACE_PARSER} --logfile ${LOG_FILE}  --columns "MDL Read Hits %,\\\MDL Reads/sec,% Usage Peak,
+                    % Processor Time,% User Time,Elapsed Time,IO Data Bytes/sec,IO Data Operations/sec,IO Other Bytes/sec,IO Other Operations/sec,
+                    IO Read Bytes/sec,IO Read Operations/sec,IO Write Bytes/sec,IO Write Operations/sec" --site ${SITE} --server ${OCS_HOSTNAME}
+                fi
+                LOG_FILE="${OCS_SYSTEM_PATH}/Published_Application_Info_${REQUIRED_DATE}.tsv"
+                if [ -f ${LOG_FILE} ] ; then
+                    run ${PUBLISHED_APPLICATION_INFO_PARSER} --logfile ${LOG_FILE} --site ${SITE} --server ${OCS_HOSTNAME} --date ${SQL_DATE}
+                fi
+            fi
+        fi
+        else
+            log "ERROR : Unable to find ${OCS_SYSTEM_PATH}/hostname.tsv "
+    fi
+done
+
+log "End ENIQ"

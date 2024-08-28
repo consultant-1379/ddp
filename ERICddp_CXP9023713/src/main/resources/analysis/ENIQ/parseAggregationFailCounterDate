@@ -1,0 +1,115 @@
+#!/usr/bin/perl
+
+####################################################################################
+# Description -----------parseAggregationFailCounterDate ---------------------------
+# This script parses the aggregated Failed Date information and stores data to DB for DDP
+# @author - PRIYANKA TALLURI (ztalpri)
+# usage parseAggregationFailCounterDate --logfile ${LOG_FILE} --site ${SITE} --date ${date}
+#####################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+sub main {
+    my ( $site, $logFile, $date );
+
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId( $dbh, $site );
+
+    my $r_parsedLog = parseData( $logFile, $siteId, $date );
+    my $bcpFile = createBcpFile( $r_parsedLog, $siteId, $date );
+
+    my $table = "eniq_agg_fail_counter_date";
+    removeOldData( $table, $siteId, $date, $dbh );
+    loadDb( $dbh, $bcpFile, $table );
+
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+
+    $dbh->disconnect();
+}
+
+sub parseData($$$) {
+    my ( $logFile, $siteId, $date ) = @_;
+
+    my @aggArray = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+
+    while ( my $line = <FILE> ) {
+        chomp( $line );
+        if ( $line =~ /(\d+)-(\d+)-(\d+)/ ) {
+            my %aggHash = (
+                failedDate => "$3-$2-$1"
+            );
+            push ( @aggArray, \%aggHash );
+        }
+    }
+
+    close FILE;
+    return ( \@aggArray );
+}
+
+sub createBcpFile ($$$) {
+    my ( $parsedLog, $siteId, $date ) = @_;
+
+    my $bcp = getBcpFileName( "Aggregation_failedDate_Status" );
+    open BCP, ">$bcp" or die "Cannot open BCPFile $bcp";
+    foreach my $agg( @$parsedLog ) {
+        printf BCP
+             "%s|%d|%s\n",
+              $date,
+              $siteId,
+              $agg->{failedDate};
+    }
+    close BCP;
+    return $bcp
+}
+
+sub removeOldData ($$$$){
+    my ( $table, $siteId, $date, $dbh ) = @_;
+
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND date = '$date' ";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+
+    dbDo( $dbh, $deleteSql ) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb ($$$){
+    my ( $dbh, $bcpFile, $table ) = @_;
+
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+
+    if ( $DEBUG > 5 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+
+    dbDo( $dbh, $loadSql ) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();
+

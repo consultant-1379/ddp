@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_shmcoreserv_job_instrumentation_logs">
+    <keycol name="netypeid" reftable="ne_types" />
+  </table>
+
+  <services>
+    <service name="shmcoreservice" />
+  </services>
+
+  <events>
+    <!--
+    {"jobName":"UpgradeJob_TORF-370091_01","TOTAL_COUNT":2,"CANCELLED_COUNT":0,"activities":["confirm","prepare","activate","verify"],"SUCCESS_COUNT":2,"jobType":"UPGRADE","FAILED_COUNT":0,"_Thread":"job-executor-tp-threads
+    - 77","neType":"RadioNode","SKIPPED_COUNT":0}  -->
+    <event name="SHM.MAIN_JOB_COMPLETED">
+      <metric source="jobName" target="jobName" />
+      <metric source="TOTAL_COUNT" target="totalCount" />
+      <metric source="CANCELLED_COUNT" target="cancelledCount" />
+      <metric source="activities" target="activities" />
+      <metric source="SUCCESS_COUNT" target="successCount" />
+      <metric source="jobType" target="jobType" />
+      <metric source="FAILED_COUNT" target="failedCount" />
+      <metric source="neType" target="netypeid" />
+      <metric source="SKIPPED_COUNT" target="skippedCount" />
+    </event>
+  </events>
+</modelledevents>

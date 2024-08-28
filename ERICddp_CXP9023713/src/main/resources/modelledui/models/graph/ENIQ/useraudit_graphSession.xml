@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Number of User Sessions"
+>
+  <presetagg type="COUNT" interval="Per Minute"/>
+  <title value="User Login"/>
+  <queries>
+    <query timecol="time" multiseries="netanserver_user_session_statistics_details.userName">
+      <dbtables main="netanserver_user_session_statistics_details">
+        <reference table="sites" condition="netanserver_user_session_statistics_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="userName"/>
+      <param name="site"/>
+      <where>netanserver_user_session_statistics_details.userName NOT IN ( %s ) AND sites.name = '%s'</where>
+      <column db="netanserver_user_session_statistics_details.userName" label="User Name"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>
+

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="comecimmscm"/>
+    <service name="mscmapg"/>
+    <service name="mscmip"/>
+  </services>
+
+  <table name="enm_mscmce_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.handlers.delta.instrumentation.com-ecim-cm-delta-sync-handler:type=ComEcimCmDeltaSyncInstrumentation$">
+      <metric source="numberOfSuccessfulDeltaSyncEvents" target="deltaEvents" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.handlers.delta.instrumentation.com-ecim-cm-delta-sync-handler:type=ComEcimDeltaSyncInstrumentation$">
+      <metric source="deltaSyncSuccessfulCounter" target="deltaSyncSucc" delta="true" filteridle="true"/>
+      <metric source="deltaSyncFailedCounter" target="deltaSyncFail" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.util.instrumentation.com-ecim-cm-subscription-handler:type=NetconfSubscriptionInstrumentation$">
+      <metric source="numberOfFailedSubscriptions" target="ncFailedSubs" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessfulSubscriptions" target="ncSuccSubs" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cba.handlers.netconf.util.cba-netconf-write-controller-handler:type=WriteInstrumentation$">
+      <metric source="actionMOCountFailure" target="ncWriteActionFail" delta="true" filteridle="true"/>
+      <metric source="actionMOCountSuccess" target="ncWriteActionSucc" delta="true" filteridle="true"/>
+      <metric source="createMOCountFailure" target="ncWriteCreateFail" delta="true" filteridle="true"/>
+      <metric source="createMOCountSuccess" target="ncWriteCreateSucc" delta="true" filteridle="true"/>
+      <metric source="deleteMOCountFailure" target="ncWriteDeleteFail" delta="true" filteridle="true"/>
+      <metric source="deleteMOCountSuccess" target="ncWriteDeleteSucc" delta="true" filteridle="true"/>
+      <metric source="modifyMOCountFailure" target="ncWriteModifyFail" delta="true" filteridle="true"/>
+      <metric source="modifyMOCountSuccess" target="ncWriteModifySucc" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cba.handlers.read.instrumentation.com-ecim-cm-filter-get-handler:type=CbaReadHandlerInstrumentation$">
+      <metric source="dpsCounterForSuccessfulRead" target="nonPersistReadSucc" delta="true" filteridle="true"/>
+      <metric source="dpsNumberOfFailedRead" target="nonPersistReadFail" delta="true" filteridle="true"/>
+      <metric source="numberOfAttributesRead" target="nonPersistReadAttr" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cba.handlers.instrumentation.cba-cm-sync-node-handlers:type=CbaDpsHandlerInstrumentation$">
+      <metric source="dpsCounterForSuccessfulSync" target="syncSucc" delta="true" filteridle="true"/>
+      <metric source="dpsNumberOfFailedSyncs" target="syncFail" delta="true" filteridle="true"/>
+      <metric source="numberOfMosBeingSynced" target="syncMO" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cba.handlers.ejb.netconf-session-impl:type=NetconfSessionInstrumentationImpl$">
+      <metric source="requestCount" target="ncSessRequestCount" delta="true" filteridle="true"/>
+      <metric source="reqCRUDProcessTime" target="ncSessReqCRUDProcessTime" delta="true" filteridle="true"/>
+      <metric source="reqRPCConstructionTime" target="ncSessReqRPCConstructionTime" delta="true" filteridle="true"/>
+      <metric source="responseCount" target="ncSessResponseCount" delta="true" filteridle="true"/>
+      <metric source="resCRUDProcessTime" target="ncSessResCRUDProcessTime" delta="true" filteridle="true"/>
+      <metric source="resRPCExtractionTime" target="ncSessrResRPCExtractionTime" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.handlers.instrumentation.com-ecim-cm-heartbeat-supervision-handler:type=HeartbeatInstrumentation$">
+      <metric source="successfullSubscriptionValidations" target="hbSubValidationSucc" delta="true" filteridle="true"/>
+      <metric source="failedSubscriptionValidations" target="hbSubValidationFail" delta="true" filteridle="true"/>
+      <metric source="startSupervision" target="hbSupervisionStart" delta="true" filteridle="true"/>
+      <metric source="stoppedSupervision" target="hbSupervisionStop" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.handlers.utility.instrumentation.com-ecim-notification-supervision-handler:type=ComEcimNotificationInstrumentation$">
+      <metric source="totalDirectlyProcessedNotifications" target="notifDirect" delta="true" filteridle="true"/>
+      <metric source="totalBufferedNotifications" target="notifBuffered" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cba.handlers.instrumentation.cba-cm-sync-node-handlers:type=CommonSoftwareSyncInstrumentation$">
+      <metric source="averageModelIdCalculationTimeTaken" target="averageModelIdCalculationTimeTaken"/>
+      <metric source="averageNoModelIdCalculationTimeTaken" target="averageNoModelIdCalculationTimeTaken"/>
+      <metric source="numberOfModelIdCalculation" target="numberOfModelIdCalculation" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncWithError" target="numberOfSoftwareSyncWithError" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncWithModelIdCalculation" target="numberOfSoftwareSyncWithModelIdCalculation" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncWithoutModelIdCalculation" target="numberOfSoftwareSyncWithoutModelIdCalculation" delta="true" filteridle="true"/>
+      <metric source="softwareSyncInvocations" target="softwareSyncInvocations" delta="true" filteridle="true"/>
+      <metric source="totalModelIdCalculationTimeTaken" target="totalModelIdCalculationTimeTaken" delta="true" filteridle="true"/>
+      <metric source="totalWithoutModelIdCalculationTimeTaken" target="totalWithoutModelIdCalculationTimeTaken" delta="true" filteridle="true"/>
+      <metric source="numberOfSoftwareSyncInvocationsForYangLibraryUpdates" target="yangNumberOfSoftwareSyncInvocations" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.cba.handlers.mimswitch.instrumentation.cba-cm-sync-node-handlers:type=MimSwitchInstrumentation$">
+      <metric source="numberOfFailedMibUpgrade" target="numberOfFailedMibUpgrade" delta="true" filteridle="true"/>
+      <metric source="numberOfSuccessfulMibUpgrade" target="numberOfSuccessfulMibUpgrade" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.instrumentation.com-ecim-mdb-notification-listener-handler:type=YangLibraryNotificationAnalysisInstrumentation$">
+      <metric source="receivedNotificationsCount" target="yangNotificationsReceivedCount" delta="true" filteridle="true"/>
+      <metric source="processedNotificationsCount" target="yangNotificationsProcessedCount" delta="true" filteridle="true"/>
+      <metric source="discardedNotificationsCount" target="yangNotificationsDiscardedCount" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

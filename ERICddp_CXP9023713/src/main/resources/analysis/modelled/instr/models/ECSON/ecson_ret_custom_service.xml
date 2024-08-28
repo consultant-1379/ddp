@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_ret_custom_service">
+
+  <table name="ecson_ret_custom_service">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <services>
+    <service name="eric-ret-algorithm"/>
+  </services>
+
+  <metricgroups>
+    <metricgroup name="eric-ret-algorithm">
+      <metric source="com_ericsson_oss_services_sonom_ret_metrics_ret_proposed_cm_changes_count" target="cmChangeCount" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>
+

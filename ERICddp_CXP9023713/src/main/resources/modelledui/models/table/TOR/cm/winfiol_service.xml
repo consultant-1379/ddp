@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="enm_winfiol_services">
+   <reference table="sites" condition="enm_winfiol_services.siteid = sites.id"/>
+   <reference table="servers" condition="enm_winfiol_services.serverid = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <param name="service"/>
+ <where>sites.name = '%site%' AND enm_winfiol_services.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_winfiol_services.service = '%service%' </where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Instance"/>
+ <column db="service" label="Service"/>
+ <column db="SUM(connections)" label="Connections"/>
+ <column db="SUM(disconnections)" label="Disconnections"/>
+ <column db="SUM(failedconnections)" label="Failed Connections"/>
+ <column db="SUM(commands)" label="Commands"/>
+
+</modelledtable>

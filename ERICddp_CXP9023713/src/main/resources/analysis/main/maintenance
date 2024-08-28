@@ -1,0 +1,273 @@
+#!/bin/bash
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN}/.. ; pwd`
+
+export PERL5OPT="-I${ANALYSIS_BIN}/common"
+
+log() {
+    MSG=$1
+    DATE=`date`
+    echo "${DATE} ${MSG}"
+}
+
+run() {
+    log "Starting Maintenance"
+
+    #
+    # Empty temp dir
+    #
+    RUNNING_LOG_DIR=/data/ddp/log
+    YESTERDAY=`date -d "1 day ago" +"%Y-%m-%d"`
+    PROC_LOGS=${RUNNING_LOG_DIR}/${YESTERDAY}
+    SERVER_SETUP_DIR=$(dirname ${ANALYSIS_BIN})
+    SERVER_SETUP_DIR=${SERVER_SETUP_DIR}/server_setup
+
+    if [ -d ${PROC_LOGS} ] ; then
+        ${ANALYSIS_BIN}/common/getEventDataUsage --dir ${PROC_LOGS}
+    fi
+
+    log "Clearing temp"
+    find /data/stats/temp -type f -exec rm -f {} +
+
+    #
+    # Remove obsolete DDP sw directories
+    #
+    CURRENT_DDP=$(readlink -f /data/ddp/current)
+    if [ ! -z "${CURRENT_DDP}" ] ; then
+        DIR_LIST=$(find /data/ddp -maxdepth 1 -type d -name 'DDP-*' -mtime +7 | egrep -v "${CURRENT_DDP}")
+        for DIR in ${DIR_LIST} ; do
+            log "Removing ${DIR}"
+            /bin/rm -rf ${DIR}
+        done
+    fi
+
+    #
+    # Remove obsolete DDP sw upgrade directories
+    #
+    DIR_LIST=$(find /data/ddp/upgrade -maxdepth 1 -type d -mtime +14)
+    for DIR in ${DIR_LIST} ; do
+        log "Removing ${DIR}"
+        /bin/rm -rf "${DIR}"
+    done
+
+    #
+    # Remove obsolete makeStats directories
+    #
+    DIR_LIST=$(find /data/tmp -maxdepth 1 -type d -name 'makeStats_*' -mtime +1)
+    for DIR in ${DIR_LIST} ; do
+        log "Removing ${DIR}"
+        /bin/rm -rf "${DIR}"
+    done
+
+    #
+    # Remove old DDC sw tar.gz
+    #
+    find /data/tmp -maxdepth 1 -type f -name 'DDC-*.tar.gz' -mtime +1 -delete
+
+    #
+    # Remove any old files in sftp dir
+    #
+    find /data/ftproot -type f -mtime +7 -delete
+
+    DAY_OF_MONTH=`date +%d`
+    . /data/stats/config
+
+    pgrep archiveSiteData > /dev/null
+    if [ $? -ne 0 ] ; then
+        # If rentention is in days, run every day. Otherwise run on the first of the
+        # month
+        if [ ! -z "${DAYS_TO_KEEP}" ] || [ ${DAY_OF_MONTH} -eq 1 ] ; then
+            ${ANALYSIS_BIN}/main/archiveSiteData -c /data/stats/config >> ${RUNNING_LOG_DIR}/archive.log &
+        fi
+    else
+        log "Skipping archiveSiteData execution as another archival process is already in progress"
+    fi
+
+    #
+    # Clear out any "crap" left in the staging_area directories
+    #
+    for SITEDATA in $(${ANALYSIS_BIN}/main/getSiteList) ; do
+        SITE_NAME=$(echo $SITEDATA | cut -d: -f2)
+        SITE_TYPE=$(echo $SITEDATA | cut -d: -f3 | tr "[:upper:]" "[:lower:]")
+
+        if [ -d /data/stats/${SITE_TYPE}/${SITE_NAME}/data/staging_area ] ; then
+            LIST=$(ls /data/stats/${SITE_TYPE}/${SITE_NAME}/data/staging_area)
+            if [ ! -z "${LIST}" ] ; then
+                rm -rf /data/stats/${SITE_TYPE}/${SITE_NAME}/data/staging_area
+            fi
+        fi
+    done
+
+    #
+    # Remove anything in the incr directory older then a day
+    # mindepth is so that we don't delete the incr directory itself
+    #
+    find /data/tmp/incr -depth -maxdepth 2 -mindepth 1 -type d -mtime +1 -exec /bin/rm -rf {} +
+
+    #
+    # Remove old logs
+    #
+    log "Clearing logs"
+    find ${RUNNING_LOG_DIR} -type f -name 'processed.*' -mtime +14 -exec rm {} \;
+    find ${RUNNING_LOG_DIR} -type d -name '2???-??-??' -mtime +14 -exec rm -r {} \;
+
+    if [ ! -z "${ELASTICSEARCH_RETENTION}" ] ; then
+        ${ANALYSIS_BIN}/TOR/elasticsearch/removeLogs ${ELASTICSEARCH_RETENTION}
+    fi
+
+    log "Process compress_pending"
+    for DIR_FILE in $(find /data/tmp/incr/compress_pending -mtime +0) ; do
+        DIR=$(cat ${DIR_FILE})
+        if [ -d ${DIR} ] ; then
+            log " ${DIR}"
+            ${ANALYSIS_BIN}/main/compressFiles ${DIR}
+        fi
+        rm -f ${DIR_FILE}
+    done
+
+    log "Performing initial partitioning"
+    for DB in statsdb ddpadmin ; do
+        ${ANALYSIS_BIN}/sql/partitionManager --db ${DB} --action initial --table auto --exit /tmp/maintance.exit
+        RESULT=$?
+        if [ ${RESULT} -ne 0 ] ; then
+            return
+        fi
+    done
+
+    log "Updating partitions"
+    for DB in statsdb ddpadmin ; do
+        ${ANALYSIS_BIN}/sql/partitionManager --db ${DB} --action update --parallel 4 --exit /tmp/maintance.exit
+        RESULT=$?
+        if [ ${RESULT} -ne 0 ] ; then
+            return
+        fi
+    done
+
+    # DB Partition removal/aggreation
+    if [ ${DAY_OF_MONTH} -eq 1 ] ; then
+        log "Clearing old partitions"
+        for DB in statsdb ddpadmin ; do
+            local DEFAULT_CONFIG=${ANALYSIS_BIN}/sql/partitions_${DB}.json
+            local SERVER_CONFIG=/data/ddp/partitions_${DB}.json
+            local CONFIG_ARG="--config ${DEFAULT_CONFIG}"
+            if [ -r ${SERVER_CONFIG} ] ; then
+                CONFIG_ARG="${CONFIG_ARG} --config ${SERVER_CONFIG}"
+            fi
+            ${ANALYSIS_BIN}/sql/partitionManager --action deleteold --db ${DB} ${CONFIG_ARG}
+        done
+    fi
+
+    log "Fix Process names"
+    ${ANALYSIS_BIN}/server/parseJps --fixnames fix --exit /tmp/maintance.exit
+    RESULT=$?
+    if [ ${RESULT} -ne 0 ] ; then
+        return
+    fi
+
+    local DAY_OF_WEEK=$(date +%u)
+    if [ ${DAY_OF_WEEK} -eq 7 ] ; then
+        ${ANALYSIS_BIN}/server/parseJps --fixnames getold >> /data/ddp/log/parseJps_getold.log 2>&1 &
+    fi
+
+    #
+    # Clear contents of Temp accout
+    #
+    if [ -d  /data/stats/oss/Temp ] ; then
+        log "Clearing Temp account"
+        log "Dump schema"
+        mysqldump --no-data --user=statsadm --password=_sadm statsdb > /tmp/statsdb.ddl
+
+        log "Delete data from MySQL"
+        ${ANALYSIS_BIN}/sql/deleteSite --site Temp --ddl /tmp/statsdb.ddl --dataonly
+
+        log "Delete directory contents"
+        rm -rf /data/stats/oss/Temp/data/*
+        rm -rf /data/stats/oss/Temp/analysis/*
+
+        log "Copy template files"
+        cp ${ANALYSIS_BIN}/template/site_index.html /data/stats/oss/Temp/analysis/index.html
+        cp ${ANALYSIS_BIN}/template/site_dataindex.html /data/stats/oss/Temp/analysis/dataindex.html
+        chmod 644 /data/stats/oss/Temp/analysis/dataindex.html
+
+        rm /tmp/statsdb.ddl
+    fi
+
+
+    RESULT=0
+}
+
+
+if [ -d /opt/csw ] ; then
+    export PATH=/opt/csw/gnu:/opt/csw/bin:$PATH
+elif [ -d /usr/local/bin ] ; then
+    export PATH=/usr/local/bin:$PATH
+fi
+
+if [ "$1" = "start" ] ; then
+
+    if [ -r /tmp/maintance.running ] ; then
+        log "ERROR: Seems to be already running"
+        exit 1
+    fi
+    echo $$ > /tmp/maintance.running
+    rm -f /tmp/maintance.exit > /dev/null 2>&1
+
+    if [ -r /lib/systemd/system/ddpd.service ] ; then
+        STATUS=$(/usr/bin/systemctl status ddpd.service | egrep '^ *Active' | awk '{print $2}')
+        if [ "${STATUS}" != "inactive" ] ; then
+            sudo /usr/bin/systemctl stop ddpd.service
+            if [ $? -ne 0 ] ; then
+                log "ERROR: Failed to stop ddpd: $?"
+                exit 1
+            fi
+            # If we timeout, don't get a non-zero exit code, so we need to explictly
+            # check the state the service
+            ACTIVE_STATE=$(sudo /usr/bin/systemctl show ddpd.service --property=ActiveState | egrep '^ActiveState' | awk -F= '{print $2}')
+            # Print state of service
+            if [ "${ACTIVE_STATE}" = "failed" ] ; then
+                log "ERROR: Failed to stop ddpd"
+                sudo /usr/bin/systemctl status ddpd.service
+                exit 2
+            fi
+        fi
+    elif [  -x /usr/sbin/svcadm ] ; then
+        /usr/sbin/svcadm disable ddpd
+        STATUS=""
+        while [ "$STATUS" != "disabled" ] && [ "$STATUS" != "maintance" ] ; do
+            sleep 5
+            STATUS=`/usr/bin/svcs ddpd | awk '{print $1}' | tail --lines 1`
+        done
+    fi
+
+    RESULT=0
+    START_TIME=$(date +'%Y-%m-%d %H-%M-%S')
+    run
+    log "Maintenance Completed"
+    mysql ddpadmin<< EOF
+INSERT into ddp_maintenance_times(startTime, duration) values ('$START_TIME', TIME_TO_SEC( TIMEDIFF( NOW(), '$START_TIME') ));
+EOF
+
+    if [ ${RESULT} -eq 0 ] || [ ${RESULT} -eq 1 ] ; then
+        if [ -r /lib/systemd/system/ddpd.service ] ; then
+            sudo /usr/bin/systemctl start ddpd.service
+        elif [ -x /usr/sbin/svcadm ] ; then
+            /usr/sbin/svcadm enable ddpd
+        fi
+    else
+        log "ERROR: Run did not exit correctly, leaving ddpd offline"
+    fi
+    date
+    rm /tmp/maintance.running
+
+elif [ "$1" = "stop" ] ; then
+    if [ -r /tmp/maintance.running ] ; then
+        touch /tmp/maintance.exit
+
+        while [ -r /tmp/maintance.running ] ; do
+            sleep 1
+        done
+    fi
+fi
+

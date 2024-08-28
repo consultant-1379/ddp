@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="test" timecol="date">
+  </table>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="groupid"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="count" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <event name="testevent" explode_array="counts">
+        <metric source="groupid" target="groupid"/>
+        <metric source="count" target="count"/>
+      </event>
+  </events>
+</modelledevents>

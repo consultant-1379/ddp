@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+our $FIND_START_BLOCK = 1;
+our $FIND_END_BLOCK = 2;
+
+sub processServerBlock($$) {
+    my ($r_simulations,$r_serverBlock) = @_;
+
+    if ( $DEBUG > 5 ) { print Dumper("processServerBlock: r_serverBlock", $r_serverBlock); }
+    if ( defined $r_serverBlock && $#{$r_serverBlock->{'nodes'}} > -1 ) {
+        my @typeParts = split(/\s+/, $r_serverBlock->{'header'});
+        my $type = $typeParts[0] . " " . $typeParts[1];
+
+        foreach my $r_node ( @{$r_serverBlock->{'nodes'}} ) {
+            my ($simulation) = $r_node->{'sim'} =~ /\/([^\/]+)$/;
+            my $nodeCountByType = $r_simulations->{$simulation}->{$type};
+            if ( ! defined $nodeCountByType ) {
+                $nodeCountByType = 0;
+            }
+            $nodeCountByType++;
+            $r_simulations->{$simulation}->{$type} = $nodeCountByType;
+        }
+        if ( $DEBUG > 5 ) { print Dumper("processServerBlock: r_simulations", $r_simulations); }
+    }
+}
+
+sub parseInput($) {
+    my ($inputFile) = @_;
+
+    my %simulations = ();
+
+    open INPUT, $inputFile or die "Cannot open $inputFile";
+    my $state = $FIND_START_BLOCK;
+    my $r_serverBlock = undef;
+    my $indent = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseInput: state=$state line=$line"; }
+        if ( $state == $FIND_START_BLOCK ) {
+            if ( $line =~ /^'server_\d+/ ) {
+                my ($header) = $line =~ / for (.*)/;
+                # Skip == line and header line
+                <INPUT>;
+                $line = <INPUT>;
+                ($indent) = $line =~ /^(\s+)NE/;
+                $r_serverBlock = { 'header' => $header, 'nodes' => [] };
+                $state = $FIND_END_BLOCK;
+            }
+        } elsif ( $state == $FIND_END_BLOCK ) {
+            if ( $line =~ /^$/ ) {
+                $state = $FIND_START_BLOCK;
+
+                processServerBlock(\%simulations,$r_serverBlock);
+                $r_serverBlock = undef;
+            } elsif ( $line =~ /^$indent(\S+)\s+(\S+)\s+(.+)/ ) {
+                my ($ne,$ip,$rest) = ($1,$2,$3);
+                my ($simulation) = $rest =~ /\s*(\S+)\s*$/;
+                if ( $DEBUG > 8 ) { print "parseInput: ne=$ne ip=$ip simulation=$simulation\n"; }
+
+                push @{$r_serverBlock->{'nodes'}}, { 'ne' => $ne, 'ip' => $ip, 'sim' => $simulation };
+            }
+        }
+    }
+    close INPUT;
+
+    if ( defined $r_serverBlock ) {
+        processServerBlock(\%simulations,$r_serverBlock);
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("parseInput: simulations", \%simulations); }
+    return \%simulations;
+}
+
+sub store($$$$) {
+    my ($r_sims,$site,$date,$server) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId($dbh, $siteId, $server);
+
+    my %types = ();
+    foreach my $r_countByType ( values %{$r_sims} ) {
+        foreach my $type ( keys %{$r_countByType} ) {
+            $types{$type} = 1;
+        }
+    }
+    my @typeList = keys %types;
+    my $r_typeMap = getIdMap($dbh,"netsim_netypes", "id", "name", \@typeList);
+
+    dbDo($dbh, "DELETE FROM netsim_simulations WHERE siteid = $siteId AND date = '$date' AND serverid = $serverId") or die "Delete failed";
+    while ( my ($simulation,$r_countByType) = each %{$r_sims} ) {
+        while ( my ($type,$count) = each %{$r_countByType} ) {
+            dbDo($dbh, sprintf("INSERT INTO netsim_simulations (siteid,date,serverid,netypeid,numne,simulation) VALUES (%d,'%s',%d,%d,%d,'%s')",
+                               $siteId, $date, $serverId,$r_typeMap->{$type},
+                               $count,$simulation)
+                ) or die "Insert failed";
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($inputFile,$date,$site,$server);
+    my $result = GetOptions(
+        "input=s" => \$inputFile,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+        );
+    setStatsDB_Debug($DEBUG);
+
+    my $r_simInfo = parseInput($inputFile);
+    store($r_simInfo,$site,$date,$server);
+}
+
+main();

@@ -1,0 +1,124 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use DBI;
+
+use StatsDB;
+use EnmServiceGroup;
+
+our $DEBUG = 0;
+
+sub parseMembers($) {
+    my ($membersFile) = @_;
+
+    open INPUT, $membersFile or die "Cannot open $membersFile";
+
+    # skip header
+    <INPUT>;
+    my %results = ();
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "parseMembers: line=$line";
+        }
+        chop $line;
+        my ($node,$address,$status,$type,$build,$protocol,$dc) = split(/\s+/,$line);
+        if ( $DEBUG > 8 ) {
+            print "parseMembers: node,address,status,type,build,protocol,dc=$node,$address,$status,$type,$build,$protocol,$dc\n";
+        }
+
+        $results{$node} = {
+            'address' => $address,
+            'status' => $status,
+            'type' => $type,
+            'build' => $build,
+            'protocol' => $protocol,
+            'dc' => $dc
+        };
+    }
+    close INPUT;
+    if ( $DEBUG > 3 ) {
+        print "parseMembers: results=", Dumper(\%results);
+    }
+
+    return \%results;
+}
+
+sub parseConfig($) {
+    my ($configFile) = @_;
+
+    open INPUT, $configFile or die "Cannot open $configFile";
+    my $file_content = do { local $/; <INPUT> };
+    close INPUT;
+    my $json = decode_json($file_content);
+
+    if ( $DEBUG > 3 ) {
+        print "parseConfig: config=", Dumper($json);
+    }
+    return $json;
+}
+
+sub main() {
+    my ($inDir, $date, $site);
+    my $result = GetOptions("indir=s" => \$inDir,
+                            "date=s" => \$date,
+                            "site=s" => \$site,
+                            "debug=s" => \$DEBUG
+                        );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    # In later cloud deployments, DDC is installed on the serviceregistry VMs,
+    # in that case we don't need to do anything
+    my $r_instances = enmGetServiceGroupInstances($site, $date, 'serviceregistry');
+    if ( %{$r_instances} ) {
+        print "INFO: serviceregistry instances already registered\n";
+        return;
+    }
+
+    my $r_members = parseMembers($inDir . "/members.txt");
+    my $r_consulCfg = parseConfig($inDir . "/config.json");
+
+    my %serviceRegIPs = ();
+    foreach my $serviceRegIP ( @{$r_consulCfg->{'retry_join'}} ) {
+        $serviceRegIPs{$serviceRegIP} = 1;
+    }
+
+    my @serviceRegNodes = ();
+    while ( my ($node,$r_nodeInfo) = each %{$r_members} ) {
+        my ($ip,$port) = $r_nodeInfo->{'address'} =~ /(.*):(\d+)$/;
+        if ( exists $serviceRegIPs{$ip} ) {
+            push @serviceRegNodes, $node;
+        }
+    }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_svcIdMap = getIdMap($dbh, "enm_servicegroup_names", "id", "name",  [ 'serviceregistry' ] );
+    my $serviceId = $r_svcIdMap->{'serviceregistry'};
+
+    my $r_serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId);
+
+    foreach my $serviceRegNode ( @serviceRegNodes ) {
+        my $serverId = $r_serverIdMap->{$serviceRegNode};
+        if ( ! defined $serverId ) {
+            my $r_nodeInfo = $r_members->{$serviceRegNode};
+            my ($ip,$port) = $r_nodeInfo->{'address'} =~ /(.*):(\d+)$/;
+            $serverId = createServer( $dbh, $siteId, $serviceRegNode, 'ENM_VM');
+        }
+        dbDo($dbh,sprintf("INSERT INTO enm_servicegroup_instances (siteid,date,serviceid,serverid) VALUES (%d,'%s',%d,%d)",
+                          $siteId, $date, $serviceId, $serverId)
+         ) or die "Failed to insert server $serviceRegNode";
+    }
+
+    $dbh->disconnect();
+}
+
+main();

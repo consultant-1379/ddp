@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ombs_activity_monitor">
+  <reference table="sites" condition="ombs_activity_monitor.siteid = sites.id"/>
+  <reference table="ombs_policies" condition="ombs_activity_monitor.policyName = ombs_policies.id"/>
+  <reference table="ombs_clients" condition="ombs_activity_monitor.clientName = ombs_clients.id"/>
+  <reference table="ombs_storage_units" condition="ombs_activity_monitor.storageUnit = ombs_storage_units.id"/>
+  <reference table="ombs_paths" condition="ombs_activity_monitor.backupPath = ombs_paths.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ombs_activity_monitor.endTime BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <column db="jobid" label="Job Id"/>
+ <column db="jobState" label="Job State"/>
+ <column db="jobReturnCode"  label="Job Return Code"/>
+ <column db="ombs_policies.name" label="Policy Name"/>
+ <column db="backupSize" label="Backup Size(MB)"/>
+ <column db="activity" label="Activity"/>
+ <column db="schedule" label="Schedule"/>
+ <column db="endTime - INTERVAL elapsedTime SECOND" label="Start Time"/>
+ <column db="endTime" label="End Time"/>
+ <column db="elapsedTime"  label="Elapsed Time(Sec)"/>
+ <column db="throughPut"  label="Throughput(MB/Sec)"/>
+ <column db="ombs_clients.name" label="Client Name"/>
+ <column db="ombs_paths.name" label="Backup Path"/>
+ <column db="numberOfBackupFiles" label="No of Files Backedup"/>
+ <column db="ombs_storage_units.name" label="Storage Unit"/>
+</modelledtable>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="%"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Volume Space Free %"/>
+  <queries>
+    <query timecol="date" multiseries="volumes.name">
+      <dbtables main="volume_stats">
+        <reference table="volumes" condition="volume_stats.volid = volumes.id"/>
+      </dbtables>
+      <param name="volids"/>
+      <param name="serverid"/>
+      <where>volumes.id IN (%s) AND volume_stats.serverid = %d</where>
+      <column db="(((volume_stats.size - volume_stats.used) / (volume_stats.size)) *100) " label="Used"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

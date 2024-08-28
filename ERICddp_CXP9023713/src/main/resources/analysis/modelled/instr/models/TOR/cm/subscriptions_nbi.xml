@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="cmevents"/>
+  </services>
+
+  <table name="enm_cm_subscriptions_nbi">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.cmsubscribedevents.instrumentation.cmsubscribedeventssubscriptionsvc:type=EventsInstrumentationBean$">
+      <metric source="createEventsReceived" target="createEventsReceived" delta="true" filteridle="true"/>
+      <metric source="vesEventsToBePushedNotifyMoiCreation" target="vesEventsToBePushedNotifyMoiCreation" delta="true" filteridle="true"/>
+      <metric source="vesEventsToBePushedNotifyMoiChangesCreate" target="vesEventsToBePushedNotifyMoiChangesCreate" delta="true" filteridle="true"/>
+      <metric source="updateEventsReceived" target="updateEventsReceived" delta="true" filteridle="true"/>
+      <metric source="vesEventsToBePushedNotifyMoiAvc" target="vesEventsToBePushedNotifyMoiAvc" delta="true" filteridle="true"/>
+      <metric source="vesEventsToBePushedNotifyMoiChangesReplace" target="vesEventsToBePushedNotifyMoiChangesReplace" delta="true" filteridle="true"/>
+      <metric source="deleteEventsReceived" target="deleteEventsReceived" delta="true" filteridle="true"/>
+      <metric source="vesEventsToBePushedNotifyMoiDeletion" target="vesEventsToBePushedNotifyMoiDeletion" delta="true" filteridle="true"/>
+      <metric source="vesEventsToBePushedNotifyMoiChangesDelete" target="vesEventsToBePushedNotifyMoiChangesDelete" delta="true" filteridle="true"/>
+      <metric source="totalEventsReceived" target="totalEventsReceived" delta="true" filteridle="true"/>
+      <metric source="totalVesEventsToBePushed" target="totalVesEventsToBePushed" delta="true" filteridle="true"/>
+      <metric source="totalVesEventsPushedSuccessfully" target="totalVesEventsPushedSuccessfully" delta="true" filteridle="true"/>
+      <metric source="totalVesEventsPushedError" target="totalVesEventsPushedError" delta="true" filteridle="true"/>
+      <metric source="totalVesEventsPushedCancelled" target="totalVesEventsPushedCancelled" delta="true" filteridle="true"/>
+      <metric source="totalSuccessfulHeartbeatRequests" target="totalSuccessfulHeartbeatRequests" delta="true" filteridle="true"/>
+      <metric source="totalFailedHeartbeatRequests" target="totalFailedHeartbeatRequests" delta="true" filteridle="true"/>
+      <metric source="successfulContinuousHeartbeatRequests" target="successfulContinuousHeartbeatRequests" delta="true" filteridle="true"/>
+      <metric source="failedContinuousHeartbeatRequests" target="failedContinuousHeartbeatRequests" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.server.cmsubscribedevents.instrumentation.cm-subscribed-events-nbi:type=SubscriptionInstrumentationBean$">
+      <metric source="successfulPostSubscriptions" target="successfulPostSubscriptions" delta="true" filteridle="true"/>
+      <metric source="failedPostSubscriptions" target="failedPostSubscriptions" delta="true" filteridle="true"/>
+      <metric source="successfulSubscriptionViews" target="successfulSubscriptionViews" delta="true" filteridle="true"/>
+      <metric source="failedSubscriptionViews" target="failedSubscriptionViews" delta="true" filteridle="true"/>
+      <metric source="successfulSubscriptionDeletion" target="successfulSubscriptionDeletion" delta="true" filteridle="true"/>
+      <metric source="failedSubscriptionDeletion" target="failedSubscriptionDeletion" delta="true" filteridle="true"/>
+      <metric source="successfulViewAllSubscriptions" target="successfulViewAllSubscriptions" delta="true" filteridle="true"/>
+      <metric source="failedViewAllSubscriptions" target="failedViewAllSubscriptions" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cmsubscribedevents.instrumentation.cmsubscribedeventssubscriptionsvc:type=SubscriptionInstrumentationBean$">
+      <metric source="successfulPostSubscriptions" target="successfulPostSubscriptions" delta="true" filteridle="true"/>
+      <metric source="failedPostSubscriptions" target="failedPostSubscriptions" delta="true" filteridle="true"/>
+      <metric source="successfulSubscriptionViews" target="successfulSubscriptionViews" delta="true" filteridle="true"/>
+      <metric source="failedSubscriptionViews" target="failedSubscriptionViews" delta="true" filteridle="true"/>
+      <metric source="successfulSubscriptionDeletion" target="successfulSubscriptionDeletion" delta="true" filteridle="true"/>
+      <metric source="failedSubscriptionDeletion" target="failedSubscriptionDeletion" delta="true" filteridle="true"/>
+      <metric source="successfulViewAllSubscriptions" target="successfulViewAllSubscriptions" delta="true" filteridle="true"/>
+      <metric source="failedViewAllSubscriptions" target="failedViewAllSubscriptions" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

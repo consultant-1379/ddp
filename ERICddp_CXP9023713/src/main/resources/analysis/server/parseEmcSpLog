@@ -1,0 +1,137 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use StatsDB;
+use DBI;
+use Data::Dumper;
+
+use File::Basename;
+use lib dirname($0);
+use EMC;
+
+our $DEBUG = 0;
+
+sub getSerialNumber($$) {
+    my ($dir,$spIP) = @_;
+
+    my $serialNumber = undef;
+
+    my $getAgentFile = $dir . "/getagent." . $spIP;
+    if ( -r $getAgentFile ) {
+        open INPUT, $getAgentFile or die "Cannot open $getAgentFile: $!";
+        while ( my $line = <INPUT> ) {
+            if ( $line =~ /^Serial No:\s+(\S+)/ ) {
+                $serialNumber = $1;
+            }
+        }
+        close INPUT;
+    }
+
+    return $serialNumber;
+}
+
+sub parseLog($$$$) {
+    my ($file, $matchDate, $r_alerts, $serialNumber) = @_;
+
+    if ( $DEBUG > 3 ) { print "parseLog: file=$file\n"; }
+
+    open INPUT, $file or die "Cannot open $file: $!";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseLog: line=", $line; }
+        if ( $line =~ /^(\S+) \S+ \S+\s+\(\d+\)(.*)/ ) {
+            my ($entryDate, $msg) = ($1,$2);
+            if ( $DEBUG > 9 ) { print "parseLog: entryDate $entryDate eq matchDate:" . ($entryDate eq $matchDate) . "\n"; }
+            if ( $entryDate eq $matchDate ) {
+                if ( $msg =~ /HwErrMon|Failure|Fault\s|faulted/ &&
+                         $msg !~ /failure cleared|ault cleared|Access is denied|'faults' called by|Storage Array is not Faulted/) {
+                    if ( $DEBUG > 8 ) { print "parseLog: adding $msg\n"; }
+                    $r_alerts->{$serialNumber}->{$msg}++;
+                }
+            }
+        }
+    }
+    close INPUT;
+}
+
+sub parseLogs($$) {
+    my ($dir, $date) = @_;
+
+    opendir(my $dh, $dir) || die "can't opendir $dir: $!";
+    my @allFiles = readdir($dh);
+    closedir $dh;
+
+    my ($year,$month,$day) = split("-", $date);
+    my $matchDate = sprintf("%02d/%02d/%04d", $month, $day, $year);
+    if ( $DEBUG > 3 ) { print "parseLogs: matchDate=$matchDate\n"; }
+
+    my %alerts = ();
+    foreach my $file (@allFiles) {
+        if ( $file =~ /getlog\.(\S+)/ ) {
+            my $spIP = $1;
+            my $serialNumber = getSerialNumber($dir, $spIP);
+            if ( defined $serialNumber ) {
+                parseLog($dir . "/" . $file, $matchDate, \%alerts, $serialNumber);
+            }
+        }
+    }
+
+    while (my ($serialNumber,$r_msgCount) = each %alerts ) {
+        my @messages = ();
+        foreach my $msg ( keys %{$r_msgCount} ) {
+            push @messages, $msg;
+        }
+        $alerts{$serialNumber} = \@messages;
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("parseLogs: alerts", \%alerts); }
+
+    return \%alerts;
+}
+
+sub store($$$) {
+    my ($site, $date, $r_alerts) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my @sysList = keys %{$r_alerts};
+    my $r_sysIds = EMC::registerSysForSite($dbh, $siteId, $date, \@sysList);
+
+    while ( my ($serialNumber, $r_alertList) = each %{$r_alerts} ) {
+        my $sysId = $r_sysIds->{$serialNumber};
+        dbDo($dbh, "DELETE FROM emc_alerts WHERE sysid = $sysId AND date = '$date'")
+            or die "Failed to remove old data";
+        foreach my $alert ( @{$r_alertList} ) {
+            dbDo($dbh, sprintf("INSERT INTO emc_alerts (sysid,date,msg) VALUES (%d,'%s',%s)",
+                               $sysId, $date, $dbh->quote($alert)
+                       )
+            ) or die "Failed to insert row";
+        }
+    }
+
+    $dbh->disconnect;
+}
+
+sub main() {
+
+    my ( $clariionDir, $site, $date);
+    my $result = GetOptions(
+        "dir=s" => \$clariionDir,
+        "site=s"   => \$site,
+        "date=s"   => \$date,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+
+    my $r_alerts = parseLogs($clariionDir, $date);
+    if ( %{$r_alerts} ) {
+        store($site,$date,$r_alerts);
+    }
+}
+
+main();

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="Millisec"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Duration of Failed Modify Operations"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="enm_cmwriter_minilink_indoor">
+     <reference table="sites" condition="enm_cmwriter_minilink_indoor.siteid = sites.id"/>
+     <reference table="servers" condition="enm_cmwriter_minilink_indoor.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="failedModifyOperationsDuration" label="Duration of Failed Modify Operations"/>
+  </query>
+ </queries>
+ <size width="640" height="320"/>
+</modelledgraph>

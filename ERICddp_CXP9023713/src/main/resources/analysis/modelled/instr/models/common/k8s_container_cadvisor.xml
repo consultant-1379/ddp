@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ namespace="^cadvisor$"
+ sampleinterval="900">
+
+  <table name="k8s_container_cadvisor">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="appid" reftable="k8s_pod_app_names"/>
+    <keycol name="containerid" reftable="k8s_container_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>containerid</multi>
+
+    <metricgroup name="(\S+)">
+      <metric source="container_cpu_user_seconds_total" target="cpu_user" delta="true" filteridle="true"/>
+      <metric source="container_cpu_system_seconds_total" target="cpu_sys" delta="true" filteridle="true"/>
+      <metric source="container_cpu_cfs_throttled_seconds_total" target="cpu_throttled" delta="true" filteridle="true"/>
+      <metric source="container_memory_working_set_bytes" target="mem_mb" scale="1048576"/>
+      <metric source="container_memory_cache" target="mem_cache" scale="1048576"/>
+    <!--
+      <metric source="container_fs_sectors_writes_total" target="disk_write_mb" delta="true" scale="2048"/>
+      <metric source="container_fs_sectors_read_total" target="disk_read_mb" delta="true" scale="2048"/>
+    -->
+      <property name="appid" xsi:type="fixedproperty" value="_servicegroup"/>
+      <property name="containerid" xsi:type="multilabelproperty" label="container" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_bulknode_cli_logs">
+  </table>
+
+  <services>
+    <service name="nodecli"/>
+  </services>
+
+  <events>
+      <!-- NODE_CLI_JOB.EXECUTION_COMPLETED {\"COLLECTION_NAME\":\"[NetworkElement=CORE16SIU02001]\",\"TOTAL_SESSIONS\":1,\"JOB_ID\":156,\"OWNER\":\"uitesterBulkNodeCli\",\"JOB_STATUS\":\"SUCCESS\",\"SESSIONS_SKIPPED\":0,\"SESSIONS_NOT_SUPPORTED\":0,\"SESSIONS_COMPLETED\":1,\"NO_OF_COMMANDS\":12,\"COLLECTION_TYPE\":\"NETWORK_ELEMENTS\",\"_Thread\":\"NODE-CLI-JOB-EXECUTION-156\",\"DURATION\":1543}"-->
+      <event name="NODE_CLI_JOB.EXECUTION_COMPLETED">
+        <metric source="JOB_ID" target="job_id"/>
+        <metric source="JOB_STATUS" target="job_status"/>
+        <metric source="DURATION" target="duration"/>
+        <metric source="NO_OF_COMMANDS" target="no_of_commands"/>
+        <metric source="COLLECTION_TYPE" target="collection_type"/>
+        <metric source="COLLECTION_NAME" target="collection_name"/>
+        <metric source="TOTAL_SESSIONS" target="total_sessions"/>
+        <metric source="SESSIONS_COMPLETED" target="sessions_completed"/>
+        <metric source="SESSIONS_SKIPPED" target="sessions_skipped"/>
+        <metric source="SESSIONS_NOT_SUPPORTED" target="sessions_not_supported"/>
+      </event>
+  </events>
+</modelledevents>

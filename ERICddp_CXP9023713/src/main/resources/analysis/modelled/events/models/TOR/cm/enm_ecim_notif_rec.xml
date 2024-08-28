@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_mscmce_notifrec" timecol="date">
+    <keycol name="moid" reftable="mo_names"/>
+    <keycol name="attribid" reftable="enm_mscm_attrib_names"/>
+  </table>
+
+  <services>
+    <service name="comecimmscm"/>
+    <service name="mscmapg"/>
+  </services>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="type"/>
+      <groupby name="MO"/>
+      <groupby name="attr" mandatory="false"/>
+      <groupby name="servicegroup"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="count" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <!--{\"Notifications\":[{\"type\":\"UPDATE\",\"MO\":\"NRCellDU\",\"attr\":\"userLabel\",\"count\":19136},{\"type\":\"UPDATE\",\"MO\":\"NRSectorCarrier\",\"attr\":\"altitude\",\"count\":10960}, ... -->
+      <event name="COM-ECIM-NOTIFICATION-SUPERVISION-HANDLER.NOTIFICATION_RECEIVER_HANDLER" explode_array="Notifications">
+        <metric source="type" target="eventtype"/>
+        <metric source="MO" target="moid"/>
+        <metric source="attr" target="attribid"/>
+        <metric source="count" target="count"/>
+        <metric source="servicegroup" target="servicegroup"/>
+      </event>
+  </events>
+</modelledevents>

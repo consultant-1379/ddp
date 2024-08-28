@@ -1,0 +1,36 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+DASH_DATE=$1
+DATA_DIR=$2
+SITE=$3
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+#
+# See if NEAD was restarted
+#
+if [ ! -r ${TMP_DIR}/lvlog/SelfManagementStartStop ] ; then
+    exit
+fi
+    
+LOG_DATE=`echo ${DASH_DATE} | awk -F\- '{printf "20%02d-%02d-%02d", $3, $2, $1}'`
+egrep "^${LOG_DATE} [0-9:\.]* SYSTEM \"SelfManagementStartStop" ${TMP_DIR}/lvlog/SelfManagementStartStop | egrep "cms_nead_seg" | grep " to started" > ${TMP_DIR}/nead.starts
+NUM_NEAD_STARTS=`wc -l ${TMP_DIR}/nead.starts | awk '{print $1}'`
+if [ ${NUM_NEAD_STARTS} -gt 0 ] ; then	
+    START_TIMES=`cat ${TMP_DIR}/nead.starts | awk '{printf "%s:%s ", $1, $2}'`
+
+    TP="THREADPOOL_EXECUTING"
+    head --lines 1000 ${DATA_DIR}/OSS/nead.log | egrep '^THREADPOOL2_ACTIVE' > /dev/null
+    if [ $? -eq 0 ] ; then
+	TP="THREADPOOL2_ACTIVE"
+    fi
+    egrep "^DUMP|^SYNCHRONIZATION_ONGOING|^TOPOLOGY_SYNC_NODES|^ATTRIBUTE_SYNC_NODES|^THREADPOOL_EXECUTING|^TOTAL_NODES|^SYNCED_NODES|^ALIVE_NODES|^${TP}"  ${DATA_DIR}/OSS/nead.log > ${TMP_DIR}/net_sync.txt
+    ${ANALYSIS_BIN}/cms/parseNetSync --times ${START_TIMES} --log ${TMP_DIR}/net_sync.txt --date ${LOG_DATE} --site ${SITE} --tp ${TP}
+fi
+

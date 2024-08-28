@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_anomaly_instr">
+    <reference table="sites" condition="enm_aim_anomaly_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_anomaly_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_anomaly_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(validKpiValuesProcessed)" label="validKpiValuesProcessed"/>
+  <column db="SUM(invalidKpiValuesProcessed)" label="invalidKpiValuesProcessed"/>
+  <column db="SUM(emptyKpiResultsReceived)" label="emptyKpiResultsReceived"/>
+  <column db="SUM(totalEventsCreated)" label="totalEventsCreated"/>
+  <column db="SUM(totalOpenKpiEventsCreated)" label="totalOpenKpiEventsCreated"/>
+  <column db="SUM(totalClosedKpiEventsCreated)" label="totalClosedKpiEventsCreated"/>
+  <column db="SUM(totalEventsDropped)" label="totalEventsDropped"/>
+  <column db="SUM(totalProcessingTime)" label="totalProcessingTime"/>
+  <column db="SUM(currentlyActiveAnomalies)" label="currentlyActiveAnomalies"/>
+  <column db="SUM(totalKpiResultsCollected)" label="totalKpiResultsCollected"/>
+  <column db="SUM(totalLoadKpiValuesProcessed)" label="totalLoadKpiValuesProcessed"/>
+  <column db="SUM(totalMonitoringKpiValuesProcessed)" label="totalMonitoringKpiValuesProcessed"/>
+  <column db="SUM(loadKpiProcessingTime)" label="loadKpiProcessingTime"/>
+  <column db="SUM(monitoringKpiProcessingTime)" label="monitoringKpiProcessingTime"/>
+  <column db="SUM(totalAnomalyReadingsCreated)" label="totalAnomalyReadingsCreated"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="an-all" label="Plot All"/>
+    <item id="an-validKpiValuesProcessed" label="Plot validKpiValuesProcessed"/>
+    <item id="an-invalidKpiValuesProcessed" label="Plot invalidKpiValuesProcessed"/>
+    <item id="an-emptyKpiResultsReceived" label="Plot emptyKpiResultsReceived"/>
+    <item id="an-totalEventsCreated" label="Plot totalEventsCreated"/>
+    <item id="an-totalOpenKpiEventsCreated" label="Plot totalOpenKpiEventsCreated"/>
+    <item id="an-totalClosedKpiEventsCreated" label="Plot totalClosedKpiEventsCreated"/>
+    <item id="an-totalEventsDropped" label="Plot totalEventsDropped"/>
+    <item id="an-totalProcessingTime" label="Plot totalProcessingTime"/>
+    <item id="an-currentlyActiveAnomalies" label="Plot currentlyActiveAnomalies"/>
+    <item id="an-totalKpiResultsCollected" label="Plot totalKpiResultsCollected"/>
+    <item id="an-totalLoadKpiValuesProcessed" label="Plot totalLoadKpiValuesProcessed"/>
+    <item id="an-totalMonitoringKpiValuesProcessed" label="Plot totalMonitoringKpiValuesProcessed"/>
+    <item id="an-loadKpiProcessingTime" label="Plot loadKpiProcessingTime"/>
+    <item id="an-monitoringKpiProcessingTime" label="Plot monitoringKpiProcessingTime"/>
+    <item id="an-totalAnomalyReadingsCreated" label="Plot totalAnomalyReadingsCreated"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

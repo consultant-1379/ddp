@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_saidserv_function_instr">
+    <reference table="sites" condition="enm_saidserv_function_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_saidserv_function_instr.serverid = servers.id"/>
+    <reference table="enm_saidserv_instr_motypes" condition="enm_saidserv_function_instr.moid = enm_saidserv_instr_motypes.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_saidserv_function_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+    <column db="enm_saidserv_instr_motypes.name"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_saidserv_instr_motypes.name" label="MO Type"/>
+  <column db="SUM(enm_saidserv_function_instr.dpsFunctionAttributeChangedEventCount)" label="Attribute Changed Notifications"/>
+  <column db="SUM(enm_saidserv_function_instr.dpsFunctionCreatedEventCount)" label="Object Created Notification"/>
+  <column db="SUM(enm_saidserv_function_instr.dpsFunctionDeletedEventCount)" label="Object Deleted Notification"/>
+
+</modelledtable>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@postgres_stats_db"
+    sampleinterval="900">
+
+  <table name="enm_postgres_stats_db">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="dbid" reftable="enm_postgres_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>dbid</multi>
+    <metricgroup name="^pg_stat_database:(\S+)$">
+      <metric source="pg_stat_database_numbackends" target="numbackends"/>
+      <metric source="pg_stat_database_blks_hit" target="blks_hit" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_blks_read" target="blks_read" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_conflicts" target="conflicts" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_deadlocks" target="deadlocks" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_temp_bytes" target="temp_bytes" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_temp_files" target="temp_files" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_tup_deleted" target="tup_deleted" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_tup_fetched" target="tup_fetched" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_tup_inserted" target="tup_inserted" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_tup_returned" target="tup_returned" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_tup_updated" target="tup_updated" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_xact_commit" target="xact_commit" delta="true" filteridle="true"/>
+      <metric source="pg_stat_database_xact_rollback" target="xact_rollback" delta="true" filteridle="true"/>
+      <property name="dbid" xsi:type="multilabelproperty" label="datname" filtervalue="^(?!template|postgres)" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ timespan="day"
+ useragg="true"
+ forcelegend="true"
+>
+ <title value="Orphan MO Count"/>
+ <queries>
+  <query timecol="time">
+   <dbtables main="enm_neo4j_orphan_mo_count">
+     <reference table="sites" condition="enm_neo4j_orphan_mo_count.siteid = sites.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="count" label="Count"/>
+  </query>
+ </queries>
+ <size width="990" height="400"/>
+</modelledgraph>

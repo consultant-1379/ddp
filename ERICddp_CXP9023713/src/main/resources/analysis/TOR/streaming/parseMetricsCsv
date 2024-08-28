@@ -1,0 +1,286 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsCommon;
+
+use Time::Local;
+
+our $DEBUG=0;
+our $site;
+our $date;
+
+main();
+exit 0;
+
+sub main {
+    my ($inputFile,$hostname,$incrFile);
+    my $result = GetOptions(
+        "file=s"  =>  \$inputFile,
+        "site=s"  =>  \$site,
+        "date=s"  =>  \$date,
+        "host=s"  =>  \$hostname,
+        "incr=s"  =>  \$incrFile,
+        "debug=s" =>  \$DEBUG
+    );
+
+    ( $result == 1 ) or die("Invalid args");
+
+    # Get siteId & serverId from statsdb
+    my $dbh = connect_db();
+    my $siteId = getSiteId( $dbh, $site);
+    ( $siteId > -1 ) or die "Failed to get siteId for $site";
+
+    my $serverId = getServerId($dbh, $siteId, $hostname);
+    ( $serverId > -1 ) or die "Failed to get serverId for $hostname";
+
+    my ( $dd, $mm, $yy ) = split( /\-/, $date);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    ################################################################
+    # TYPE: STREAM_IN
+    # Database tables that correspond to the metric entries
+    ################################################################
+    my %dbTableMap;
+    $dbTableMap{'stream_in_Active_Connections'}   = 'stream_in_active_connections';
+    $dbTableMap{'stream_in_Created_Connections'}   = 'stream_in_created_connections';
+    $dbTableMap{'stream_in_Events'}   = 'stream_in_events';
+    $dbTableMap{'stream_in_Dropped_Connections'}   = 'stream_in_dropped_connections';
+    $dbTableMap{'stream_in_South-bound-dropped-events'}   = 'stream_in_south_bound_dropped_events';
+    
+    # TYPE: STREAM_OUT
+    $dbTableMap{'stream_out_events-sent'}   = 'stream_out_events_sent';
+    $dbTableMap{'stream_out_events-filtered'}   = 'stream_out_events_filtered';
+    $dbTableMap{'stream_out_events-lost'}   = 'stream_out_events_lost';
+
+    ######################################################################################
+    # Metrics.csv contains 3 different formats for STREAM_IN records
+    #
+    # Data Format: stream_in_<datapathId>@<component_position><metric_name><timestamp>...
+    #
+    # Meter: metric name, timestamp, count, 1 min rate, mean rate, 5 min rate, 15 min rate
+    # Gauge: metric name, timestamp, count
+    # Counter: metric name, timestamp, value
+    ######################################################################################
+    my %dbFieldOrder;
+    # Meter record 
+    %dbFieldOrder = (
+        'stream_in_Active_Connections'          => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_in_Created_Connections'         => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_in_Events'                      => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_in_Dropped_Connections'         => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_in_South-bound-dropped-events'  => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_out_events-sent'                => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_out_events-filtered'            => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate'],
+        'stream_out_events-lost'                => ['count','min_rate','mean_rate','five_min_rate','fifteen_min_rate']
+        );
+
+    parseFile($sqlDate,$siteId,$serverId,$inputFile,$incrFile,\%dbFieldOrder,\%dbTableMap);
+
+    return 0;
+}
+
+sub parseFile() {
+    my ($sqlDate,$siteId,$serverId,$inputFile,$incrFile,$r_dbFieldOrder,$r_dbTableMap) = @_;
+    my @data = ();
+    my @metricsLines = ();
+    my %uniqueDatapath = ();
+    my %uniqueId = ();
+    my %dataForStorage;
+    my %recordhash;
+    my $first_element = 0;
+    my $isIncremental = 0;
+    my $inode;
+
+    open METRICS_LOG, $inputFile or die "Can't open file $inputFile: $!";
+        if ( defined $incrFile && -r $incrFile ) {
+            $isIncremental = 1;
+            my $dumperOutput;
+            do {
+                local $/ = undef;
+                open my $fh, "<", $incrFile or die "could not open $incrFile: $!";
+                $dumperOutput = <$fh>;
+                close $fh;
+            };
+            my $firstLine = <METRICS_LOG>;
+            my ($fileinode) = $firstLine =~ /^inode=(\d*)/;
+            my $VAR1;
+            eval($dumperOutput);
+            my $offSet = $VAR1->{'offSet'};
+            if ( $DEBUG > 0 ) { print "readJpsLog: isIncremental=1 seeking to $offSet\n"; }
+            # Check against the matrics.csv inode number to insure we are parsing the same file as previous.
+            # Should pmstreaming restart a new inode number will exist due to new file creation. 
+            # This check should eliminates the situation where we fail to parse a new file until the offset exceeded whats set in the incr file.
+            # Only comes into play if file changes.
+            if(defined $fileinode && $VAR1->{'inode'} ne $fileinode && $VAR1->{'inode'} eq undef){
+                seek METRICS_LOG, 0, 0;
+            }
+            else{
+                $inode = $VAR1->{'inode'};
+                seek METRICS_LOG, $offSet, 0;
+            }
+        }
+
+    @metricsLines = <METRICS_LOG>;
+    close METRICS_LOG;
+
+    if(scalar @metricsLines == 0){print "Offset >= Filesize. Check if Failover has occured on host.\n"; exit 0;}
+    
+    PARSE_RECORDS: while (my $line = shift @metricsLines) {
+        my ($metric_type,$metric_name,$timestamp);
+        my ($datapath,$id);
+        chomp $line;
+
+        if($line =~ /^inode/){
+            ($inode) = $line =~ /^inode=(\d*)/;
+            next PARSE_RECORDS;
+        }
+        # Set variables base on stream_in or stream_out data
+        if($line =~ /^stream_in/){
+            $metric_type = "stream_in";
+            ($datapath,$id) = $line =~ /^stream_in_(\w*)@(\d*)/;
+            $line =~ s/^stream_in_\w*@\d*//;
+        }
+        elsif ($line =~ /^stream_out/){
+            $metric_type = "stream_out";
+            ($datapath,$id) = $line =~ /^stream_out_(\w*)\[(\w*)@/;
+            $line =~ s/^stream_out_\w*\[\w*@\/\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}:\d*\]//;
+        }
+
+        $uniqueId{$id} ++;
+        $uniqueDatapath{$datapath} ++; 
+
+        @data = split(/,/, $line);
+            
+        # The first two element of the array contain the metric name and the timestamp
+        $metric_name = shift @data;
+        $timestamp = shift @data;
+
+        if($metric_name =~ /South-bound-dropped-events/){ $metric_name = 'South-bound-dropped-events'; }
+            
+        ####
+        # Incase any new fields are created within the metrics.csv file that are not catered 
+        # for in the database, log and errorand ignore them otherwise they will break the script
+        ###
+        if($r_dbFieldOrder->{$metric_type . "_" . $metric_name} && $timestamp =~ m/$sqlDate.*/ ){ 
+                # Create a hash from both arrays by mapping the dbField elements as the keys and the data
+                # elemets as the values. Then build up the hash dataForStorage for each metric timestamp entry 
+                # NOTE: Takes quite a period of time to perform this task - May want to look at this again.
+                @recordhash{@{$r_dbFieldOrder->{$metric_type . "_" . $metric_name}}}=@data;
+                $dataForStorage{$metric_type . "_" . $metric_name}{$datapath}{$id}{$timestamp} = {%recordhash};
+        }
+        else{
+                #print "WARNING: TOR Streaming $metric_type _ $metric_name not supported\n";
+                next PARSE_RECORDS; 
+        }
+    }
+
+    if ( defined $incrFile ) {
+        my @fileStats = stat $inputFile;
+        my $fileSize = $fileStats[7];
+        my %incrData = (
+            'offSet' => $fileSize,
+            'inode' => $inode,
+            );
+
+        # Set indent to zero to shrink the size of the output
+        my $defaultIndent = $Data::Dumper::Indent;
+        $Data::Dumper::Indent = 0;
+        my $incrDataStr = Dumper(\%incrData);
+        $Data::Dumper::Indent = $defaultIndent;
+
+        open INC, ">$incrFile";
+        print INC $incrDataStr;
+        close INC;
+    }
+
+    # Get the dpidMap for the datapath id names
+    my @uniqueDatapathNames = keys %uniqueDatapath;
+    my $dbh = connect_db();
+    my $r_dpMap = getIdMap($dbh, "tor_streaming_datapath_names", "id", "name", \@uniqueDatapathNames );
+
+    my @uniqueIds= keys %uniqueId;
+    my $r_idMap = getIdMap($dbh, "tor_stream_out_datapath_id", "id", "name", \@uniqueIds );
+
+    if ($DEBUG > 6){print Dumper \%dataForStorage}
+
+    writeBulkImport($sqlDate,$siteId,$serverId,$r_dbFieldOrder,$r_dbTableMap,\%dataForStorage,$r_dpMap,$r_idMap,$isIncremental);
+
+    return 0;
+}
+
+sub writeBulkImport() {
+    my ($sqlDate,$siteId,$serverId,$r_dbFieldOrder,$r_dbTableMap,$r_dataForStorage,$r_dpMap,$r_idMap,$isIncremental) = @_;
+
+    foreach my $metric_name (keys %{$r_dbTableMap}){
+        my $table = $r_dbTableMap->{$metric_name}; 
+        my $record;
+
+        my $tmpDir = "/tmp";
+        if (exists $ENV{"TMP_DIR"}) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+        #BCP file and record counter
+        my $bcpFile = $tmpDir . "/" . $table . ".bcp";
+
+        if ($DEBUG > 1) {"Writing to " . $bcpFile . " \n "};
+        open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+        foreach my $datapath (keys(%{$r_dataForStorage->{$metric_name}})){
+            foreach my $id (keys(%{$r_dataForStorage->{$metric_name}->{$datapath}})){
+                foreach my $timestamp (sort keys(%{$r_dataForStorage->{$metric_name}->{$datapath}->{$id}})){
+                    $record = $timestamp . "," . $siteId . "," . $serverId . "," . $r_dpMap->{$datapath} . "," . $r_idMap->{$id} . ",";
+
+                    foreach my $field ( @{ $r_dbFieldOrder->{$metric_name}} ){
+                            # Convert float/exponential value to 4 decimal places
+                            my $value   = $r_dataForStorage->{$metric_name}->{$datapath}->{$id}->{$timestamp}{$field};
+                            if ($value =~ m/^\d+.\d+E/) {
+                                my $float_value = sprintf("%.5f", $value );
+                                if ($float_value eq "0.00000"){ $float_value = '\\N';}
+                                $record .= $float_value . ",";
+                            }
+                            else{
+                                if ($value eq "0"){ $value = '\\N';}
+                                $record .= $value . ",";
+                            }
+                    }
+
+                    $record =~ s/\,$/\n/; # Remove the last comma and add a carriage return
+                    print BULK_INSERT $record;
+                    if ($DEBUG > 5) {print Dumper $record;}
+                }
+            }
+        }
+        close BULK_INSERT;
+
+        # For each table stores the corresponding records.
+        storeDataSets($sqlDate, $siteId, $serverId, $table, $bcpFile,$isIncremental);
+    }
+
+    return 0;
+}
+
+sub storeDataSets() {
+    my ($sqlDate, $siteId, $serverId, $table, $bcpFile,$isIncremental) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    if( $isIncremental == 0){
+        my $rerunDelete = "DELETE FROM " . $table . " WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteId . " AND serverid = " . $serverId;
+    
+        if ($DEBUG > 0) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+        # Run the DELETE
+        dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+    }
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','");
+    $dbh->disconnect;
+
+    return 0;
+}

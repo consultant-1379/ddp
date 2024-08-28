@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_shm_nbi_rest_job">
+    <keycol name="siteid" reftable="sites"/>
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="shmcoreservice"/>
+    <service name="shmservice"/>
+  </services>
+
+  <events>
+    <event name="SHM_NBI_REST.JOB_INTERFACE">
+      <metric source="host" target="serverid"/>
+      <metric source="UsecaseName" target="useCaseName"/>
+      <metric source="NumOfNodes" target="numOfNodes"/>
+    </event>
+  </events>
+</modelledevents>

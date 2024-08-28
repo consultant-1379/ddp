@@ -1,0 +1,157 @@
+#!/usr/bin/env perl
+# This script parses the network IO data as collected by kstat via the instr2
+# utility. 
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $server;
+our $site;
+our $DEBUG = 0;
+
+sub main {
+    my ($cpuInstrCfg, $cpuInstrData,$incrFile);
+    my $result = GetOptions("cfg=s" => \$cpuInstrCfg,
+        "data=s" => \$cpuInstrData,
+        "server=s" => \$server,
+        "site=s" => \$site,
+	"incr=s" => \$incrFile,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG); 
+
+    my $dataOffset = 0;
+    my %lastVals;
+    if ( defined $incrFile && -r $incrFile ) { 
+	my $dumperOutput;
+	do {
+	    local $/ = undef;
+	    open my $fh, "<", $incrFile or die "could not open $incrFile: $!";
+	    $dumperOutput = <$fh>;
+	    close $fh;
+	};
+	my $VAR1;
+	eval($dumperOutput);
+	%lastVals = %{$VAR1->{'lastVals'}};
+	$dataOffset = $VAR1->{'dataOffset'};
+	if ( $DEBUG > 0 ) { print Dumper("main: dataOffset=$dataOffset lastVals", \%lastVals); }
+    }
+
+
+    my $r_cfg = parseConfig($cpuInstrCfg);
+    my $r_data = parseDataForCfg($r_cfg, $cpuInstrData,$dataOffset);
+    if ( ! exists $r_data->{'kstat-net-io-metrics'} ) {
+	print "WARN: No data found for kstat-net-io-metrics\n";
+	exit 0;
+    }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    ($serverId > -1) or die "Failed to get serverid for $site - $server";
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/nic_stats.$server.bcp";
+
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    # Network data is returned in the following kstat format:
+    #   <nic-driver>:<nic-instance>:<nic-driver><nic-instance>:obytes64
+    #   <nic-driver>:<nic-instance>:<nic-driver><nic-instance>:rbytes64
+    my @nicData = @{$r_data->{'kstat-net-io-metrics'}};
+    my $startTime;
+    my $endTime;
+    my $r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name", [], $serverId, "serverid" );
+
+    foreach my $ts (@nicData) {
+        my %ts = %{$ts};
+	if ( ! defined $startTime ) {
+	    $startTime = instr2mysqlTime($ts{'timestamp'});
+	}
+        if ( ! %lastVals ) {
+            # Use the first entry to set up the initial datapoints - we store the
+            # rate, so the first datapoint is used to calculate the delta for
+            # the second timestamp.
+            %lastVals = %ts;
+            next;
+        }
+        my $time = instr2mysqlTime($ts{'timestamp'});
+        $endTime = $time;
+        my $timeDelta = instr2unixTime($ts{'timestamp'}) - instr2unixTime($lastVals{'timestamp'});
+	if ( $timeDelta == 0 ) {
+	    # Sometimes we see input data where the interval varies
+	    # to the point where we get two samples with the same timestamp
+	    # As we calculate a rate lower down, we have to dump this sample
+	    # or we'll get a divide by zero error
+	    print "WARN: Zero interval @ $time\n";
+	    next;
+	}
+
+        my %info = ();
+        foreach my $k (keys (%ts)) {
+            # group each NIC's values together, and subtract the previous value
+            # to get the interval value
+            chomp($k);
+            next if ($k =~ /^timestamp$/);
+            my ($nicname, $metric) = $k =~ /^\S+:\d+:(\w+):([ro])bytes64$/;
+            my $prevData = $lastVals{$k};
+            my %nicData = ();
+            if (defined ($info{$nicname})) { %nicData = %{$info{$nicname}}; }
+            $nicData{$metric} = $ts{$k} - $prevData;
+            if ($DEBUG > 4) {
+                print $time . ": NIC: " . $nicname . " ; METRIC: " . $metric . " ; DELTA: " . $nicData{$metric} . " ; TIMEDELTA: " . $timeDelta . "\n";
+            }
+
+            $info{$nicname} = \%nicData;
+        }
+        my @nicnames = sort keys %info;
+        # TODO: should not be running this every time
+        foreach my $nic (@nicnames) {
+	    if ( ! exists $r_nicMap->{$nic} ) {
+		$r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name", [ $nic ], $serverId, "serverid" );
+	    }
+            my %nicData = %{$info{$nic}};
+            printf BULK_INSERT "%d\t%d\t%d\t%s\t%d\t%d\n",$siteId,$serverId,$r_nicMap->{$nic},$time,($nicData{'r'} / $timeDelta),($nicData{'o'} / $timeDelta);
+        }
+        # store this period's data as the previous period
+        %lastVals = %ts;
+    }
+    close BULK_INSERT;
+    # only store if we've actually seen more than one data point
+    if (defined($startTime) && defined($endTime)) {
+	# Don't need to delete data if we are processing incrementally
+	if ( $dataOffset == 0 ) {
+	    my $sql = sprintf("DELETE FROM nic_stat WHERE serverid = %d AND time BETWEEN '%s' AND '%s'",
+			      $serverId,$startTime, $endTime);
+	    dbDo($dbh,$sql) or die "Failed to delete old stats";
+	}
+
+	dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE nic_stat") 
+	    or die "Failed to load stats";
+    }
+    $dbh->disconnect;
+
+
+    if ( defined $incrFile ) {
+	my @fileStats = stat $cpuInstrData;
+	my $fileSize = $fileStats[7];
+	my %incrData = (
+	    'dataOffset' => $fileSize,
+	    'lastVals' => \%lastVals
+	    );
+	my $incrDataStr = Dumper(\%incrData);
+	open INC, ">$incrFile";
+	print INC $incrDataStr;
+	close INC;    
+    }   
+}
+
+main;

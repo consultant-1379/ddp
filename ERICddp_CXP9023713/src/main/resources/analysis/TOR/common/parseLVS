@@ -1,0 +1,455 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+our @STORE_PORTS = ( 56834, 2049, 6513, 80 );
+
+# Return hash of samples, key is proto:localaddr:port, value is array of hashes, where each hash contains
+#    'timestamp' => '220216:12:35',
+#     'remote' is a hash, key is remoteaddr:remoteport, value is hash
+#        'inpkts' => '86',
+#        'outbytes' => '4228',
+#        'inbytes' => '30440',
+#        'conns' => '8',
+#        'outpkts' => '66'
+
+sub parseStats($) {
+    my ($statsFile) = @_;
+
+    my %results = ();
+    my $timestamp = undef;
+    my $key = undef;
+    my $r_CurrRemote = undef;
+    open INPUT, $statsFile or die "Failed to open $statsFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseStats: line=$line"; }
+        if ( $line =~ /BEGIN (\S+)/ ) {
+            $timestamp = formatTime( parseTime($1,
+                                               $StatsTime::TIME_DDMMYY_HM),
+                                     $StatsTime::TIME_SQL );
+        } elsif ( $line =~ /^(\S+)\s+([\d\.]+):(\d+)/ ) {
+            my ($proto,$localAddr,$localPort) = ($1,$2,$3);
+
+            my $key = $proto . ":" . $localAddr . ":" . $localPort;
+            if ( ! exists $results{$key} ) {
+                $results{$key} = [];
+            }
+
+            $r_CurrRemote = {};
+            push @{$results{$key}}, {
+                'timestamp' => $timestamp,
+                'remote' => $r_CurrRemote
+            };
+        } elsif ( $line =~ /^\s+->\s+([\d\.]+):(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/ ) {
+            my ($remoteaddr,$remoteport) = ($1,$2);
+            my $r_remote = {
+                'conns' => $3,
+                'inpkts' => $4,
+                'outpkts' => $5,
+                'inbytes' => $6,
+                'outbytes' => $7
+            };
+            if ( $DEBUG > 8 ) { print Dumper("parseStats: r_remote", $r_remote); }
+            $r_CurrRemote->{$remoteaddr . ":" . $remoteport} = $r_remote;
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseStats: samples", \%results); }
+    return \%results;
+}
+
+#
+# Return hash of samples, key is proto:localaddr:port, value is array of hashes
+#  In turn, this hash hash a key of remotehost:remoteport, value is an array of samples which are hashes containing
+#    'timestamp' => '220216:12:35',
+#    'conns', 'inpkts', 'outpkts', 'inbytes', 'outbytes'
+#
+#  remotehost:remoteport arrays that have no traffic are removed
+sub processData($$$) {
+    my ($r_inputData,$r_hosts,$r_addrByTime) = @_;
+
+    my %outData = ();
+    while ( my ($localKey,$r_samples) = each %{$r_inputData} ) {
+        my ($proto,$ip,$port) = split(":",$localKey);
+        (exists $r_hosts->{$ip}) or die "Cannot map ip: $ip";
+        my $host = $r_hosts->{$ip};
+        $localKey = $proto . ":" . $host . ":" . $port;
+
+        for ( my $index = 0; $index < $#{$r_samples}; $index++ ) {
+            my $timestamp = parseTime($r_samples->[$index]->{'timestamp'},$StatsTime::TIME_SQL);
+            if ( ! exists $r_addrByTime->{$timestamp}->{$ip} ) {
+                if ( $DEBUG > 5 ) { print "processData: Skipping $ip @ $r_samples->[$index]->{'timestamp'}\n"; }
+                next;
+            }
+
+            while ( my ($remoteKey,$r_remoteStat) = each %{$r_samples->[$index]->{'remote'}} ) {
+                my ($remoteip,$remoteport) = split(":",$remoteKey);
+                (exists $r_hosts->{$remoteip}) or die "Cannot map remote ip: $remoteip";
+                my $remoteHostKey = $r_hosts->{$remoteip} . ":" . $remoteport;
+                if ( exists $r_samples->[$index+1]->{'remote'}->{$remoteKey} ) {
+                    my %delta = ( 'timestamp' => $r_samples->[$index]->{'timestamp'} );
+                    if ( ! exists $outData{$localKey}->{$remoteHostKey} ) {
+                        $outData{$localKey}->{$remoteHostKey} = [];
+                    }
+                    push @{$outData{$localKey}->{$remoteHostKey}}, \%delta;
+                    my $r_nextRemoteStat = $r_samples->[$index+1]->{'remote'}->{$remoteKey};
+                    foreach my $statName ( sort keys %{$r_remoteStat} ) {
+                        if ( $statName eq 'conns' ) {
+                            $delta{$statName} = $r_remoteStat->{$statName};
+                        } else {
+                            $delta{$statName} = $r_nextRemoteStat->{$statName} - $r_remoteStat->{$statName};
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("processData: raw outData", \%outData); }
+
+    # Filter the data, remote any remote host where the total number of pkts = 0
+    foreach my $localKey ( keys %outData ) {
+        while ( my ($remoteKey,$r_remoteStats) = each %{$outData{$localKey}} ) {
+            my $totalPkts = 0;
+            foreach my $r_stat ( @{$r_remoteStats} ) {
+                $totalPkts += $r_stat->{'inpkts'} + $r_stat->{'outpkts'};
+            }
+            if ( $totalPkts == 0 ) {
+                delete $outData{$localKey}->{$remoteKey};
+            }
+        }
+        my @remoteKeys = keys %{$outData{$localKey}};
+        if ( $#remoteKeys == -1 ) {
+            delete $outData{$localKey};
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("processData: filtered outData", \%outData); }
+
+    return \%outData;
+}
+
+sub parseIpAddr($) {
+    my ($lvsDir) = @_;
+
+    open INPUT, $lvsDir . "/ip_addr.log";
+    my %addrByTime = ();
+    my $r_currSample = undef;
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseIpAddr: line=$line"; }
+        if ( $line =~ /BEGIN (\S+)/ ) {
+            my $timestamp = parseTime($1, $StatsTime::TIME_DDMMYY_HM);
+            $r_currSample = {};
+            $addrByTime{$timestamp} = $r_currSample;
+        } elsif ( $line =~ /^\d+:\s+(\S+)\s+inet\s+([\d\.]+)/ ) {
+            my ($nic,$ip) = ($1,$2);
+            if ( $DEBUG > 5 ) { print "parseIpAddr: nic=$nic ip=$ip\n"; }
+            $r_currSample->{$ip} = $nic;
+        }
+    }
+    close INPUT;
+
+    if ($DEBUG > 5) { print Dumper("parseIpAddr: addrByTime", \%addrByTime); }
+    return \%addrByTime;
+}
+
+
+
+sub parseHosts($$) {
+    my ($lvsDir,$props) = @_;
+
+    my %results = ();
+
+    open INPUT, $lvsDir . "/hosts" or die "Failed to open hosts file";
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^([\d\.]+)\s+(\S+)/ ) {
+            $results{$1} = $2;
+        }
+    }
+    close INPUT;
+
+    open INPUT, $props or die "Failed to open props file $props";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseHosts: vip line=$line"; }
+        if ( $line =~ /^([^_]+)_(\S+)_vip_ipaddress=([\d\.]+)/ ) {
+            my ($cluster,$name,$ip) = ($1,$2,$3);
+            if ( $DEBUG > 8 ) { print "parseHosts: ext vip cluster=$cluster name=$name ip=$ip\n"; }
+            $results{$ip} = $cluster . "_" . $name . "_ext";
+        } elsif ( $line =~ /^([^_]+)_(\S+)_vip_internal=([\d\.]+)/ ) {
+            my ($cluster,$name,$ip) = ($1,$2,$3);
+            if ( $DEBUG > 8 ) { print "parseHosts: int vip cluster=$cluster name=$name ip=$ip\n"; }
+            $results{$ip} =  $cluster . "_" . $name . "_int";
+        } elsif ( $line =~ /^([^_]+)_(\S+)_ip_storage=([\d\.]+)/ ) {
+            my ($cluster,$name,$ip) = ($1,$2,$3);
+            if ( $DEBUG > 8 ) { print "parseHosts: storage ip cluster=$cluster name=$name ip=$ip\n"; }
+            $results{$ip} =  $cluster . "_" . $name . "_storage";
+        } elsif ( $line =~ /^([^_]+)_ip_storage=([\d\.]+)/ ) {
+            my ($cluster,$ip) = ($1,$2,$3);
+            if ( $DEBUG > 8 ) { print "parseHosts: storage ip cluster=$cluster ip=$ip\n"; }
+            $results{$ip} =  $cluster . "_storage";
+        } elsif ( $line =~ /^([^_]+)_storage_gateway_ip_internal=([\d\.]+)/ ) {
+            my ($cluster,$ip) = ($1,$2);
+            $results{$ip} = $cluster . "_" . 'storage_int';
+        } elsif ( $line =~ /^([^_]+)_1_ip_internal=([\d\.]+)/ ) {
+            my ($cluster,$ip) = ($1,$2);
+            $results{$ip} = $cluster . '_1_ip_internal';
+        } elsif ( $line =~ /^([^_]+)_1_external_ip_address=([\d\.]+)/ ) {
+            my ($cluster,$ip) = ($1,$2);
+            $results{$ip} = $cluster .'_1_external_ip_address';
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseHosts: results", \%results); }
+    return \%results;
+}
+
+sub storeData($$$$$$) {
+    my ($site,$server,$r_data,$r_addrByTime,$r_hosts,$r_connTrackData) = @_;
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+
+    my $from = undef;
+    my $to = undef;
+
+    my %allLvsMap = ();
+    while ( my ($localKey,$r_remote) = each %{$r_data} ) {
+        while ( my ($remoteKey,$r_samples) = each %{$r_remote} ) {
+            $allLvsMap{$localKey . ":" . $remoteKey} = 1;
+
+            my $firstTime = parseTime($r_samples->[0]->{'timestamp'},$StatsTime::TIME_SQL);
+            if ( ! defined $from ||  $firstTime < $from ) {
+                $from = $firstTime;
+            }
+            my $lastTime = parseTime($r_samples->[$#{$r_samples}]->{'timestamp'},$StatsTime::TIME_SQL);
+            if ( ! defined $to || $lastTime > $to ) {
+                $to = $lastTime;
+            }
+        }
+    }
+    my @allLvs = sort keys %allLvsMap;
+    if ( $DEBUG > 8 ) { print Dumper("storeData: allLvs", \@allLvs); }
+
+    # Get id's for each proto:lhost:lport:rhost:rport combo
+    dbDo($dbh, "LOCK TABLE enm_lvs WRITE") or die "Failed to lock enm_lvs";
+    my %lvsIdMap = ();
+    foreach my $r_row ( @{dbSelectAllArr($dbh, "SELECT id,proto,lhost,lport,rhost,rport FROM enm_lvs")} ) {
+        my $id = shift @{$r_row};
+        my $key = join(":",@{$r_row});
+        $lvsIdMap{$key} = $id;
+    }
+    if ( $DEBUG > 8 ) { print Dumper("storeData: lvsIdMap", \%lvsIdMap); }
+
+    foreach my $lvs ( @allLvs ) {
+        if ( ! exists $lvsIdMap{$lvs} ) {
+            my ($proto,$lhost,$lport,$rhost,$rport) = split(":",$lvs);
+            dbDo($dbh, sprintf("INSERT INTO enm_lvs (proto,lhost,lport,rhost,rport) VALUES ('%s','%s',%d,'%s',%d)",
+                               $proto,$lhost,$lport,$rhost,$rport)) or die "Failed to insert $lvs";
+            my $id = $dbh->last_insert_id( undef, undef, "enm_lvs", "id" );
+            $lvsIdMap{$lvs} = $id;
+        }
+    }
+    dbDo( $dbh, "UNLOCK TABLES" ) or die "Failed to unlock";
+
+    if ( defined $from && defined $to ) {
+        # Delete prev loaded data
+        dbDo($dbh,sprintf("DELETE FROM enm_lvs_stats WHERE siteid = %d AND serverid = %d AND time BETWEEN '%s' AND '%s'",
+                          $siteId, $serverId, formatTime($from,$StatsTime::TIME_SQL),
+                          formatTime($to,$StatsTime::TIME_SQL))
+            ) or die "Failed to remove old data";
+
+        # Load data
+        while ( my ($localKey,$r_remote) = each %{$r_data} ) {
+            while ( my ($remoteKey,$r_samples) = each %{$r_remote} ) {
+                my $key = $localKey . ":" . $remoteKey;
+                my $lvsId = $lvsIdMap{$key};
+                foreach my $r_sample ( @{$r_samples} ) {
+                    if ( $DEBUG > 8 ) { print Dumper("storeData: r_sample", $r_sample); }
+                    dbDo($dbh,sprintf("INSERT INTO enm_lvs_stats (siteid,serverid,time,lvsid,conns,inpkts,outpkts,inbytes,outbytes) VALUES(%d,%d,'%s',%d,%d,%d,%d,%d,%d)",
+                                      $siteId,$serverId,$r_sample->{'timestamp'},$lvsIdMap{$key},
+                                      $r_sample->{'conns'},
+                                      $r_sample->{'inpkts'}, $r_sample->{'outpkts'},
+                                      $r_sample->{'inbytes'}, $r_sample->{'outbytes'})
+                        ) or die "Failed to insert data";
+                }
+            }
+        }
+    }
+
+    my @addrTimeStamps = sort { $a <=> $b } keys %{$r_addrByTime};
+    if ( $#addrTimeStamps > -1 ) {
+        dbDo($dbh,
+             sprintf("DELETE FROM enm_lvs_viphost WHERE siteid = %d and serverid = %d AND time between '%s' AND '%s'",
+                     $siteId,$serverId,
+                     formatTime($addrTimeStamps[0],$StatsTime::TIME_SQL),
+                     formatTime($addrTimeStamps[$#addrTimeStamps],$StatsTime::TIME_SQL))
+            ) or die "Failed to remove old data";
+
+        my $r_nicMap = getIdMap($dbh, "network_interfaces", "id", "name", [], $serverId, "serverid" );
+        my %vipSet = ();
+        foreach my $timestamp ( @addrTimeStamps ) {
+            foreach my $vip ( keys %vipSet ) {
+                $vipSet{$vip} = 0;
+            }
+
+            while ( my ($ip,$nic) = each %{$r_addrByTime->{$timestamp}} ) {
+                my $alias = $r_hosts->{$ip};
+                if ( defined $alias && $alias =~ /_(ext|int|storage)|^haproxy$/ ) {
+                    if ( ! exists $vipSet{$ip} ) {
+                        dbDo($dbh,sprintf("INSERT INTO enm_lvs_viphost (siteid,serverid,time,vip,nicid) VALUES (%d,%d,'%s','%s',%d)",
+                                          $siteId,
+                                          $serverId,
+                                          formatTime($timestamp,$StatsTime::TIME_SQL),
+                                          $r_hosts->{$ip},
+                                          $r_nicMap->{$nic})
+                            ) or die "Cannot insert $r_hosts->{$ip}";
+                    }
+                    $vipSet{$ip} = 1;
+                }
+            }
+
+            foreach my $vip ( keys %vipSet ) {
+                if ( $vipSet{$vip} == 0 ) {
+                    delete $vipSet{$vip};
+                }
+            }
+        }
+    }
+
+    my @connTrackTimeStamps = sort { $a <=> $b } keys %{$r_connTrackData};
+    if ( $#addrTimeStamps > -1 ) {
+	my %storePortsHash = ();
+	foreach my $port ( @STORE_PORTS ) {
+	    $storePortsHash{$port} = 1;
+	}
+
+        dbDo($dbh,
+             sprintf("DELETE FROM enm_lvs_conntrack WHERE siteid = %d and serverid = %d AND time between '%s' AND '%s'",
+                     $siteId,$serverId,
+                     formatTime($connTrackTimeStamps[0],$StatsTime::TIME_SQL),
+                     formatTime($connTrackTimeStamps[$#connTrackTimeStamps],$StatsTime::TIME_SQL))
+            ) or die "Failed to remove old data";
+        foreach my $timestamp ( @connTrackTimeStamps ) {
+	        my $r_sample = $r_connTrackData->{$timestamp};
+    	    my $otherCount = 0;
+	        while ( my ($port,$count) = each %{$r_sample->{'dest'}} ) {
+		        if ( ! exists $storePortsHash{$port} ) {
+		            $otherCount += $count;
+    		    }
+	        }
+	        my @portColNames = ( 'port_Other' );
+    	    my @portColValues = ( $otherCount );
+	        foreach my $port ( @STORE_PORTS ) {
+        		push @portColNames, 'port_' . $port;
+		        if ( exists $r_sample->{'dest'}->{$port} ) {
+        		    push @portColValues, $r_sample->{'dest'}->{$port};
+		        } else {
+        		    push @portColValues, 0;
+		        }
+	        }
+	        dbDo($dbh,sprintf("INSERT INTO enm_lvs_conntrack (siteid,serverid,time,tcp,udp,%s) VALUES (%d,%d,'%s',%d,%d,%s)",
+			          join(",",@portColNames),
+			          $siteId,
+    			      $serverId,
+	    		      formatTime($timestamp,$StatsTime::TIME_SQL),
+		    	      $r_sample->{'tcp'},
+			          $r_sample->{'udp'},
+			          join(",",@portColValues)))
+		    or die "Insert failed";
+	    }
+    }
+
+    $dbh->disconnect();
+}
+
+sub getValue($) {
+    my ($nameValue) = @_;
+    my ($name,$value) = $nameValue =~ /(\S+)=(\S+)/;
+    return $value;
+}
+
+sub parseNfConnTrack($) {
+    my ($inputFile) = @_;
+
+    my %statsByTime = ();
+    my $r_currSample = undef;
+    open INPUT, $inputFile or die "Failed to open $inputFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseNfConnTrack: line=$line"; }
+	if ( $line =~ /^BEGIN ([\d:]+)/ ) {
+            my $timestamp = parseTime($1, $StatsTime::TIME_DDMMYY_HM);
+            $r_currSample = { 'tcp' => 0, 'udp' => 0, 'dest' => {} };
+            $statsByTime{$timestamp} = $r_currSample;
+	} else {
+	    chop $line;
+	    my @fields = split(/\s+/,$line);
+	    if ( $fields[2] eq 'tcp' ) {
+		$r_currSample->{'tcp'}++;
+		$r_currSample->{'dest'}->{getValue($fields[9])}++;
+	    } elsif ( $fields[2] eq 'udp' ) {
+		$r_currSample->{'udp'}++;
+		$r_currSample->{'dest'}->{getValue($fields[8])}++;
+	    }
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseNfConnTrack: statsByTime", \%statsByTime); }
+
+    return \%statsByTime;
+}
+
+sub parseMembers($$) {
+    my ($r_hosts, $dataDir) = @_;
+    $dataDir  = substr($dataDir, 0, index($dataDir, 'tor_servers')) . 'TOR/consul/members.txt';
+    if (-e $dataDir) {
+        open INPUT, $dataDir or die "Failed to open hosts file";
+        while ( my $line = <INPUT> ) {
+        if ( $line =~ /^(\S+)\s+(\d+.\d+.\d+.\d+)/ ) {
+                $r_hosts->{$2} = $1;
+            }
+        }
+        close INPUT;
+    }
+}
+
+sub main() {
+    my ($dataFile,$dataDir,$site,$server,$props);
+    my $result = GetOptions(
+        "dir=s" => \$dataDir,
+        "server=s" => \$server,
+        "site=s" => \$site,
+        "props=s" => \$props,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_hosts = parseHosts($dataDir,$props);
+    parseMembers($r_hosts, $dataDir);
+    my $r_addrByTime = parseIpAddr($dataDir);
+    my $statsFile = $dataDir . "/ipvsadm_stats.log";
+    my $r_data = processData(parseStats($statsFile),$r_hosts,$r_addrByTime);
+
+    my $r_connTrackData = parseNfConnTrack($dataDir . "/nf_conntrack");
+
+    storeData($site,$server,$r_data,$r_addrByTime,$r_hosts,$r_connTrackData);
+}
+
+main();

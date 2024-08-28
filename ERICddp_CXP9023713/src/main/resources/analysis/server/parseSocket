@@ -1,0 +1,398 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+our $TIMESTAMP    = 0;
+our $INTERNAL     = 1;
+our $EXTERNAL_OUT = 2;
+our $EXTERNAL_IN  = 3;
+our $STATES       = 4;
+
+our %OSS_PORTS =
+    (
+     '12468' => 'InternalNameService',
+     '389'   => 'LDAP',
+     '5025'  => 'Sybase',
+     '49254' => 'ExtNameService',
+     '50031' => 'TSSAuth'
+     );
+
+our %NE_PORTS =
+    (
+     '56835' => 'CelloNameService',
+     '56834' => 'CelloCorbaServices',
+     '56836' => 'CelloSecureCorbaServices',
+     '20'    => 'FTP-Data',
+     '21'    => 'FTP',
+     '80'    => 'HTTP',
+     '22'    => 'ssh'
+     );
+
+main();
+
+sub main
+{
+    my ($socLog,$dataFile);
+    my $result = GetOptions(
+			    "soclog=s" => \$socLog,
+			    "data=s" => \$dataFile,
+			    "debug=s" => \$DEBUG
+			    );
+
+    my $r_Data = parseLog($socLog);
+    my $r_PortMap = aggregateData($r_Data,7);
+
+    open DATA, ">$dataFile" or die "Cannot write to $dataFile";
+
+    #
+    # Print stats by socket type
+    #
+    foreach my $type ( 'internal', 'extin', 'extout' )
+    {
+	my $topCount = (scalar keys %{$r_PortMap->{$type}}) + 1;
+	my %indexToPort = reverse %{$r_PortMap->{$type}};
+
+	print "$type";
+	for ( my $i = 0; $i < $topCount; $i++ )
+	{
+	    print " ", getPortName( $type, $indexToPort{$i} );
+	}
+	print "\n";
+	
+	for my $r_CurrData ( @{$r_Data} )
+	{
+	    print DATA $r_CurrData->{'timestamp'};
+	    my $runningCount = 0;
+	    for ( my $i = 0; $i < $topCount; $i++ )
+	    {
+		$runningCount += $r_CurrData->{$type}->[$i];
+		print DATA " ", $runningCount;
+	    }
+	    print DATA "\n";
+	}
+	print DATA "\n\n";
+    }    
+
+    #
+    # Print stats by socket state
+    #
+    my %stateMap = ();
+    for my $r_CurrData ( @{$r_Data} )
+    {
+	foreach my $state ( keys %{$r_CurrData->{'states'}} )
+	{
+	    $stateMap{$state} += $r_CurrData->{'states'}->{$state};
+	}
+    }
+    my $r_keysSortedByValue = getKeysSortedByValue(\%stateMap);
+    if ( $#{$r_keysSortedByValue} > 6 )
+    {
+	$#{$r_keysSortedByValue} = 6;
+    }	
+	 
+    my @stateList = sort keys %stateMap;
+    for my $r_CurrData ( @{$r_Data} )
+    {
+	print DATA $r_CurrData->{'timestamp'};
+	my $runningCount = 0;
+	foreach my $state ( @{$r_keysSortedByValue} )
+	{
+	    if ( exists $r_CurrData->{'states'}->{$state} )
+	    {
+		$runningCount += $r_CurrData->{'states'}->{$state};
+		delete $r_CurrData->{'states'}->{$state};
+	    }
+	    
+	    print DATA " ", $runningCount;
+	}
+	foreach my $state ( keys %{$r_CurrData->{'states'}} )
+	{
+	    $runningCount += $r_CurrData->{'states'}->{$state};
+	}
+	print DATA " ", $runningCount, "\n";
+    }
+    print DATA "\n\n";
+    print "states ";
+    foreach my $state ( @{$r_keysSortedByValue} )
+    {
+	print " ", $state;
+    }
+    if ( $#{$r_keysSortedByValue} != scalar keys %stateMap )
+    {
+	print " Other";
+    }
+    print "\n";
+
+
+    #
+    # Print total number of anon connections (internal + extout)
+    #
+    for my $r_CurrData ( @{$r_Data} )
+    {
+	my $total = 0;
+	foreach my $type ( 'internal', 'extout' )
+	{
+	    foreach my $count ( @{$r_CurrData->{$type}} )
+	    {
+		$total += $count;
+	    }
+	}
+	
+	print DATA $r_CurrData->{'timestamp'}, " ", $total, "\n";
+    }
+    print DATA "\n\n";
+
+
+    close DATA;
+}
+
+sub aggregateData
+{
+    my ($r_Data, $maxCount) = @_;
+
+    my %total = ();
+    for my $r_CurrData ( @{$r_Data} )
+    {
+	foreach my $type ( 'internal', 'extin', 'extout' )
+	{
+	    my $r_Counts = $r_CurrData->{$type};
+	    foreach my $r_pair ( @{$r_Counts} )
+	    {
+		$total{$type}->{$r_pair->{'port'}} += $r_pair->{'count'};
+	    }
+	}
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("aggregateData: total", \%total); }
+
+
+    my %sortedKeys = ();
+    foreach my $type ( 'internal', 'extin', 'extout' )
+    {
+	my $r_sortedPorts = getKeysSortedByValue( $total{$type} );
+	my $topCount = $maxCount;	
+	if ( $topCount > $#{$r_sortedPorts} )
+	{
+	    $topCount = $#{$r_sortedPorts} + 1;
+	}
+	my %indexMap = ();
+	for ( my $i = 0; $i < $topCount; $i++ )
+	{
+	    $indexMap{$r_sortedPorts->[$i]} = $i;
+	}
+	$sortedKeys{$type} = \%indexMap;
+    }
+
+
+    for my $r_CurrData ( @{$r_Data} )
+    {
+	if ( $DEBUG > 4 ) { print "aggregateData: r_CurrData timestamp=$r_CurrData->{'timestamp'}\n"; }
+
+	foreach my $type ( 'internal', 'extin', 'extout' )
+	{
+	    if ( $DEBUG > 4 ) { print "aggregateData: r_CurrData type=$type\n"; }
+	    my $r_Counts = $r_CurrData->{$type};
+
+	    my @newCounts = ();
+	    foreach my $portNum ( keys %{$sortedKeys{$type}} )
+	    {
+		$newCounts[$sortedKeys{$type}->{$portNum}] = 0
+	    }
+	    push @newCounts, 0;
+
+	    foreach my $r_pair ( @{$r_Counts} )
+	    {
+		if ( exists $sortedKeys{$type}->{$r_pair->{'port'}} )
+		{
+		    $newCounts[$sortedKeys{$type}->{$r_pair->{'port'}}] =
+			$r_pair->{'count'};
+		}
+		else
+		{
+		    $newCounts[$#newCounts] +=
+			$r_pair->{'count'};
+		}
+	    }
+
+	    if ( $DEBUG > 4 ) { print Dumper("aggregateData: $type newCounts", \@newCounts); }
+
+	    $r_CurrData->{$type} = \@newCounts;
+	}
+    }
+
+    foreach my $type ( 'internal', 'extin', 'extout' )
+    {
+	my $r_indexMap = $sortedKeys{$type};
+	my $numEntries = scalar keys %{$r_indexMap};
+	$r_indexMap->{'Other'} = $numEntries;
+    }
+
+    if ( $DEBUG > 4 ) { print Dumper("aggregateData: sortedKeys", \%sortedKeys); }
+
+
+    return \%sortedKeys;
+}
+
+sub parseLog
+{
+    my ($socLog) = @_;
+
+    my @data = ();
+    my ($r_CurrData);
+
+    my $state = $TIMESTAMP;
+    open SOCLOG, $socLog or die "Cannot open $socLog";    
+    while ( my $line = <SOCLOG> )
+    {
+	if ( $state == $TIMESTAMP )
+	{
+	    if ( $line =~ /^\d{6,6}:\d{2,2}:\d{2,2}/ )
+	    {
+		$r_CurrData = {};
+		push @data, $r_CurrData;
+		chop $line;
+		$r_CurrData->{'timestamp'} = $line;
+		
+		$state = $INTERNAL;
+		$r_CurrData->{'internal'} = [];
+	    }
+	}
+	elsif ( $state == $INTERNAL )
+	{
+	    if ( $line =~ /^(\d+):(\d+)$/ )
+	    {
+		my $r_pair = {
+		    'port' => $1,
+		    'count' => $2
+		    };
+		push @{$r_CurrData->{'internal'}}, $r_pair;
+	    }
+	    elsif ( $line =~ /^Outgoing External/ )
+	    {
+		$state = $EXTERNAL_OUT;
+		$r_CurrData->{'extout'} = [];
+	    }
+	}
+	elsif ( $state == $EXTERNAL_OUT )
+	{
+	    if ( $line =~ /^(\d+):(\d+)$/ )
+	    {
+		my $r_pair = {
+		    'port' => $1,
+		    'count' => $2
+		    };
+		push @{$r_CurrData->{'extout'}}, $r_pair;
+	    }
+	    elsif ( $line =~ /^Incoming External/ )
+	    {
+		$state = $EXTERNAL_IN;
+		$r_CurrData->{'extin'} = [];
+	    }
+	}
+	elsif ( $state == $EXTERNAL_IN )
+	{
+	    if ( $line =~ /^(\d+):(\d+)$/ )
+	    {
+		my $r_pair = {
+		    'port' => $1,
+		    'count' => $2
+		    };
+		push @{$r_CurrData->{'extin'}}, $r_pair;
+	    }
+	    elsif ( $line =~ /^Sockets State/ )
+	    {
+		$state = $STATES;
+		$r_CurrData->{'states'} = {};
+	    }
+	}
+	elsif ( $state == $STATES )
+	{
+	    if ( $line =~ /^([A-Z_]+):(\d+)$/ )
+	    {
+		$r_CurrData->{'states'}->{$1} = $2;
+	    }
+	    else 
+	    {
+		$state = $TIMESTAMP;
+	    }
+	}
+    }
+    close SOCLOG;
+
+    if ( $DEBUG > 7 ) { print Dumper("parse data", \@data); }
+
+    return \@data;    
+}
+
+sub getSortedIndex 
+{
+    my ($r_Data) = @_;
+
+    my %sortableData = ();
+    for ( my $i = 0; $i <= $#{$r_Data}; $i++ )
+    {
+	my $sortableValue = sprintf "%d%05d", $r_Data->[$i]->{'count'}, $i;
+	$sortableData{$sortableValue} = $i;
+    }
+    
+    my @sortedIndexes = ();
+    foreach my $key ( sort by_number keys %sortableData )
+    {
+	push @sortedIndexes, $sortableData{$key};
+    }
+
+    return \@sortedIndexes;
+}
+
+sub by_number
+{
+    return $b <=> $a;
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+        my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+        $reverseHash{$reverseKey} = $key;
+        $counter++;
+    }
+
+    my $r_Result = [];
+    foreach my $reverseKey ( sort by_number keys %reverseHash )
+    {
+        $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+
+    return $r_Result;
+}
+
+sub getPortName
+{
+    my ($type,$portNum) = @_;
+
+    my $portName = "";
+    if ( ($type eq 'internal') || ($type eq 'extin') )
+    {
+	$portName = $OSS_PORTS{$portNum};
+    }
+    else
+    {
+	$portName = $NE_PORTS{$portNum};
+    }
+
+    if ( ! $portName )
+    {
+	$portName = $portNum;
+    }
+
+    return $portName;
+}

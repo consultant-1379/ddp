@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($inputFile,$tableFile);
+    my $result = GetOptions("input=s"  => \$inputFile,
+			    "table=s"    => \$tableFile,
+			    "debug=s" => \$DEBUG );
+
+    open INPUT, $inputFile or die "Cannot open input $inputFile";
+    open OUTPUT, ">$tableFile" or die "Cannot open table $tableFile";
+    my $lastSnPhase = "";
+    my $lastCcRun = "";
+    while ( my $line = <INPUT> )
+    {
+	my $changed = 0;
+
+	my @fields = split / /, $line;
+
+	my ($time) = $fields[0] =~ /^[^:]+:(\S+)/;
+	my $snRecoveryPhase = $fields[10];
+	if ( $snRecoveryPhase ne $lastSnPhase )
+	{
+	    $changed = 1;
+	    $lastSnPhase = $snRecoveryPhase;
+	}
+
+	my $isConCheckerRunning = $fields[6];
+	if ( $isConCheckerRunning ne $lastCcRun )
+	{
+	    $changed = 1;
+	    $lastCcRun = $isConCheckerRunning;
+	}
+
+	if ( $changed )
+	{
+	    printf OUTPUT " <tr> <td>%s<\/td> <td>%s<\/td> <td>%s<\/td> <\/tr>\n", $time, $snRecoveryPhase, $isConCheckerRunning;
+	}
+    }
+    close INPUT;
+    close OUTPUT;
+}

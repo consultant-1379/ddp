@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmsnmp_lossoftrapevent">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="mssnmpfm"/>
+  </services>
+  <events>
+<!-- LossOfTrapEvent {\"TypeOfTrap\":\"ALARM\",\"Expected\":9967,\"Actual\":9968,\"_Thread\":\"Camel (camel-1) thread #0 - JmsConsumer[NetworkElementFmNotifications_0]\",\"Node\":\"LTE17dg2ERBS00141\"}","timestamp":"2019-11-24T00:32:19.505+00:00"}} -->
+      <event name="LossOfTrapEvent">
+        <metric source="host" target="serverid"/>
+        <metric source="TypeOfTrap" target="typeOfTrap"/>
+        <metric source="Expected" target="expected"/>
+        <metric source="Actual" target="actual"/>
+        <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+      </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^JbossConnectionPools@(\S+)">
+
+  <table name="eo_jboss_connection_pool">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="poolid" reftable="eo_jboss_connection_pool_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>poolid</multi>
+
+    <metricgroup name="^jboss-connection-pools-(\S+)">
+      <metric source="BlockingFailureCount" target="blockingFailureCount" delta="true" filteridle="true"/>
+      <metric source="CreatedCount" target="createdCount" delta="true" filteridle="true"/>
+      <metric source="DestroyedCount" target="destroyedCount" delta="true" filteridle="true"/>
+      <metric source="TimedOut" target="timedOut" delta="true" filteridle="true"/>
+      <metric source="TotalBlockingTime" target="totalBlockingTime" delta="true" filteridle="true"/>
+      <metric source="TotalCreationTime" target="totalCreationTime" delta="true" filteridle="true"/>
+      <metric source="WaitCount" target="waitCount" delta="true" filteridle="true"/>
+      <property name="poolid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

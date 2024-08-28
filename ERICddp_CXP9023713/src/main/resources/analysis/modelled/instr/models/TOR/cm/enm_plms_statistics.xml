@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+" sampleinterval="900">
+  <services>
+    <service name="servicemanagement"/>
+  </services>
+
+  <table name="enm_plms_statistics">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.link.metrics.linkmanagement-service:type=LinkManagementServiceMetric$">
+      <metric source="totalNumberOfDiscoveredLinks" target="totalNumberOfDiscoveredLinks"/>
+      <metric source="totalNumberOfNotDiscoveredLinks" target="totalNumberOfNotDiscoveredLinks"/>
+      <metric source="totalNumberOfDefinedLinks" target="totalNumberOfDefinedLinks"/>
+      <metric source="totalNumberOfUndefinedLinks" target="totalNumberOfUndefinedLinks"/>
+      <metric source="totalNumberOfPendingLinks" target="totalNumberOfPendingLinks"/>
+      <metric source="totalNumberOfPhysicalLinks" target="totalNumberOfPhysicalLinks"/>
+      <metric source="totalNumberOfLogicalLinks" target="totalNumberOfLogicalLinks"/>
+      <metric source="totalNumberOfUnKnownLinks" target="totalNumberOfUnKnownLinks"/>
+      <metric source="totalNumberOfLinks" target="totalNumberOfLinks"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

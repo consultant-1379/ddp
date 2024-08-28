@@ -1,0 +1,203 @@
+#!/usr/bin/env perl 
+# parse SMF log files and svcs -p output.
+# Produces SMF event data, SMF status data and SMF downtime data
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use POSIX;
+use Time::Local;
+use File::Basename;
+use Time::HiRes;
+
+our $DEBUG = 0;
+our $tmpDir = "/tmp";
+
+main();
+
+sub main {
+    my ($statusFile, $smfLogDir, $site, $date, $hostname);
+    my $result = GetOptions(
+        "status=s" => \$statusFile,
+        "logdir=s" => \$smfLogDir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "server=s" => \$hostname,
+        "debug=s" => \$DEBUG,
+    );
+    setStatsDB_Debug($DEBUG);
+
+    if ( exists $ENV{'TMP_DIR'} ) { $tmpDir = $ENV{'TMP_DIR'}; }
+    my $dbh = connect_db();
+
+    if (defined($statusFile)) {
+	my $t1 = Time::HiRes::time();
+        storeServiceStatus($dbh,$statusFile, $site, $date, $hostname);
+	my $t2 = Time::HiRes::time();
+	if ( $DEBUG > 0 ) { print "main: storeServiceStatus took " . ($t2 - $t1) . "\n"; }
+    }
+    if (defined($smfLogDir)) {
+	my $r_eventsBySvc = parseSmfLogs($smfLogDir,$date);		
+	storeServiceEvents($dbh,$r_eventsBySvc, $site, $date, $hostname);
+    }
+}
+
+sub storeServiceStatus {
+    my ($dbh,$statusFile, $site, $date, $hostname) = @_;
+    open STATUS, $statusFile or die "Could not open SMF status file: " . $statusFile . ": " . $!;
+    my %services = ();
+
+    my $line = <STATUS>; # discard first header line
+    while ($line = <STATUS>) {
+        chomp $line;
+        my ($state, $ts, $service) = $line =~ /^(\S+)\s+(\S+)\s+(\S+)$/;
+        next if (! defined ($state) || ! defined($service));
+        # ensure service name is not greater than 255 chars
+        $service = substr($service,0,255);
+        $services{$service} = $state;
+    }
+    close STATUS;
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId($dbh,$siteId,$hostname);
+    my $t1 = Time::HiRes::time();
+    dbDo($dbh, "DELETE FROM smf_status WHERE serverid = $serverId AND date = '$date'");
+    my $t2 = Time::HiRes::time(); if ( $DEBUG > 1 ) { print "storeServiceStatus: delete took " . ($t2 - $t1) . "\n"; }
+
+    my @smfNameList = keys %services;
+    my $r_svcMap = getIdMap($dbh, "smf_names", "id", "name", \@smfNameList);
+    my $t3 = Time::HiRes::time(); if ( $DEBUG > 1 ) { print "storeServiceStatus: getIdMap took " . ($t3 - $t2) . "\n"; }
+
+    my $sql = "INSERT INTO smf_status (serverid,smfid,date,status) VALUES ";
+    my $delim = "";
+    foreach my $svc (keys %services) {
+        my $status = $services{$svc};
+        $status =~ s/_/-/;
+        if ($DEBUG > 8) { print $svc . " : " . $status . "\n"; }
+        $sql .= sprintf("%s(%d,%d,%s,%s)", $delim, $serverId, $r_svcMap->{$svc}, $dbh->quote($date), $dbh->quote($status));
+        $delim = ",";
+    }
+    dbDo($dbh, $sql);
+    my $t4 = Time::HiRes::time(); if ( $DEBUG > 1 ) { print "storeServiceStatus: insert took " . ($t4 - $t3) . "\n"; }
+}
+
+sub parseSmfLogs($) {
+    my ($smfLogDir,$date) = @_;
+
+    opendir SMFDIR, $smfLogDir or die "Could not open directory: " . $smfLogDir . ": " . $!;
+    # list all non-dot files, prepending the directory name again
+    my @smfFiles = grep { $_ ne "." and $_ ne ".." } readdir SMFDIR;
+    closedir SMFDIR;
+
+    my %eventsBySvc = ();
+
+    # get a string which matches the timestamps SMF uses in its log file - e.g.:
+    # Mar  4
+    # Jan 23
+    my ($year, $month, $day) = $date =~ /([1-9][0-9][0-9][0-9])-([0-1][0-9])-([0-3][0-9])/;
+    my $svcDate = POSIX::strftime("%b %e", (0, 0, 0, $day, ($month - 1), ($year - 1900), 0, 0, 0));
+
+    foreach my $serviceFile ( @smfFiles ) { 
+	open SVC, $smfLogDir . "/" . $serviceFile or die "Could not open service log file: " . $serviceFile . ": " . $!;
+	my $state = ""; # we don't know what our current state is
+	my $downtime = 0;
+	my @events = ();
+	my $lastEventTime = timelocal(0,0,0,$day, $month - 1, $year - 1900);
+
+	while (my $line = <SVC>) {
+	    if ($line =~ /^\[ $svcDate ([0-2][0-9]):([0-5][0-9]):([0-5][0-9]) (.*) \]$/) {
+		my $eventTime = $date . " " . $1 . ":" . $2 . ":" . $3;
+		my $evtTimeSecs = timelocal($3, $2, $1, $day, $month - 1, $year - 1900);
+		my $evt = $4;
+		if ($evt =~ /^Stopping because (.*)\.$/) {
+		    if ($DEBUG > 7) { print $eventTime . ": STOP: " . $1 . "\n"; }
+		    my $reason = $1;
+		    my %evt = ("time" => $eventTime, "event" => "stop", "reason" => $reason, "status" => 0);
+		    push @events, \%evt;
+		    # assume we were in a started state
+		    $lastEventTime = $evtTimeSecs;
+		} elsif ( $evt =~ /^Method "start" exited with status ([0-9]*)$/) {
+		    if ($DEBUG > 7) { print $eventTime . ": START: " . $1 . "\n"; }
+		    my $status = $1;
+		    my %evt = ("time" => $eventTime, "event" => "start", "reason" => "", "status" => $status);
+		    push @events, \%evt;
+		    # only update $lastEventTime / downtime when we come up successfully
+		    if ($status == 0) {
+			$downtime += ($evtTimeSecs - $lastEventTime);
+			$lastEventTime = $evtTimeSecs;
+			$state = "started";
+		    }
+		}
+	    }
+	}
+	close SVC;
+
+	if ( $#events > -1 ) {
+	    my $smfName = $serviceFile;
+	    $smfName =~ s/-/\//g;
+	    # Assume svc service
+	    $smfName =~ s/(.*)\.log$/svc:\/$1/;
+	    # If SMF name does not end with :something, assume :default
+	    if ($smfName !~ /svc:\/.*:.*/) {
+		$smfName = $smfName . ":default";
+	    }
+	    $eventsBySvc{$smfName} = {
+		'events' => \@events,
+		'downtime' => $downtime
+	    };
+	}
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseSmfLogs: eventsBySvc:",  \%eventsBySvc); }
+    return \%eventsBySvc;
+}
+
+sub storeServiceEvents {
+    my ($dbh,$r_eventsBySvc, $site, $date, $hostname) = @_;
+
+    my @smfNames = keys %{$r_eventsBySvc};
+    if ( $#smfNames == -1 ) {
+	return;
+    }
+    my $r_nameMap = getIdMap($dbh, "smf_names", "id", "name", \@smfNames);
+
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId($dbh,$siteId,$hostname);
+
+    my %allReasonsHash = ();
+    foreach my $smfName ( @smfNames ) {
+	foreach my $r_event ( @{$r_eventsBySvc->{$smfName}->{'events'}} ) {
+	    $allReasonsHash{$r_event->{'reason'}}++;
+	}
+    }
+    my @allReasonsArr = keys %allReasonsHash;
+    my $r_reasonIdMap = getIdMap($dbh, "smf_reasons","id","name",\@allReasonsArr);
+
+    # store the events
+    dbDo($dbh, "DELETE FROM smf_events WHERE serverid = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'")
+	or die "Failed to remove old data";
+    dbDo($dbh, "DELETE FROM smf_downtime WHERE serverid = $serverId AND date = '$date'")
+	or die "Failed to remove old data";
+
+    foreach my $smfName ( @smfNames ) {
+	my $nameId = $r_nameMap->{$smfName};
+
+	# we use a sequenceid to store the order of the events, since the event time only has a granularity
+	# of one second and we cannot rely on the insert order of the table rows. This value starts at 0 for
+	# each day.
+	my $sequenceId = 0;
+
+        my $sql = "INSERT INTO smf_events (serverid,smfid,time,event,reasonid,status,sequenceid) VALUES ";
+        my $delim = "";
+        foreach my $evt (@{$r_eventsBySvc->{$smfName}->{'events'}}) {
+            $sql .= sprintf("%s(%d,%d,%s,%s,%d,%d,%d)", $delim, $serverId, $nameId, $dbh->quote($evt->{"time"}),
+			    $dbh->quote($evt->{"event"}), $r_reasonIdMap->{$evt->{"reason"}}, $evt->{"status"}, $sequenceId++);
+            $delim = ",";
+        }
+        dbDo($dbh, $sql);
+
+	# store the downtime
+	dbDo($dbh, "INSERT INTO smf_downtime (serverid,smfid,date,downtime) " .
+	     "VALUES (" . $serverId . "," . $nameId . ",'" . $date . "'," . $r_eventsBySvc->{$smfName}->{'downtime'} . ")");
+    }
+}

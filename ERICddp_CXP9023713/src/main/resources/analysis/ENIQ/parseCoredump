@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+####################################################################################
+#  Description --------- parseCoredump -----------
+#  This script parses the coredump log file for DDP
+#  and stores data to DB
+#  @author - Anam Pargal (xanampa)
+#  usage parseCoredump --logfile ${LOG_FILE} --site ${SITE} --date ${SQL_DATE}
+#####################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $siteId;
+our $logFile;
+our $date;
+our $DEBUG = 0;
+our $coredumpTable = "eniq_coredump_details";
+
+sub main {
+    my $site;
+    my $result = GetOptions(
+        "logfile=s"  => \$logFile,
+        "site=s"     => \$site,
+        "date=s"     => \$date,
+        "debug=s"    => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    my $time =  parseData();
+    loadDb($time);
+    if($DEBUG > 1){
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my $timestamp;
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    my $line = <FILE>;
+    if ( $line =~ /\[ .*(\d{2}:\d{2}:\d{2}).*/ ) {
+        $timestamp = "$date $1";
+    }
+    close FILE;
+    return $timestamp;
+}
+
+sub loadDb {
+    my $occurrenceTime = shift;
+    my $insertSql = "INSERT INTO $coredumpTable (occurrence_time,siteid) VALUES ('$occurrenceTime',$siteId)";
+    removeOldData();
+    if ($DEBUG >= 3) {
+        print "Sql statement for inserting data into the database.\n";
+        print "$insertSql\n";
+    }
+    dbDo($dbh,$insertSql) or die "Failed to insert Data".$dbh->errstr."\n";
+    $dbh->disconnect();
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $coredumpTable WHERE siteid = $siteId AND occurrence_time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ($DEBUG >= 2) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql\n";
+    }
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main();

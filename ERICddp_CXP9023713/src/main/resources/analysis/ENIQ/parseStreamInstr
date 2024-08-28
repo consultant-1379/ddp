@@ -1,0 +1,212 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $CCTR_SCANNER_ID = 10005;
+
+sub by_rop {
+    return $a->{'rop'} <=> $b->{'rop'};
+}
+
+sub processDir($$) {
+    my ($dirPath,$r_statsByType) = @_;
+
+    opendir SUBDIR, $dirPath or die "Cannot open $dirPath";
+    my @files = grep /^A2/, readdir(SUBDIR);
+    close SUBDIR;
+    if ( $DEBUG > 4 ) { print Dumper("processDir: files in $dirPath", \@files); }
+
+    my %ropsByType = ();
+    # We stores the count for each nodes of different  type and retrieve only the the nodes as key.
+    my %nodeKeysByType = ();
+    foreach my $file ( @files ) {
+        my ($date,$hourmin) = $file =~ /^A(\d{8,8})\.(\d{4,4})/;
+        my $time = parseTime($date . $hourmin . "00",$StatsTime::TIME_YYYYMMDDHHMMSS);
+        if ( $DEBUG > 4 ) { print "processDir: file=$file date=$date hourmin=$hourmin time=$time\n"; }
+        my $filePath = $dirPath . "/" . $file;
+        open INPUT, $filePath or die "Failed to open $filePath";
+        my $header = <INPUT>;
+        my @headerFields = split(/\|/,$header);
+        if ( $DEBUG > 4 ) { print Dumper("processDir: headerFields", \@headerFields); }
+
+        #IP_ADDRESS|REMOTE_PORT|DATA_VOLUME(BYTE)|NO_OF_EVENTS|NO_OF_STREAM_INDICATOR|NO_OF_STREAM_DISCONNECTIONS|NO_OF_DROPPED_EVENTS
+
+        my ($dataVolCol,$numEventsCol,$scannerIdCol);
+        for ( my $i = 0; $i <= $#headerFields; $i++ ) {
+            if ( $headerFields[$i] eq 'DATA_VOLUME(BYTE)' ) {
+                $dataVolCol = $i;
+            } elsif ( $headerFields[$i] eq 'NO_OF_EVENTS' ) {
+                $numEventsCol = $i;
+            } elsif ( $headerFields[$i] eq 'SCANNER_ID' ) {
+                $scannerIdCol = $i;
+            }
+        }
+        if ( $DEBUG > 4 ) { print Dumper"processDir: dataVolCol=$dataVolCol numEventsCol=$numEventsCol\n"; }
+
+        my %resultsByType = ();
+        while ( my $line = <INPUT> ) {
+            if ( $DEBUG > 9 ) { print "processDir: line=$line"; }
+            my @cols = split(/\|/, $line);
+            if ( $DEBUG > 8 ) { print Dumper("processDir: cols",\@cols); }
+            my $type;
+            if ( ! defined $scannerIdCol ) {
+                $type = 'ctum';
+            } else {
+                if ( $cols[$scannerIdCol] == $CCTR_SCANNER_ID ) {
+                    $type = 'cctr';
+                } else {
+                    $type = 'ctr';
+                }
+            }
+            my $r_result = $resultsByType{$type};
+            if ( ! defined $r_result ) {
+                $r_result = {
+                    'rop' => $time,
+                    'datavol' => 0,
+                    'events' => 0,
+                    'maxdatavol' => 0,
+                    'maxevents' => 0
+                };
+                $resultsByType{$type} = $r_result;
+            }
+            #Increasing the count for the nodes against time for diff types(ctr,cctr,ctum).
+            $nodeKeysByType{$type}->{$time}->{$cols[0]}++;
+            $r_result->{'datavol'} += $cols[$dataVolCol];
+            if ( $cols[$dataVolCol] > $r_result->{'maxdatavol'} ) {
+                $r_result->{'maxdatavol'} = $cols[$dataVolCol];
+            }
+            $r_result->{'events'} += $cols[$numEventsCol];
+            if ( $cols[$numEventsCol] > $r_result->{'maxevents'} ) {
+                $r_result->{'maxevents'} = $cols[$numEventsCol];
+            }
+        }
+        close INPUT;
+
+        foreach my $type ( keys %resultsByType ) {
+            my $r_result = $resultsByType{$type};
+
+            my $r_results = $r_statsByType->{$type};
+            # Retrieving unique nodes of different types against each hour.
+            my @nodes = keys %{$nodeKeysByType{$type}->{$r_result->{'rop'}}};
+
+            $r_result->{'nodes'} = $#nodes + 1;
+
+            if ( ! defined $r_results ) {
+                $r_results = [];
+                $r_statsByType->{$type} = $r_results;
+            }
+
+            # Now we need to deal with the case where there are multiple
+            # instr files for the same ROP
+
+            if ( exists $ropsByType{$type}->{$r_result->{'rop'}} ) {
+                if ( $DEBUG > 3 ) { print "processDir: updating existing result for $file\n"; }
+                my $r_existingResult = $ropsByType{$type}->{$r_result->{'rop'}};
+
+                foreach my $field ( 'datavol', 'events' ) {
+                    $r_existingResult->{$field} += $r_result->{$field};
+                }
+                foreach my $field ( 'maxdatavol', 'maxevents' ) {
+                    if ( $r_result->{$field} > $r_existingResult->{$field} ) {
+                        $r_existingResult->{$field} = $r_result->{$field};
+                    }
+                }
+                #Assigning the existing node to some temp Result set.
+                $r_existingResult->{'nodes'}  = $r_result->{'nodes'};
+            } else {
+                if ( $DEBUG > 3 ) { print "processDir: new result for $file\n"; }
+                push @{$r_results}, $r_result;
+                $ropsByType{$type}->{$r_result->{'rop'}} = $r_result;
+            }
+        }
+    }
+}
+
+sub storeStats($$) {
+    my ($site,$r_stats) = @_;
+
+    my ($minRop,$maxRop);
+    foreach my $type ( keys %{$r_stats} ) {
+        my $r_rops = $r_stats->{$type};
+        if ( $#{$r_rops} > -1 ) {
+            if ( (! defined $minRop) || ($minRop > $r_rops->[0]->{'rop'}) ) {
+                $minRop = $r_rops->[0]->{'rop'};
+            }
+            if ( (! defined $maxRop) || ($maxRop < $r_rops->[$#{$r_rops}]->{'rop'}) ) {
+                $maxRop = $r_rops->[$#{$r_rops}]->{'rop'};
+            }
+        }
+    }
+
+    if ( ! defined $minRop ) {
+        return;
+    }
+
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+    my $siteId = getSiteId($dbh, $site);
+    dbDo($dbh,sprintf("DELETE FROM eniq_streaming WHERE siteid = %d AND rop BETWEEN '%s' AND '%s'",
+                      $siteId, formatTime($minRop,$StatsTime::TIME_SQL),
+                      formatTime($maxRop,$StatsTime::TIME_SQL)))
+        or die "Failed to delete old data\n";
+    foreach my $type ( keys %{$r_stats} ) {
+        foreach my $r_rop ( @{$r_stats->{$type}} ) {
+            dbDo($dbh,sprintf("INSERT INTO eniq_streaming (siteid,rop,type,nodes,totalvolmb,totalevents,peakvolkb,peakevents) VALUES(%d,'%s','%s',%d,%d,%d,%d,%d)",
+                              $siteId,formatTime($r_rop->{'rop'}, $StatsTime::TIME_SQL),$type,
+                              $r_rop->{'nodes'},
+                              $r_rop->{'datavol'} / (1024*1024), $r_rop->{'events'},
+                              $r_rop->{'maxdatavol'} / 1024, $r_rop->{'maxevents'}))
+                or die "Failed to insert data";
+        }
+    }
+    $dbh->disconnect;
+
+}
+
+sub main {
+    my ($indir,$site,$date);
+    my $result = GetOptions (
+        "dir=s" => \$indir,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+        );
+    ($result == 1) or die "Invalid args";
+
+    opendir STREAMDIR, $indir or die "Cannot open $indir";
+    my @entires = grep !/^\.\.?$/, readdir(STREAMDIR);
+    close STREAMDIR;
+    if ( $DEBUG > 3 ) { print Dumper("main: entires", \@entires); }
+
+    if ( $#entires == -1 ) {
+        print "WARN: No subdir in $indir\n";
+        exit 0;
+    }
+
+    my %statsByType = ();
+    foreach my $entry ( @entires ) {
+        processDir($indir . "/" . $entry,\%statsByType);
+    }
+
+    foreach my $type ( keys %statsByType ) {
+        my @sortedResults = sort by_rop @{$statsByType{$type}};
+        $statsByType{$type} = \@sortedResults;
+    }
+    if ( $DEBUG > 3 ) { print Dumper("main: statsByType", \%statsByType); }
+
+    if ( defined $site ) {
+        storeStats($site,\%statsByType);
+    }
+}
+
+main();

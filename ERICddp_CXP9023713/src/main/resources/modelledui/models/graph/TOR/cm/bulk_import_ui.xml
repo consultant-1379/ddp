@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ ylabel="count"
+ timespan="day"
+ useragg="false"
+>
+  <presetagg type="COUNT" interval="Hourly" />
+  <title value="Executed Jobs"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_bulk_import_ui">
+        <reference table="sites" condition="enm_bulk_import_ui.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND status = 'executed'</where>
+      <column db="status" label="executed"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

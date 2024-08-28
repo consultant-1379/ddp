@@ -1,0 +1,299 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+
+use File::Basename;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main()
+{
+
+    my ($cfgFile,$outDir,$neadLog, $plotCmd,$date,$plotDir,$site);
+    my $tmpDir = "/tmp";
+
+    my $result = GetOptions(
+			    "cfg=s"  => \$cfgFile,
+			"outputdir=s" => \$outDir,
+			    "neadlog=s" => \$neadLog,
+			    "plotcmd=s" =>\$plotCmd,
+			    "plotdir=s" =>\$plotDir,
+			    "date=s" => \$date,
+			    "tmpdir=s" => \$tmpDir,
+	                    "site=s" => \$site,
+			    "debug=s" => \$DEBUG
+			    );
+    
+    ($result == 1) or printUsageAndExit("");
+
+    my ($day,$month,$year) = $date =~ /^(\d{2,2})-(\d{2,2})-(\d{2,2})$/;
+    defined $day or die "Cannot parse date $date";
+
+    my @statsCfg = ();
+    readCfg( $cfgFile, \@statsCfg );
+
+    my $filteredLog = $tmpDir . "/nead_filtered.log";
+    filterYinYang( $neadLog, $tmpDir, \@statsCfg, $filteredLog );
+        
+    if ( $site ) 
+    {
+	my $sqlDate = sprintf("%04d-%02d-%02d", ($year + 2000), $month, $day);
+	store($site,$sqlDate,$plotCmd, $filteredLog, $tmpDir, \@statsCfg );
+    }
+
+    my $dataFile = $tmpDir . "/hires_nead_stat.bcp";
+    open CMD, ">$tmpDir/yinyang.cmd" or die "Cannot open $tmpDir/yinyang.cmd";
+    print CMD <<EOF;
+set xdata time
+set timefmt "%H:%M:%S"
+set xrange [ "00:00":"23:59" ]
+set format x "%H"
+set terminal jpeg
+set key below right
+EOF
+    
+    my %neadCols = ();
+    my $colIndex = 4; # date,time,site
+    foreach my $r_statCfg ( @statsCfg ) {
+	if ( exists $r_statCfg->{'dbcol'} ) {
+	    foreach my $dbColName ( keys %{$r_statCfg->{'dbcol'}} ) {
+		$neadCols{$r_statCfg->{'dbcol'}->{$dbColName}} = $colIndex;
+		$colIndex++;
+	    }
+	}
+    }
+    
+    #
+    # Finally, run the plot commands
+    # 
+    foreach my $r_statCfg ( @statsCfg )
+    {
+	if ( exists $r_statCfg->{'dbcol' } ) 
+	{
+	    #printf CMD "set size %s,%s\n", $r_statCfg->{'graphscale'}->[0], $r_statCfg->{'graphscale'}->[1];
+	    printf CMD "set terminal jpeg medium size %d,%d\n", 800 * $r_statCfg->{'graphscale'}->[0], 600 * $r_statCfg->{'graphscale'}->[1];
+	    printf CMD "set output \"%s/%s\"\n", $outDir, $r_statCfg->{'file'};
+	    my $plotCmd;
+	    foreach my $statName ( @{$r_statCfg->{'stats'}} ) {
+		if ( $plotCmd ) 
+		{
+		    $plotCmd = $plotCmd . ",";
+		}
+		$plotCmd .= sprintf " \"%s\" using 2:%d title \"%s\" with lines", $dataFile, $neadCols{$statName}, $statName;
+	    }
+	    print CMD "plot ", $plotCmd, "\n";
+	}
+	else
+	{
+	    my $statsList = "";
+	    foreach my $statName ( @{$r_statCfg->{'stats'}} )
+	    {
+		$statsList .= " " . $statName;
+	    }
+	    print " $statsList\n";
+	    my $cmd = $plotCmd . " $filteredLog $outDir/" . $r_statCfg->{'file'} . " $date " . 
+		$r_statCfg->{'datascale'} . " " . $r_statCfg->{'graphscale'}->[0] . " " . $r_statCfg->{'graphscale'}->[1];
+	    if ( $r_statCfg->{'plotfile'} ne 'NA' )
+	    {
+		$cmd .= " " . $plotDir . "/" . $r_statCfg->{'plotfile'} . " '" . $r_statCfg->{'plotargs'} . "'";
+	    }
+	    else
+	    {
+		$cmd .= " NA 'NA'";
+	    }
+	    $cmd .= $statsList;
+	    if ( $DEBUG ) { print $cmd, "\n"; }
+	    
+	    system($cmd);
+	}
+    }
+
+    system("gnuplot $tmpDir/yinyang.cmd");
+    
+}
+   
+sub readCfg
+{
+    my ($cfgFile,$r_statsCfg) = @_;
+
+    open CFG, $cfgFile or die "Cannot open $cfgFile";
+    while ( my $line = <CFG> )
+    {
+	if ( $DEBUG ) { print "readCfg: line=$line"; }
+
+	if ( $line =~ /^file/ )
+	{
+	    chop $line;
+
+	    my ($file);
+	    my @stats = ();
+	    my @graphScale = ( 1 ,1 );
+	    my $dataScale = 1;
+	    my $plotFile = "NA";
+	    my $plotArgs = "NA";
+	    my %dbCol = ();
+
+	    my @fields = split /@/, $line;
+	    foreach my $field ( @fields )
+	    {
+		my ( $fieldName, $fieldValue ) = split(/=/, $field);
+		if ( $DEBUG ) { print "field=$field fieldName=$fieldName fieldValue=$fieldValue\n"; }
+
+		if ( $fieldName eq "file" )
+		{
+		    $file = $fieldValue;
+		}
+		elsif ( $fieldName eq "stats" )
+		{
+		    @stats = split(/:/, $fieldValue);
+		}
+		elsif ( $fieldName eq "graphscale" )
+		{
+		    @graphScale = split(/,/, $fieldValue);
+		}
+		elsif ( $fieldName eq "datascale" )
+		{
+		    $dataScale = $fieldValue;
+		}
+		elsif ( $fieldName eq "plot" )
+		{
+		    $plotFile = $fieldValue;
+		}
+		elsif ( $fieldName eq "plotargs" )
+		{
+		    $plotArgs = $fieldValue;
+		}
+		elsif ( $fieldName eq "dbcol" )
+		{
+		    my @colNames = split(/:/, $fieldValue );
+		    for ( my $i = 0; $i <= $#stats; $i++ )
+		    {
+			if ( $colNames[$i] )
+			{
+			    $dbCol{$colNames[$i]} = $stats[$i];
+			}
+		    }
+		}
+		else 
+		{
+		    die "Unknown field name $fieldName";
+		}
+	    }
+
+
+	    my $r_statCfg = {
+		'file' => $file,
+		'stats' => \@stats,
+		'datascale' => $dataScale,
+		'graphscale' => \@graphScale,
+		'plotfile'   => $plotFile,
+		'plotargs'   => $plotArgs,
+		'dbcol'      => \%dbCol
+		};
+	    push @{$r_statsCfg}, $r_statCfg;
+	}
+    }
+    close CFG;
+
+    if ( $DEBUG > 4 ) { print Dumper("readCfg cfg", $r_statsCfg ); }
+}
+
+sub filterYinYang
+{
+    my ($inFile,$tmpDir,$r_statsCfg,$outFile) = @_;
+
+    #
+    # Use egrep to filter the nead log to only have the stats we want
+    #
+    my $filter = "^DUMP";
+    foreach my $r_statCfg ( @{$r_statsCfg} )
+    {
+	foreach my $statName ( @{$r_statCfg->{'stats'}} )
+	{
+	    $filter .= "|^" . $statName;
+	}
+    }
+    my $cmd = "egrep -a \'" . $filter . "\' $inFile > $tmpDir/filterNead_precheck.log";
+    if ( $DEBUG > 3 ) { print "filterYinYang cmd=$cmd\n"; }
+    system($cmd);
+
+    
+
+    #
+    # Now filter now any repeated time samples (cause by NEAD/DOSS restarts)
+    #
+    my %dumpTimes = ();
+    open YY_IN, "$tmpDir/filterNead_precheck.log" or die "Cannot open $tmpDir/filterNead_precheck.log";
+    open YY_OUT, ">$outFile" or die "Cannot open $outFile";
+    my $doPrint = 1;
+    while ( my $line = <YY_IN> )
+    {
+	if ( $DEBUG > 8 ) { print "filterYinYang: doPrint=$doPrint line=$line"; }
+	if ( $line =~ /^DUMP START (.*)/ )
+	{
+	    my $timestamp = $1;
+	    if ( exists $dumpTimes{$timestamp} )
+	    {
+		print "WARN: Disgarding repeated dump for $timestamp\n"; 
+		$doPrint = 0;
+	    }
+	    else
+	    {
+		$doPrint = 1;
+		$dumpTimes{$timestamp} = 1;
+	    }
+	}
+	
+	if ( $doPrint )
+	{
+	    print YY_OUT $line;
+	}
+    }
+    close YY_IN;
+    close YY_OUT;
+
+    unlink("$tmpDir/filterNead_precheck.log");
+}
+
+sub store
+{
+    my ( $site, $sqlDate, $plotCmd, $filteredFile, $tmpDir, $r_statsCfg ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    
+    my $bcpFile = $tmpDir . "/hires_nead_stat.bcp";
+    my $sql = 'LOAD DATA LOCAL INFILE \'' . $bcpFile . '\' INTO TABLE hires_nead_stat (time,siteid';
+    
+    my @neadCols = ();
+    foreach my $r_statCfg ( @{$r_statsCfg} ) {
+	if ( exists $r_statCfg->{'dbcol'} ) {
+	    foreach my $dbColName ( keys %{$r_statCfg->{'dbcol'}} ) {
+		$sql .= "," . $dbColName;
+		push @neadCols, $r_statCfg->{'dbcol'}->{$dbColName};
+	    }
+	}
+    }
+    $sql .= ")";
+    
+    if ( $DEBUG > 5 ) { print Dumper("main: neadCols", \@neadCols); }
+    
+    if ( $#neadCols > -1 ) 
+    {
+	my $getNeadStatCmd = dirname($plotCmd) . "/getNeadStat --input $filteredFile --output $bcpFile --stats " . join(",",@neadCols) . " --bcp --siteid $siteId";
+	if ( $DEBUG ) { print "main: getNeadStatCmd=$getNeadStatCmd\n"; }
+	system($getNeadStatCmd);
+	
+	dbDo($dbh,"DELETE FROM hires_nead_stat WHERE time BETWEEN '$sqlDate 00:00:00' AND '$sqlDate 23:59:59' AND siteid = $siteId");
+	dbDo($dbh,$sql);
+    }
+    
+}

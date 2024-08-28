@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_om_media_table_info">
+    <reference table="sites" condition="eniq_om_media_table_info.siteid = sites.id"/>
+    <reference table="eniq_om_patch_media_status_id_mapping" condition="eniq_om_patch_media_status_id_mapping.id = eniq_om_media_table_info.statusId"/>
+    <reference table="eniq_om_patch_release_id_mapping" condition="eniq_om_patch_release_id_mapping.id = eniq_om_media_table_info.releaseId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_om_media_table_info.date = '%date%' </where>
+
+  <column db="eniq_om_patch_media_status_id_mapping.status" label="OM Media Status"/>
+  <column db="eniq_om_patch_release_id_mapping.releaseName" label="Release"/>
+  <column db="eniq_om_media_table_info.installTime" label="Installation Time"/>
+</modelledtable>

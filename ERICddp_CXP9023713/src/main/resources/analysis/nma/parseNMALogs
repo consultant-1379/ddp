@@ -1,0 +1,309 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use POSIX;
+use Data::Dumper;
+use Time::Local;
+
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use StatsCommon;
+
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ( $dir, $site, $dashDate, @fileDataset );
+    my $result = GetOptions(
+                             "dir=s"   => \$dir,
+                             "site=s"  => \$site,
+                             "date=s"  => \$dashDate,
+                             "debug=n" => \$DEBUG
+                           );
+
+    ( $result == 1 ) or die("Invalid args");
+
+    ### Get Site ID
+    my $dbh = connect_db();
+    my $siteid = getSiteId( $dbh, $site );
+    ( $siteid > -1 ) or die "Failed to get siteid for $site";
+
+    ### Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ( $dd, $mm, $yy ) = split( /\-/, $dashDate );
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    opendir( DIR, $dir ) or die "$!";
+    @fileDataset = grep { /_instrumentation.txt/ } readdir DIR;
+    close DIR;
+
+    my $r_NeMap = loadNeMap( $dbh, $siteid );
+
+    ### Map of the table names in the intrumentation input that correspond to statsdb
+    my %dbNameMap;
+
+    $dbNameMap{'NodeSynchStatus'}      = 'nma_node_sync_status_data';
+    $dbNameMap{'SyncResultsByNode'}    = 'nma_sync_by_node_data';
+    $dbNameMap{'Statistics'}           = 'nma_stats_data';
+    $dbNameMap{'NotificationReceived'} = 'nma_notif_recieved_data';
+    $dbNameMap{'ConnectionStatus'}     = 'nma_con_status_data';
+    $dbNameMap{'NotificationHandling'} = 'nma_notif_handling_data';
+
+    ### Map of the field names in the instrumentation input data to corresponding field names in statsdb
+    my %dbFieldMap;
+
+    ### nma_node_sync_status_data
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Number of nodes synched Success'}   = 'sync_success';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Number of nodes synched Failed'}    = 'sync_failed';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Number of Unsynched Nodes'}         = 'unsynced';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Number of Topology Synched Nodes'}  = 'top_sync';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Number of Attribute Synched Nodes'} = 'att_sync';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Sync ongoing for SGSN/MME'}         = 'sgsn_mme_ongoing';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Sync ongoing for EPG'}              = 'epg_ongoing';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Sync ongoing for H2S'}              = 'h_two_s_ongoing';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Sync ongoing for MTAS'}             = 'mtas_ongoing';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Sync ongoing for CSCF'}             = 'cscf_ongoing';
+    $dbFieldMap{'nma_node_sync_status_data'}->{'Sync ongoing for PRBS'}             = 'prbs_ongoing';
+
+    ### nma_sync_by_node_data
+    $dbFieldMap{'nma_sync_by_node_data'}->{'Node'}    = 'node';
+    $dbFieldMap{'nma_sync_by_node_data'}->{'Failure'} = 'failure';
+    $dbFieldMap{'nma_sync_by_node_data'}->{'Success'} = 'success';
+
+    ### nma_stats_data
+    $dbFieldMap{'nma_stats_data'}->{'Synch Success Stats'}           = 'sync_success';
+    $dbFieldMap{'nma_stats_data'}->{'Number of total alive nodes'}   = 'alive_nodes';
+    $dbFieldMap{'nma_stats_data'}->{'Number of total nodes synched'} = 'total_node_sync';
+    $dbFieldMap{'nma_stats_data'}->{'Total number of nodes'}         = 'node_count';
+
+    ### nma_notif_recieved_data
+    $dbFieldMap{'nma_notif_recieved_data'}->{'Event Type'} = 'event_type';
+    $dbFieldMap{'nma_notif_recieved_data'}->{'Node Type'}  = 'node_type';
+    $dbFieldMap{'nma_notif_recieved_data'}->{'MO'}         = 'mo';
+    $dbFieldMap{'nma_notif_recieved_data'}->{'Attribute'}  = 'attribute';
+    $dbFieldMap{'nma_notif_recieved_data'}->{'Count'}      = 'count';
+
+    ### nma_con_status_data
+    $dbFieldMap{'nma_sync_by_node_data'}->{'Node'}    = 'node';
+    $dbFieldMap{'nma_con_status_data'}->{'Number of connects'}    = 'no_connect';
+    $dbFieldMap{'nma_con_status_data'}->{'Number of disconnects'} = 'no_disconnect';
+
+    ### nma_notif_handling_data
+    $dbFieldMap{'nma_notif_handling_data'}->{'Number of Notifications in buffer'}                = 'notif_in_buffer';
+    $dbFieldMap{'nma_notif_handling_data'}->{'Number of Notifications received in last 15 mins'} = 'notif_rec_in_fifteen_min';
+    $dbFieldMap{'nma_notif_handling_data'}->{'Average time to process a notification'}           = 'avg_ttp_notif';
+    $dbFieldMap{'nma_notif_handling_data'}->{'Maximum time to process a notification'}           = 'mx_ttp_notif';
+
+    ### set the field Order
+    my %dbFieldOrder = (
+                         "nma_node_sync_status_data" => [
+                                                          'sync_success', 'sync_failed', 'unsynced', 'top_sync', 'att_sync', 'sgsn_mme_ongoing',
+                                                          'epg_ongoing', 'h_two_s_ongoing', 'mtas_ongoing', 'cscf_ongoing', 'prbs_ongoing'
+                                                        ],
+                         "nma_sync_by_node_data"   => [ 'node',         'failure',     'success' ],
+                         "nma_stats_data"          => [ 'sync_success', 'alive_nodes', 'total_node_sync', 'node_count' ],
+                         "nma_notif_recieved_data" => [ 'event_type',   'node_type',   'mo', 'attribute', 'count' ],
+                         "nma_notif_handling_data" => [ 'notif_in_buffer', 'notif_rec_in_fifteen_min', 'avg_ttp_notif', 'mx_ttp_notif' ],
+                         "nma_con_status_data"     => [ 'no_connect',      'no_disconnect' ]
+                       );
+
+    my @appdatasets;
+    foreach my $file (@fileDataset) {
+        ( my $tableName ) = $file =~ /^(\w+)_instrumentation.txt/;
+        if ( $tableName ne '' ) {
+            my $logFile = $dir . "/" . $file;
+            ### If the tableName from the instrmentation text file exist then proceed with parsing data
+            if ( exists $dbNameMap{$tableName} ) {
+                my $table = $dbNameMap{$tableName};    ### Set the $table to the name that corresponds to the tableName.
+                parseDataforBulkInsert( $sqlDate, $siteid, $logFile, $table, $r_NeMap, \%dbFieldMap, \%dbFieldOrder );
+            }
+        }
+    }
+
+}
+
+sub parseDataforBulkInsert {
+    my ( $sqlDate, $siteid, $logFile, $table, $r_NeMap, $r_dbFieldMap, $r_dbFieldOrder ) = @_;
+    my ( %dataForStorage, %counts, %values );
+    my $timestamp;
+    my $node;
+
+    # set variables in case we have multipe sets bewteen start and stop times.
+    my $eventset_cnt_per_startstop = 0;
+    my $db_field_map_cnt           = scalar( keys( %{ $r_dbFieldMap->{$table} } ) );
+    $db_field_map_cnt = $db_field_map_cnt - 1;
+
+    if ( $DEBUG > 4 ) { print "processData called with " . $logFile . "...\n"; }
+
+    open DATA, $logFile or die "Could not open file: $!";
+  LINE: while ( my $line = <DATA> ) {
+        chomp($line);
+        ### RESET TIMESTAMP VALUE IF LINE "#####START#####"
+        if ( $line =~ /^#####START/ ) {
+            $timestamp                  = "";
+            $eventset_cnt_per_startstop = 0;
+        }
+
+        ### We don't want to parse the lines "#####START#####" or "#####STOP#####"
+        unless ( $line =~ /^###/ ) {
+            if ( ( $table eq 'nma_sync_by_node_data' ) && ( $line =~ /^Node/ ) ) {
+
+                # Change name format of values depending on Success or Failure
+                $line =~ s/Node=/Node@/;
+                if ( $line =~ 'Status=FAILED' )  { $line =~ s/Status=/Failure@/; }
+                if ( $line =~ 'Status=SUCCESS' ) { $line =~ s/Status=/Success@/; }
+                %values = split( /[@ ]/, $line );
+            }
+            else {
+                %values = split( /[=]/, $line, 2 );
+            }
+
+
+            ### CREATE SQL DATE TIMESTAMP FROM $date and $time
+            ### Delete any trailing whitespaces
+            $timestamp .= $values{'DATE'} . " " . $values{'Time'};
+            $timestamp =~ s/\s*$//;
+
+            if ( $timestamp =~ m/$sqlDate.*/ ) {
+                unless ( ( $line =~ /^DATE*/ ) || ( $line =~ /^Time*/ ) ) {
+                    ### Itterate through the HASH %values to build up the data that will be stored
+                    ### Format for nma_sync_by_node_data and nma_con_status_data is slightly different as we have multiple entried per timestamp.
+                    foreach my $value ( keys %values ) {
+                        if ( $table eq 'nma_sync_by_node_data' || $table eq 'nma_con_status_data' ) {
+                            ### Parse the RNS name and ME name from the node entry. This will be checked against the NeMap later.
+                            ### Node Format1: /SubNetwork=[^,]*,SubNetwork=[^,]*,ManagedElement=[^:]*/
+                            if ( $values{'Node'} =~ /SubNetwork=[^,]*,SubNetwork=[^,]*,ManagedElement=[^:]*/ ) {
+                                my ( $rns, $mc ) = $values{'Node'} =~ /SubNetwork=[^,]*,SubNetwork=([^,]*),ManagedElement=([^:]*)/;
+                                $node = $rns . "," . $mc;
+                            }
+                            elsif( $values{'Node'} =~ /SubNetwork=[^,]*,SubNetwork=[^,]*,MeContext=([^:]*)/ ) {
+                                my ( $rns, $mc ) = $values{'Node'} =~ /SubNetwork=[^,]*,SubNetwork=([^,]*),MeContext=([^:]*)/;
+                                $node = $rns . "," . $mc;
+                            }
+
+                            if ( $table eq 'nma_sync_by_node_data' ) {
+                                unless ( $value eq 'Node' ) {
+                                    if ( exists $dataForStorage{$timestamp}->{ $r_NeMap->{$node} }->{ $r_dbFieldMap->{$table}->{$value} } ) {
+                                        $dataForStorage{$timestamp}->{ $r_NeMap->{$node} }->{ $r_dbFieldMap->{$table}->{$value} }++;
+                                    }
+                                    else {
+                                        $dataForStorage{$timestamp}->{ $r_NeMap->{$node} }->{ $r_dbFieldMap->{$table}->{$value} } = 1;
+                                    }
+                                }
+                            }
+                            else {
+                                unless ( $value eq 'Node' ) {
+                                    ### nma_con_status_data 
+                                    $dataForStorage{$timestamp}->{ $r_NeMap->{$node} }->{ $r_dbFieldMap->{$table}->{$value} } = $values{$value};
+                                }
+                            }
+                        }
+                        else {
+                            $dataForStorage{$timestamp}->{$eventset_cnt_per_startstop}->{ $r_dbFieldMap->{$table}->{$value} } = $values{$value};
+
+                            ### Caters for occurances of multiple event sets within a start and stop time period
+                            ### If db_field_map_cnt = 0 we know we have collected a set so increment eventset_cnt & reset db_field_map_cnt.
+                            ### Examples occur in NotificationReceived_instrumentation.txt
+                            if ( $db_field_map_cnt eq 0 ) {
+                                $eventset_cnt_per_startstop++;
+                                $db_field_map_cnt = scalar( keys( %{ $r_dbFieldMap->{$table} } ) );
+                            }
+                            $db_field_map_cnt--;
+                        }
+                    }
+                }
+                next LINE;
+            }
+        }
+    }
+    close(DATA);
+
+    if ( $DEBUG > 5 ) { print Dumper \%dataForStorage; }
+
+    writeBulkImport( $sqlDate, $siteid, $table, $r_dbFieldMap, $r_dbFieldOrder, \%dataForStorage );
+
+    return 0;
+}
+
+sub writeBulkImport() {
+    my ( $sqlDate, $siteid, $table, $r_dbFieldMap, $r_dbFieldOrder, $r_dataForStorage ) = @_;
+    my $record;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/" . $table . ".bcp";
+
+    my $fieldCnt = keys( %{ $r_dbFieldMap->{$table} } );
+
+    if ( $DEBUG > 4 ) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $timestamp ( sort( keys(%$r_dataForStorage) ) ) {
+        my $blankCnt = 1;    # Count the blanks
+        foreach my $key ( keys %{ $r_dataForStorage->{$timestamp} } ) {
+            $record .= $timestamp . "," . $siteid . ",";
+
+            if ( $table eq 'nma_con_status_data' || $table eq 'nma_sync_by_node_data' ) { $record .= $key . ","; }
+
+            foreach my $field ( @{ $r_dbFieldOrder->{$table} } ) {
+                unless ( $field eq 'node' ) {
+                    $record .= $r_dataForStorage->{$timestamp}->{$key}{$field} . ",";
+                }
+            }
+            $record =~ s/\,$/\n/;    # Remove the last comma and add a carriage return
+        }
+    }
+
+    print BULK_INSERT $record;
+    if ( $DEBUG > 1 ) { print $record; }
+    close BULK_INSERT;
+
+    storeDataset( $sqlDate, $siteid, $table, $bcpFile );
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ( $sqlDate, $siteid, $table, $bcpFile ) = @_;
+    my $dbh = connect_db();
+
+    # Run the bulk insert into the fm_stats
+    my $rerunDelete =
+      "DELETE FROM " . $table . " WHERE date BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid;
+
+    if ( $DEBUG > 1 ) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo( $dbh, $rerunDelete ) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','" );
+    $dbh->disconnect;
+
+    return 0;
+}
+
+sub loadNeMap {
+    my ( $dbh, $siteId ) = @_;
+
+    my $r_AllNe = readNe($dbh,$siteId);
+    my %neMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) {
+        my $shortName = $r_NeRow->{'name'};
+
+        # if the rns.name is the same as the ne.type then we know we have an entry on a level 1 Subnetwork.
+        if ( $r_NeRow->{'rns'} ne $r_NeRow->{'type'} ) {
+            $shortName = $r_NeRow->{'rns'} . "," . $shortName;
+        }
+        $neMap{$shortName} = $r_NeRow->{'neid'};
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper( "loadNeMap: neMap", \%neMap ); }
+    return \%neMap;
+}

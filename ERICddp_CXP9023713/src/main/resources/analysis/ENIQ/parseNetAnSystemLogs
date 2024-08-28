@@ -1,0 +1,123 @@
+#!/usr/bin/perl
+###############################################################################
+#       Description ---------   parseNetAnSystemLogs -----------
+#       This script is generic script to parse any NetanServer, BIS and OCS system logs
+#       in tsv format and store data to Db
+#       @author - Bhagyashree Jain (xjaibha)
+#       usage  parseNetAnSystemLogs --logfile ${LogFile} --table <table name>
+#               --columns <coulmn names> --site <site> --server <servername>
+###############################################################################
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+use List::Util qw(first);
+
+our $DEBUG = 0;
+
+sub main {
+    my ($site, $server, $siteId, $serverId, $dbh, $logFile, $requiredColumnNames, $table, $bcpFile, $firstTimestamp, $lastTimestamp);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "table=s" => \$table,
+        "columns=s" => \$requiredColumnNames,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    $bcpFile = getBcpFileName("windows_processor_details_metrics");
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    ($bcpFile, $firstTimestamp, $lastTimestamp) = parseData($siteId, $serverId, $logFile, $table, $bcpFile, $requiredColumnNames, $firstTimestamp, $lastTimestamp);
+    removeOldData($siteId, $serverId, $dbh, $table, $firstTimestamp, $lastTimestamp);
+    loadDb($dbh, $table, $bcpFile);
+}
+
+sub parseData($$$$$$$$) {
+    my ($siteId, $serverId, $logFile, $table, $bcpFile, $requiredColumnNames, $firstTimestamp, $lastTimestamp) = @_;
+    my $count = 0;
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    my $firstLine = <FILE>;
+    $firstLine =~ s/"//g;
+    my @requiredColumnNumber = getColumnNumbers($firstLine, $logFile, $requiredColumnNames);
+    while (my $line = <FILE>){
+        $line =~ s/"//g;
+        my @linedata = (split /\t/, $line) [@requiredColumnNumber];
+        if ($table eq "windows_processor_details" || $table eq "ocs_processor_details"){
+            if (($linedata[1] gt 0) && ($linedata[2] gt 0)){
+                my $total = $linedata[1] + $linedata[2];
+                push(@linedata, $total);
+            }
+        }
+        if ( $DEBUG > 1 ) {print Dumper(@linedata)};
+        my $datetime = convertDateToSql($linedata[0]);
+        if ($count == 0) {
+            $firstTimestamp = $datetime;
+        }
+        $count++;
+        $lastTimestamp = $datetime;
+        printf BCP "%s,%d,%d",
+        $datetime, $siteId, $serverId;
+            for my $i (1 .. $#linedata) {
+                if ($linedata[$i] =~ /^\s*$/) {
+                    print BCP ",".0;
+                } else {
+                    print BCP ",".$linedata[$i];
+                }
+            }
+            print BCP "\n";
+    }
+    close BCP;
+    return ($bcpFile, $firstTimestamp, $lastTimestamp);
+}
+
+sub getColumnNumbers($$$) {
+    my ($r_allColumnNames, $logFile, $requiredColumnNames) = @_;
+    my (@requiredColumnNumber);
+    my @requiredColumnList = split(/\,/, $requiredColumnNames);
+    if ( $DEBUG > 2 ) {print Dumper(@requiredColumnList)};
+    my @actualColumnsList = split(/\t/, $r_allColumnNames);
+    if ( $DEBUG > 3 ) {print Dumper(@actualColumnsList)};
+    push(@requiredColumnNumber,0);
+    for my $requiredColumn ( @requiredColumnList ) {
+        my $index = first { $actualColumnsList[$_] =~ m/${requiredColumn}$/ } 0..$#actualColumnsList;
+        if ($index) {
+            push(@requiredColumnNumber,$index);
+        }
+    }
+    my $noOfColumns = @requiredColumnNumber;
+    if ( $noOfColumns <= 1 ) {
+        print "Required columns are not present in $logFile.\n";
+        exit 1;
+    }
+    return @requiredColumnNumber;
+}
+
+sub convertDateToSql($) {
+    my ($timeStamp) = @_;
+    my ($m, $d, $y, $h, $M, $s, $ms) = $timeStamp =~ /^([0-1][0-9])\/([0-3][0-9])\/([1-9][0-9][0-9][0-9]) ([0-2][0-9]):([0-5][0-9]):([0-5][0-9])\.([0-9][0-9][0-9])$/;
+    return "$y-$m-$d $h:$M:$s";
+}
+
+sub removeOldData($$$$$$){
+    my ($siteId, $serverId, $dbh, $table, $firstTimestamp, $lastTimestamp) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid= $serverId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ( $DEBUG > 4 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$){
+    my ($dbh, $table, $bcpFile) = @_;
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 5 ) { print "SQL query for inserting data: $sth \n" };
+    dbDo($dbh, $sth) or die "Failed to load Data".$dbh->errstr."\n";
+    unlink($bcpFile);
+}
+
+main();

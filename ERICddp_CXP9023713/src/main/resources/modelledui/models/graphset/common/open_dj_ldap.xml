@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="opendj_ldap_stats">
+      <reference table="sites" condition="opendj_ldap_stats.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverId"/>
+    <param name="port"/>
+    <where>sites.name = '%s' AND opendj_ldap_stats.serverid = %d AND opendj_ldap_stats.port = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="operComp" type="sa" ylabel="Count">
+      <title value="Operations Completed"/>
+      <column db="bind_cnt" label="Bind"/>
+      <column db="unbind_cnt" label="Unbind"/>
+      <column db="search_cnt" label="Search"/>
+      <column db="compare_cnt" label="Compare"/>
+      <column db="mod_cnt" label="Modify"/>
+      <column db="moddn_cnt" label="Mod DN"/>
+      <column db="add_cnt" label="Add"/>
+      <column db="delete_cnt" label="Delete"/>
+      <column db="abandon_cnt" label="Abandon"/>
+      <column db="search_base_cnt" label="Search-base"/>
+      <column db="search_sub_cnt" label="Search-sub"/>
+    </graph>
+    <graph name="operResTime" type="sa" ylabel="Total(millisec)">
+      <title value="Operations Response Times"/>
+      <column db="bind_time" label="Bind"/>
+      <column db="unbind_time" label="Unbind"/>
+      <column db="search_time" label="Search"/>
+      <column db="compare_time" label="Compare"/>
+      <column db="mod_time" label="Modify"/>
+      <column db="moddn_time" label="Mod DN"/>
+      <column db="add_time" label="Add"/>
+      <column db="delete_time" label="Delete"/>
+      <column db="abandon_time" label="Abandon"/>
+      <column db="search_base_time" label="Search-base"/>
+      <column db="search_sub_time" label="Search-sub"/>
+    </graph>
+    <graph name="MedResTime" type="sa" ylabel="Total(millisec)">
+      <title value="Average Response Time Per Operation"/>
+      <column db="bind_time/bind_cnt" label="Bind"/>
+      <column db="unbind_time/unbind_cnt" label="Unbind"/>
+      <column db="search_time/search_cnt" label="Search"/>
+      <column db="compare_time/compare_cnt" label="Compare"/>
+      <column db="mod_time/mod_cnt" label="Modify"/>
+      <column db="moddn_time/moddn_cnt" label="Mod DN"/>
+      <column db="add_time/add_cnt" label="Add"/>
+      <column db="delete_time/delete_cnt" label="Delete"/>
+      <column db="abandon_time/abandon_cnt" label="Abandon"/>
+      <column db="search_base_time/search_base_cnt" label="Search-base"/>
+      <column db="search_sub_time/search_sub_cnt" label="Search-sub"/>
+    </graph>
+    <graph name="avgBytes" type="tsc" ylabel="Bytes">
+      <title value="Avg Bytes Per Operation"/>
+      <column db="bytes_read_total/bytes_read_count" label="Read"/>
+      <column db="bytes_written_total/bytes_written_count" label="Written"/>
+    </graph>
+    <graph name="operQueryRates" type="sa" ylabel="Rate">
+      <title value="Operations Query Rates"/>
+      <column db="bind_query_rate" label="Bind"/>
+      <column db="unbind_query_rate" label="Unbind"/>
+      <column db="search_query_rate" label="Search"/>
+      <column db="compare_query_rate" label="Compare"/>
+      <column db="mod_query_rate" label="Modify"/>
+      <column db="moddn_query_rate" label="Mod DN"/>
+      <column db="add_query_rate" label="Add"/>
+      <column db="delete_query_rate" label="Delete"/>
+    </graph>
+    <graph name="avgBytesOld" type="tsc" ylabel="Bytes">
+      <title value="Average Bytes Per Operation"/>
+      <column db="avg_bytesread_per_op" label="Read"/>
+      <column db="avg_byteswritten_per_op" label="Written"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="operComp">
+      <member>operComp</member>
+    </group>
+    <group name="operResTime">
+      <member>operResTime</member>
+    </group>
+    <group name="MedResTime">
+      <member>MedResTime</member>
+    </group>
+    <group name="avgBytes">
+      <member>avgBytes</member>
+    </group>
+    <group name="operQueryRates">
+      <member>operQueryRates</member>
+    </group>
+    <group name="avgBytesOld">
+      <member>avgBytesOld</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

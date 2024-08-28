@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_knowledge_instr">
+    <reference table="sites" condition="enm_aim_knowledge_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_aim_knowledge_instr.serverid  = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_aim_knowledge_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="servers.id" label="Instance" id="host_id" visible="false"/>
+  <column db="SUM(totalCombinedDimensionKeysCreated)" label="totalCombinedDimensionKeysCreated"/>
+  <column db="SUM(totalElementsReceivedToProcess)" label="totalElementsReceivedToProcess"/>
+  <column db="SUM(singleDimensionKeysSize)" label="singleDimensionKeysSize"/>
+  <column db="SUM(combinedDimensionKeysSize)" label="combinedDimensionKeysSize"/>
+  <column db="SUM(totalCombinedDimensionKeysRemovedFromMemory)" label="totalCombinedDimensionKeysRemovedFromMemory"/>
+  <column db="SUM(totalEvictedKeysFromSingleDimensionKeys)" label="totalEvictedKeysFromSingleDimensionKeys"/>
+  <column db="SUM(totalTimeReadingCombinedDimensionKeys)" label="totalTimeReadingCombinedDimensionKeys"/>
+  <column db="SUM(totalTimeReadingSingleDimensionKeys)" label="totalTimeReadingSingleDimensionKeys"/>
+  <column db="SUM(totalTimeSavingCombinedDimensionKeys)" label="totalTimeSavingCombinedDimensionKeys"/>
+  <column db="SUM(totalTimeSavingSingleDimensionKeys)" label="totalTimeSavingSingleDimensionKeys"/>
+  <column db="SUM(totalCallsToStorageWhenCacheIsUsed)" label="totalCallsToStorageWhenCacheIsUsed"/>
+  <column db="SUM(totalRequestsToGetCombinedDimensionKeysInBatch)" label="totalRequestsToGetCombinedDimensionKeysInBatch"/>
+  <column db="SUM(totalTimeToGetSingleDimensionKeysInBatch)" label="totalTimeToGetSingleDimensionKeysInBatch"/>
+  <column db="SUM(totalRequestToGetOneCombinedDimensionKey)" label="totalRequestToGetOneCombinedDimensionKey"/>
+  <column db="SUM(totalRequestsToGetSingleDimensionKeysInBatch)" label="totalRequestsToGetSingleDimensionKeysInBatch"/>
+  <column db="SUM(totalRequestToGetOneSingleDimensionKey)" label="totalRequestToGetOneSingleDimensionKey"/>
+  <column db="SUM(totalTimeToGetCombinedDimensionKeysInBatch)" label="totalTimeToGetCombinedDimensionKeysInBatch"/>
+  <column db="SUM(totalTimeToGetOneCombinedDimensionKey)" label="totalTimeToGetOneCombinedDimensionKey"/>
+  <column db="SUM(totalTimeToGetOneSingleDimensionKey)" label="totalTimeToGetOneSingleDimensionKey"/>
+
+  <ctxmenu keycol="host_id" targettype="url" multiselect="true">
+    <item id="kn-all" label="Plot All"/>
+    <item id="kn-totalCombinedDimensionKeysCreated" label="Plot totalCombinedDimensionKeysCreated"/>
+    <item id="kn-totalElementsReceivedToProcess" label="Plot totalElementsReceivedToProcess"/>
+    <item id="kn-singleDimensionKeysSize" label="Plot singleDimensionKeysSize"/>
+    <item id="kn-combinedDimensionKeysSize" label="Plot combinedDimensionKeysSize"/>
+    <item id="kn-totalCombinedDimensionKeysRemovedFromMemory" label="Plot totalCombinedDimensionKeysRemovedFromMemory"/>
+    <item id="kn-totalEvictedKeysFromSingleDimensionKeys" label="Plot totalEvictedKeysFromSingleDimensionKeys"/>
+    <item id="kn-totalTimeReadingCombinedDimensionKeys" label="Plot totalTimeReadingCombinedDimensionKeys"/>
+    <item id="kn-totalTimeReadingSingleDimensionKeys" label="Plot totalTimeReadingSingleDimensionKeys"/>
+    <item id="kn-totalTimeSavingCombinedDimensionKeys" label="Plot totalTimeSavingCombinedDimensionKeys"/>
+    <item id="kn-totalTimeSavingSingleDimensionKeys" label="Plot totalTimeSavingSingleDimensionKeys"/>
+    <item id="kn-totalCallsToStorageWhenCacheIsUsed" label="Plot totalCallsToStorageWhenCacheIsUsed"/>
+    <item id="kn-totalRequestsToGetCombinedDimensionKeysInBatch" label="Plot totalRequestsToGetCombinedDimensionKeysInBatch"/>
+    <item id="kn-totalTimeToGetSingleDimensionKeysInBatch" label="Plot totalTimeToGetSingleDimensionKeysInBatch"/>
+    <item id="kn-totalRequestToGetOneCombinedDimensionKey" label="Plot totalRequestToGetOneCombinedDimensionKey"/>
+    <item id="kn-totalRequestsToGetSingleDimensionKeysInBatch" label="Plot totalRequestsToGetSingleDimensionKeysInBatch"/>
+    <item id="kn-totalRequestToGetOneSingleDimensionKey" label="Plot totalRequestToGetOneSingleDimensionKey"/>
+    <item id="kn-totalTimeToGetCombinedDimensionKeysInBatch" label="Plot totalTimeToGetCombinedDimensionKeysInBatch"/>
+    <item id="kn-totalTimeToGetOneCombinedDimensionKey" label="Plot totalTimeToGetOneCombinedDimensionKey"/>
+    <item id="kn-totalTimeToGetOneSingleDimensionKey" label="Plot totalTimeToGetOneSingleDimensionKey"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

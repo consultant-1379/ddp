@@ -1,0 +1,38 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use warnings;
+use DBI;
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main{
+    my ($site, $server, $date, $type);
+    my $result = GetOptions(
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "type=s" => \$type,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    my $serverId = getServerId($dbh, $siteId, $server);
+    my $table = "eniq_server_info";
+
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND date = '$date' AND type = '$type'";
+    if ( $DEBUG > 1 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+
+    my $loadSql = "INSERT INTO $table (date, siteid, serverid, type) VALUES ('$date', $siteId, $serverId, '$type')";
+    if ( $DEBUG > 2 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+
+    $dbh->disconnect();
+}

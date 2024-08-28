@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_pmic_fs_usage">
+    <reference table="sites" condition="enm_pmic_fs_usage.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_pmic_fs_usage.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="enm_pmic_fs_usage.path"/>
+  </groupby>
+
+  <column db="path" label="File System Mount Path"/>
+  <column db="ROUND(AVG(fsCapacity))" label="Average File System Capacity (GB)"/>
+  <column db="ROUND(AVG(fsUsage))" label="Average File System Used Space (GB)"/>
+  <column db="ROUND(AVG(fsAvailable))" label="Average File System Available Space (GB)"/>
+  <column db="CEIL(AVG((fsUsage/(fsUsage+fsAvailable))*100))" label="Average File System Usage (Percentage)"/>
+
+  <ctxmenu keycol="path" targettype="url" multiselect="false">
+    <item id="showFsGraphs" label="Show PM File System Usage Graphs"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+</modelledtable>

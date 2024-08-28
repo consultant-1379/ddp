@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="esm_performance_aggregation_metrics">
+  </table>
+
+  <events>
+<!-- ESM_METRICS_ALERT_DATA {\"alert_date_time\": \"2020-03-13 01:30:00\",\"Alertdatapurged\": 1471} -->
+      <event name="ESM_METRICS_ALERT_DATA">
+        <metric source="alert_date_time" target="alertDate"/>
+        <metric source="Alertdatapurged" target="alertDataPurged"/>
+      </event>
+<!--ESM_METRICS_EVENT_DATA {\"event_date_time\": \"2020-03-13 01:30:00\",\"Eventdatapurged\": 131} -->
+      <event name="ESM_METRICS_EVENT_DATA">
+        <metric source="event_date_time" target="eventDate"/>
+        <metric source="Eventdatapurged" target="eventDataPurged"/>
+      </event>
+<!--ESM_METRICS_ALERT_DEFINITIONS {\"def_date_time\": \"2020-03-13 02:30:00\",\"Alertdefinitionspurged\": 111} -->
+      <event name="ESM_METRICS_ALERT_DEFINITIONS">
+        <metric source="def_date_time" target="aletDefDate"/>
+        <metric source="Alertdefinitionspurged" target="alertdefinitionspurged"/>
+      </event>
+<!--ESM_METRICS_DATABASE_MAINTENANCE {\"db_date_time\": \"2020-03-13 01:30:01\",\"Databasemaintenancecompleted\": 115931} -->
+      <event name="ESM_METRICS_DATABASE_MAINTENANCE">
+        <metric source="db_date_time" target="dbMaintainDate"/>
+        <metric source="Databasemaintenancecompleted" target="databaseMaintenanceCompleted"/>
+      </event>
+<!--ESM_METRIC_DATA_PURGE {\"purge_date_time\": \"2020-03-13 02:30:02\",\"DataPurgeJob\": 129751} -->
+      <event name="ESM_METRIC_DATA_PURGE">
+        <metric source="purge_date_time" target="dataPurgeDate"/>
+        <metric source="DataPurgeJob" target="dataPurgeJob"/>
+      </event>
+<!--ESM_METRICS_RAW_DATA_AGGREGATION {\"raw_date_time\": \"2020-03-13 01:00:19\",\"raw_data_count\":4732,\"raw data_aggregations\": 19015} -->
+      <event name="ESM_METRICS_RAW_DATA_AGGREGATION">
+        <metric source="raw_date_time" target="rawDataDate"/>
+        <metric source="raw data_aggregations" target="rawDataAggregation"/>
+        <metric source="raw_data_count" target="rawDataCount"/>
+      </event>
+<!--ESM_METRICS_ONE_HOUR_AGGREGATION {\"onehr_date_time\": \"2020-03-13 01:00:28\",\"onehour_data_count\":4612,\"one_hour data_aggregations\": 9533} -->
+      <event name="ESM_METRICS_ONE_HOUR_AGGREGATION">
+        <metric source="onehr_date_time" target="oneHourDate"/>
+        <metric source="one_hour data_aggregations" target="oneHourDataAggregation"/>
+        <metric source="onehour_data_count" target="onehourDataCount"/>
+      </event>
+<!--ESM_METRICS_SIX_HOURS_AGGREGATION {\"sixhr_date_time\": \"2020-03-13 01:00:35\",\"sixhour_data_count\":4629,\"six_hour data_aggregations\": 7189} -->
+      <event name="ESM_METRICS_SIX_HOURS_AGGREGATION">
+        <metric source="sixhr_date_time" target="sixHourDate"/>
+        <metric source="six_hour data_aggregations" target="sixhourDataAggregation"/>
+        <metric source="sixhour_data_count" target="sixhourDataCount"/>
+      </event>
+<!--ESM_METRICS_SERVER_COUNT {\"server_date_time\": \"2020-03-13 00:41:33\",\"Servercount\":261} -->
+      <event name="ESM_METRICS_SERVER_COUNT">
+        <metric source="server_date_time" target="serverDate"/>
+        <metric source="Servercount" target="serverCount"/>
+      </event>
+<!-- ESM_METRICS_SERVICE_COUNT {\"service_date_time\": \"2020-03-13 00:41:33\",\"Servicecount\":1391} -->
+      <event name="ESM_METRICS_SERVICE_COUNT">
+        <metric source="service_date_time" target="serviceDate"/>
+        <metric source="Servicecount" target="serviceCount"/>
+      </event>
+<!-- ESM_METRICS_PLATFORM_COUNT {\"platform_date_time\": \"2020-03-13 00:41:33\",\"PlatformCount\":8}-->
+      <event name="ESM_METRICS_PLATFORM_COUNT">
+        <metric source="platform_date_time" target="platformDate"/>
+        <metric source="PlatformCount" target="platformCount"/>
+      </event>
+
+  </events>
+</modelledevents>
+

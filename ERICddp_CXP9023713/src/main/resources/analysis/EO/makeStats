@@ -1,0 +1,123 @@
+#!/bin/bash
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 date site statsroot"
+    exit 1
+fi
+
+ANALYSIS_BIN=$(dirname $0)
+ANALYSIS_BIN=$(cd ${ANALYSIS_BIN} ; cd .. ; pwd)
+
+DASH_DATE=${1}
+DATE=$(echo ${1} | sed 's/-//g')
+
+SITE=$2
+STATS_ROOT=$3
+
+ANALYSIS_TYPE=$4
+if [ "${ANALYSIS_TYPE}" != "FULL" ] ; then
+    echo "INFO: Ignoring ANALYSIS_TYPE=${ANALYSIS_TYPE}"
+    exit 0
+fi
+
+SQL_DATE=$(echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g')
+
+#If the log format has not been declared above me, assume default
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="TSts"
+# for a description of log line formats, see comments in outputProcessing.awk
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+log "Start EO"
+ANALYSIS_OUTPUT=${STATS_ROOT}/${SITE}/analysis/${DATE}
+DATADIR=${STATS_ROOT}/${SITE}/data/${DATE}
+
+if [ -d ${DATADIR}/plugin_data/EO ] ; then
+    log "Moving plugin_data content"
+    if [ ! -d ${DATADIR}/EO ] ; then
+        mkdir ${DATADIR}/EO
+    fi
+    mv -f ${DATADIR}/plugin_data/EO/* ${DATADIR}/EO/
+fi
+
+VERSION_FILE=${DATADIR}/ProductInfo.json
+if [ -s ${VERSION_FILE} ] ; then
+    run ${ANALYSIS_BIN}/sql/setAppVer --app eo --site ${SITE} --date ${SQL_DATE} --ver_file ${VERSION_FILE}
+elif [ -r ${DATADIR}/CLOUD_NATIVE ] ; then
+    ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/swim_version <<EOF
+SELECT CONCAT(swim.commercialName, ' (', swim.semanticVersion, ') ', swim.pnumber, ' ', swim.revision)
+FROM swim
+JOIN sites ON swim.siteid = sites.id
+WHERE
+ sites.name = '${SITE}' AND
+ swim.date = '${SQL_DATE}' AND
+ swim.name LIKE 'EO-CM%'
+EOF
+    if [ -s ${TMP_DIR}/swim_version ] ; then
+        VERSION=$(cat ${TMP_DIR}/swim_version)
+        cat > ${TMP_DIR}/swim_version.json <<EOF
+[
+    {
+        "version": "${VERSION}"
+    }
+]
+EOF
+        run ${ANALYSIS_BIN}/sql/setAppVer --app eo --site ${SITE} --date ${SQL_DATE} --ver_file ${TMP_DIR}/swim_version.json
+    fi
+fi
+
+if [ -d ${DATADIR}/eo_servers ] ; then
+    log "EO hosts"
+    SERVER_DIR_LIST=$(ls ${DATADIR}/eo_servers)
+    for SERVER in ${SERVER_DIR_LIST} ; do
+        TARDIR=${DATADIR}/eo_servers/${SERVER}
+        TARFILE=${TARDIR}/DDC_Data_${DATE}.tar.gz
+        if [ -f "${TARFILE}" ] ; then
+            cd ${TARDIR}
+            tar -xzf ${TARFILE}
+            if [ $? -ne 0 ] ; then
+                log "ERROR: could not extract ${TARFILE}"
+            else
+                rm -f ${TARFILE}
+            fi
+        fi
+    done
+
+    /usr/bin/parallel -j ${PARALLEL_COUNT} ${ANALYSIS_BIN}/EO/processServer -s ${SITE} -d ${DASH_DATE} -i ${DATADIR} \
+                      -o ${ANALYSIS_OUTPUT} -u ${UTC_OFFSET} -t FULL -r -- ${SERVER_DIR_LIST}
+fi
+
+PROFILE_LOG_DIR=${DATADIR}/plugin_data/workload
+if [ -s ${PROFILE_LOG_DIR}/profiles.log ] ; then
+    run ${ANALYSIS_BIN}/TOR/parseProfileLogs --logdir ${PROFILE_LOG_DIR} --site ${SITE} --date ${SQL_DATE}
+fi
+
+POSTGRES_INPUT_DIR=${DATADIR}/EO/clustered_data/postgres
+if [ -d ${POSTGRES_INPUT_DIR} ] && [ -s ${POSTGRES_INPUT_DIR}/postgres.pg_stat_database ] ; then
+    log "Postgres Stats"
+    run ${ANALYSIS_BIN}/TOR/postgres/parseStats --dbfileinput ${POSTGRES_INPUT_DIR}/postgres.pg_stat_database --dbsizeinput ${POSTGRES_INPUT_DIR}/dbsize.txt --site ${SITE} --date ${SQL_DATE}
+fi
+
+ASSETS_FILE=${DATADIR}/EO/clustered_data/postgres/assets.json
+if [ -s ${ASSETS_FILE} ] ; then
+    log "Assets"
+    run ${ANALYSIS_BIN}/EO/parseAssets --site ${SITE} --date ${SQL_DATE} --assets ${ASSETS_FILE}
+fi
+
+SERVER=$(${ANALYSIS_BIN}/server/getHostname ${DATADIR}/server)
+run ${ANALYSIS_BIN}/EO/processEoData -s ${SITE} -d ${DASH_DATE} -h ${DATADIR} \
+                      -o ${ANALYSIS_OUTPUT} -u ${UTC_OFFSET} -t FULL -r ${SERVER}
+
+if [ -s ${DATADIR}/f5/instr.txt ] ; then
+    run ${ANALYSIS_BIN}/modelled/instr/parseModeledInstr --model ${ANALYSIS_BIN}/modelled/instr/models/EO/f5 \
+        --cfg  ${DATADIR}/f5/instr --data  ${DATADIR}/f5/instr.txt --incr ${INCR_DIR}/parseModeledInstr.f5 \
+        --site ${SITE} --date ${SQL_DATE}
+fi
+
+if [ -s ${DATADIR}/EO/perf/instr.txt ] ; then
+    run ${ANALYSIS_BIN}/modelled/instr/parseModeledInstr --model ${ANALYSIS_BIN}/modelled/instr/models/EO/perf \
+        --cfg  ${DATADIR}/EO/perf/instr --data  ${DATADIR}/EO/perf/instr.txt --incr ${INCR_DIR}/parseModeledInstr.perf \
+        --site ${SITE} --date ${SQL_DATE}
+fi
+
+log "End EO"

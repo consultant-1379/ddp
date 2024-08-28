@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@elasticsearch_indices"
+    sampleinterval="900">
+
+  <table name="elasticsearch_indices">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+  <metricgroups>
+    <multi>servicetype</multi>
+    <metricgroup name="query_total:(\S+)">
+      <metric source="elasticsearch_indices_search_query_total" target="searchQueryCount" delta="true">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="query_time_seconds:(\S+)">
+      <metric source="elasticsearch_indices_search_query_time_seconds" target="searchQueryTime" delta="true" scale="0.001">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="fetch_total:(\S+)">
+      <metric source="elasticsearch_indices_search_fetch_total" target="searchFetchCount" delta="true">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+
+    <metricgroup name="fetch_time_seconds:(\S+)">
+      <metric source="elasticsearch_indices_search_fetch_time_seconds" target="searchFetchTime" delta="true" scale="0.001">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+    <metricgroup name="index_total:(\S+)">
+      <metric source="elasticsearch_indices_indexing_index_total" target="indexCount" delta="true">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+    <metricgroup name="index_time_seconds:(\S+)">
+      <metric source="elasticsearch_indices_indexing_index_time_seconds" target="indexTime" delta="true" scale="0.001">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+    <metricgroup name="store_size_bytes:(\S+)">
+      <metric source="elasticsearch_indices_store_size_bytes" target="storeSizeMB" scale="1048576">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+    <metricgroup name="indices_docs_deleted:(\S+)">
+      <metric source="elasticsearch_indices_docs_deleted" target="docsDeleted" delta="true">
+        <labelfilter name="es_data_node" value="true"/>
+      </metric>
+      <property name="servicetype" xsi:type="multilabelproperty" label="cluster" index="1"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>

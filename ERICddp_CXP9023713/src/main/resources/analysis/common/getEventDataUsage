@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+
+our $DEBUG = 0;
+
+main();
+
+sub main {
+    my ( $indir );
+
+    my $result = GetOptions(
+        "dir=s" => \$indir,
+        "debug=s" => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+
+    my @files = getFiles( $indir );
+    my @parts = split( '/', $indir );
+    my $date = pop( @parts );
+
+    parseFiles( $indir, $date, @files );
+}
+
+sub parseFiles($$$) {
+    my ( $indir, $date, @files ) = @_;
+    my ( %res, %siteData );
+    foreach my $file ( @files ) {
+        if ( $file !~ /^\./ && $file =~ /\.log$/) {
+            open IN, "$indir/$file" or die "Cannot open $file";
+            my %data;
+            while ( my $line = <IN> ) {
+                if ( $line =~ /\[makeStats\]\[parseEventData\]table=(\w+)\s#events=(\d+)/ ) {
+                    $data{$1} = $2;
+                }
+            }
+            close IN;
+            my $site = substr($file, 0, index($file, '-') );
+            $siteData{$site} = \%data;
+           }
+    }
+    $res{$date} = \%siteData;
+
+    my $outFile = $indir . '/eventDataLoggerCounts.json';
+    open(FH, '>', $outFile) or die $!;
+    print FH JSON->new->ascii->pretty->encode( \%res );
+    close FH;
+}
+
+sub getFiles($) {
+    my ( $path ) = @_;
+
+    opendir my $dir, $path or die "Cannot open directory: $!";
+    my @files = readdir $dir;
+    closedir $dir;
+
+    return @files;
+}
+

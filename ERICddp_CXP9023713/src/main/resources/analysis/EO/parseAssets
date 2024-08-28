@@ -1,0 +1,62 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use DBI;
+
+use StatsDB;
+
+our $DEBUG = 0;
+
+sub parse($) {
+    my ($path) = @_;
+
+    open(my $handle, $path) or die "Failed to open $path";
+    my $line = <$handle>;
+    if ( ! defined $line ) {
+        return [];
+    }
+    close $handle;
+    return decode_json($line)->[0];
+}
+
+sub store($$$) {
+    my ($site,$date,$r_data) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    dbDo($dbh, "DELETE FROM eo_assets WHERE siteid = $siteId AND date = '$date'");
+    while ( my ($type, $count) = each %{$r_data} ) {
+        if ( $count > 0 ) {
+            dbDo($dbh, sprintf("INSERT INTO eo_assets (siteid,date,type,count) VALUES ( %d, '%s', '%s', %d)",
+                                $siteId, $date, $type, $count
+                        )
+            ) or die "Failed to insert workflow";
+        }
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($site, $date, $file);
+
+    my $result = GetOptions(
+        "site=s"        => \$site,
+        "date=s"     => \$date,
+        "assets=s" => \$file,
+        "debug=s"       => \$DEBUG
+        );
+    die "Invalid args"  if ($result != 1);
+    setStatsDB_Debug($DEBUG);
+
+    my $r_counts = parse($file);
+    store($site, $date, $r_counts);
+}
+
+main();

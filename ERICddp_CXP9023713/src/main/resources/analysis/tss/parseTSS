@@ -1,0 +1,212 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($instrCfg,$instrData,$dashDate);
+    my $result = GetOptions(
+        "cfg=s" => \$instrCfg,
+        "data=s" => \$instrData,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    setInstr_Debug($DEBUG);
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) from dash date (DD-MM-YY)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    ###
+    # Get the metrics from the instr config file. They are in the form <service>_<metric>.
+    # Some of the fields repeat themselves by service and group, so we group them as follows, and store the values to 'other_stats' tables:
+    #
+    #  Service  Group                              Metrics
+    #  =======  =====                              =======
+    #  Auth     IsAuthorized                       Calls Exception_Calls TotalExecutionTime Exception_TotalExecutionTime
+    #           isAuthorizedBatch                  Calls Exception_Calls Sizes TotalExecutionTime Exception_TotalExecutionTime
+    #           getAuthorizedTargets               ''
+    #           getAllowedTargets                  ''
+    #           getAllowedActivities               ''
+    #           getAuthorizedTargetGroups          ''
+    #
+    #  Notif    TargetGroupsAddedToTargetGroup     Calls Exception_Calls Exception_RealExecutionTime Exception_TotalExecutionTime Exception_WaitTime
+    #                                              Impacted_Targets Impacted_Users RealExecutionTime TotalExecutionTime WaitTime
+    #           TargetGroupsRemovedFromTargetGroup ''
+    #           TargetsAddedToTargetGroup          ''
+    #           TargetsRemovedFromTargetGroup      ''
+    #           UsersAddedToRole                   ''
+    #           UsersDeleted                       ''
+    #           UsersRemovedFromRole               ''
+    #           ACLEntryIsCreated                  ''
+    #           ACLEntryIsDeleted                  ''
+    #
+    #  Pw       getPassword                        Calls Exception_Calls TotalExecutionTime Exception_TotalExecutionTime
+    ###
+
+    # Initialize a database field map to map the TSS fields to the database table fields
+    my @dbFieldOrder = ('auth_db_acivityactsetconns', 'auth_db_aclentries', 'auth_db_aclgentries', 'auth_db_acts', 'auth_db_actsetactsetconns', 'auth_db_actsets', 'auth_db_roles', 'auth_db_tgtgrps', 'auth_db_tgtgrptgtgrpconns', 'auth_db_tgts', 'auth_db_tgttgtgrpconns', 'auth_db_userroleconns', 'auth_db_users', 'auth_general_calls', 'auth_general_exc_calls', 'auth_getallwacts_calls', 'auth_getallwacts_exc_calls', 'auth_getallwacts_exc_totexectime', 'auth_getallwacts_sizes', 'auth_getallwacts_totexectime', 'auth_getallwtgts_calls', 'auth_getallwtgts_exc_calls', 'auth_getallwtgts_exc_totexectime', 'auth_getallwtgts_sizes', 'auth_getallwtgts_totexectime', 'auth_getauthtgtgrps_calls', 'auth_getauthtgtgrps_exc_calls', 'auth_getauthtgtgrps_exc_totexectime', 'auth_getauthtgtgrps_sizes', 'auth_getauthtgtgrps_totexectime', 'auth_getauthtgts_calls', 'auth_getauthtgts_exc_calls', 'auth_getauthtgts_exc_totexectime', 'auth_getauthtgts_sizes', 'auth_getauthtgts_totexectime', 'auth_isauth_calls', 'auth_isauth_exc_calls', 'auth_isauth_exc_totexectime', 'auth_isauth_totexectime', 'auth_isauthbatch_calls', 'auth_isauthbatch_exc_calls', 'auth_isauthbatch_exc_totexectime', 'auth_isauthbatch_sizes', 'auth_isauthbatch_totexectime', 'notif_aclentryisctd_calls', 'notif_aclentryisctd_exc_calls', 'notif_aclentryisctd_exc_realexectime', 'notif_aclentryisctd_exc_totexectime', 'notif_aclentryisctd_exc_waittime', 'notif_aclentryisctd_imp_tgts', 'notif_aclentryisctd_imp_users', 'notif_aclentryisctd_realexectime', 'notif_aclentryisctd_totexectime', 'notif_aclentryisctd_waittime', 'notif_aclentryisdel_calls', 'notif_aclentryisdel_exc_calls', 'notif_aclentryisdel_exc_realexectime', 'notif_aclentryisdel_exc_totexectime', 'notif_aclentryisdel_exc_waittime', 'notif_aclentryisdel_imp_tgts', 'notif_aclentryisdel_imp_users', 'notif_aclentryisdel_realexectime', 'notif_aclentryisdel_totexectime', 'notif_aclentryisdel_waittime', 'notif_general_calls', 'notif_general_exc_calls', 'notif_general_exc_realexectime', 'notif_general_exc_totexectime', 'notif_general_exc_waittime', 'notif_general_imp_tgts', 'notif_general_imp_users', 'notif_general_realexectime', 'notif_general_totexectime', 'notif_general_waittime', 'notif_tgtgrpsaddtotgtgrp_calls');
+    foreach my $metric ('notif_tgtgrpsaddtotgtgrp_exc_calls', 'notif_tgtgrpsaddtotgtgrp_exc_realexectime', 'notif_tgtgrpsaddtotgtgrp_exc_totexectime', 'notif_tgtgrpsaddtotgtgrp_exc_waittime', 'notif_tgtgrpsaddtotgtgrp_imp_tgts', 'notif_tgtgrpsaddtotgtgrp_imp_users', 'notif_tgtgrpsaddtotgtgrp_realexectime', 'notif_tgtgrpsaddtotgtgrp_totexectime', 'notif_tgtgrpsaddtotgtgrp_waittime', 'notif_tgtgrpsremfromtgtgrp_calls', 'notif_tgtgrpsremfromtgtgrp_exc_calls', 'notif_tgtgrpsremfromtgtgrp_exc_realexectime', 'notif_tgtgrpsremfromtgtgrp_exc_totexectime', 'notif_tgtgrpsremfromtgtgrp_exc_waittime', 'notif_tgtgrpsremfromtgtgrp_imp_tgts', 'notif_tgtgrpsremfromtgtgrp_imp_users', 'notif_tgtgrpsremfromtgtgrp_realexectime', 'notif_tgtgrpsremfromtgtgrp_totexectime', 'notif_tgtgrpsremfromtgtgrp_waittime', 'notif_tgtsaddtotgtgrp_calls', 'notif_tgtsaddtotgtgrp_exc_calls', 'notif_tgtsaddtotgtgrp_exc_realexectime', 'notif_tgtsaddtotgtgrp_exc_totexectime', 'notif_tgtsaddtotgtgrp_exc_waittime', 'notif_tgtsaddtotgtgrp_imp_tgts', 'notif_tgtsaddtotgtgrp_imp_users', 'notif_tgtsaddtotgtgrp_realexectime', 'notif_tgtsaddtotgtgrp_totexectime', 'notif_tgtsaddtotgtgrp_waittime', 'notif_tgtsremfromtgtgrp_calls', 'notif_tgtsremfromtgtgrp_exc_calls', 'notif_tgtsremfromtgtgrp_exc_realexectime', 'notif_tgtsremfromtgtgrp_exc_totexectime', 'notif_tgtsremfromtgtgrp_exc_waittime', 'notif_tgtsremfromtgtgrp_imp_tgts', 'notif_tgtsremfromtgtgrp_imp_users', 'notif_tgtsremfromtgtgrp_realexectime', 'notif_tgtsremfromtgtgrp_totexectime', 'notif_tgtsremfromtgtgrp_waittime', 'notif_usersaddtorole_calls', 'notif_usersaddtorole_exc_calls', 'notif_usersaddtorole_exc_realexectime', 'notif_usersaddtorole_exc_totexectime', 'notif_usersaddtorole_exc_waittime', 'notif_usersaddtorole_imp_tgts', 'notif_usersaddtorole_imp_users', 'notif_usersaddtorole_realexectime', 'notif_usersaddtorole_totexectime', 'notif_usersaddtorole_waittime', 'notif_usersdel_calls', 'notif_usersdel_exc_calls', 'notif_usersdel_exc_realexectime', 'notif_usersdel_exc_totexectime', 'notif_usersdel_exc_waittime', 'notif_usersdel_imp_tgts', 'notif_usersdel_imp_users', 'notif_usersdel_realexectime', 'notif_usersdel_totexectime', 'notif_usersdel_waittime', 'notif_usersremfromrole_calls', 'notif_usersremfromrole_exc_calls', 'notif_usersremfromrole_exc_realexectime', 'notif_usersremfromrole_exc_totexectime', 'notif_usersremfromrole_exc_waittime', 'notif_usersremfromrole_imp_tgts', 'notif_usersremfromrole_imp_users', 'notif_usersremfromrole_realexectime', 'notif_usersremfromrole_totexectime', 'notif_usersremfromrole_waittime', 'pw_general_status', 'pw_getpassword_calls', 'pw_getpassword_exc_calls', 'pw_getpassword_exc_totexectime', 'pw_getpassword_totexectime') {
+        push (@dbFieldOrder, $metric);
+    }
+
+    my %dbFieldMap = ();
+    my %abbns = ( 'Authorized' => 'Auth', 'Exception' => 'Exc', 'Total' => 'Tot', 'Execution' => 'Exec', 'Target' => 'Tgt', 'Group' => 'Grp', 'Added' => 'Add', 'Removed' => 'Rem', 'Created' => 'Ctd', 'Deleted' => 'Del', 'Activity' => 'Act','Activities' => 'Acts', 'Connections' => 'Conns', 'Impacted' => 'Imp', 'Allowed' => 'Allw' );
+
+    open READ_CFG, "$instrCfg" or die "Could not open TSSAuthorityMC instr config file";
+    while ( my $line = <READ_CFG> ) {
+        chomp $line;
+        my $cnt = 0;
+        if ($line =~ m/<metric name\=\"(\S+)\"\s+\/>/) {
+            my ($metric) = ($1);
+            my $metricAbbr = $metric;
+            foreach my $key (keys(%abbns)) { 
+                $metricAbbr =~ s/$key/$abbns{$key}/gi;
+            }
+            my $dbField = lc($metricAbbr);
+            $dbFieldMap{$metric} = $dbField;
+            $dbFieldMap{$metric} = $dbField;
+        }
+    }
+    close(READ_CFG);
+
+    if ($DEBUG > 4) { print Dumper %dbFieldMap; }
+
+    my $r_data = parseData($instrCfg, $instrData);
+
+    if ($DEBUG > 7) {
+        print "Dumper parsed dataset:\n";
+        print Dumper($r_data);
+    }
+
+    # Build up the bulk insert file for each table and write the data to statsdb
+    parseDataForBcp($sqlDate, $siteid, \%dbFieldMap, \@dbFieldOrder, $r_data);
+}
+
+sub parseDataForBcp() {
+    my ($sqlDate, $siteid, $r_dbFieldMap, $r_dbFieldOrder, $r_data) = @_;
+    my %dataRaw;
+    my %dataForStorage;
+    my $cnt = 0;
+
+    # Parse out the data
+    PARSE_TIMES : foreach my $recordRef (@{$r_data->{'TSSAuthorityMC'}}) {
+        my $timestamp = instr2mysqlTime($recordRef->{'timestamp'});
+        foreach my $metric (keys(%$recordRef)) {
+            if ($metric eq 'timestamp') {
+                next;
+            } else {
+                $dataRaw{$timestamp}->{$r_dbFieldMap->{$metric}} = $recordRef->{$metric};
+            }
+        }
+    }
+    # Calculate the deltas and format for storage
+    my $timestampLast;
+    FORMAT_DATA: foreach my $timestamp (sort(keys(%dataRaw))) {
+        if ($cnt == 0) {
+            $timestampLast = $timestamp;
+            $cnt++;
+            next;            
+        } else {
+            foreach my $metric (keys(%{$dataRaw{$timestamp}})) {
+                $dataForStorage{$timestamp}->{$metric} = $dataRaw{$timestamp}->{$metric} - $dataRaw{$timestampLast}->{$metric};
+            }
+            $timestampLast = $timestamp;
+            $cnt++;
+        }
+    }
+    # We have one less than the raw data set now, so decrement the counter
+    $cnt--;
+
+    if ($DEBUG > 4) { print Dumper %dataForStorage; }
+
+    writeBcpFile($sqlDate, $siteid, $r_dbFieldMap, $r_dbFieldOrder, \%dataForStorage, \$cnt);
+
+    return 0;
+}
+
+sub writeBcpFile() {
+    my ($sqlDate, $siteid, $r_dbFieldMap, $r_dbFieldOrder, $r_dataForStorage, $r_cnt) = @_;
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/" . "tss_instr_stats." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+    my $cnt = $$r_cnt;
+    foreach my $timestamp (sort(keys(%$r_dataForStorage))) {
+        my $record = $timestamp . "|" . $siteid . "|";
+        foreach my $field (@{$r_dbFieldOrder}) {
+            if (!defined($r_dataForStorage->{$timestamp}->{$field}) || $r_dataForStorage->{$timestamp}->{$field} eq '') {
+                $record .= "\\N" . "|";
+            } else {
+                $record .= $r_dataForStorage->{$timestamp}->{$field} . "|";
+            }
+        }
+        $record =~ s/\|$/\n/; # Remove the last comma and add a carriage return
+
+        if ($DEBUG > 4) { print $record; }
+
+        # Write the record to the file, eliminating records with no metrics
+        print BULK_INSERT $record;
+        $cnt--; # Keep count to make sure all records are dealt with
+    }
+    close BULK_INSERT;
+
+    # Sanity check to see that we have got all of the records
+    if ($cnt != 0) {
+        die "ERROR: Not all records have been processed - " . $$r_cnt . " over.\n";
+    }
+    # Run the bulk insert
+    storeDataset($sqlDate, $siteid, "tss_instr_stats", $bcpFile);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $table, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM " . $table . " WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY '|'");
+    $dbh->disconnect;
+
+    return 0;
+}
+

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_stats_adaptor_totals">
+    <reference table="sites" condition="eniq_stats_adaptor_totals.siteid = sites.id"/>
+    <reference table="eniq_stats_source" condition="eniq_stats_adaptor_totals.sourceid = eniq_stats_source.id"/>
+    <reference table="eniq_stats_types" condition="eniq_stats_adaptor_totals.typeid = eniq_stats_types.id"/>
+    <reference table="eniq_stats_workflow_types" condition="eniq_stats_adaptor_totals.workflow_type = eniq_stats_workflow_types.workflow_type_id OR
+    eniq_stats_adaptor_totals.workflow_type = 0"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_stats_workflow_types.workflow_type NOT LIKE '%FRH%' AND eniq_stats_adaptor_totals.day  = '%date%' </where>
+
+  <order columnid="cntrsum" direction="DESC"/>
+  <column db="eniq_stats_source.name" label="source"/>
+  <column db="eniq_stats_types.name" label="type"/>
+  <column db="eniq_stats_adaptor_totals.rop_count" label="rop_count"/>
+  <column db="CAST(eniq_stats_adaptor_totals.rows_avg AS int)" label="rows_avg"/>
+  <column db="eniq_stats_adaptor_totals.rows_max" label="rows_max"/>
+  <column db="eniq_stats_adaptor_totals.rows_sum" label="rows_sum"/>
+  <column db="CAST(eniq_stats_adaptor_totals.cntr_avg AS int)" label="cntr_avg"/>
+  <column db="eniq_stats_adaptor_totals.cntr_max" label="cntr_max"/>
+  <column db="eniq_stats_adaptor_totals.cntr_sum" label="cntr_sum" id ="cntrsum"/>
+
+</modelledtable>

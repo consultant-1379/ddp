@@ -1,0 +1,219 @@
+#!/bin/bash
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+##If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="s"
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+DATADIR=$1
+ANALYSIS_OUTPUT=$2
+DATE=$3
+SQL_DATE=$4
+DASH_DATE=$5
+SITE=$6
+ARCHIVE_TYPE=$7
+REMOTE_SERVER="$8"
+
+processWorkloadProfileLogs() {
+    local LOGDIR=$1
+
+    log "Profiles Log File"
+
+    if [ -r ${LOGDIR}/torutils-version ] ; then
+        RPM_INFO=$(cat ${LOGDIR}/torutils-version)
+    fi
+    [ -z "$RPM_INFO" ] && RPM_INFO="NA"
+
+    run ${ANALYSIS_BIN}/TOR/parseProfileLogs --logdir ${LOGDIR} --site ${SITE} --date ${SQL_DATE} \
+        --rpminfo ${RPM_INFO} --incr ${INCR_DIR}/workload_profiles
+}
+
+processHostDelta() {
+    local REMOTE_SERVER=$1
+    local REMOTEHOSTNAME=$2
+    local TYPE=$3
+
+    local DELTA_DIR=${DATADIR}/delta/remotehosts
+    if [ ! -d ${DELTA_DIR} ] ; then
+        log "ERROR: Delta dir doesn't exist ${DELTA_DIR}"
+        return
+    fi
+
+    local DELTA_FILE=$(find ${DATADIR}/delta/remotehosts -name "DDC_Delta_${DATE}_*.tar.gz@${REMOTE_SERVER}" | head -1)
+    if [ -z "${DELTA_FILE}" ] ; then
+        log "WARN: No Delta file found for ${REMOTE_SERVER}"
+        return
+    fi
+
+    local REMOTE_DATA_DIR=${DATADIR}/remotehosts/${REMOTE_SERVER}
+
+    tar --extract --ungzip  --file ${DELTA_FILE} --directory ${REMOTE_DATA_DIR}
+    if [ $? -ne 0 ] ; then
+        log "ERROR: could not extract ${DELTA_FILE}"
+        return
+    else
+        rm -f ${DELTA_FILE}
+    fi
+
+    local DELTA_SERVER_DIR=${REMOTE_DATA_DIR}/${DATE}/delta/${REMOTEHOSTNAME}
+    if [ ! -d ${DELTA_SERVER_DIR} ] ; then
+        # Some deployments have the FQDN as the hostname in servers file, so check
+        # if the server dir just has the hostname only
+        local HOSTNAME_ONLY=$(echo ${REMOTEHOSTNAME} | awk -F\. '{print $1}')
+        DELTA_SERVER_DIR=${REMOTE_DATA_DIR}/${DATE}/delta/${HOSTNAME_ONLY}
+    fi
+    if [ -d ${DELTA_SERVER_DIR} ] ; then
+        local SAR_FILE_LIST=$(find ${DELTA_SERVER_DIR} -name 'sar.*')
+        if [ ! -z "${SAR_FILE_LIST}" ] ; then
+            mv ${SAR_FILE_LIST} ${REMOTE_DATA_DIR}/${DATE}/server
+            run ${ANALYSIS_BIN}/server/analyseServer -i ${REMOTE_DATA_DIR}/${DATE}/server -o ${ANALYSIS_OUTPUT}/servers \
+                -s ${SITE} -d ${SQL_DATE} -t ${TYPE} -a ${DATADIR} -m DELTA
+        fi
+    fi
+
+    local DELTA_WORKLOAD_DIR=${REMOTE_DATA_DIR}/${DATE}/delta/workload
+    if [ -d ${DELTA_WORKLOAD_DIR} ] ; then
+        PROFILE_FILES_LIST=$(find ${DELTA_WORKLOAD_DIR} -name 'profiles.log.*')
+        if [ ! -z "${PROFILE_FILES_LIST}" ] ; then
+            local WORKLOAD_DIR=${REMOTE_DATA_DIR}/${DATE}/plugin_data/workload
+            mv ${PROFILE_FILES_LIST} ${WORKLOAD_DIR}
+            processWorkloadProfileLogs ${WORKLOAD_DIR}
+        fi
+    fi
+
+    # Now there shouldn't be any files left in the delta directory
+    local REMAINING_FILES=$(find ${REMOTE_DATA_DIR}/${DATE}/delta -type f)
+    if [ ! -z "${REMAINING_FILES}" ] ; then
+        log "WARNING: File remain after processing ${REMAINING_FILES}"
+    fi
+    rm -rf ${REMOTE_DATA_DIR}/${DATE}/delta
+}
+
+processHostFull() {
+    REMOTE_SERVER=$1
+    REMOTEHOSTNAME=$2
+    TYPE=$3
+
+    REMOTE_DATA_DIR=${DATADIR}/remotehosts/${REMOTE_SERVER}
+    TARFILE=${REMOTE_DATA_DIR}/DDC_Data_${DATE}.tar.gz
+    if [ -f ${TARFILE} ] ; then
+        cd ${REMOTE_DATA_DIR}
+        tar xzf ${TARFILE}
+        if [ $? -ne 0 ] ; then
+            log "ERROR: could not extract ${TARFILE}"
+            return
+        else
+            rm -f ${TARFILE}
+        fi
+    fi
+
+    # SFS tarballs don't have date in them
+    if [ ! -d ${REMOTE_DATA_DIR}/${DATE} ] ; then
+        FILES_TO_MOVE=`ls ${REMOTE_DATA_DIR}`
+        mkdir ${REMOTE_DATA_DIR}/${DATE}
+        for file in ${FILES_TO_MOVE} ; do
+            mv ${REMOTE_DATA_DIR}/$file ${REMOTE_DATA_DIR}/${DATE}
+        done
+    fi
+
+    run ${ANALYSIS_BIN}/server/analyseServer -i ${REMOTE_DATA_DIR}/${DATE}/server -o ${ANALYSIS_OUTPUT}/servers \
+        -s ${SITE} -d ${SQL_DATE} -t ${TYPE} -a ${DATADIR}
+
+    # Run parseGenericInstr, need to run this after analyseServer as this could be be
+    # the first time we "see" this server
+    if [ -d ${REMOTE_DATA_DIR}/${DATE}/instr ] && [ ! -z $(ls ${REMOTE_DATA_DIR}/${DATE}/instr) ] ; then
+        run ${ANALYSIS_BIN}/server/processGenericInstr -d ${REMOTE_DATA_DIR}/${DATE} -s ${REMOTE_DATA_DIR}/${DATE}/server -a ${DASH_DATE} -e ${SITE}
+    fi
+
+    if [ "${TYPE}" = "NETSIM" ] ; then
+        SHORT_HOSTNAME=$(echo ${REMOTEHOSTNAME} | sed 's/\..*//')
+        NETSIM_DIR=${REMOTE_DATA_DIR}/${DATE}/plugin_data/netsim
+        if [ -r ${NETSIM_DIR}/show_started.txt ] ; then
+            run ${ANALYSIS_BIN}/netsim/parseShowStarted --input ${NETSIM_DIR}/show_started.txt \
+                --site ${SITE} --server ${SHORT_HOSTNAME} --date ${SQL_DATE}
+            run ${ANALYSIS_BIN}/netsim/parseBeamJps --showstarted ${NETSIM_DIR}/show_started.txt \
+                --ps ${REMOTE_DATA_DIR}/${DATE}/server/ps.txt --jps ${REMOTE_DATA_DIR}/${DATE}/server/jps.log \
+                --site ${SITE} --server ${SHORT_HOSTNAME} --date ${SQL_DATE}
+        fi
+        if [ -r ${NETSIM_DIR}/show_numstartednes.txt ] ; then
+            run ${ANALYSIS_BIN}/netsim/parseShowNumStartedNes --input ${NETSIM_DIR}/show_numstartednes.txt \
+                --site ${SITE} --server ${SHORT_HOSTNAME}
+        fi
+        if [ -d ${NETSIM_DIR}/netsimprmn ] ; then
+            run ${ANALYSIS_BIN}/netsim/parseNetsimRequestResponse --dir ${NETSIM_DIR}/netsimprmn \
+                --site ${SITE} --server ${SHORT_HOSTNAME}
+        fi
+        if [ -d ${NETSIM_DIR}/prmnresponse ] ; then
+            run ${ANALYSIS_BIN}/netsim/parseNetsimRequestResponse --dir ${NETSIM_DIR}/prmnresponse \
+                --site ${SITE} --server ${SHORT_HOSTNAME}
+        fi
+        if [ -r ${NETSIM_DIR}/NRM.json ] ; then
+            run ${ANALYSIS_BIN}/netsim/parseNRM --nrm ${NETSIM_DIR}/NRM.json \
+                --site ${SITE} --server ${SHORT_HOSTNAME} --date ${SQL_DATE}
+        fi
+    elif [ "${TYPE}" = "WORKLOAD" ] ; then
+        LOGDIR=${REMOTE_DATA_DIR}/${DATE}/plugin_data/workload/
+        if [ -r ${LOGDIR}/profiles.log ] || [ -r ${LOGDIR}/profiles.log.1 ] ; then
+            processWorkloadProfileLogs $LOGDIR
+        fi
+    fi
+}
+
+if [ -z "${REMOTE_SERVER}" ] ; then
+    ARCHIVE_TYPE=FULL
+    if [ -s ${DATADIR}/ARCHIVE_TYPE ] ; then
+        ARCHIVE_TYPE=$(cat ${DATADIR}/ARCHIVE_TYPE)
+    fi
+
+    #
+    # General server stats for remote servers
+    #
+    if [ ! -d ${ANALYSIS_OUTPUT}/servers ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/servers
+    fi
+
+    REMOTE_SERVERS=$(ls ${DATADIR}/remotehosts)
+    run /usr/bin/parallel -j ${PARALLEL_COUNT} ${0} "$@" ${ARCHIVE_TYPE} -- ${REMOTE_SERVERS}
+
+    echo "${REMOTE_SERVERS}" | egrep --silent '_NETSIM'
+    if [ $? -eq 0 ] ; then
+        #Parse the network configuration information for NetSim Servers
+        log "NetSim Network Information"
+        run ${ANALYSIS_BIN}/netsim/parseNetsimNetworkStats --rhdir ${DATADIR}/remotehosts --date ${DATE} --sqldate ${SQL_DATE} --site ${SITE}
+    fi
+
+else
+    REMOTEHOSTNAME=`echo ${REMOTE_SERVER} | awk -F_ '{ print $1 }'`
+    TYPE=`echo ${REMOTE_SERVER} | awk -F_ '{ print $2 }'`
+    log " ${REMOTEHOSTNAME} ${TYPE} ${ARCHIVE_TYPE}"
+    MATCHED_TYPE="OTHER"
+    SUPPORTED_TYPES="MASTER UAS ENIQ EBAS EBSS EBSW SMRS SMRS_SLAVE NESS NEDSS NETSIM PEER SFS ACCESSNAS OTHER INFRA TOR ESXI WORKLOAD"
+    for stype in ${SUPPORTED_TYPES} ; do
+        if [ "${stype}" = "${TYPE}" ] ; then
+            MATCHED_TYPE=${stype}
+            break
+        fi
+    done
+
+    # Created deciated directories for each server (to allow us run in parallel)
+    export TMP_DIR=${TMP_DIR}/${REMOTEHOSTNAME}
+    if [ ! -d ${TMP_DIR} ] ; then
+        mkdir ${TMP_DIR}
+        # Make sure MySQL can read from the TMP_DIR
+        chmod 777 ${TMP_DIR}
+    fi
+    export INCR_DIR=${INCR_DIR}/${REMOTEHOSTNAME}
+    if [ ! -d ${INCR_DIR} ] ; then
+        mkdir ${INCR_DIR}
+    fi
+
+    if [ ${ARCHIVE_TYPE} = "DELTA" ] ; then
+        processHostDelta ${REMOTE_SERVER} ${REMOTEHOSTNAME} ${MATCHED_TYPE}
+    else
+        processHostFull ${REMOTE_SERVER} ${REMOTEHOSTNAME} ${MATCHED_TYPE}
+    fi
+fi

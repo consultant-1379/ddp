@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_vm_hc">
+     <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+     <keycol name="summaryId" reftable="enm_vm_hc_summarys"/>
+  </table>
+
+  <events>
+      <!-- Healthcheck_Status {"status":"Monitor Offline","summary":"Spark Master had invalid status multiple times so exiting with failure","summary_data":10} -->
+      <event name="Healthcheck_Status">
+        <metric source="host" target="serverid"/>
+        <metric source="status" target="status"/>
+        <metric source="summary" target="summaryId" filtervalue="^[a-zA-Z .()_]+$"/>
+        <metric source="summary_data" target="summaryData"/>
+      </event>
+  </events>
+</modelledevents>

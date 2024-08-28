@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_shm_axeactivity">
+    <keycol name="nameid" reftable="enm_shm_axeactivity_names"/>
+  </table>
+
+  <services>
+      <service name="shmcoreservice"/>
+      <service name="consshm"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="activityName"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="n_count" type="count"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <!-- SHM.AXE_ACTIVITY {"nodeName":"MSC06__BC1","mainJobId":281474980265137,"requestType":"UPGRADE","activityName":"Test script","platformType":"AXE","activityJobId":281474980265319,"_Thread":"EJB async - 3"} -->
+      <event name="SHM.AXE_ACTIVITY">
+        <metric source="activityName" target="nameid"/>
+        <metric source="n_count" target="n_count"/>
+      </event>
+  </events>
+
+</modelledevents>
+

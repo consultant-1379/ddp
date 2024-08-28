@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_IBS_error_loaderset">
+    <reference table="sites" condition="eniq_IBS_error_loaderset.siteid = sites.id"/>
+    <reference table="eniq_IBS_loaderset_id_mapping" condition="eniq_IBS_loaderset_id_mapping.id = eniq_IBS_error_loaderset.loaderSetId"/>
+    <reference table="eniq_IBS_techpack_id_mapping" condition="eniq_IBS_techpack_id_mapping.id = eniq_IBS_error_loaderset.techpackId"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_IBS_error_loaderset.timeStamp BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <column db="eniq_IBS_error_loaderset.timeStamp" label="Occurrence Time"/>
+  <column db="eniq_IBS_techpack_id_mapping.techpackName" label="Techpack Name"/>
+  <column db="eniq_IBS_loaderset_id_mapping.loaderSetName" label="Loader Set"/>
+
+</modelledtable>

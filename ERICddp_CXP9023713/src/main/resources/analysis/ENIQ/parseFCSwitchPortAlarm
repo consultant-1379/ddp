@@ -1,0 +1,113 @@
+#!/usr/bin/perl
+
+####################################################################################
+# Description -----------parseFCSwitchPortAlarm ---------------------------
+# This script parses the different switches port information and stores data to DB for DDP
+# @author - PRIYANKA TALLURI (ztalpri)
+# usage parseFCSwitchPortAlarm --logfile ${LOG_FILE} --site ${SITE} --date ${date}
+#####################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use Getopt::Long;
+our $DEBUG = 0;
+
+sub main {
+    my ( $site, $logFile, $date );
+    my $switchNameMap = ();
+    my $result = GetOptions(
+        "logFile=s" => \$logFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $dbh = connect_db();
+    my $siteId = getSiteId( $dbh, $site );
+    my( $r_parsedLog, @r_switchNameList ) = parseData( $logFile, $siteId, $date );
+    $switchNameMap = getIdMap( $dbh, "eniq_fc_port_switch_names", "id", "switchName", @r_switchNameList );
+    my $table = "eniq_fc_switch_port_alarms";
+    my $bcpFile = createBcpFile( $r_parsedLog, $siteId, $date, $switchNameMap );
+    removeOldData( $table, $siteId, $date, $dbh );
+    loadDb( $dbh, $bcpFile, $table );
+    $dbh->disconnect();
+}
+
+sub parseData($$$) {
+    my ( $logFile, $siteId, $date ) = @_;
+    my @arryOfSwitchName = ();
+    my @arrayOfSwitchPortHash = ();
+    my @arrayOfPort = ();
+    my @arrayOfState = ();
+    my $counter = 0;
+    my $tmpSwitchLogFile = "/tmp/tmpSwitchLogFile.txt";
+    `egrep -w 'Disabled|switchName' $logFile | egrep -v 'Persistent|DEBUG' > $tmpSwitchLogFile`;
+    open FILE, "<$tmpSwitchLogFile" or die "Can't open file to read $tmpSwitchLogFile";
+    my @lines = reverse <FILE>;
+    foreach my $line (@lines) {
+        chomp( $line );
+        if ( $line =~  /\d+\s+(\d+)+\s+.*\s+\w+\s+\w+\s+(\Disabled)/ ) {
+            push ( @arrayOfPort, $1);
+            push ( @arrayOfState, $2);
+        }
+        if ( $line =~ /switchName:\s+(.*)/ ) {
+            my $i = 0;
+            foreach my $port (@arrayOfPort) {
+                my %hashOfSwitchPort = (
+                    switchName => $1,
+                    port => $port,
+                    state => "$arrayOfState[$i++]"
+                );
+                push ( @arrayOfSwitchPortHash, \%hashOfSwitchPort );
+                push ( @arryOfSwitchName, $1 );
+            }
+            @arrayOfPort = ();
+            @arrayOfState = ();
+            $counter++;
+            if ( $counter == 2 ) {
+                last;
+            }
+        }
+    }
+    close FILE;
+    unlink ( $tmpSwitchLogFile );
+    return ( \@arrayOfSwitchPortHash, \@arryOfSwitchName );
+}
+
+sub createBcpFile ($$$$) {
+    my ( $parsedLog, $siteId, $date, $switchNameMap ) = @_;
+    my $bcp = getBcpFileName( "switchPort_disabled_Status" );
+    open BCP, ">$bcp" or die "Cannot open BCPFile $bcp";
+    foreach my $fc ( @$parsedLog ) {
+        printf BCP "%s|%d|%s|%d|%s\n",
+        $date,
+        $siteId,
+        $switchNameMap->{$fc->{switchName}},
+        $fc->{port},
+        $fc->{state};
+    }
+    close BCP;
+    return $bcp;
+}
+
+sub removeOldData ($$$$) {
+    my ( $table, $siteId, $date, $dbh ) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND date = '$date' ";
+    if ( $DEBUG > 1 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo( $dbh, $deleteSql ) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb ($$$) {
+    my ( $dbh, $bcpFile, $table ) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo( $dbh, $loadSql ) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

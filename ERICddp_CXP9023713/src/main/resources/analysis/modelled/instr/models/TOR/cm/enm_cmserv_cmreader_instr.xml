@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="cmservice"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <table name="enm_cmserv_cmreader_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.services.cm.cmreader.ejb.instrumentation.cm-reader:type=InstrumentationBean$">
+      <metric source="allDeployedNetypesVisits" target="allDeployedNetypesVisits" delta="true" filteridle="true"/>
+      <metric source="descriptionsForNetypeVisits" target="descriptionsForNetypeVisits" delta="true" filteridle="true"/>
+      <metric source="descriptionsWithListOfOutputSpecificationsVisits" target="descriptionsWithListOfOutputSpecificationsVisits" delta="true" filteridle="true"/>
+      <metric source="moByFdnVisits" target="moByFdnVisits" delta="true" filteridle="true"/>
+      <metric source="posByPoIdsVisits" target="posByPoIdsVisits" delta="true" filteridle="true"/>
+      <metric source="searchWithListOfOutputSpecificationsVisits" target="searchWithListOfOutputSpecificationsVisits" delta="true" filteridle="true"/>
+      <metric source="searchWithListOfOutputSpecificationsTotalExecutionTime" target="searchWithListOfOutputSpecificationsTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="getCommandProcessorTotalExecutionTime" target="getCommandProcessorTotalExecutionTime" delta="true" filteridle="true"/>
+      <metric source="getCommandProcessorVisits" target="getCommandProcessorVisits" delta="true" filteridle="true"/>
+      <metric source="sendBackToCmEditorRequestQueueVisits" target="sendBackToCmEditorRequestQueueVisits" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="node_exporter">
+
+  <table name="hires_server_stat">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="cpu">
+      <metric source="user" target="user" delta="true" rate="true" scale="0.01"/>
+      <metric source="system" target="sys" delta="true" rate="true" scale="0.01"/>
+      <metric source="iowait" target="iowait" delta="true" rate="true" scale="0.01"/>
+      <metric source="steal" target="steal" delta="true" rate="true" scale="0.01"/>
+      <metric source="guest" target="guest" delta="true" rate="true" scale="0.01"/>
+    </metricgroup>
+
+    <metricgroup name="memory">
+      <metric source="node_memory_MemFree_bytes" target="freeram" scale="1048576"/>
+      <metric source="node_memory_SwapFree_bytes" target="freeswap" scale="1048576"/>
+      <metric source="node_memory_Buffers_bytes" target="membuffers" scale="1048576"/>
+      <metric source="node_memory_Cached_bytes" target="memcached" scale="1048576"/>
+      <metric source="node_memory_MemUsed_bytes" target="memused" scale="1048576"/>
+    </metricgroup>
+
+  </metricgroups>
+
+
+</modelledinstr>

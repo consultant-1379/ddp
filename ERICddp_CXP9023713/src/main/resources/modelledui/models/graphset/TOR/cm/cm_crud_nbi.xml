@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" forcelegend="true">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_cm_crud_nbi">
+      <reference table="sites" condition="enm_cm_crud_nbi.siteid = sites.id"/>
+      <reference table="servers" condition="enm_cm_crud_nbi.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverid"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="getBaseOnlyCount" type="sb" ylabel="Count">
+      <title value="Single-GET Requests"/>
+      <column db="getBaseOnlyCount" label="Single-GET Requests"/>
+    </graph>
+    <graph name="getBaseOnlyAsyncResponses" type="sb" ylabel="Count">
+      <title value="Single-GET Failed Resp" type="sb"/>
+      <column db="getBaseOnlyAsyncResponses" label="Single-GET Failed Resp"/>
+    </graph>
+    <graph name="getBaseOtherAllCount" type="sb" ylabel="Count">
+      <title value="Multi-GET Requests" type="sb"/>
+      <column db="getBaseOtherAllCount" label="Multi-GET Requests"/>
+    </graph>
+    <graph name="getBaseOtherAllAsyncResponses" type="sb" ylabel="Count">
+      <title value="Multi-GET Failed Resp"/>
+      <column db="getBaseOtherAllAsyncResponses" label="Multi-GET Failed Resp"/>
+    </graph>
+    <graph name="getBaseOnlyTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="Single-GET Total Average Time"/>
+      <column db="getBaseOnlyTotalAvgTime" label="Single-GET Total Average Time"/>
+    </graph>
+    <graph name="getBaseOnlyTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="Single-GET Total Max Time"/>
+      <column db="getBaseOnlyTotalMaxTime" label="Single-GET Total Max Time"/>
+    </graph>
+    <graph name="getBaseOtherAllTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="Multi-GET Total Average Time"/>
+      <column db="getBaseOtherAllTotalAvgTime" label="Multi-GET Total Average Time"/>
+    </graph>
+    <graph name="getBaseOtherAllTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="Multi-GET Total Max Time"/>
+      <column db="getBaseOtherAllTotalMaxTime" label="Multi-GET Total Max Time"/>
+    </graph>
+    <graph name="getBaseOnlyExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="Single-GET Execution Average Time"/>
+      <column db="getBaseOnlyExecAvgTime" label="Single-GET Execution Average Time"/>
+    </graph>
+    <graph name="getBaseOnlyExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="Single-GET Execution Max Time"/>
+      <column db="getBaseOnlyExecMaxTime" label="Single-GET Execution Max Time"/>
+    </graph>
+    <graph name="getBaseOtherAllExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="Multi-GET Execution Average Time"/>
+      <column db="getBaseOtherAllExecAvgTime" label="Multi-GET Execution Average Time"/>
+    </graph>
+    <graph name="getBaseOtherAllExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="Multi-GET Execution Max Time"/>
+      <column db="getBaseOtherAllExecMaxTime" label="Multi-GET Execution Max Time"/>
+    </graph>
+    <graph name="deleteCount" type="sb" ylabel="Count">
+      <title value="DELETE Requests"/>
+      <column db="deleteCount" label="DELETE Requests"/>
+    </graph>
+    <graph name="deleteAsyncResponses" type="sb" ylabel="Count">
+      <title value="DELETE Failed Resp"/>
+      <column db="deleteAsyncResponses" label="DELETE Failed Resp"/>
+    </graph>
+    <graph name="deleteTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="DELETE Total Average Time"/>
+      <column db="deleteTotalAvgTime" label="DELETE Total Average Time"/>
+    </graph>
+    <graph name="deleteTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="DELETE Total Max Time"/>
+      <column db="deleteTotalMaxTime" label="DELETE Total Max Tim"/>
+    </graph>
+    <graph name="deleteExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="DELETE Execution Average Time"/>
+      <column db="deleteExecAvgTime" label="DELETE Execution Average Time"/>
+    </graph>
+    <graph name="deleteExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="DELETE Execution Max Time"/>
+      <column db="deleteExecMaxTime" label="DELETE Execution Max Time"/>
+    </graph>
+    <graph name="postCount" type="sb" ylabel="Count">
+      <title value="POST Requests"/>
+      <column db="postCount" label="POST Requests"/>
+    </graph>
+    <graph name="postAsyncResponses" type="sb" ylabel="Count">
+      <title value="POST Failed Resp"/>
+      <column db="postAsyncResponses" label="POST Failed Resp"/>
+    </graph>
+    <graph name="postTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="POST Total Average Time"/>
+      <column db="postTotalAvgTime" label="POST Total Average Time"/>
+    </graph>
+    <graph name="postTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="POST Total Max Time"/>
+      <column db="postTotalMaxTime" label="POST Total Max Time"/>
+    </graph>
+    <graph name="postExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="POST Execution Average Time"/>
+      <column db="postExecAvgTime" label="POST Execution Average Time"/>
+    </graph>
+    <graph name="postExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="POST Execution Max Time"/>
+      <column db="postExecMaxTime" label="POST Execution Max Time"/>
+    </graph>
+    <graph name="putCreateCount" type="sb" ylabel="Count">
+      <title value="PUT-Create Requests"/>
+      <column db="putCreateCount" label="PUT-Create Requests"/>
+    </graph>
+    <graph name="putCreateAsyncResponses" type="sb" ylabel="Count">
+      <title value="PUT-Create Failed Resp"/>
+      <column db="putCreateAsyncResponses" label="PUT-Create Failed Resp"/>
+    </graph>
+    <graph name="putCreateTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Create Total Average Time"/>
+      <column db="putCreateTotalAvgTime" label="PUT-Create Total Average Time"/>
+    </graph>
+    <graph name="putCreateTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Create Total Max Time"/>
+      <column db="putCreateTotalMaxTime" label="PUT-Create Total Max Time"/>
+    </graph>
+    <graph name="putCreateExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Create Execution Average Time"/>
+      <column db="putCreateExecAvgTime" label="PUT-Create Execution Average Time"/>
+    </graph>
+    <graph name="putCreateExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Create Execution Max Time"/>
+      <column db="putCreateExecMaxTime" label="PUT-Create Execution Max Tim"/>
+    </graph>
+    <graph name="putModifyCount" type="sb" ylabel="Count">
+      <title value="PUT-Modify Requests"/>
+      <column db="putModifyCount" label="PUT-Modify Requests"/>
+    </graph>
+    <graph name="putModifyAsyncResponses" type="sb" ylabel="Count">
+      <title value="PUT-Modify Failed Resp"/>
+      <column db="putModifyAsyncResponses" label="PUT-Modify Failed Resp"/>
+    </graph>
+    <graph name="putModifyTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Modify Total Average Time"/>
+      <column db="putModifyTotalAvgTime" label="PUT-Modify Total Average Time"/>
+    </graph>
+    <graph name="putModifyTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Modify Total Max Time"/>
+      <column db="putModifyTotalMaxTime" label="PUT-Modify Total Max Time"/>
+    </graph>
+    <graph name="putModifyExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Modify Execution Average Time"/>
+      <column db="putModifyExecAvgTime" label="PUT-Modify Execution Average Time"/>
+    </graph>
+    <graph name="putModifyExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="PUT-Modify Execution Max Time"/>
+      <column db="putModifyExecMaxTime" label="PUT-Modify Execution Max Time"/>
+    </graph>
+    <graph name="patch3gppJPatchCount" type="sb" ylabel="Count">
+      <title value="PATCH-3GPP-J+P Requests"/>
+      <column db="patch3gppJPatchCount" label="PATCH-3GPP-J+P Requests"/>
+    </graph>
+    <graph name="patch3gppJPatchAsyncResponses" type="sb" ylabel="Count">
+      <title value="PATCH-3GPP-J+P Failed Resp"/>
+      <column db="patch3gppJPatchAsyncResponses" label="PATCH-3GPP-J+P Failed Resp"/>
+    </graph>
+    <graph name="patch3gppJPatchTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-3GPP-J+P Total Average Time"/>
+      <column db="patch3gppJPatchTotalAvgTime" label="PATCH-3GPP-J+P Total Average Time"/>
+    </graph>
+    <graph name="patch3gppJPatchTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-3GPP-J+P Total Max Time"/>
+      <column db="patch3gppJPatchTotalMaxTime" label="PATCH-3GPP-J+P Total Max Time"/>
+    </graph>
+    <graph name="patch3gppJPatchExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-3GPP-J+P Execution Average Time"/>
+      <column db="patch3gppJPatchExecAvgTime" label="PATCH-3GPP-J+P Execution Average Time"/>
+    </graph>
+    <graph name="patch3gppJPatchExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-3GPP-J+P Execution Max Time"/>
+      <column db="patch3gppJPatchExecMaxTime" label="PATCH-3GPP-J+P Execution Max Time"/>
+    </graph>
+    <graph name="patchJPatchCount" type="sb" ylabel="Count">
+      <title value="PATCH-J+P Requests"/>
+      <column db="patchJPatchCount" label="PATCH-J+P Requests"/>
+    </graph>
+    <graph name="patchJPatchAsyncResponses" type="sb" ylabel="Count">
+      <title value="PATCH-J+P Failed Responses"/>
+      <column db="patchJPatchAsyncResponses" label="PATCH-J+P Failedd Responses"/>
+    </graph>
+    <graph name="patchJPatchTotalAvgTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-J+P  Total Average Time"/>
+      <column db="patchJPatchTotalAvgTime" label="PATCH-J+P  Total Average Time"/>
+    </graph>
+    <graph name="patchJPatchTotalMaxTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-J+P  Total Max Time"/>
+      <column db="patchJPatchTotalMaxTime" label="PATCH-J+P  Total Max Time"/>
+    </graph>
+    <graph name="patchJPatchExecAvgTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-J+P Execution Average Time"/>
+      <column db="patchJPatchExecAvgTime" label="PATCH-J+P Execution Average Time"/>
+    </graph>
+    <graph name="patchJPatchExecMaxTime" type="tsc" ylabel="Duration">
+      <title value="PATCH-J+P Execution Max Time"/>
+      <column db="patchJPatchExecMaxTime" label="PATCH-J+P Execution Max Time"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="get_count">
+      <member>getBaseOnlyCount</member>
+      <member>getBaseOnlyAsyncResponses</member>
+      <member>getBaseOtherAllCount</member>
+      <member>getBaseOtherAllAsyncResponses</member>
+    </group>
+    <group name="get_total_time">
+      <member>getBaseOnlyTotalAvgTime</member>
+      <member>getBaseOnlyTotalMaxTime</member>
+      <member>getBaseOtherAllTotalAvgTime</member>
+      <member>getBaseOtherAllTotalMaxTime</member>
+    </group>
+    <group name="get_exec_time">
+      <member>getBaseOnlyExecAvgTime</member>
+      <member>getBaseOnlyExecMaxTime</member>
+      <member>getBaseOtherAllExecAvgTime</member>
+      <member>getBaseOtherAllExecMaxTime</member>
+    </group>
+    <group name="delete_count">
+      <member>deleteCount</member>
+      <member>deleteAsyncResponses</member>
+    </group>
+    <group name="delete_total_time">
+      <member>deleteTotalAvgTime</member>
+      <member>deleteTotalMaxTime</member>
+    </group>
+    <group name="delete_exec_time">
+      <member>deleteExecAvgTime</member>
+      <member>deleteExecMaxTime</member>
+    </group>
+    <group name="post_count">
+      <member>postCount</member>
+      <member>postAsyncResponses</member>
+    </group>
+    <group name="post_total_time">
+      <member>postTotalAvgTime</member>
+      <member>postTotalMaxTime</member>
+    </group>
+    <group name="post_exec_time">
+      <member>postExecAvgTime</member>
+      <member>postExecMaxTime</member>
+    </group>
+    <group name="put_count">
+      <member>putCreateCount</member>
+      <member>putCreateAsyncResponses</member>
+    </group>
+    <group name="put_total_time">
+      <member>putCreateTotalAvgTime</member>
+      <member>putCreateTotalMaxTime</member>
+    </group>
+    <group name="put_exec_time">
+      <member>putCreateExecAvgTime</member>
+      <member>putCreateExecMaxTime</member>
+    </group>
+    <group name="put_mod_count">
+      <member>putModifyCount</member>
+      <member>putModifyAsyncResponses</member>
+    </group>
+    <group name="put_mod_total">
+      <member>putModifyTotalAvgTime</member>
+      <member>putModifyTotalMaxTime</member>
+    </group>
+    <group name="put_mod_exec">
+      <member>putModifyExecAvgTime</member>
+      <member>putModifyExecMaxTime</member>
+    </group>
+    <group name="patch_3gpp_count">
+      <member>patch3gppJPatchCount</member>
+      <member>patch3gppJPatchAsyncResponses</member>
+    </group>
+    <group name="patch_3gpp_total">
+      <member>patch3gppJPatchTotalAvgTime</member>
+      <member>patch3gppJPatchTotalMaxTime</member>
+    </group>
+    <group name="patch_3gpp_exec">
+      <member>patch3gppJPatchExecAvgTime</member>
+      <member>patch3gppJPatchExecMaxTime</member>
+    </group>
+    <group name="patch_json_count">
+      <member>patchJPatchCount</member>
+      <member>patchJPatchAsyncResponses</member>
+    </group>
+    <group name="patch_json_total">
+      <member>patchJPatchTotalAvgTime</member>
+      <member>patchJPatchTotalMaxTime</member>
+    </group>
+    <group name="patch_json_exec">
+      <member>patchJPatchExecAvgTime</member>
+      <member>patchJPatchExecMaxTime</member>
+    </group>
+  </groups>
+</modelledgraphset>

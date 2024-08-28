@@ -1,0 +1,96 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use StatsDB;
+use DBI;
+use Getopt::Long;
+
+our @CELLS = ( 'EUtranCellFDD','EUtranCellTDD','NbIotCell','GeranCell','NodeBLocalCell','RbsLocalCell','NRCellDU' );
+our $DEBUG = 0;
+
+sub getCellCount($$$) {
+    my ($dbh, $siteId, $date) = @_;
+
+    my $cellsStr = "'" . join("','", @CELLS) . "'";
+
+    my $cellCount = 0;
+    # Check neo4j table first
+    my $r_rows = dbSelectAllHash($dbh, "
+SELECT
+ mo_names.name AS celltype,
+ IFNULL(enm_neo4j_mocounts.total - enm_neo4j_mocounts.nonlive, 0) AS cellcount
+FROM
+    enm_neo4j_mocounts, mo_names
+WHERE
+ enm_neo4j_mocounts.siteid = $siteId AND
+ enm_neo4j_mocounts.date = '$date' AND
+ enm_neo4j_mocounts.motypeid = mo_names.id AND mo_names.id AND mo_names.name IN ($cellsStr)
+");
+    # If there's no cells in the neo4j table, then check the versant table
+    if ( $#{$r_rows} == -1 ) {
+        $r_rows = dbSelectAllHash($dbh, "
+SELECT
+ mo_names.name AS celltype,
+ IFNULL(mo.count - mo.planned, 0) AS cellcount
+FROM
+    mo, mo_names
+WHERE
+ mo.siteid = $siteId AND
+ mo.date = '$date' AND
+ mo.moid = mo_names.id AND mo_names.name IN ($cellsStr)
+");
+    }
+    foreach my $r_row ( @{$r_rows} ) {
+        if ( $r_row->{'celltype'} eq 'NbIotCell' ) {
+            $cellCount += int($r_row->{'cellcount'}/13);
+        } else {
+            $cellCount += $r_row->{'cellcount'};
+        }
+    }
+
+    return $cellCount;
+}
+
+sub getNodeCount($$$) {
+    my ($dbh, $siteId, $date) = @_;
+
+    my $r_rows = dbSelectAllHash($dbh, "
+SELECT
+   SUM( IFNULL(enm_network_element_details.count, 0) ) AS node_count
+FROM
+   enm_network_element_details
+WHERE
+   enm_network_element_details.siteid = $siteId AND
+   enm_network_element_details.date = '$date'");
+    return $r_rows->[0]->{'node_count'};
+}
+
+sub main() {
+    my ($site, $date, $deploymentType);
+    my $result = GetOptions("site=s" => \$site,
+                            "date=s" => \$date,
+                            "type=s" => \$deploymentType,
+                            "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    my $cellCount = getCellCount($dbh, $siteId, $date);
+    my $nodeCount = getNodeCount($dbh, $siteId, $date);
+
+    dbDo($dbh, "DELETE FROM enm_site_info WHERE siteid = $siteId AND date = '$date'")
+        or die "Failed to remove old row";
+    dbDo($dbh, sprintf("INSERT INTO enm_site_info (siteid,date,deployment_type,cellcount,nodecount) VALUES(%d,'%s',%s,%d, %d)",
+                       $siteId,$date,$dbh->quote($deploymentType),$cellCount, $nodeCount))
+        or die "Failed to insert new row";
+
+    $dbh->disconnect();
+}
+
+main();
+

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_cm_restconf_nbi">
+      <reference table="sites" condition="enm_cm_restconf_nbi.siteid = sites.id"/>
+      <reference table="servers" condition="enm_cm_restconf_nbi.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="totalMOsUpdated" type="sb">
+      <title value="Total MOs Updated"/>
+      <column db="totalMOsUpdated" label="Total MOs Updated"/>
+    </graph>
+    <graph name="totalMOsDeleted" type="sb">
+      <title value="Total MOs Deleted"/>
+      <column db="totalMOsDeleted" label="Total MOs Deleted"/>
+    </graph>
+    <graph name="totalMOsRead" type="sb">
+      <title value="Total MOs Read"/>
+      <column db="totalMOsRead" label="Total MOs Read"/>
+    </graph>
+    <graph name="totalMOsCreated" type="sb">
+      <title value="Total MOs Created"/>
+      <column db="totalMOsCreated" label="Total MOs Created"/>
+    </graph>
+    <graph name="totalReqDataSize" type="sb">
+      <title value="Total Request Data Size"/>
+      <column db="totalReqDataSize" label="Total Request Data Size"/>
+    </graph>
+    <graph name="totalResDataSize" type="sb">
+      <title value="Total Response Data Size"/>
+      <column db="totalResDataSize" label="Total Response Data Size"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="req">
+      <member>totalReqDataSize</member>
+    </group>
+    <group name="res">
+      <member>totalResDataSize</member>
+    </group>
+    <group name="mos">
+      <member>totalMOsRead</member>
+      <member>totalMOsCreated</member>
+      <member>totalMOsUpdated</member>
+      <member>totalMOsDeleted</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

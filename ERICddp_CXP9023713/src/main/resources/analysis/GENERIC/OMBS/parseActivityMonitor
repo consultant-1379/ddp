@@ -1,0 +1,100 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## Script  : parseActivityMonitor
+## Author  : ESOMPAM
+## Purpose : The purpose of this script is to load the Netbackup job details
+##           for the given day or any backup job started previous day(s) and finished given day.
+## Usage   : ${ANALYSIS_BIN}/GENERIC/OMBS/parseActivityMonitor --site ${SITE} --date ${SQL_DATE} \
+#                                -dataFile ${dataFile_JSON}
+##=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use DBI;
+
+use StatsDB;
+use StatsCommon;
+
+our $DEBUG = 0;
+
+sub parseFile($){
+    my ($file) = @_;
+    my $json_text = do {
+        open(my $json_fh, "<:encoding(UTF-8)", $file) or die("Can't open \$file\"");
+        local $/;
+        <$json_fh>
+    };
+    my $r_json = decode_json($json_text);
+    return $r_json;
+}
+
+sub storeJobs($$$) {
+    my ($site, $date, $r_data) = @_;
+    my $dbh = connect_db();
+    my $siteId = getSiteId( $dbh, $site );
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    dbDo($dbh, "DELETE FROM ombs_activity_monitor WHERE siteid = $siteId AND endTime BETWEEN '$date 00:00:00'
+    AND '$date 23:59:59'") or die "Failed to remove old data";
+
+    # Get ID maps for backup policies, clients , storage-units and paths
+
+    my %backupPolicies = ();
+    my %backupClients = ();
+    my %backupStorageunits = ();
+    my %backupPaths = ();
+
+    foreach my $href_data ( values %{$r_data} ) {
+        foreach my $data ( @{$href_data} ) {
+            $backupPolicies{$data->{'policyName'}} = 1;
+            $backupClients{$data->{'clientName'}} = 1;
+            $backupStorageunits{$data->{'storageUnit'}} = 1;
+            $backupPaths{$data->{'backupPath'}} = 1;
+        }
+    }
+
+    my @backupPolicyNames = keys %backupPolicies;
+    my @backupClientNames = keys %backupClients;
+    my @backupStorageunitNames = keys %backupStorageunits;
+    my @backupPathNames = keys %backupPaths;
+
+    my $policyIdMap = getIdMap($dbh, 'ombs_policies', 'id', 'name', \@backupPolicyNames);
+    my $clientIdMap = getIdMap($dbh, 'ombs_clients', 'id', 'name', \@backupClientNames);
+    my $storage_unitIdMap = getIdMap($dbh, 'ombs_storage_units', 'id', 'name', \@backupStorageunitNames);
+    my $backupPathIdMap = getIdMap($dbh, 'ombs_paths', 'id', 'name', \@backupPathNames);
+
+    foreach my $href_data ( values %{$r_data} ) {
+        foreach my $data ( @{$href_data} ) {
+            dbDo($dbh, sprintf("INSERT INTO ombs_activity_monitor (siteid, policyName, jobid,
+            backupSize, activity, schedule, endTime, numberOfBackupFiles, clientName,
+            storageUnit, jobState, jobReturnCode, elapsedTime, throughPut, backupPath) VALUES
+            (%d, '%d', '%d', '%d', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d','%d','%d','%s')", $siteId,
+            $policyIdMap->{$data->{'policyName'}}, $data->{'jobid'}, $data->{'backupSize'},
+            $data->{'activity'}, $data->{'schedule'}, $data->{'endTime'}, $data->{'numberOfBackupFiles'},
+            $clientIdMap->{$data->{'clientName'}}, $storage_unitIdMap->{$data->{'storageUnit'}},
+            $data->{'jobState'}, $data->{'jobReturnCode'},$data->{'elapsedTime'}, $data->{'throughPut'},
+            $backupPathIdMap->{$data->{'backupPath'}} ))
+            or die "Insert failed";
+       }
+    }
+}
+
+sub main() {
+    my ( $site, $date, $datafile );
+    my $result = GetOptions(
+        "site=s"   => \$site,
+        "date=s" => \$date,
+        "dataFile=s" => \$datafile,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+    my $r_data = parseFile($datafile);
+    storeJobs($site, $date, $r_data);
+}
+main();

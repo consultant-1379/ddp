@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_f5_nic_stats">
+    <reference table="sites" condition="eo_f5_nic_stats.siteid = sites.id"/>
+    <reference table="eo_f5_nic_names" condition="eo_f5_nic_stats.nicid = eo_f5_nic_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_f5_nic_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="eo_f5_nic_names.name"/>
+  </groupby>
+
+  <column db="eo_f5_nic_stats.nicid" id="nicid" label="nicid" visible="false"/>
+  <column db="eo_f5_nic_names.name" label="F5 NIC"/>
+  <column db="ROUND(AVG(eo_f5_nic_stats.kbitsInPersec))" label="Kbit/s In"/>
+  <column db="ROUND(AVG(eo_f5_nic_stats.kbitsOutPerSec))" label="Kbit/s Out"/>
+  <column db="SUM(eo_f5_nic_stats.dropsAll)" label="Drops"/>
+  <column db="SUM(eo_f5_nic_stats.errorsAll)" label="Errors"/>
+
+  <ctxmenu keycol="nicid" targettype="url" multiselect="true">
+    <item id="nicstats" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

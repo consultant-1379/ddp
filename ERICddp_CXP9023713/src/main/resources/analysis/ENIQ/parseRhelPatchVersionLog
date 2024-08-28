@@ -1,0 +1,166 @@
+#!/usr/bin/env perl
+
+
+###################################################################################################################################################
+# Description --------- parseRhelPatchVersionLog --------------------
+# This script parses Rhel OS Version logs and patch versions logs and stores data to DB for DDP
+# @author - POOJA NAGAJE (zpoonag)
+# usage parseRhelPatchVersionLog --dir ${DIR} --site ${SITE} --date ${SQL_DATE}
+###################################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+###############################################################
+# Globals
+###############################################################
+our $dbh;
+our $dir;
+our $siteId;
+our $DEBUG = 0;
+our $date = "";
+
+sub main {
+    my $site;
+    my $result = GetOptions(
+        "dir=s" => \$dir,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    parseData();
+    if($DEBUG > 1) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+
+    $dbh->disconnect();
+}
+
+sub parseData() {
+    opendir(DIR, $dir) or die "couldn't open $dir: $!\n";
+    my @files = readdir DIR;
+    closedir DIR;
+    if ( $DEBUG > 2 ) {
+        print Dumper("Files to be parsed", @files);
+    }
+    my $table;
+    my $bcpFile;
+    foreach my $file (@files) {
+        next if $file =~ /^\./;
+        if ( $file =~ /^redhat-.*/ ) {
+            $bcpFile = parseRhelVersionLog($file);
+            $table = "eniq_rhel_version";
+        } elsif ( $file =~ /^pre_upgrade_patchrhel.bsh_.*/ ) {
+            $bcpFile = parsePatchVersionLog($file);
+            $table = "eniq_patch_version";
+        } else {
+            return;
+        }
+        removeOldData($table);
+        loadDb($bcpFile, $table);
+    }
+}
+
+sub parseRhelVersionLog($) {
+    my $file = shift;
+    my $rhelVersionIdMap;
+    my @rhelVersionNameList = ();
+    my @rhelVersionArrayData = ();
+    my $rhelId = 0;
+    my $bcpFile = getBcpFileName("rhelVersion");
+
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile $bcpFile";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( my ($rhelVersion) = $line =~ /^.*\s+(\d+.\d+\s+.*)$/ ) {
+            my %r_rhelVersionData = (
+                rhelVersion => "$rhelVersion"
+            );
+            push (@rhelVersionArrayData, \%r_rhelVersionData);
+            push (@rhelVersionNameList, $rhelVersion);
+        }
+    }
+
+    $rhelVersionIdMap = getIdMap($dbh, "eniq_release_version_id_mapping", "id", "rhelVersion", \@rhelVersionNameList);
+    foreach my $data_element ( @rhelVersionArrayData ) {
+        printf BCP "%s|%d|%d\n",
+        $date,
+        $siteId,
+        $rhelVersionIdMap->{$rhelVersionNameList[$rhelId++]};
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpFile;
+}
+
+sub parsePatchVersionLog($) {
+    my $file = shift;
+    my $patchVersionIdMap;
+    my @patchVersionNameList = ();
+    my @patchVersionArrayData = ();
+    my $bcpForPatch = getBcpFileName("patch_version");
+    my $patchId = 0;
+
+    open BCP, ">$bcpForPatch" or die "Cannot open BCPFile $bcpForPatch";
+    open FILE, "<$dir/$file" or die "Can't open file $file to read\n";
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( my ($patchVersion) = $line =~ /^.*bundle\s+version\s+is\s+(.*)$/ ) {
+            my %r_patchVersionData = (
+                patchVersion => "$patchVersion"
+            );
+            push (@patchVersionArrayData, \%r_patchVersionData);
+            push (@patchVersionNameList, $patchVersion);
+        }
+    }
+
+    $patchVersionIdMap = getIdMap($dbh, "eniq_patch_version_id_mapping", "id", "patchVersion", \@patchVersionNameList);
+    foreach my $dataElement ( @patchVersionArrayData ) {
+        printf BCP "%s|%d|%d\n",
+        $date,
+        $siteId,
+        $patchVersionIdMap->{$patchVersionNameList[$patchId++]};
+    }
+
+    close BCP;
+    close FILE;
+    return $bcpForPatch;
+}
+
+sub removeOldData($) {
+    my $table = shift;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date' ";
+    if ( $DEBUG > 4 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$) {
+    my ($bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 5 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

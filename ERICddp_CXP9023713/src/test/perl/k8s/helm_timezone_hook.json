@@ -1,0 +1,158 @@
+{
+    "podstatus": {},
+    "events": [],
+    "helm": [
+        {
+            "metadata": {
+                "name": "sh.helm.release.v1.eric-enm-bro-integration-enm183.v8",
+                "namespace": "enm183",
+                "uid": "1be712d2-db6a-4fd9-988c-13e6b4890ee4",
+                "resourceVersion": "144222577",
+                "creationTimestamp": "2024-01-17T18:46:31Z",
+                "labels": {
+                    "modifiedAt": "1705519260",
+                    "name": "eric-enm-bro-integration-enm183",
+                    "owner": "helm",
+                    "status": "deployed",
+                    "version": "8"
+                },
+                "managedFields": [
+                    {
+                        "manager": "Helm",
+                        "operation": "Update",
+                        "apiVersion": "v1",
+                        "time": "2024-01-17T19:21:00Z",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:data": {
+                                ".": {},
+                                "f:release": {}
+                            },
+                            "f:metadata": {
+                                "f:labels": {
+                                    ".": {},
+                                    "f:modifiedAt": {},
+                                    "f:name": {},
+                                    "f:owner": {},
+                                    "f:status": {},
+                                    "f:version": {}
+                                }
+                            },
+                            "f:type": {}
+                        }
+                    }
+                ]
+            },
+            "data": {
+                "release": {
+                    "name": "eric-enm-bro-integration-enm183",
+                    "info": {
+                        "first_deployed": "2023-12-15T12:54:13.188463279Z",
+                        "last_deployed": "2024-01-17T18:46:30.88133383Z",
+                        "deleted": "",
+                        "description": "Upgrade complete",
+                        "status": "deployed",
+                        "notes": "This is eric-enm-bro-integration Helm Installation!\nYour chart has been successfully released.\n\nTo check it's state, run:\n\n  helm status eric-enm-bro-integration-enm183\n"
+                    },
+                    "chart": {
+                        "metadata": {
+                            "name": "eric-enm-bro-integration",
+                            "version": "1.52.0-4",
+                            "description": "A Helm chart for bro-integration",
+                            "apiVersion": "v2",
+                            "appVersion": "1.0",
+                            "dependencies": [
+                                {
+                                    "name": "eric-ctrl-bro",
+                                    "version": "9.1.0+50",
+                                    "repository": "https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm",
+                                    "condition": "eric-ctrl-bro.enabled",
+                                    "enabled": true
+                                },
+                                {
+                                    "name": "eric-enm-version-configmap",
+                                    "version": "1.16.0-1",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-enm-version-configmap.enabled",
+                                    "enabled": true
+                                },
+                                {
+                                    "name": "eric-ctrl-brocli",
+                                    "version": "1.0.97-1",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "condition": "eric-ctrl-brocli.enabled",
+                                    "enabled": true
+                                },
+                                {
+                                    "name": "eric-log-shipper",
+                                    "version": "16.0.1+72",
+                                    "repository": "https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/",
+                                    "condition": "eric-log-shipper.enabled",
+                                    "enabled": true,
+                                    "import-values": [
+                                        {
+                                            "child": "logShipper.config",
+                                            "parent": "global.logShipper.config"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "lock": {
+                            "generated": "2024-01-17T12:52:16.585819176Z",
+                            "digest": "sha256:f839cd572619b9b10f3d55e806609c2fa2fe236ba39f18fa87b4f16884080677",
+                            "dependencies": [
+                                {
+                                    "name": "eric-ctrl-bro",
+                                    "version": "9.1.0+50",
+                                    "repository": "https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm"
+                                },
+                                {
+                                    "name": "eric-enm-version-configmap",
+                                    "version": "1.16.0-1",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-ctrl-brocli",
+                                    "version": "1.0.97-1",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/"
+                                },
+                                {
+                                    "name": "eric-log-shipper",
+                                    "version": "16.0.1+72",
+                                    "repository": "https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/"
+                                }
+                            ]
+                        },
+                        "schema": null
+                    },
+                    "hooks": [
+                        {
+                            "name": "eric-ctrl-bro-hkln",
+                            "kind": "ServiceAccount",
+                            "path": "eric-enm-bro-integration/charts/eric-ctrl-bro/templates/common/hooklauncher/manifests.yaml",
+                            "events": [
+                                "pre-install",
+                                "pre-upgrade",
+                                "pre-rollback",
+                                "pre-delete"
+                            ],
+                            "last_run": {
+                                "started_at": "2024-01-17T18:46:31.545621675Z",
+                                "completed_at": "2024-01-17T18:47:35.571232166Z",
+                                "phase": "Succeeded"
+                            },
+                            "weight": -202,
+                            "delete_policies": [
+                                "before-hook-creation"
+                            ]
+                        }
+                ],
+                    "version": 8,
+                    "namespace": "enm183"
+                }
+            },
+            "type": "helm.sh/release.v1"
+        }
+    ]
+}

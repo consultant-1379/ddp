@@ -1,0 +1,36 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_bulk_import_ui">
+    <reference table="sites" condition="enm_bulk_import_ui.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_bulk_import_ui.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="false">
+    <column db="fileFormat"/>
+    <column db="status"/>
+    <column db="IF(validationPolicies='', 'NA', validationPolicies)"/>
+    <column db="IF(executionPolicies='', 'NA', executionPolicies)"/>
+    <column db="invocation"/>
+  </groupby>
+
+  <column db="COUNT(jobId)" label="Jobs"/>
+  <column db="status" label="Status"/>
+  <column db="fileFormat" label="File Format"/>
+  <column db="numberOfNodes" label="Number of Nodes"/>
+  <column db="SUM(elapsedTime)" label="Elapsed Time"/>
+  <column db="SUM(mosProcessed)" label="MOs Processed"/>
+  <column db="IFNULL(ROUND((mosProcessed)/(elapsedTime),3),0)" label="MOs Processed/Sec"/>
+  <column db="invocation" label="Invocation Flow"/>
+  <column db="IF(validationPolicies='', 'NA', validationPolicies)" label="Validation Policies"/>
+  <column db="IF(executionPolicies='', 'NA', executionPolicies)" label="Execution Policies"/>
+  <column db="SUM(createOperations)" label="Total Create Operations"/>
+  <column db="SUM(deleteOperations)" label="Total Delete Operations"/>
+  <column db="SUM(updateOperations)" label="Total Update Operations"/>
+  <column db="SUM(actionOperations)" label="Total Action Operations"/>
+  <column db="SUM(validCount)" label="Total Valid"/>
+  <column db="SUM(invalidCount)" label="Total Invalid"/>
+  <column db="SUM(executedCount)" label="Total Executed"/>
+  <column db="SUM(executionErrorCount)" label="Total Execution Error"/>
+</modelledtable>

@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+
+#####################################################################################################################################
+# Description ------------------------parsePublishedApplicationInfo--------------------------------------
+# This script parses the PublishedApplicationInfo information and stores data to DB for DDP
+# @author - PRIYANKA TALLURI (ztalpri)
+# usage parsePublishedApplicationInfo --logfile ${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+######################################################################################################################################
+
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use Getopt::Long;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($site, $logFile, $server, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    my $serverId = getServerId($dbh, $siteId, $server);
+    my $r_parsedLog = parseData($logFile);
+    my $bcpFile = createBcpFile($r_parsedLog, $siteId, $serverId);
+    my $table = "eniq_ocs_published_application";
+    removeOldData($table, $siteId, $serverId, $dbh, $date);
+    loadDb($dbh, $bcpFile, $table);
+
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($logFile) = @_;
+    my @appArray = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    while ( my $line = <FILE> ) {
+        chomp( $line );
+        if ( $line =~ /(\d+-\d+-\d+-\d+:\d+:\d+)\s(\d+)\s(\d+)\s(\d+)\s(\d+)$/ ) {
+            my %appHash = (
+                time => "$1",
+                biWirc => "$2",
+                biUdt => "$3",
+                biIdt => "$4",
+                netanAnalyst => "$5"
+            );
+            push( @appArray, \%appHash );
+        }
+    }
+    close FILE;
+    return ( \@appArray );
+}
+
+sub createBcpFile($$$) {
+    my ($r_parsedLog, $siteId, $serverId) = @_;
+    my $appBcp = getBcpFileName( "Published_Application_Info" );
+    open BCP, ">$appBcp" or die "Cannot open BCPFile $appBcp";
+    foreach my $app ( @$r_parsedLog ) {
+        printf BCP
+            "%s|%d|%d|%s|%d|%d|%s\n",
+            $app->{'time'},
+            $siteId,
+            $serverId,
+            $app->{'biWirc'},
+            $app->{'biUdt'},
+            $app->{'biIdt'},
+            $app->{'netanAnalyst'};
+    }
+    close BCP;
+    return $appBcp;
+}
+
+sub removeOldData($$$$$) {
+    my ($table, $siteId, $serverId, $dbh, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 1 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo( $dbh, $deleteSql ) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo( $dbh, $loadSql ) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

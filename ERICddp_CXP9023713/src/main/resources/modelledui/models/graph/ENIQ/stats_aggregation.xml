@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Sessions"
+>
+  <title value="Running Aggregation Sessions"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_stats_aggregator_running">
+        <reference table="sites" condition="eniq_stats_aggregator_running.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="eniq_stats_aggregator_running.running" label = "sessions"/>
+    </query>
+  </queries>
+  <size width="800" height="250"/>
+</modelledgraph>

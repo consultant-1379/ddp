@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="node_exporter">
+
+  <table name="nic_stat">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="nicid" reftable="network_interfaces" reffiltercol="serverid"/>
+  </table>
+
+  <metricgroups>
+    <multi>nicid</multi>
+
+    <metricgroup name="^network:(\S+)">
+      <metric source="node_network_receive_packets_total" target="ipkts_per_sec" delta="true" rate="true"/>
+      <metric source="node_network_transmit_packets_total" target="opkts_per_sec" delta="true" rate="true"/>
+      <metric source="node_network_transmit_bytes_total" target="obytes_per_sec" delta="true" rate="true"/>
+      <metric source="node_network_receive_bytes_total" target="ibytes_per_sec" delta="true" rate="true"/>
+      <property name="nicid" xsi:type="multilabelproperty" label="device" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

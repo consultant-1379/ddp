@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^dps_integration@dps_integration$">
+
+  <table name="vdb_stats">
+    <keycol name="vdbid" reftable="vdb_names"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^dps_integration$" providername="VDB_dps_integration">
+      <metric source="db_bf_llog_bytes_written" target="llogwrite" delta="true"/>
+      <metric source="db_bf_llog_end" target="llogend" delta="true"/>
+      <metric source="db_bf_llog_full" target="llogfull" delta="true"/>
+      <metric source="db_bf_plog_bytes_written" target="plogwrite" delta="true"/>
+      <metric source="db_checkpoints" target="checkpts" delta="true"/>
+      <metric source="db_data_located" target="located" delta="true"/>
+      <metric source="db_data_reads" target="datareads" delta="true"/>
+      <metric source="db_data_writes" target="datawrites" delta="true"/>
+      <metric source="db_lock_timeouts" target="lktimeout" delta="true"/>
+      <metric source="db_lock_waits" target="lkwait" delta="true"/>
+      <metric source="db_running_threads" target="threads"/>
+      <metric source="db_xact_active" target="xactactive"/>
+      <metric source="db_xact_committed" target="xactcommit" delta="true"/>
+      <metric source="db_xact_rolled_back" target="xactrollback" delta="true"/>
+
+      <property name="vdbid" xsi:type="fixedproperty" value="dps_integration"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

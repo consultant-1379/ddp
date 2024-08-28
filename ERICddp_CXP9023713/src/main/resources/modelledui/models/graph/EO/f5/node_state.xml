@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="month"
+  forcelegend="true"
+>
+  <title value="State"/>
+  <queries>
+    <query timecol="time" multiseries="f5_node_names.name">
+      <dbtables main="eo_f5_node_states">
+        <reference table="sites" condition="eo_f5_node_states.siteid = sites.id"/>
+        <reference table="f5_node_names" condition="eo_f5_node_states.nodeMemid = f5_node_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="nodeids"/>
+      <where>sites.name = '%s' AND eo_f5_node_states.nodeMemid IN ( %s )</where>
+      <column db="eo_f5_node_states.state" label="State"/>
+    </query>
+  </queries>
+  <size width="600" height="240"/>
+</modelledgraph>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_flow_asu_group_summary">
+    <reference table="sites" condition="enm_flow_asu_group_summary.siteId = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="instanceName"/>
+  <where>sites.name = '%site%' AND enm_flow_asu_group_summary.flowExecutionName = '%instanceName%' AND enm_flow_asu_group_summary.time BETWEEN '%date%' - INTERVAL 30 DAY AND '%date% 23:59:59'</where>
+
+  <column db="flowExecutionName" label="Flow Execution Name" id="flowExecutionName"/>
+  <column db="FROM_UNIXTIME(UNIX_TIMESTAMP(time) - (timeTaken))" label="Start Time"/>
+  <column db="time" label="End Time"/>
+  <column db="sequenceOrder" label="Sequence Order"/>
+  <column db="totalNodes" label="Total Nodes"/>
+  <column db="nodesSuccessful" label="Nodes Successful"/>
+  <column db="totalFailed" label="Total Failed"/>
+  <column db="upgradedNodeswithWarnings" label="Upgraded Nodes With Warnings"/>
+  <column db="startedInMaintenanceWindow" label="Started In Maintenance Window"/>
+
+</modelledtable>

@@ -1,0 +1,70 @@
+#!/usr/bin/env perl
+
+use strict;
+
+use StatsDB;
+use DBI;
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+
+our $DEBUG=0;
+
+main();
+
+sub readJSON($) {
+    my ($verFile) = @_;
+    my $file_content = do {
+        open(my $cm_fh, "<:encoding(UTF-8)", $verFile)
+            or die("Can't open \$filename\": $!\n");
+        local $/;
+        <$cm_fh>
+    };
+    my $r_json = decode_json($file_content);
+    return $r_json;
+}
+
+sub main
+{
+    my ($site, $swVer, $date, $app, $verFile);
+    my $result = GetOptions("site=s" => \$site,
+                            "sw=s" => \$swVer,
+                            "date=s" => \$date,
+                            "app=s" => \$app,
+                            "ver_file=s" => \$verFile,
+                            "debug=s" => \$DEBUG
+    );
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my @verList = ();
+    if ( defined $verFile ) {
+        my $arrverList = readJSON($verFile);
+        if ( $#{$arrverList} > -1 ) {
+            $swVer = $arrverList->[0]->{'version'};
+            push @verList, $swVer;
+        }
+    } else {
+        push @verList, $swVer;
+    }
+
+
+    my $nameTable = $app . "_ver_names";
+    my $r_verIdMap = getIdMap($dbh, $nameTable, "id", "name", \@verList );
+
+    my $siteId = getSiteId($dbh,$site);
+    my $verTable = $app . "_ver";
+    dbDo($dbh, "DELETE FROM $verTable WHERE siteid = $siteId AND date = '" . $date . "'")
+        or die "Failed to remove old data";
+
+    my $names = "date,siteid,verid";
+    my $vals = "'" . $date . "'," . $siteId . "," . $r_verIdMap->{$swVer};
+
+    my $sql = " $verTable (" . $names . ") VALUES (" . $vals . ")";
+    dbDo($dbh, sprintf("INSERT INTO %s (date,siteid,verid) VALUES ('%s', %d, %d)",
+                       $verTable, $date, $siteId, $r_verIdMap->{$swVer})
+     ) or die "Failed to insert sample";
+
+    $dbh->disconnect;
+}

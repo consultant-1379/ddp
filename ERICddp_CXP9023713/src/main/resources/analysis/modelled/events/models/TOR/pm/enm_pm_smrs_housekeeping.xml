@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_pm_smrs_housekeeping">
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="smrsservice"/>
+    <service name="mspm"/>
+    <service name="fileaccountservice"/>
+  </services>
+
+  <events>
+    <!-- PM_SMRS_HOUSEKEEPING_PROCESSING_STATUS {"NeType":"MINI-LINK-Indoor","HouseKeepingProcessingTime":1581,"_Thread":"EJB default - 120","NumberOfFilesDeleted":20} -->
+    <event name="PM_SMRS_HOUSEKEEPING_PROCESSING_STATUS">
+      <metric source="NeType" target="netypeid"/>
+      <metric source="HouseKeepingProcessingTime" target="procTime"/>
+      <metric source="NumberOfFilesDeleted" target="filesDeleted"/>
+    </event>
+  </events>
+</modelledevents>

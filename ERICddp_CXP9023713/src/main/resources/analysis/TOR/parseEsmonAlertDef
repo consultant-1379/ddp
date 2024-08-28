@@ -1,0 +1,58 @@
+#! /usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use StatsDB;
+use Data::Dumper;
+use DBI;
+
+our $DEBUG = 0;
+
+sub parseLogs($$$) {
+    my ($logFile, $site, $date) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $bcpFileName = getBcpFileName("esm_alert_info");
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+    my @typeList = `cat $logFile | awk -F ',' '{if(\$1)print \$1}'`;
+
+    foreach my $types (@typeList){
+       $types =~ s/\s+$//;
+    }
+
+    my $r_typeIdMap = getIdMap($dbh, "esm_alert_types", "id", "name", \@typeList);
+
+    foreach my $type (@typeList){
+       print BCP "$siteId\t$date\t$r_typeIdMap->{$type}\n";
+    }
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM esm_alert_def WHERE siteid = $siteId AND date = '$date'"
+            ) or die "Failed to delete from esm_alert_def".$dbh->errstr."\n";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE esm_alert_def" )
+       or die "Failed to load new data from '$bcpFileName' file to esm_alert_def table";
+    $dbh->disconnect();
+    unlink $bcpFileName;
+
+}
+
+sub main() {
+
+    my ( $logFile, $site, $date);
+    my $result = GetOptions(
+        "logFile=s" => \$logFile,
+        "date=s"   => \$date,
+        "site=s"   => \$site,
+        "debug=s"  => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", $logFile); }
+    parseLogs($logFile, $site, $date);
+}
+
+main();

@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" forcelegend="true">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_mscmce_instr">
+      <reference table="sites" condition="enm_mscmce_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_mscmce_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverids"/>
+    <where>sites.name = '%s' AND servers.id IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="syncSucc" type="tsc" ylabel="count">
+      <title value="Successful Full Sync"/>
+      <column db="syncSucc" label="Successful Full Sync"/>
+    </graph>
+    <graph name="syncFail" type="tsc" ylabel="count">
+      <title value="Failed Full Syncs"/>
+      <column db="syncFail" label="Failed Full Syncs"/>
+    </graph>
+    <graph name="syncMo" type="tsc" ylabel="count">
+      <title value="Number Of Mos Being Synced"/>
+      <column db="syncMO" label="Number Of Mos Being Synced"/>
+    </graph>
+    <graph name="deltaSyncSucc" type="tsc" ylabel="count">
+      <title value="Successful Delta Syncs"/>
+      <column db="deltaSyncSucc" label="Successful Delta Syncs"/>
+    </graph>
+    <graph name="deltaSyncFail" type="tsc" ylabel="count">
+      <title value="Failed Delta Syncs"/>
+      <column db="deltaSyncFail" label="Failed Delta Syncs"/>
+    </graph>
+    <graph name="ncSuccSubs" type="tsc" ylabel="count">
+      <title value="Successful Subscriptions"/>
+      <column db="ncSuccSubs" label="Successful Subscriptions"/>
+    </graph>
+    <graph name="ncFailedSubs" type="tsc" ylabel="count">
+      <title value="Failed Subscriptions"/>
+      <column db="ncFailedSubs" label="Failed Subscriptions"/>
+    </graph>
+    <graph name="ncWriteActionSucc" type="tsc" ylabel="count">
+      <title value="Successful Action"/>
+      <column db="ncWriteActionSucc" label="Successful Action"/>
+    </graph>
+    <graph name="ncWriteActionFail" type="tsc" ylabel="count">
+      <title value="Failed Action"/>
+      <column db="ncWriteActionFail" label="Failed Action"/>
+    </graph>
+    <graph name="ncWriteCreateSucc" type="tsc" ylabel="count">
+      <title value="Successful Create"/>
+      <column db="ncWriteCreateSucc" label="Successful Create"/>
+    </graph>
+    <graph name="ncWriteCreateFail" type="tsc" ylabel="count">
+      <title value="Failed Create"/>
+      <column db="ncWriteCreateFail" label="Failed Create"/>
+    </graph>
+    <graph name="ncWriteDeleteSucc" type="tsc" ylabel="count">
+      <title value="Successful Delete"/>
+      <column db="ncWriteDeleteSucc" label="Successful Delete"/>
+    </graph>
+    <graph name="ncWriteDeleteFail" type="tsc" ylabel="count">
+      <title value="Failed Delete"/>
+      <column db="ncWriteDeleteFail" label="Failed Delete"/>
+    </graph>
+    <graph name="ncWriteModifySucc" type="tsc" ylabel="count">
+      <title value="Successful Modify"/>
+      <column db="ncWriteModifySucc" label="Successful Modify"/>
+    </graph>
+    <graph name="ncWriteModifyFail" type="tsc" ylabel="count">
+      <title value="Failed Modify"/>
+      <column db="ncWriteModifyFail" label="Failed Modify"/>
+    </graph>
+    <graph name="nonPersistReadSucc" type="tsc" ylabel="count">
+      <title value="Successful Reads"/>
+      <column db="nonPersistReadSucc" label="Successful Reads"/>
+    </graph>
+    <graph name="nonPersistReadFail" type="tsc" ylabel="count">
+      <title value="Failed Reads"/>
+      <column db="nonPersistReadFail" label="Failed Reads"/>
+    </graph>
+    <graph name="nonPersistReadAttr" type="tsc" ylabel="count">
+      <title value="Num Attributes"/>
+      <column db="nonPersistReadAttr" label="Num Attributes"/>
+    </graph>
+    <graph name="ncSessRequestCount" type="tsc" ylabel="count">
+      <title value="Requests"/>
+      <column db="ncSessRequestCount" label="Requests"/>
+    </graph>
+    <graph name="ncSessReqCRUDProcessTime" type="tsc" ylabel="count">
+      <title value="Average CRUD Process Time"/>
+      <column db="ncSessReqCRUDProcessTime" label="Average CRUD Process Time"/>
+    </graph>
+    <graph name="ncSessReqRPCConstructionTime" type="tsc" ylabel="count">
+      <title value="Average RPC Construction Time"/>
+      <column db="ncSessReqRPCConstructionTime" label="Average RPC Construction Time"/>
+    </graph>
+    <graph name="ncSessResponseCount" type="tsc" ylabel="count">
+      <title value="Responces"/>
+      <column db="ncSessResponseCount" label="Responces"/>
+    </graph>
+    <graph name="ncSessResCRUDProcessTime" type="tsc" ylabel="count">
+      <title value="Average CRUD Process Time"/>
+      <column db="ncSessResCRUDProcessTime" label="Average CRUD Process Time"/>
+    </graph>
+    <graph name="ncSessrResRPCExtractionTime" type="tsc" ylabel="count">
+      <title value="Average RPC Extraction Time"/>
+      <column db="ncSessrResRPCExtractionTime" label="Average RPC Extraction Time"/>
+    </graph>
+    <graph name="softwareSyncInvocations" type="tsc" ylabel="count">
+      <title value="Software Sync Invocations"/>
+      <column db="softwareSyncInvocations" label="Software Sync Invocations"/>
+    </graph>
+    <graph name="numberOfSoftwareSyncWithError" type="tsc" ylabel="count">
+      <title value="Number Of Software Sync With Error"/>
+      <column db="numberOfSoftwareSyncWithError" label="Number Of Software Sync With Error"/>
+    </graph>
+    <graph name="numberOfSoftwareSyncWithModelIdCalculation" type="tsc" ylabel="count">
+      <title value="Number Of Software Sync With ModelId Calculation"/>
+      <column db="numberOfSoftwareSyncWithModelIdCalculation" label="Number Of Software Sync With ModelId Calculation"/>
+    </graph>
+    <graph name="numberOfSoftwareSyncWithoutModelIdCalculation" type="tsc" ylabel="count">
+      <title value="Number Of Software Sync Without ModelId Calculation"/>
+      <column db="numberOfSoftwareSyncWithoutModelIdCalculation" label="Number Of Software Sync Without ModelId Calculation"/>
+    </graph>
+    <graph name="averageModelIdCalculationTimeTaken" type="tsc" ylabel="msec">
+      <title value="Average ModelId Calculation Time Taken"/>
+      <column db="averageModelIdCalculationTimeTaken" label="Average ModelId Calculation Time Taken"/>
+    </graph>
+    <graph name="averageNoModelIdCalculationTimeTaken" type="tsc" ylabel="msec">
+      <title value="Average No ModelId Calculation Time Taken"/>
+      <column db="averageNoModelIdCalculationTimeTaken" label="Average No ModelId Calculation Time Taken"/>
+    </graph>
+    <graph name="totalModelIdCalculationTimeTaken" type="tsc" ylabel="msec">
+      <title value="Total ModelId Calculation Time Taken"/>
+      <column db="totalModelIdCalculationTimeTaken" label="Total ModelId Calculation Time Taken"/>
+    </graph>
+    <graph name="totalWithoutModelIdCalculationTimeTaken" type="tsc" ylabel="msec">
+      <title value="Total Without ModelId Calculation Time Taken"/>
+      <column db="totalWithoutModelIdCalculationTimeTaken" label="Total Without ModelId Calculation Time Taken"/>
+    </graph>
+    <graph name="numberOfModelIdCalculation" type="tsc" ylabel="count">
+      <title value="Number Of ModelId Calculation"/>
+      <column db="numberOfModelIdCalculation" label="Number Of ModelId Calculation"/>
+    </graph>
+    <graph name="numberOfFailedMibUpgrade" type="sb">
+      <title value="Number Of Failed MibUpgrade"/>
+      <column db="numberOfFailedMibUpgrade" label="Number Of Failed MibUpgrade"/>
+    </graph>
+    <graph name="numberOfSuccessfulMibUpgrade" type="sb">
+      <title value="Number Of Successful MibUpgrade"/>
+      <column db="numberOfSuccessfulMibUpgrade" label="Number Of Successful MibUpgrade"/>
+    </graph>
+    <graph name="notifBuffered" type="sb">
+      <title value="Notifications Requiring Buffering"/>
+      <column db="notifBuffered" label="Notifications Requiring Buffering"/>
+    </graph>
+    <graph name="notifDirect" type="sb">
+      <title value="Notifications Processed Directly"/>
+      <column db="notifDirect" label="Notifications Processed Directly"/>
+    </graph>
+    <graph name="hbSupervisionStart" type="sb">
+      <title value="Start Supervision"/>
+      <column db="hbSupervisionStart" label="Start Supervision"/>
+    </graph>
+    <graph name="hbSupervisionStop" type="sb">
+      <title value="Stop Supervision"/>
+      <column db="hbSupervisionStop" label="Stop Supervision"/>
+    </graph>
+    <graph name="hbSubValidationSucc" type="sb">
+      <title value="Successful Subscription Validations"/>
+      <column db="hbSubValidationSucc" label="Successful Subscription Validations"/>
+    </graph>
+    <graph name="hbSubValidationFail" type="sb">
+      <title value="Failed Subscription Validations"/>
+      <column db="hbSubValidationFail" label="Failed Subscription Validations"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="hb">
+      <member>hbSupervisionStart</member>
+      <member>hbSupervisionStop</member>
+      <member>hbSubValidationSucc</member>
+      <member>hbSubValidationFail</member>
+    </group>
+    <group name="notifBuff">
+      <member>notifBuffered</member>
+      <member>notifDirect</member>
+    </group>
+    <group name="mib">
+      <member>numberOfFailedMibUpgrade</member>
+      <member>numberOfSuccessfulMibUpgrade</member>
+    </group>
+    <group name="softSyncInv">
+      <member>softwareSyncInvocations</member>
+      <member>numberOfSoftwareSyncWithError</member>
+      <member>numberOfSoftwareSyncWithModelIdCalculation</member>
+      <member>numberOfSoftwareSyncWithoutModelIdCalculation</member>
+      <member>averageModelIdCalculationTimeTaken</member>
+      <member>averageNoModelIdCalculationTimeTaken</member>
+      <member>totalModelIdCalculationTimeTaken</member>
+      <member>totalWithoutModelIdCalculationTimeTaken</member>
+      <member>numberOfModelIdCalculation</member>
+    </group>
+    <group name="sync">
+      <member>syncSucc</member>
+      <member>syncFail</member>
+      <member>deltaSyncSucc</member>
+      <member>deltaSyncFail</member>
+      <member>syncMo</member>
+    </group>
+    <group name="netConfSub">
+      <member>ncSuccSubs</member>
+      <member>ncFailedSubs</member>
+    </group>
+    <group name="netConfWrite">
+      <member>ncWriteActionSucc</member>
+      <member>ncWriteActionFail</member>
+      <member>ncWriteCreateSucc</member>
+      <member>ncWriteCreateFail</member>
+      <member>ncWriteDeleteSucc</member>
+      <member>ncWriteDeleteFail</member>
+      <member>ncWriteModifySucc</member>
+      <member>ncWriteModifyFail</member>
+    </group>
+    <group name="netConfPerReads">
+      <member>nonPersistReadSucc</member>
+      <member>nonPersistReadFail</member>
+      <member>nonPersistReadAttr</member>
+    </group>
+    <group name="netConfSes">
+      <member>ncSessRequestCount</member>
+      <member>ncSessReqCRUDProcessTime</member>
+      <member>ncSessReqRPCConstructionTime</member>
+      <member>ncSessResponseCount</member>
+      <member>ncSessResCRUDProcessTime</member>
+      <member>ncSessrResRPCExtractionTime</member>
+    </group>
+    <group name="netConfPerReadsSuccFail">
+      <member>nonPersistReadSucc</member>
+      <member>nonPersistReadFail</member>
+    </group>
+    <group name="netConfWriteAcSuccAcFail">
+      <member>ncWriteActionSucc</member>
+      <member>ncWriteActionFail</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

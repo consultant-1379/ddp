@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="Proposed CM Changes Count"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="ecson_ret_custom_service">
+    <reference table="sites" condition="ecson_ret_custom_service.siteid = sites.id"/>
+    <reference table="servers" condition="ecson_ret_custom_service.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_ret_custom_service.cmChangeCount" label="Proposed CM Changes Count"/>
+  </query>
+ </queries>
+ <size width="650" height="400"/>
+</modelledgraph>

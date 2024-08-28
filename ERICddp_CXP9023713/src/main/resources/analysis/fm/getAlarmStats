@@ -1,0 +1,1076 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use POSIX;
+use DBI;
+use Data::Dumper;
+use JSON;
+
+use StatsDB;
+use Time::Local;
+use StatsTime;
+
+use File::Basename;
+use lib dirname($0);
+use alarmConsts;
+use alarmLog;
+
+our $topN = 5;
+our $DEBUG = 0;
+our %TIMES = ();
+
+# Max delay over an an alarm event
+# If an event exceeds this we assume
+# it's due to a re-sync and don't count it
+our $MAX_DELAY = 14400;
+
+sub loadNodes($$) {
+    my ($inFile,$r_onrm) = @_;
+
+    my $jsonStr = undef;
+    {
+        local $/ = undef;
+        open FILE, $inFile or die "Couldn't open file: $!";
+        binmode FILE;
+        $jsonStr = <FILE>;
+        close FILE;
+    }
+    my $json = decode_json($jsonStr);
+
+    foreach my $r_node ( @{$json} ) {
+        if ( $DEBUG > 7 ) { print Dumper("loadNodes: processing r_node", $r_node); }
+        my $nodeFdn = $r_node->{'prefix'};
+        if ( $nodeFdn =~ /,MeContext=[^,]+$/ ) {
+            $nodeFdn .= ",ManagedElement=1";
+        } else {
+	    $nodeFdn .= ",ManagedElement=" . $r_node->{'id'};
+	}
+        $r_onrm->{$nodeFdn} = {
+            'mtype' => $r_node->{'neType'},
+            'conn'  => lc($r_node->{'fmSupervision'})
+        };
+    }
+}
+
+sub loadONRM
+{
+    my($inFile,$r_onrm) = @_;
+
+    open INPUT, $inFile or die "Failed to open $inFile";
+    my @lines = <INPUT>;
+    close INPUT;
+
+    my $index = 0;
+    while ( $index <= $#lines )
+    {
+        if ( $DEBUG > 9 ) { print "loadONRM: lines[$index]=$lines[$index]"; }
+
+        if ( $lines[$index] =~ /^SubNetwork/ )
+        {
+            my $ne = $lines[$index];
+            chop $ne;
+            $index++;
+
+            my %attribs = ();
+            while ( ($index <= $#lines) && ($lines[$index] =~ /^\s+\[\d+\]\s+(\S+)[^:]+: (.*)/) ) {
+                $attribs{$1} = $2;
+                $index++;
+            }
+
+            $r_onrm->{$ne} = {
+                'stype' => trim_str($attribs{'sourceType'}),
+                'conn'  => $attribs{'connectionStatus'},
+                'ver'   => trim_str($attribs{'nodeVersion'}),
+                'mtype' => trim_str($attribs{'managedElementType'})
+            };
+        }
+        else
+        {
+            $index++;
+        }
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("load: nodes", $r_onrm); }
+}
+
+sub trim_str
+{
+    my ($out) = @_;
+
+    $out =~ s/\"//g;
+    $out =~ s/ *$//;
+    $out =~ s/^ *//;
+
+    return $out;
+}
+
+sub writeInstrBcp  {
+    my ( $r_instr, $siteId, $r_instrTimes ) = @_;
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = $tmpDir . "/hires_fm.bcp";
+
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+    my $lastTime = $r_instrTimes->[0];
+    foreach my $time ( @{$r_instrTimes} ) {
+        while ( ($time - $lastTime) > 60 ) {
+            $lastTime += 60;
+            printf BCP "%s\t%d\t0\t0\t0\t0\t0\t0\t0\n", formatTime($lastTime, $StatsTime::TIME_SQL), $siteId;
+        }
+
+        my $r_sample = $r_instr->{$time};
+        if ( $DEBUG > 3 ) { print Dumper("writeInstrBcp: " . formatTime($time, $StatsTime::TIME_SQL), $r_sample); }
+
+        my $numNew = 0;
+        printf BCP "%s\t%d", formatTime($time, $StatsTime::TIME_SQL), $siteId;
+        for ( my $eventType = 1; $eventType <= 5; $eventType++ ) {
+            my $value = 0;
+            if ( exists $r_sample->{'eventtype'}->{$eventType} ) {
+                $value = $r_sample->{'eventtype'}->{$eventType};
+            }
+            print BCP "\t$value";
+
+            if ( $eventType == 1 ) {
+                $numNew = $value;
+            }
+        }
+        my $avgdelay = 0;
+        my $maxdelay = 0;
+        if ( exists $r_sample->{'maxdelay'} ) {
+            $maxdelay = $r_sample->{'maxdelay'};
+            if ( $numNew > 0 ) {
+                $avgdelay = int( ($r_sample->{'totaldelay'} / $numNew) + 0.5);
+            }
+        }
+        if ( $DEBUG > 3 ) { print "writeInstrBcp: numNew=$numNew, sample maxdelay=" . $r_sample->{'maxdelay'} .
+            ", totaldelay=" . $r_sample->{'totaldelay'} .
+            ", maxdelay=$maxdelay avgdelay=$avgdelay\n"; }
+
+        printf BCP "\t%d\t%d\n", $avgdelay,$maxdelay;
+
+        $lastTime = $time;
+    }
+    close BCP;
+
+    return $bcpFileName;
+}
+
+sub storeStats
+{
+    my ( $r_eventTotals, $r_onrm, $site, $sqlDate, $r_instr ) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 )
+    {
+        print "ERROR: Could not find siteid for $site\n";
+        return;
+    }
+
+
+    my @instrTimes = sort keys %{$r_instr};
+    if ( $#instrTimes > -1 ) {
+        my $bcpFileName = writeInstrBcp($r_instr,$siteId,\@instrTimes);
+        dbDo($dbh, sprintf("DELETE FROM hires_fm WHERE siteid = $siteId AND time BETWEEN '%s' AND '%s'",
+                formatTime( $instrTimes[0], $StatsTime::TIME_SQL ),
+                formatTime( $instrTimes[$#instrTimes], $StatsTime::TIME_SQL ))
+        );
+        dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE hires_fm (time,siteid,x1,x2,x3,x4,x5,avgdelay,maxdelay)");
+    }
+
+    if ( $DEBUG > 1 ) { print Dumper("storeStats: eventTotals", $r_eventTotals); }
+
+    my %countsByMeType = ();
+    foreach my $ne ( keys %{$r_onrm} ) {
+        if ( $DEBUG > 7 ) { print STDERR Dumper("storeStats: ne=$ne onrm", $r_onrm->{$ne}); }
+        my $neType = $r_onrm->{$ne}->{'mtype'};
+        if ( ! defined $neType ) {
+            if ( $DEBUG > 0 ) { print "WARN: Cannot get type for $ne\n"; }
+            next;
+        }
+
+        my $r_countsForThisType = $countsByMeType{$neType};
+        if ( ! defined $r_countsForThisType ) {
+            $r_countsForThisType = { 'count' => 0, 'alive' => 0 };
+            $countsByMeType{$neType} = $r_countsForThisType;
+        }
+        $r_countsForThisType->{'count'}++;
+        if ( $r_onrm->{$ne}->{'conn'} eq 'true' ) {
+            $r_countsForThisType->{'alive'}++;
+        }
+    }
+
+
+    my @meTypeList = keys %{$r_eventTotals};
+    my $r_meTypeIdMap = getIdMap($dbh, "me_types", "id", "name", \@meTypeList );
+
+    dbDo($dbh, "DELETE FROM alarmevents_by_metype WHERE siteid = $siteId AND date = \'" . $sqlDate . "\'");
+
+    foreach my $meType ( @meTypeList )
+    {
+        my @colNames = ( 'date', 'siteid', 'me_typeid' );
+        my @colValues = ( "'$sqlDate'", $siteId, $r_meTypeIdMap->{$meType} );
+
+        foreach my $dbCol ( 'event_total', 'event_x1', 'event_x2', 'event_x3', 'event_x4', 'event_x5', 'active' ) {
+            my $value = undef;
+            if ( $dbCol =~ /^event_x(\d)$/ ) {
+                my $eventType = $1;
+                $value = $r_eventTotals->{$meType}->{'event_type'}->{$eventType};
+            } else {
+                $value = $r_eventTotals->{$meType}->{$dbCol};
+            }
+
+            if ( defined $value ) {
+                push @colNames, $dbCol;
+                push @colValues, $value;
+            }
+        }
+        if ( exists $countsByMeType{$meType} ) {
+            push @colNames, "total";
+            push @colValues, $countsByMeType{$meType}->{'count'};
+        }
+
+
+        dbDo( $dbh, "INSERT INTO alarmevents_by_metype (". join(",",@colNames) . ") VALUES (" . join(",",@colValues) . ")")
+            or die "Failed to insert";
+    }
+
+    $dbh->disconnect;
+}
+
+
+
+sub by_number {
+    if ($a > $b) {
+        return -1;
+    } elsif ($a == $b) {
+        return 0;
+    } elsif ($a < $b) {
+        return 1;
+    }
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash, $r_Result ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+        my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+        $reverseHash{$reverseKey} = $key;
+        $counter++;
+    }
+
+    foreach my $reverseKey ( sort by_number keys %reverseHash )
+    {
+        $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+}
+
+sub processAlarmList
+{
+    my ($alarmListFile,$r_onrm,$outputdir) = @_;
+
+    open ALARM_LIST, $alarmListFile or die "Cannot open alarmlist $alarmListFile";
+    my $alarmListSize = 0;
+    my %alarmCount = ();
+    while ( my $line = <ALARM_LIST> )
+    {
+        if ( $line =~ /^ 1f1/ )
+        {
+            my $alarmId = "";
+            my $moInst;
+            while ( defined($line = <ALARM_LIST>) && !($line =~ /^\s+$/) )
+            {
+                if ( $DEBUG > 7 ) { print "processAlarmList: line=$line"; };
+
+                #print $line;
+                if ( $line =~ /^\s+k=/ ) # alarm id
+                {
+                    $_ = $line;
+                    ($alarmId) = /^\s+k=\"(.*)\"$/;
+                }
+                elsif ( $line =~ /^\s+externalAlarmId=\"(.*)\"$/ ) # alarm id for OSS-RC
+                {
+                    $alarmId = $1;
+                }
+                elsif ( $line =~ /^\s+f=\"(.*)\"$/ )
+                {
+                    ($moInst) = $1;
+                    if ( $DEBUG > 6 ) { print "processAlarmList: moInst=$moInst\n"; }
+                }
+            }
+
+            my $nodeType = getMeType($moInst,$r_onrm);
+
+            $alarmListSize++;
+            $alarmCount{$nodeType}++;
+        }
+    }
+
+    close ALARM_LIST;
+    open ALARM_LIST_TABLE, ">$outputdir/alarmListCounters.html" or die "Cannot open $outputdir/alarmListCounters.html";
+    foreach my $nodeType ( sort keys %alarmCount )
+    {
+        printf ALARM_LIST_TABLE " <tr> <td>%s<\/td> <td>%d<\/td> <\/tr>\n", $nodeType, $alarmCount{$nodeType};
+    }
+    printf ALARM_LIST_TABLE " <tr> <td>Total<\/td> <td>%d<\/td> <\/tr>\n", $alarmListSize;
+    close ALARM_LIST_TABLE;
+}
+
+sub isNodeSyncing($$) {
+    my ($r_thisNodeSyncs,$time) = @_;
+    if ( $DEBUG > 6 ) { print "isNodeSyncing: time=$time\n"; }
+
+    if ( ! defined $r_thisNodeSyncs ) {
+        return 0;
+    }
+
+    while ( $#{$r_thisNodeSyncs} > -1 ) {
+        my $r_sync = $r_thisNodeSyncs->[0];
+        if ( $DEBUG > 6 ) { print "isNodeSyncing: start=" . $r_sync->[0] . " " . $r_sync->[1] . "\n"; }
+
+        # If the event time is before the start of this sync, then we are not sync'ing
+        if ( $time < $r_sync->[0] ) {
+            return 0;
+        }
+
+        # If the event time is before/equal the end of this sync, then we are sync'ing
+        if ( $time <= $r_sync->[1] ) {
+            return 1;
+        }
+
+        # Event time is after this sync
+        # so we can remove this sync and move on to the next one
+        shift @{$r_thisNodeSyncs};
+    }
+
+    # If we get here there are no sync's left so we are not sync'ing
+    return 0;
+}
+
+#
+# Read in the 1f1 events and populate r_alarmStats
+#  key: node fdn
+#  value: map of
+#    specprob -> $specprob -> count
+#    type -> node type
+#    eventtype -> eventtype
+#
+sub readAlarmEvents($$$$$$$$$) {
+    my ($eventsFile,$outputdir, $r_onrm,$tzOffset,$r_alarmStats,
+        $r_instr,$r_heartBeat,$incrFile,$r_syncsByNode) = @_;
+
+
+    open ALARM_EVENTS, $eventsFile or die "Cannot open eventsFile $eventsFile";
+
+    #
+    # Seems like > 90% of the time taken for getAlarmStats is here in
+    # readAlarmEvents. So we will now try and incrementally parse the 1f1 events
+    # Once we parse the events we will store the content r_alarmStats and r_instr
+    # in a file. During a re-parse we reload these vars from the file and
+    # only parse the new events in the 1f1 file
+    #
+    my $r_incrData = {};
+    if ( (defined $incrFile) && (-r $incrFile) ) {
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " readAlarmEvents: start loading incr data\n"; }
+        my $dumperOutput;
+        do {
+            local $/ = undef;
+            open my $fh, "<", $incrFile
+                or die "could not open $incrFile: $!";
+            $dumperOutput = <$fh>;
+            close $fh;
+        };
+
+        if ( $DEBUG > 8 ) { print "readAlarmEvents: dumperOutput=$dumperOutput\n"; }
+
+        my $VAR1;
+        eval($dumperOutput);
+        $r_incrData = $VAR1;
+        if ( $DEBUG > 7 ) { print Dumper("readAlarmEvents: r_incrData", $r_incrData); }
+
+        %{$r_alarmStats} = %{$r_incrData->{'alarmStats'}};
+        %{$r_instr} = %{$r_incrData->{'instr'}};
+        if ( exists $r_incrData->{'hb'} ) {
+            @{$r_heartBeat} = @{$r_incrData->{'hb'}};
+        }
+        if ( $DEBUG > 8 ) {
+            print Dumper("readAlarmEvents: incrData r_alarmStats", $r_alarmStats);
+            print Dumper("readAlarmEvents: incrData r_instr", $r_instr);
+            printf("readAlarmEvents: lastSize=%d\n", $r_incrData->{'lastSize'});
+        }
+
+        seek ALARM_EVENTS, $r_incrData->{'lastSize'}, 0;
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " readAlarmEvents: end loading incr data\n"; }
+    }
+
+    my $disgardDeltaCount = 0;
+    while ( my $line = <ALARM_EVENTS> )
+    {
+        # Start of alarm - e.g.:
+        # 19-03-11:00:22:27.977 OSS 1f1 x1 x4
+        if ( $line =~ /^([\d\-:\.]+) .* x(\d+)$/ )
+        {
+            # event type: one of:
+            # 1, 2, 3, 4, 5 - see alarmConsts.pm for values
+            my ($eventTimeStamp,$eventType) = ($1,$2);
+
+            if ( $DEBUG > 8 ) { print $line; }
+
+
+            my ($specProb,$alarmId,$moInst,$externAlarmId,$eventTime,$alarmDate,$alarmTime);
+
+            # iterate through lines of this alarm
+            while ( defined($line = <ALARM_EVENTS>) && !($line =~ /^\s+$/) )
+            {
+                if ( $DEBUG > 8 ) { print $line; }
+                if ( $line =~ /^\s+i=/ ) # Specific problem
+                {
+                    ($specProb) = $line =~ /^\s+i=\"(.*)\"$/;
+                }
+                elsif ( $line =~ /^\s+k=/ ) # alarm id
+                {
+                    ($alarmId) = $line =~ /^\s+k=\"(.*)\"$/;
+                }
+                elsif ( $line =~ /^\s+externalAlarmId=\"(.*)\"$/ ) # alarm id for OSS-RC
+                {
+                    $externAlarmId = $1;
+                    if ( $externAlarmId )
+                    {
+                        $alarmId = $externAlarmId;
+                    }
+                }
+                elsif ( $line =~ /^\s+f=\"(.*)\"$/ )
+                {
+                    ($moInst) = $1;
+                    if ( $DEBUG > 6 ) { print "readAlarmEvents: moInst=$moInst\n"; }
+                }
+                elsif ( $line =~ /^\s+c=(\S+) (\S+)/ )
+                {
+                    # for example: c=2011.03.19 05:01:18 UTC
+                    ($alarmDate,$alarmTime) = ($1,$2);
+                }
+            }
+
+            my $node;
+            my $nodeType = getMeType($moInst,$r_onrm);
+            # Identify source of alarm and define the short name of the node
+            # e.g.:
+            # f="SubNetwork=ONRM_RootMo,SubNetwork=WCHCILBFCR0R01,MeContext=ILU0757,ManagedElement=1,TransportNetwork=1,Synchronization=1"
+            # becomes:
+            # ILU0757
+            if ( $moInst =~ /,MeContext=([^,]+)/ ) {
+                $node = $1;
+            } elsif ( $moInst =~ /,ManagedElement=([^,]+)/ ) {
+                $node = $1;
+            } else {
+                $node = 'OSS';
+            }
+            if ( $DEBUG > 5 ) { print "readAlarmEvents: eventType=$eventType node=$node nodeType=$nodeType\n"; }
+
+            if ( (defined $specProb) && (defined $alarmId) ) {
+                $r_alarmStats->{$node}->{'specprob'}->{$specProb}++;
+                $r_alarmStats->{$node}->{'type'} = $nodeType;
+
+                $r_alarmStats->{$node}->{'eventtype'}->{$eventType}++;
+            } else {
+                #print "\"$specProb\" \"$alarmId\"\n";
+                next;
+            }
+
+            my ($eventTimeStampNoMs) = $eventTimeStamp =~ /^([\d\-:]+)\.\d{3,3}$/;
+            my ($fmDay,$fmMon,$fmYear,$fmHour,$fmMin,$fmSec) = $eventTimeStampNoMs =~
+            /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d{2,2}):(\d{2,2}):(\d{2,2})$/;
+            my $fmDate = sprintf("20%02d.%02d.%02d", $fmYear, $fmMon, $fmDay);
+            my $instrMin = getTime($fmDate) + ( (($fmHour * 60) + $fmMin) * 60 );
+            $r_instr->{$instrMin}->{'eventtype'}->{$eventType}++;
+
+            #
+            # FM Latency code
+            #
+            # If it's a new alarm event, we have the tzOffset, the eventTime (c=) is set
+            # and we have the externAlarmId
+            if ( ($eventType == $alarmConsts::ALARM_NEW) && (defined $tzOffset) &&
+                (defined $alarmDate) && (defined $externAlarmId && $externAlarmId ne "") )
+            {
+                # Try and figure out if a sync in ongoing, if it is we ignore this
+                # event (alarm could have been created while we were disconnected)
+                my $nodeIsSyncing = isNodeSyncing($r_syncsByNode->{$node}, ($fmHour*3600) + ($fmMin*60) + $fmSec);
+                if ( ! $nodeIsSyncing ) {
+                    my $delay = getTimeDelta($eventTimeStamp,$alarmDate,$alarmTime,$tzOffset);
+                    if ( $delay > 0 ) {
+                        if ( $delay < $MAX_DELAY ) {
+                            $r_instr->{$instrMin}->{'totaldelay'} += $delay;
+                            my $currentMaxDelay = $r_instr->{$instrMin}->{'maxdelay'};
+                            if ( (!defined $currentMaxDelay) || ($delay > $currentMaxDelay) ) {
+                                $r_instr->{$instrMin}->{'maxdelay'} = $delay;
+                                $r_instr->{$instrMin}->{'maxdelaytime'} = $eventTimeStamp;
+                            }
+                        } else {
+                            $disgardDeltaCount++;
+                        }
+                    }
+                } else {
+                    if ( $DEBUG > 4 ) { print "Disgarding alarm @ $eventTimeStamp for $node, nodeIsSyncing\n"; }
+                }
+            }
+
+            if ( $specProb =~ /^Heartbeat failure/i ) {
+                push @{$r_heartBeat}, {
+                    'timestamp' => sprintf("%02d-%02d-%02d:%02d:%02d:%02d", $fmDay, $fmMon, $fmYear, $fmHour, $fmMin, $fmSec),
+                    'node' => $node,
+                    'connectionStatus' => $eventType
+                };
+            }
+        }
+    }
+    close ALARM_EVENTS;
+
+    if ( $disgardDeltaCount ) {
+        print "WARN: Disgarded $disgardDeltaCount events due to excessive delay\n";
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("readAlarmEvents: instr", $r_instr); }
+
+    #
+    # Incremental stuff here, store r_alarmStats and r_instr in case we have to re-parse later
+    #
+    if ( defined $incrFile ) {
+        $r_incrData->{'alarmStats'} =  $r_alarmStats;
+        $r_incrData->{'instr'} = $r_instr;
+        $r_incrData->{'hb'} = $r_heartBeat;
+        my @fileStats = stat $eventsFile;
+        my $fileSize = $fileStats[7];
+        $r_incrData->{'lastSize'} = $fileSize;
+        my $defaultIndent = $Data::Dumper::Indent;
+        if ( $DEBUG == 0 ) { $Data::Dumper::Indent = 0; }
+        my $incrDataStr = Dumper($r_incrData);
+        $Data::Dumper::Indent = $defaultIndent;
+        open INC, ">$incrFile";
+        print INC $incrDataStr;
+        close INC;
+    }
+}
+
+
+sub calTotalsByMeType
+{
+    my ($r_alarmStats,$r_eventTotals) = @_;
+
+    foreach my $node ( keys %{$r_alarmStats} )
+    {
+        $r_eventTotals->{$r_alarmStats->{$node}->{'type'}}->{'active'}++;
+
+        foreach my $specprob ( keys %{$r_alarmStats->{$node}->{'specprob'}} )
+        {
+            $r_eventTotals->{$r_alarmStats->{$node}->{'type'}}->{'event_total'} += $r_alarmStats->{$node}->{'specprob'}->{$specprob};
+        }
+
+        foreach my $eventType ( keys %{$r_alarmStats->{$node}->{'eventtype'}} )
+        {
+            $r_eventTotals->{$r_alarmStats->{$node}->{'type'}}->{'event_type'}->{$eventType} +=
+            $r_alarmStats->{$node}->{'eventtype'}->{$eventType};
+        }
+    }
+}
+
+sub printAlarmStats
+{
+    my ($r_alarmStats, $aliveCount, $hasONRM, $r_eventTotals, $outputdir, $filePrefix) = @_;
+
+    #
+    # Output alarms by Specific prob
+    #
+    my %specProbCount = ();
+    my %specProbNodes = ();
+
+    foreach my $node ( keys %{$r_alarmStats} )
+    {
+        foreach my $specProb ( keys %{$r_alarmStats->{$node}->{'specprob'}} )
+        {
+            if ( ! exists $specProbCount{$specProb} )
+            {
+                $specProbCount{$specProb} = 0;
+                $specProbNodes{$specProb} = [];
+            }
+            $specProbCount{$specProb} += $r_alarmStats->{$node}->{'specprob'}->{$specProb};
+            push @{$specProbNodes{$specProb}}, $node;
+        }
+    }
+
+    my @sortedKeys = ();
+    getKeysSortedByValue( \%specProbCount, \@sortedKeys );
+    my $fileName = $outputdir . "/" . $filePrefix . "StatsSpecProblemTable.html";
+    open TABLE, ">$fileName" or die "Cannot open $fileName";
+    foreach my $specProb ( @sortedKeys )
+    {
+        my %countByNode = ();
+        foreach my $node ( @{$specProbNodes{$specProb}} )
+        {
+            $countByNode{$node} = $r_alarmStats->{$node}->{'specprob'}->{$specProb};
+        }
+        my @sortedNodes = ();
+        getKeysSortedByValue( \%countByNode, \@sortedNodes );
+
+        printf TABLE " <tr> <td>%d<\/td> <td>%s<\/td> <td>", $specProbCount{$specProb}, $specProb;
+
+        for ( my $i = 0; ($i < $topN) && ($i <= $#sortedNodes); $i++ )
+        {
+            if ( $i > 0 )
+            {
+                print TABLE ", ";
+            }
+            printf TABLE "%s(%d)", $sortedNodes[$i], $countByNode{$sortedNodes[$i]}
+        }
+        print TABLE "<\/td> <\/tr>\n";
+    }
+    close TABLE;
+
+
+    #
+    # Output alarms by Network Element
+    #
+    my %nodeCount = ();
+    foreach my $node ( keys %{$r_alarmStats} )
+    {
+        my $nodeTotal = 0;
+        foreach my $specProb ( keys %{$r_alarmStats->{$node}->{'specprob'}} )
+        {
+            $nodeTotal += $r_alarmStats->{$node}->{'specprob'}->{$specProb};
+        }
+        $nodeCount{$node} = $nodeTotal;
+    }
+
+    @sortedKeys = ();
+    getKeysSortedByValue( \%nodeCount, \@sortedKeys );
+
+    $fileName = $outputdir . "/" . $filePrefix . "StatsNETable.html";
+    open TABLE, ">$fileName" or die "Cannot open $fileName";
+
+    $fileName = $outputdir. "/" . $filePrefix . "StatsNETableByEventType.html";
+    open TABLE_EVENT_TYPE, ">$fileName" or die "Cannot open $fileName";
+
+    print TABLE_EVENT_TYPE "<table border>\n";
+    print TABLE_EVENT_TYPE " <tr> <th>Node</th> <th>New</th> <th>Changed</th> <th>Ack State Changed</th> <th>Cleared</th> <th>Alarm List Rebuilt</th> </tr>\n";
+    foreach my $node ( @sortedKeys )
+    {
+        my @sortedSpecProb = ();
+        getKeysSortedByValue( \%{$r_alarmStats->{$node}->{'specprob'}}, \@sortedSpecProb );
+
+        printf TABLE " <tr> <td>%d<\/td> <td>%s<\/td> <td>", $nodeCount{$node}, $node;
+        for ( my $i = 0; ($i < $topN) && ($i <= $#sortedSpecProb); $i++ )
+        {
+            if ( $i > 0 )
+            {
+                print TABLE ", ";
+            }
+            printf TABLE "%s(%d)", $sortedSpecProb[$i], $r_alarmStats->{$node}->{'specprob'}->{$sortedSpecProb[$i]};
+        }
+        print TABLE "<\/td> <\/tr>\n";
+
+        my @statsCols = ();
+        for ( my $eventType = 1; $eventType <= 5; $eventType++ ) {
+            my $count = $r_alarmStats->{$node}->{'eventtype'}->{$eventType};
+            if ( defined $count ) {
+                push @statsCols, sprintf("<td>%d</td>",$count);
+            } else {
+                push @statsCols, "<td></td>";
+            }
+        }
+        printf TABLE_EVENT_TYPE " <tr> <td>%s</td> %s <tr>\n", $node, join(" ", @statsCols);
+    }
+
+    close TABLE;
+
+    print TABLE_EVENT_TYPE "</table>\n";
+    close TABLE_EVENT_TYPE;
+
+
+    #
+    # Output overall statistics
+    # removed due to conflict with DB stats
+    #
+}
+
+sub getMeType
+{
+    my ($fdn,$r_onrm) = @_;
+
+    if ( $DEBUG > 8 ) { print ("getMeType: fdn=$fdn\n"); }
+
+    my ($meContext,$manElm,$meId);
+
+    if ( $fdn =~ /ManagedElement/ )
+    {
+        ($meContext,$meId) = $fdn =~ /^(.*),ManagedElement=([^,]+).*$/;
+        $manElm = $meContext . ",ManagedElement=" . $meId;
+    }
+    else
+    {
+        if ( $DEBUG > 7 ) { print "getMeType: No ManagedElement in $fdn, assuming ManagedElement=1\n"; }
+        $meContext = $fdn;
+        $manElm = $fdn . ",ManagedElement=1";
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("getMeType: manElm=$manElm", $r_onrm->{$manElm}); }
+    my $nodeType = $r_onrm->{$manElm}->{'mtype'};
+    if ( ! $nodeType ) {
+        if ($DEBUG > 7 ) { print "no nodeType for " . $meContext . "\n";
+            my $count = keys %{$r_onrm->{$manElm}};
+            if ($count == 0) {
+                print "empty ONRM data structure\n";
+            }
+        }
+        $nodeType = "UNKNOWN_NODE_TYPE";
+    }
+    if ( $DEBUG > 7 ) { print "getMeType nodeType=$nodeType fdn=$fdn\n"; }
+    return $nodeType;
+}
+
+sub getTimeDelta
+{
+    my ($eventTimeStamp,$alarmDate,$alarmTime,$tzOffset) = @_;
+
+    my ($fmDay,$fmMon,$fmYear,$fmHour,$fmMin,$fmSec) = $eventTimeStamp =~
+    /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d{2,2}):(\d{2,2}):(\d{2,2})/;
+    my $fmDate = sprintf("20%02d.%02d.%02d", $fmYear, $fmMon, $fmDay);
+    if ( $DEBUG > 9 ) { print "getTimeDelta: fmDate=$fmDate fmFields = $fmDay,$fmMon,$fmYear,$fmHour,$fmMin,$fmSec\n"; }
+    my $fmTimestamp = getTime($fmDate);
+    $fmTimestamp += ( (($fmHour * 60) + $fmMin) * 60 ) + $fmSec;
+
+    my ($nodeHour,$nodeMin,$nodeSec) = $alarmTime =~ /^(\d{2,2}):(\d{2,2}):(\d{2,2})/;
+    my $nodeTimestamp = getTime($alarmDate);
+    $nodeTimestamp += ($nodeHour * 3600) + ($nodeMin * 60) + $nodeSec + ($tzOffset * 60);
+    if ( $DEBUG > 8 ) { print "getTimeDelta: nodeTimestamp=", (scalar localtime($nodeTimestamp)), "\n"; }
+
+    my $delta = $fmTimestamp - $nodeTimestamp;
+    if ( $DEBUG > 8 ) { print "getTimeDelta: eventTimeStamp=$eventTimeStamp($fmTimestamp) alarmDate=$alarmDate alarmTime=$alarmTime($nodeTimestamp) tzOffset=$tzOffset delta=$delta\n"; }
+    return $delta;
+}
+
+sub getTime
+{
+    my ($date) = @_;
+
+    if ( ! exists $TIMES{$date} )
+    {
+        my ($year,$month,$day) = split /\./, $date;
+        if ( $DEBUG > 9 ) { print "getTime: date=$date $year,$month,$day\n"; }
+        $TIMES{$date} = timelocal(0,0,0,$day,$month-1,$year-1900);
+    }
+
+    if ( $DEBUG > 9 ) { print "getTime: $date=$TIMES{$date}\n"; }
+    return $TIMES{$date};
+}
+
+sub read1z1Events
+{
+    my($events1z1File,$r_onrm,$tzOffset,$r_alarmStats) = @_;
+
+    open ALARM_EVENTS, $events1z1File or die "Cannot open eventsFile $events1z1File";
+    while ( my $line = <ALARM_EVENTS> )
+    {
+        if ( $line =~ /^([\d\-:\.]+) \S+ 1z1/ )
+        {
+            my $eventTimeStamp = $1;
+
+            if ( $DEBUG > 8 ) { print "read1z1Events: $line"; }
+
+
+            my ($specProb,$moInst);
+            while ( defined($line = <ALARM_EVENTS>) && !($line =~ /^\s+$/) )
+            {
+                if ( $DEBUG > 8 ) { print "read1z1Events: $line"; }
+                if ( $line =~ /^\s+i=/ ) # Specific problem
+                {
+                    ($specProb) = $line =~ /^\s+i=\"(.*)\"$/;
+                }
+                elsif ( $line =~ /^\s+f=\"(.*)\"$/ )
+                {
+                    ($moInst) = $1;
+                    if ( $DEBUG > 6 ) { print "readAlarmEvents: moInst=$moInst\n"; }
+                }
+            }
+
+            if ( (defined $specProb) && (defined $moInst) )
+            {
+                my $nodeType = getMeType($moInst,$r_onrm);
+                my $node;
+                if ( $moInst =~ /,MeContext=([^,]+)/ )
+                {
+                    $node = $1;
+                }
+                elsif ( $moInst =~ /,ManagedElement=([^,]+)/ )
+                {
+                    $node = $1;
+                }
+                else
+                {
+                    $node = 'OSS';
+                }
+
+                if ( $DEBUG > 5 ) { print "read1z1Events: node=$node nodeType=$nodeType\n"; }
+
+                $r_alarmStats->{$node}->{'specprob'}->{$specProb}++;
+                $r_alarmStats->{$node}->{'type'} = $nodeType;
+            }
+            else
+            {
+                #print "\"$specProb\" \"$alarmId\"\n";
+                next;
+            }
+        }
+    }
+    close ALARM_EVENTS;
+
+    if ( $DEBUG > 5 ) { print Dumper( "read1z1Events: alarmStats", $r_alarmStats); }
+}
+
+sub processHeartBeat {
+    my ($r_Events,$dataFile,$tableFile) = @_;
+
+    my %nodeMap = (); # Maps node name to number, gives position in graph
+    my @nodes = ();   # List of nodes, postion in array = value in nodeMap, contains counters for conn/disc
+    my $hasConnectEvents = 0;
+    my @discLines = ();
+
+    open PLOT_DATA, ">$dataFile" or die "Cannot open $dataFile";
+
+    foreach my $r_Event ( @{$r_Events} )
+    {
+        if ( $DEBUG > 6 ) { print Dumper("processHeartBeat: r_Event", $r_Event); }
+
+        my $nodeNumber = $nodeMap{$r_Event->{'node'}};
+        if ( ! $nodeNumber )
+        {
+            my $r_Node = {
+                'name' => $r_Event->{'node'},
+                'conn' => 0,
+                'disc' => 0
+                };
+            push @nodes, $r_Node;
+
+            $nodeNumber = $#nodes + 1;
+            $nodeMap{$r_Event->{'node'}} = $nodeNumber;
+
+            if ( $DEBUG > 3 ) { print "processHeartBeat: Assigning $nodeNumber to $r_Event->{'node'}\n"; }
+        }
+
+        my $eventLine = sprintf("%s %d %s %d\n",
+                                $r_Event->{'timestamp'},
+                                $nodeNumber,
+                                $r_Event->{'node'},
+                                $r_Event->{'connectionStatus'});
+        if ( $DEBUG > 5 ) { print "processHeartBeat: eventLine=$eventLine\n"; }
+
+        if ( $r_Event->{'connectionStatus'} ==  $alarmConsts::ALARM_CLEARED )
+        {
+            $nodes[$nodeNumber-1]->{'conn'}++;
+            $hasConnectEvents = 1;
+            print PLOT_DATA $eventLine;
+        }
+        elsif ( $r_Event->{'connectionStatus'} == $alarmConsts::ALARM_NEW )
+        {
+            $nodes[$nodeNumber-1]->{'disc'}++;
+            push @discLines, $eventLine;
+        }
+        elsif ( $r_Event->{'connectionStatus'} != $alarmConsts::ALARM_ACK )
+        {
+            print Dumper("unknown connectionStatus", $r_Event);
+        }
+    }
+
+    if ( $hasConnectEvents )
+    {
+        print PLOT_DATA "\n\n";
+    }
+    foreach my $eventLine ( @discLines )
+    {
+        print PLOT_DATA $eventLine;
+    }
+    close PLOT_DATA;
+
+    open TABLE, ">$tableFile" or die "Cannot open $tableFile";
+    for ( my $i = 0; $i <= $#nodes; $i++ )
+    {
+        my $r_Node = $nodes[$i];
+
+        printf TABLE " <tr> <td>%d</td> <td>%s</td> <td>%d</td> <td>%d</td> </tr>\n",
+        $i + 1, $r_Node->{name}, $r_Node->{conn}, $r_Node->{disc};
+    }
+    close TABLE;
+}
+
+sub getSybTime($) {
+    my ($timeStr) = @_;
+
+    my ($month,$day,$year,$hour,$min,$sec,$ampm) = $timeStr =~
+        /^(\S+)\s+(\d+)\s+(\d+)\s+(\d+):(\d+):(\d+):\d+(\S+)$/;
+    if ( $ampm eq "PM" ) {
+        if ( $hour != 12 ) {
+            $hour += 12;
+        }
+    } elsif ( $hour == 12 ) {
+        $hour = 0;
+    }
+
+    return ($hour * 3600) + ($min * 60) + $sec;
+}
+
+sub getSyncsByNode($) {
+    my ($alarmLog) = @_;
+
+    setAlarmLog_Debug($DEBUG);
+    if ( $DEBUG > 0 ) { print scalar localtime(time), " readLog\n"; }
+    my $r_events = readLog($alarmLog);
+    if ( $DEBUG > 0 ) { print scalar localtime(time), " processEvents\n"; }
+    my $r_syncs = processEvents($r_events);
+    if ( $DEBUG > 0 ) { print scalar localtime(time), " group By Node\n"; }
+
+    my %syncsByNode = ();
+    my $formatTimes = 0;
+    foreach my $r_sync ( @{$r_syncs} ) {
+        my $node;
+        if ( $r_sync->{'node'} =~ /,MeContext=([^,]+)/ ) {
+            $node = $1;
+        } elsif ( $r_sync->{'node'} =~ /,ManagedElement=([^,]+)/ ) {
+            $node = $1;
+        } else {
+            $node = 'OSS';
+        }
+
+        my $r_thisNodeSyncs = $syncsByNode{$node};
+        if ( ! defined $r_thisNodeSyncs ) {
+            $r_thisNodeSyncs = [];
+            $syncsByNode{$node} = $r_thisNodeSyncs;
+        }
+
+        my $startSec = getSybTime($r_sync->{'start'});
+        my $endSec = getSybTime($r_sync->{'end'});
+        if ( $startSec <= $endSec ) {
+            push @{$r_thisNodeSyncs}, [ $startSec, $endSec ];
+        }
+    }
+    if ( $DEBUG > 0 ) { print scalar localtime(time), " done in getSyncsByNode formatTimes=$formatTimes\n"; }
+
+    foreach my $node ( keys %syncsByNode ) {
+        my $r_thisNodeSyncs = $syncsByNode{$node};
+        @{$r_thisNodeSyncs} = sort { $a->[0] <=> $b->[0] } @{$r_thisNodeSyncs};
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("getSyncsByNode: r_syncsByNode", \%syncsByNode); }
+
+    return \%syncsByNode;
+}
+
+sub main() {
+    my ($eventsFile,$events1z1File,$outputdir,$aliveCount,$alarmListFile,$site,
+        $sqlDate,$onrmMe,$tzOffset,$incrFile,$hbDataFile,$hbTableFile,$alarmLog,$nodesFile);
+    my $result = GetOptions (
+        "events=s"    => \$eventsFile,
+        "outputdir=s" => \$outputdir,
+        "alarmlist=s" => \$alarmListFile,
+        "aliveCount=s" => \$aliveCount,
+        "site=s" => \$site,
+        "sqldate=s" => \$sqlDate,
+        "onrm_me=s" => \$onrmMe,
+        "nodes=s" => \$nodesFile,
+        "tzoffset=s"     => \$tzOffset,
+        "1z1=s" => \$events1z1File,
+        "incr=s" => \$incrFile,
+        "hbdata=s" => \$hbDataFile,
+        "hbtable=s" => \$hbTableFile,
+        "alarmlog=s" => \$alarmLog,
+        "debug=s"       => \$DEBUG
+    );
+    ($result == 1) or die("Invalid args");
+    setStatsDB_Debug($DEBUG);
+    
+    my %onrm = ();
+    if ( defined $onrmMe ) {
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " Loading ONRM\n"; }
+        loadONRM($onrmMe,\%onrm);
+    } elsif ( defined $nodesFile ) {
+        loadNodes($nodesFile,\%onrm);
+    } else {
+        print "WARNING: no onrm_me.txt file passed, therefore alarm counts per node type cannot be calculated\n";
+    }
+
+    if ( (defined $alarmListFile) && (-r $alarmListFile) ) {
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " processAlarmList\n"; }
+        processAlarmList($alarmListFile,\%onrm,$outputdir);
+    }
+
+    my $r_syncsByNode = undef;
+    if ( defined $alarmLog ) {
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " getSyncsByNode\n"; }
+        $r_syncsByNode = getSyncsByNode($alarmLog);
+    }
+
+    if (defined $tzOffset) {
+        if ( $tzOffset =~ /^[-\d]+$/ ) {
+            $tzOffset = $tzOffset * 60;
+        } elsif ( $tzOffset =~ /^([-+])(\d{2}):(\d{2})$/ ) {
+            my ($sign,$hour,$min) = ($1,$2,$3);
+            $tzOffset = ($hour * 60) + $min;
+            if ( $sign eq '-') {
+                $tzOffset = 0 - $tzOffset;
+            }
+        }
+    }
+
+    my %alarmStats = ();
+    my %instr = ();
+    my @hbEvents = ();
+    if ( defined $eventsFile ) {
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " readAlarmEvents\n"; }
+        readAlarmEvents($eventsFile, $outputdir,\%onrm, $tzOffset,\%alarmStats,
+                        \%instr, \@hbEvents, $incrFile,$r_syncsByNode);
+
+        my %eventTotals = ();
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " calTotalsByMeType\n"; }
+        calTotalsByMeType(\%alarmStats,\%eventTotals);
+
+        if ( defined $outputdir ) {
+            if ( $DEBUG > 0 ) { print scalar localtime(time), " printAlarmStats\n"; }
+            printAlarmStats(\%alarmStats,$aliveCount,(defined $onrmMe), \%eventTotals, $outputdir, "alarm");
+        }
+
+        if ( defined $site ) {
+            if ( $DEBUG > 0 ) { print scalar localtime(time), " storeStats\n"; }
+            storeStats(\%eventTotals,\%onrm,$site,$sqlDate,\%instr);
+        }
+
+        if ( defined $hbDataFile ) {
+            processHeartBeat(\@hbEvents,$hbDataFile,$hbTableFile);
+        }
+    }
+
+
+    my %stats1z1 = ();
+    if ( defined $events1z1File )
+    {
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " read1Z1\n"; }
+        read1z1Events($events1z1File, \%onrm, $tzOffset,\%stats1z1);
+
+        my %eventTotals = ();
+        if ( $DEBUG > 0 ) { print scalar localtime(time), " calTotalsByMeType\n"; }
+        calTotalsByMeType(\%stats1z1,\%eventTotals);
+
+        if ( $outputdir )
+        {
+            if ( $DEBUG > 0 ) { print scalar localtime(time), " printAlarmStats\n"; }
+            printAlarmStats(\%stats1z1,$aliveCount,($onrmMe ne ""), \%eventTotals, $outputdir, "1z1");
+        }
+    }
+}
+main();

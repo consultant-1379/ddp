@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <xs:complexType name="propertybase" abstract="true">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="fixedproperty">
+    <xs:complexContent>
+      <xs:extension base="propertybase">
+        <xs:attribute name="value" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:element name="modelledevents">
+    <xs:complexType>
+      <xs:all>
+
+        <!--
+             The services is used to restrict what servers we look for the events from
+
+             For example, the services section below restricts us to looking at servers
+             that have a service group of either comecimmscm or mscmapg
+             <services>
+              <service name="comecimmscm"/>
+              <service name="mscmapg"/>
+             </services>
+        -->
+        <xs:element name="services" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="service" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="hooks" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="hook" minOccurs="1">
+                <xs:simpleType>
+                  <xs:restriction base="xs:string">
+                    <xs:enumeration value="preprocess"/>
+                  </xs:restriction>
+                </xs:simpleType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="module" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+
+        <!--
+             The table section is used to identify the database table where the
+             data from the events is stored. The table name is specified with the
+             name attribute
+             Foreign keys references are specified using the keycol element
+             If the table uses something other then "time" for the name of the
+             time column, then you can specify the column name using the "timecol"
+             attribute
+
+             For example, the table section below specifies
+             - Load the event data into the database table enm_ecim_syncs
+             - The time column in the enm_ecim_syncs is called "start"
+             - The table has two foreign key references
+               - severid refers to servers.id
+               - neid refers to enm_ne.id
+             <table name="enm_ecim_syncs" timecol="start">
+              <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+              <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+             </table>
+        -->
+        <xs:element name="table" minOccurs="1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="keycol" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                  <xs:attribute name="reftable" type="xs:string" use="required"/>
+                  <xs:attribute name="refnamecol" type="xs:string" default="name"/>
+                  <xs:attribute name="reffiltercol" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="timecol" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+
+        <!--
+            The merge section allows us to specify that all events that have
+            the same values for the fields listed in the grouping section, should be
+            merged into a single event called _MERGED
+            The _MERGE event contains all the fields from the individual events, where
+            the name of the field in the _MERGED event is <SourceEventName>.<FieldName>,
+            e.g. status in BULK_CMIMPORT.importJobParameters would be
+            BULK_CMIMPORT.importJobParameters.status in the _MERGED event
+
+            For example, the merge section below will merge all events that have the
+            same value for the jobId field
+
+            <merge>
+             <grouping>
+              <groupby name="jobId"/>
+             </grouping>
+            </merge>
+        -->
+        <xs:element name="merge" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="grouping" minOccurs="1">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="groupby" minOccurs="1" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <!--
+            The aggregate setion allows you to perform aggregation on a number of events
+            before they are loaded into the database
+            Events are grouped by the fields specified in the the grouping section and
+            the time period. The granularity of the time period is controlled by the
+            interval attribute and defaults to 1 minute
+            Each field name by an aggregation will have the specified aggregation performed
+
+            For example, the aggregate block below will aggregate all events in the day
+            (1440 minutes = 1 day), grouped by the eventid field, with the count field holding
+            the sum of all the count fields in the group (events with the same eventid)
+
+            <aggregate interval="1440">
+             <grouping>
+              <groupby name="eventid"/>
+             </grouping>
+             <aggregations>
+              <aggregation name="count" type="sum"/>
+             </aggregations>
+            </aggregate>
+        -->
+        <xs:element name="aggregate" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="grouping" minOccurs="1">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="groupby" minOccurs="1" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                        <xs:attribute name="mandatory" type="xs:boolean" default="true"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="aggregations" minOccurs="1">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="aggregation" minOccurs="1" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="type" use="required">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="count"/>
+                              <xs:enumeration value="sum"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="interval" type="xs:integer"/>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="events" minOccurs="1" >
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="event" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="metric" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <!--
+                          The source of the metric value. Normally this just refers to the name of a metric
+                          contained in the input data
+
+                          The are some "pseudo" source options
+                          - host: The hostname that logged the entry
+                          - eventname: The event name for the log entry
+                          - eventtime: The event time for the log entry
+                          - servicegroup: The servicegroup name of the host that logged the entry
+                        -->
+                        <xs:attribute name="source" type="xs:string" use="required"/>
+                        <xs:attribute name="target" type="xs:string" use="required"/>
+                        <xs:attribute name="scale" type="xs:decimal"/>
+                        <xs:attribute name="store" type="xs:boolean" default="true"/>
+                        <!--
+                          filtervalue: drop events that don't match the regex pattern
+                          if there are multiple metrics with filtervalue, then if any
+                          metric doesn't match, the event is dropped
+                        -->
+                        <xs:attribute name="filtervalue" type="xs:string"/>
+                        <!--
+                          filteridle: drop event if all the metrics with filteridle="true" are zero
+                        -->
+                        <xs:attribute name="filteridle" type="xs:boolean" default="false"/>
+                        <xs:attribute name="convert">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="tostring" />
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="property" type="propertybase" minOccurs="0" maxOccurs="unbounded"/>
+                  </xs:sequence>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                  <xs:attribute name="time_source" type="xs:string"/>
+                  <xs:attribute name="explode_array" type="xs:string"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

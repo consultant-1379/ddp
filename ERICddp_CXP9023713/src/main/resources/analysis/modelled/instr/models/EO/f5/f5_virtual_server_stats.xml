@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^f5instr@f5virtualstats$">
+
+  <table name="f5_virtual_stats">
+    <keycol name="virtualid" reftable="f5_virtual_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>virtualid</multi>
+
+    <metricgroup name="^F5virtualstats-(\S+)">
+      <metric source="clientside.bitsOut" target="clientsidekbitsout" delta="true" scale="1000" rate="true"/>
+      <metric source="clientside.bitsIn" target="clientsidekbitsin" delta="true" scale="1000" rate="true"/>
+      <metric source="clientside.totConns" target="clientsidetotconns" delta="true"/>
+      <metric source="clientside.slowKilled" target="clientsideslowkilled" delta="true"/>
+      <metric source="clientside.evictedConns" target="clientsideevictedconn" delta="true"/>
+      <metric source="ephemeral.bitsOut" target="ephemeralkbitsout" delta="true" scale="1000" rate="true"/>
+      <metric source="ephemeral.bitsIn" target="ephemeralkbitsin" delta="true" scale="1000" rate="true"/>
+      <metric source="ephemeral.totConns" target="ephemeraltotconns" delta="true"/>
+      <metric source="ephemeral.slowKilled" target="ephmeralslowkilled" delta="true"/>
+      <metric source="ephemeral.evictedConns" target="ephmeralevictedconns" delta="true"/>
+      <metric source="totRequests" target="totrequests" delta="true"/>
+      <property name="virtualid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

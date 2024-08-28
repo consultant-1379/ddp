@@ -1,0 +1,96 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use Time::Local;
+
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main {
+    my ($site, $utilVer, $date, $lastSarDataTime, $collStart);
+    my $result = GetOptions(
+        "site=s"            => \$site,
+        "utilver=s"         => \$utilVer,
+        "date=s"            => \$date,
+        "lastSarDataTime=s" => \$lastSarDataTime,
+        "collstart=s"         => \$collStart,
+        "debug=s"           => \$DEBUG
+    );
+    ( $result == 1 ) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+    # Get the last SAR data availability time from DB, if it's not available as the input argument
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+
+    if ( defined $lastSarDataTime && $lastSarDataTime =~ /^\d{2}:\d{2}:\d{2}$/ ) {
+        $lastSarDataTime = $date . ' ' . $lastSarDataTime;
+        print "Fetched the last SAR data availability time from MS 'sar.txt': $lastSarDataTime\n";
+    } elsif ( defined $collStart && $collStart =~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/ ) {
+        $lastSarDataTime = $collStart;
+        print "Fetched the last SAR data availability time from collStart\n";
+    } else {
+        my $query = <<"END_SQL";
+SELECT MAX(hires_server_stat.time)
+FROM hires_server_stat
+WHERE
+ hires_server_stat.siteid = $siteId AND
+ hires_server_stat.time BETWEEN '$date 00:00:00' AND '$date 23:59:59'
+END_SQL
+        my $r_rows = dbSelectAllArr($dbh, $query);
+        if ( $#{$r_rows} == 0 ) {
+            $lastSarDataTime = $r_rows->[0]->[0];
+            print "Fetched the last SAR data availability time from DB: $lastSarDataTime\n";
+        }
+    }
+
+    # Use the default '$date 00:00:00' if we still don't have valid last SAR data availability time
+    if ( (!defined $lastSarDataTime) || ($lastSarDataTime !~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/) ) {
+        $lastSarDataTime = "$date 00:00:00";
+        print "Unable to fetch last SAR data availability time. Using '$lastSarDataTime' instead...\n";
+    }
+
+
+    # Get the last data availability time from DB
+    my $previousLastSarDataTime = "";
+    my $sth = $dbh->prepare('SELECT lastupload FROM sites WHERE name=?')
+        or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute($site)
+        or die "Couldn't execute statement: " . $sth->errstr;
+    if ( $sth->rows == 0 ) {
+        die "no such site: " . $site;
+    }
+    else {
+        my @data = $sth->fetchrow_array();
+        $previousLastSarDataTime = $data[0];
+    }
+    $sth->finish;
+
+
+    # Update 'Site' details under DB with recent 'Util Version' & 'Last SAR Data Availabilty Time'
+    if ( $lastSarDataTime ge $previousLastSarDataTime ) {
+        my $sql = "UPDATE sites SET utilver='$utilVer', lastupload='$lastSarDataTime' WHERE name='$site'";
+        print "sql = $sql\n"    if ( $DEBUG );
+        $dbh->do($sql)
+            or die "Failed to update the 'Util Version' & 'Last SAR Data Availabilty Time' details for $site under DB";
+    }
+
+    my $sql = undef;
+    my $r_rows = dbSelectAllArr($dbh,"SELECT COUNT(*) FROM site_data WHERE site_data.siteid = $siteId AND site_data.date = '$date'");
+    if ( $r_rows->[0]->[0] == 0 ) {
+        $sql = "INSERT INTO site_data (siteid, date, dataAvailabilityTime) VALUES($siteId, '$date', '$lastSarDataTime')";
+    } else {
+        $sql = "UPDATE site_data SET dataAvailabilityTime = '$lastSarDataTime' WHERE siteid = $siteId AND date = '$date'";
+    }
+    dbDo( $dbh, $sql ) or die "Failed to store in site_data";
+    $dbh->disconnect;
+}
+

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@logtransformer"
+    >
+
+  <table name="logtransformer">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="stats">
+      <metric source="lt_events_in" target="events_in" delta="true" filteridle="true"/>
+      <metric source="lt_events_out" target="events_out" delta="true" filteridle="true"/>
+      <metric source="lt_events_duration_millis" target="events_duration_millis" delta="true" filteridle="true"/>
+      <metric source="lt_pipelines_events_in" target="pipelines_events_in" delta="true" filteridle="true"/>
+      <metric source="lt_pipelines_events_out" target="pipelines_events_out" delta="true" filteridle="true"/>
+      <metric source="lt_pipelines_queue_size" target="pipelines_queue_size_mb" filteridle="true" scale="1048576"/>
+      <metric source="lt_pipelines_events_duration_millis" target="pipelines_events_duration_millis" delta="true" filteridle="true"/>
+      <metric source="lt_pipelines_events_queue_push_duration" target="pipelines_events_queue_push_duration" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

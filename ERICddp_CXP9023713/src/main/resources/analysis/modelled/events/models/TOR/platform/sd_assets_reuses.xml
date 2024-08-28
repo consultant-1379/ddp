@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_sd_assets">
+  </table>
+
+  <events>
+    <!-- ENM_SD_ASSETS.EXECUTION {"ASSET":"CTAF_TESTS", "TOTAL":"6", "PASS":"2", "FAIL":"4"} -->
+    <event name="ENM_SD_ASSETS.EXECUTION">
+      <metric source="ASSET" target="asset"/>
+      <metric source="TOTAL" target="total"/>
+      <metric source="PASS" target="pass"/>
+      <metric source="FAIL" target="fail"/>
+    </event>
+  </events>
+</modelledevents>

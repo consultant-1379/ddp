@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="cm_export" timecol="export_end_date_time">
+    <keycol name="typeid" reftable="cm_export_types"/>
+    <keycol name="filter_choice_nameid" reftable="cm_export_filter_choice_names"/>
+    <keycol name="source_nameid" reftable="cm_export_source_names"/>
+  </table>
+
+  <services>
+    <service name="importexportservice"/>
+  </services>
+
+  <merge>
+    <grouping>
+      <groupby name="jobId"/>
+    </grouping>
+  </merge>
+
+  <events>
+      <event name="EXPORT_SERVICE.COMPLETED"/>
+      <event name="EXPORT_MERGE_FILES"/>
+      <event name="_MERGED">
+        <metric source="jobId" target="jobid"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.batchStatus" target="status"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.exportType" target="typeid"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.expectedNodesExported" target="expected_nodes"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.nodesExported" target="exported"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.nodesNotExported" target="not_exported"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.nodesNoMatchFound" target="nodes_no_match_found"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.MOsExported" target="total_mos"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.exportFile" target="export_file"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.jobName" target="job_name"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.source" target="source_nameid"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.filterChoice" target="filter_choice_nameid"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.masterServerId" target="master_server_id"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.exportNonSynchronizedNodes" target="export_non_synchronized_nodes"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.compressionType" target="compression_type"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.elapsedTime" target="elapsedTime"/>
+        <metric source="EXPORT_SERVICE.COMPLETED.dpsReadDuration" target="dpsReadDuration"/>
+        <metric source="EXPORT_MERGE_FILES.mergeDuration" target="merge_duration"/>
+        <metric source="EXPORT_MERGE_FILES.mergeStartTime" target="merge_start_time"/>
+      </event>
+  </events>
+</modelledevents>

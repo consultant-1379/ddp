@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_pm_events_jdbc_updates">
+  <reference table="sites" condition="ecson_pm_events_jdbc_updates.siteid = sites.id"/>
+  <reference table="event_type_names" condition="ecson_pm_events_jdbc_updates.typeid = event_type_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_pm_events_jdbc_updates.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="event_type_names.name"/>
+ </groupby>
+
+ <column db="event_type_names.name" label="Type Name"/>
+ <column db="SUM(ecson_pm_events_jdbc_updates.jdbcUpdates)" label="Total JDBC Updates"/>
+ <column db="SUM(ecson_pm_events_jdbc_updates.failedJdbcUpdates)" label="Total Failed JDBC Updates"/>
+
+</modelledtable>

@@ -1,0 +1,23 @@
+#!/bin/sh
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+DATA_DIR=$1
+OUTPUT_DIR=$2
+DASH_DATE=$3
+SITE=$4
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ -r ${TMP_DIR}/lvlog/cms_snad_reg ] ; then
+    ${ANALYSIS_BIN}/cms/processSnadConCheck --input ${TMP_DIR}/lvlog/cms_snad_reg --site ${SITE}
+fi
+
+${ANALYSIS_BIN}/server/plotHeap ${DATA_DIR}/instr.txt cms_snad_reg ${DASH_DATE} ${OUTPUT_DIR}/cms/snad_heap.jpg 1,0.5
+
+${ANALYSIS_BIN}/cms/parseSnadInstr --data ${DATA_DIR}/instr.txt --cfg ${DATA_DIR}/instr/oss.xml --site ${SITE}
+

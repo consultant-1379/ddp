@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  namespace="prometheus@enm_lvs_stats"
+  sampleinterval="900">
+
+  <hooks module="TOR::platform::LvsStats">
+    <hook>prestore</hook>
+  </hooks>
+
+  <table name="enm_lvs_stats">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <multi>lhost</multi>
+    <multi>lport</multi>
+    <multi>rhost</multi>
+    <multi>rport</multi>
+    <multi>proto</multi>
+    <metricgroup name="^eric_l4_external_address:(\S+):(\S+):(\S+):(\S+):(\S+)">
+      <metric source="eric_l4_external_address_connections" target="conns"/>
+      <metric source="eric_l4_external_address_packets_received" target="inpkts" delta="true" filteridle="true"/>
+      <metric source="eric_l4_external_address_packets_sent" target="outpkts" delta="true" filteridle="true"/>
+      <metric source="eric_l4_external_address_bytes_received" target="inbytes" delta="true" filteridle="true"/>
+      <metric source="eric_l4_external_address_bytes_sent" target="outbytes" delta="true" filteridle="true"/>
+      <property name="lhost" xsi:type="multilabelproperty" label="external_address" index="1"/>
+      <property name="lport" xsi:type="multilabelproperty" label="external_port" index="2"/>
+      <property name="rhost" xsi:type="multilabelproperty" label="backend_pod_address" index="3"/>
+      <property name="rport" xsi:type="multilabelproperty" label="backend_pod_port" index="4"/>
+      <property name="proto" xsi:type="multilabelproperty" label="protocol" index="5"/>
+    </metricgroup>
+
+  </metricgroups>
+
+</modelledinstr>
+

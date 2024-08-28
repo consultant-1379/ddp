@@ -1,0 +1,113 @@
+{
+    "podstatus": {},
+    "events": [],
+    "helm": [
+        {
+            "data": {
+                "release": {
+                    "chart": {
+                        "files": [
+                            {
+                                "data": "LmdpdApPV05FUlM=",
+                                "name": ".helmignore"
+                            }
+                        ],
+                        "lock": {
+                            "dependencies": [
+                                {
+                                    "name": "eric-ctrl-bro",
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm/",
+                                    "version": "4.5.0+47"
+                                },
+                                {
+                                    "name": "eric-enm-version-configmap",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "version": "1.12.0-1"
+                                }
+                            ],
+                            "digest": "sha256:33fb53b3d950d8680b2aee98bd6ae1c5c0fb52896fa0af92c1d095312d304e18",
+                            "generated": "2021-10-06T13:12:49.057458934Z"
+                        },
+                        "metadata": {
+                            "apiVersion": "v2",
+                            "appVersion": "1.0",
+                            "dependencies": [
+                                {
+                                    "condition": "eric-ctrl-bro.enabled",
+                                    "enabled": true,
+                                    "name": "eric-ctrl-bro",
+                                    "repository": "https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm/",
+                                    "version": "4.5.0+47"
+                                },
+                                {
+                                    "condition": "eric-enm-version-configmap.enabled",
+                                    "enabled": true,
+                                    "name": "eric-enm-version-configmap",
+                                    "repository": "https://arm.epk.ericsson.se/artifactory/proj-enm-helm/",
+                                    "version": "1.12.0-1"
+                                }
+                            ],
+                            "description": "A Helm chart for bro-integration",
+                            "name": "eric-enm-bro-integration",
+                            "version": "1.11.7-0"
+                        },
+                        "schema": null
+                    },
+                    "info": {
+                        "deleted": "",
+                        "description": "Upgrade complete",
+                        "first_deployed": "2021-09-09T00:06:18.285112176-07:00",
+                        "last_deployed": "2021-10-14T02:19:32.050767945-07:00",
+                        "notes": "This is eric-enm-bro-integration Helm Installation!\nYour chart has been successfully released.\n\nTo check it's state, run:\n\n  helm status eric-enm-bro-integration-pon01\n",
+                        "status": "deployed"
+                    },
+                    "name": "eric-enm-bro-integration-pon01",
+                    "namespace": "pon01",
+                    "version": 3
+                }
+            },
+            "metadata": {
+                "creationTimestamp": "2021-10-14T09:18:12Z",
+                "labels": {
+                    "modifiedAt": "1634203172",
+                    "name": "eric-enm-bro-integration-pon01",
+                    "owner": "helm",
+                    "status": "deployed",
+                    "version": "3"
+                },
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:data": {
+                                ".": {},
+                                "f:release": {}
+                            },
+                            "f:metadata": {
+                                "f:labels": {
+                                    ".": {},
+                                    "f:modifiedAt": {},
+                                    "f:name": {},
+                                    "f:owner": {},
+                                    "f:status": {},
+                                    "f:version": {}
+                                }
+                            },
+                            "f:type": {}
+                        },
+                        "manager": "helm",
+                        "operation": "Update",
+                        "time": "2021-10-14T09:18:12Z"
+                    }
+                ],
+                "name": "sh.helm.release.v1.eric-enm-bro-integration-pon01.v3",
+                "namespace": "pon01",
+                "resourceVersion": "34776591",
+                "selfLink": "/api/v1/namespaces/pon01/secrets/sh.helm.release.v1.eric-enm-bro-integration-pon01.v3",
+                "uid": "93015506-4a2c-41c4-a404-0863ade22eb4"
+            },
+            "type": "helm.sh/release.v1"
+        }
+    ]
+}

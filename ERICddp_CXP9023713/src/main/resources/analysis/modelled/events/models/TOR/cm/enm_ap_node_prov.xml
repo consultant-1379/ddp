@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_ap_node_prov" timecol="date" />
+
+  <services>
+    <service name="autoprovisioning"/>
+    <service name="consautoprov"/>
+  </services>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="ACTIVITY_TYPE"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="OTHER" type="sum"/>
+      <aggregation name="UNKNOWN" type="sum"/>
+      <aggregation name="ECT" type="sum"/>
+      <aggregation name="PCI" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+    <!-- AUTO_PROVISIONING.NODE_PROVISIONING_TOOL {"OTHER":[NUM],"UNKNOWN":[NUM],"ACTIVITY_TYPE":"greenfield","_Thread":"EJB async - [NUM]","ECT":[NUM],"PCI":[NUM]} -->
+    <event name="AUTO_PROVISIONING.NODE_PROVISIONING_TOOL">
+      <metric source="ACTIVITY_TYPE" target="activityType"/>
+      <metric source="OTHER" target="other"/>
+      <metric source="UNKNOWN" target="unknown"/>
+      <metric source="ECT" target="ect"/>
+      <metric source="PCI" target="pci"/>
+    </event>
+  </events>
+</modelledevents>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_cm_subscribed_events_nbi">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="cmevents"/>
+  </services>
+
+  <events>
+    <event name="CM_SUBSCRIBED_EVENTS_NBI.SUBSCRIPTION">
+      <metric source="SubscriptionId" target="subscriptionId"/>
+      <metric source="notificationTypes" target="notificationTypes" convert="tostring"/>
+      <metric source="scope" target="scope" convert="tostring"/>
+    </event>
+    <event name="CM_SUBSCRIBED_EVENTS_NBI.SUBSCRIPTION_CREATED">
+      <metric source="SubscriptionId" target="subscriptionId"/>
+      <metric source="notificationTypes" target="notificationTypes" convert="tostring"/>
+      <metric source="scope" target="scope" convert="tostring"/>
+      <property name="eventName" xsi:type="fixedproperty" value="CREATED"/>
+    </event>
+    <event name="CM_SUBSCRIBED_EVENTS_NBI.SUBSCRIPTION_DELETED">
+      <metric source="SubscriptionId" target="subscriptionId"/>
+      <property name="eventName" xsi:type="fixedproperty" value="DELETED"/>
+    </event>
+  </events>
+</modelledevents>

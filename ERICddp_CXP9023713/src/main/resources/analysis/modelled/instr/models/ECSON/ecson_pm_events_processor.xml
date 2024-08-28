@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="prometheus@ecson_pm_events_processor">
+
+  <table name="ecson_pm_events_processor"/>
+
+  <metricgroups>
+    <metricgroup name="eric-prometheus-pushgateway">
+      <metric source="number_of_incoming_events" target="incomingEvents" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>

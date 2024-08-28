@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_postgres_stats_db">
+    <reference table="sites" condition="enm_postgres_stats_db.siteid = sites.id" />
+    <reference table="servers" condition="enm_postgres_stats_db.serverid  = servers.id" />
+  </dbtables>
+
+  <param name="site" />
+  <param name="date" />
+  <where>sites.name = '%site%' AND enm_postgres_stats_db.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname" />
+  </groupby>
+
+  <order columnid="txcommit" direction="DESC" />
+
+  <column db="servers.id" label="serverid" visible="false" id="serverid" />
+  <column db="servers.hostname" label="Server" />
+  <column db="MAX(enm_postgres_stats_db.numbackends)" label="Backends" />
+  <column db="SUM(enm_postgres_stats_db.tup_inserted)" label="Rows inserted" />
+  <column db="SUM(enm_postgres_stats_db.tup_fetched)" label="Rows fetched" />
+  <column db="SUM(enm_postgres_stats_db.tup_returned)" label="Rows returned" />
+  <column db="SUM(enm_postgres_stats_db.tup_deleted)" label="Rows deleted" />
+  <column db="SUM(enm_postgres_stats_db.tup_updated)" label="Rows updated" />
+  <column db="SUM(enm_postgres_stats_db.xact_commit)" label="Tx commited" id="txcommit" />
+  <column db="SUM(enm_postgres_stats_db.xact_rollback)" label="Tx rolled back" />
+  <column db="SUM(enm_postgres_stats_db.blks_hit)" label="Blocks Hit" />
+  <column db="SUM(enm_postgres_stats_db.blks_read)" label="Blocks Read" />
+  <column db="SUM(enm_postgres_stats_db.conflicts)" label="Queries Cancelled - Conflicts" />
+  <column db="SUM(enm_postgres_stats_db.deadlocks)" label="Deadlocks" />
+  <column db="SUM(enm_postgres_stats_db.temp_bytes)" label="Temp Bytes" />
+  <column db="SUM(enm_postgres_stats_db.temp_files)" label="Temp Files" />
+
+  <ctxmenu keycol="serverid" targettype="url" multiselect="false">
+    <item id="details" label="Details" />
+    <urltarget arg="action" />
+  </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^\S+-Instrumentation@e2e_(\S+)">
+  <services>
+    <service name="sso"/>
+  </services>
+
+  <table name="enm_sso_app_openam_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.security.singlesignon.ejb.beans.instrumentation.singlesignon:type=SSOInstrumentationBean$">
+      <metric source="activeSession" target="activeSession" filteridle="true"/>
+      <metric source="localFailedUserAuth" target="localFailedUserAuth" delta="true" filteridle="true"/>
+      <metric source="localFailedUserPamAuth" target="localFailedUserPamAuth" delta="true" filteridle="true"/>
+      <metric source="localSuccessUserAuth" target="localSuccessUserAuth" delta="true" filteridle="true"/>
+      <metric source="localSuccessUserPamAuth" target="localSuccessUserPamAuth" delta="true" filteridle="true"/>
+      <metric source="remoteFailedUserAuth" target="remoteFailedUserAuth" delta="true" filteridle="true"/>
+      <metric source="remoteFailedUserPamAuth" target="remoteFailedUserPamAuth" delta="true" filteridle="true"/>
+      <metric source="remoteSuccessUserAuth" target="remoteSuccessUserAuth" delta="true" filteridle="true"/>
+      <metric source="remoteSuccessUserPamAuth" target="remoteSuccessUserPamAuth" delta="true" filteridle="true"/>
+      <metric source="unknownFailedUserAuth" target="unknownFailedUserAuth" delta="true" filteridle="true"/>
+      <metric source="unknownFailedUserPamAuth" target="unknownFailedUserPamAuth" delta="true" filteridle="true"/>
+      <metric source="minLocalLoginResponseTime" target="minLocalLoginResponseTime"/>
+      <metric source="avgLocalLoginResponseTime" target="avgLocalLoginResponseTime"/>
+      <metric source="maxLocalLoginResponseTime" target="maxLocalLoginResponseTime"/>
+      <metric source="minRemoteLoginResponseTime" target="minRemoteLoginResponseTime"/>
+      <metric source="avgRemoteLoginResponseTime" target="avgRemoteLoginResponseTime"/>
+      <metric source="maxRemoteLoginResponseTime" target="maxRemoteLoginResponseTime"/>
+      <metric source="minLocalPamResponseTime" target="minLocalPamResponseTime"/>
+      <metric source="avgLocalPamResponseTime" target="avgLocalPamResponseTime"/>
+      <metric source="maxLocalPamResponseTime" target="maxLocalPamResponseTime"/>
+      <metric source="minRemotePamResponseTime" target="minRemotePamResponseTime"/>
+      <metric source="avgRemotePamResponseTime" target="avgRemotePamResponseTime"/>
+      <metric source="maxRemotePamResponseTime" target="maxRemotePamResponseTime"/>
+      <metric source="logoutSuccessCount" target="logoutSuccessCount" delta="true" filteridle="true"/>
+      <metric source="pamValidateErrorCount" target="pamValidateErrorCount" delta="true" filteridle="true"/>
+      <metric source="pamValidateSuccessCount" target="pamValidateSuccessCount" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

@@ -1,0 +1,355 @@
+#!/usr/bin/env perl
+
+#
+# Parses the file produced by parseConfigEvents 
+#
+# File Format:
+# Each line of the file, except the last, consists for
+# timestamp[,eventIndex,eventCount,....]
+# where 
+#  timestamp is the interval start time in UNIX time
+#  eventIndex is an index in to the list of event sources
+#             (MO.attribute) which is printed on the last 
+#             line of the file
+#  eventCount is the number of events for the event source
+#             that occured during the current interval              
+
+use Getopt::Long;
+use Time::Local;
+use strict;
+use Data::Dumper;
+
+our $DEBUG=0;
+my ($dataFile,$outDir,$plotDataFile,$offset);
+my $result = GetOptions(
+			"data=s"  => \$dataFile,
+			"outputdir=s" => \$outDir,
+			"plotdata=s" => \$plotDataFile,
+			"debug=s" => \$DEBUG,
+			"offset=s" => \$offset
+			);
+
+($result == 1) or printUsageAndExit("");
+$dataFile or printUsageAndExit("No data file specified");
+(-r $dataFile) or printUsageAndExit("Cannot read dataFile \"$dataFile\"");
+$outDir or printUsageAndExit("No outputdir specified");
+(-d $outDir) or printUsageAndExit("Cannot read dir \"$outDir\"");
+
+my %eventCount = ();
+my @map = ();
+my $timeOffset = 0;
+if ( $offset )
+{
+    $timeOffset = $offset * 3600;
+}
+readData( $dataFile, \%eventCount, \@map, $plotDataFile, $timeOffset );
+
+my %byMoType = ();
+my %byNode = ();
+my %byOverFlow = ();
+
+for ( my $i = 0; $i <= $#map; $i++ )
+{
+    #printf "%5d %s\n", $i, $map[$i];
+
+    $_ = $map[$i];
+    my ($eventType,$event) = /^([^:]+):(.*)/;
+
+    if ( $eventType eq "OverflowType" )
+    {
+	$byOverFlow{$event}++;
+    }
+    else
+    {
+	my ($node,$moType,$attrib);
+	if ( $eventType eq "AVC" )
+	{
+	    $_ = $event;
+	    ($node,$moType,$attrib) =
+		/^SubNetwork=[^,]+,(.*),ManagedElement=1.*,([^=,]+)=[^\.]+\.([^,.]+)$/;
+	}
+	else
+	{
+	    $_ = $event;
+	    ($node,$moType) =
+		/^SubNetwork=[^,]+,(.*),ManagedElement=1.*,([^=,]+)=([^,=]+)$/;
+	}
+
+	if ( ! $node )
+	{
+	    print "Parse failed for $eventType $i $#map \"$map[$i]\"\n";
+	    next;
+	}
+
+	if ( $node =~ /,/ )
+	{
+	    $_ = $node;
+	    my ($rns,$mc) = /SubNetwork=([^,]+),MeContext=(.*)/;
+	    $node = $rns . "," . $mc;
+	}
+	else
+	{
+	    $_ = $node;
+	    my ($mc) = /MeContext=(.*)/;
+	    $node = $mc;
+	}
+
+	$byNode{$node} += $eventCount{$i};
+	
+	if ( $eventType eq "AVC" )
+	{
+	    $byMoType{"AVC:" . $moType . "." . $attrib} += $eventCount{$i};
+	}
+	else
+	{
+	    $byMoType{"TOP:" . $moType} += $eventCount{$i};
+	}
+    }
+}
+
+open TABLE, ">$outDir/nodetable.html" or die "Cannot write to $outDir/nodetable.html";
+my @sortedNodes = ();
+getKeysSortedByValue( \%byNode, \@sortedNodes );
+foreach my $node ( @sortedNodes  )
+{
+    printf TABLE " <tr> <td>%s<\/td> <td>%d<\/td> <\/tr>\n", $node, $byNode{$node};
+}
+close TABLE;
+
+open TABLE, ">$outDir/moitable.html" or die "Cannot write to $outDir/motable.html";
+my @sortedEvents = ();
+getKeysSortedByValue( \%eventCount, \@sortedEvents );
+foreach my $moIndex ( @sortedEvents )
+{
+    if ( $eventCount{$moIndex} > 10 )
+    {
+	my $mo = $map[$moIndex];
+	printf TABLE " <tr> <td>%s<\/td> <td>%d<\/td> <\/tr>\n", $mo, $eventCount{$moIndex};
+    }
+}
+close TABLE;
+
+open TABLE, ">$outDir/overflow.html" or die "Cannot write to $outDir/overflow.html";
+my @sortedNodes = ();
+getKeysSortedByValue( \%byOverFlow, \@sortedNodes );
+foreach my $node ( @sortedNodes )
+{
+    printf TABLE " <tr> <td>%s<\/td> <td>%d<\/td> <\/tr>\n", $node, $byOverFlow{$node};
+}
+close TABLE;
+
+open TABLE, ">$outDir/moctable.html" or die "Cannot write to $outDir/moctable.html";
+my @sorted = ();
+getKeysSortedByValue( \%byMoType, \@sorted );
+foreach my $key ( @sorted  )
+{
+    printf TABLE " <tr> <td>%s<\/td> <td>%d<\/td> <\/tr>\n", $key, $byMoType{$key};
+}
+close TABLE;
+
+sub printUsageAndExit
+{
+    my ($errMsg) = @_;
+    print "Error: $errMsg\n";
+    print "Usage: parseCfEventData --data dataFile --outputdir dir\n";
+    exit(1);
+}
+
+sub readData
+{
+    # 1080432480,0,2,9,3,10,3,11,3,1,2,2,2,3,2,4,2,5,2,6,2,7,3,8,3
+    # File format
+    # timestamp,index,count[,index,count...]
+    
+    my ( $dataFile, $r_EventCount, $r_EventMap, $plotDataFile, $timeOffset ) = @_;
+
+    if ( $DEBUG ) { print "Readling $dataFile\n"; } 
+    open DATA, "$dataFile" or die "Cannot read from $dataFile";
+    my @lines = <DATA>; # Read all the lines in one go
+    close DATA;
+    if ( $DEBUG ) { print "Done\n"; } 
+
+    my $line = pop @lines;
+    my @map = split /::/, $line;
+    shift @map;
+    push @{$r_EventMap}, @map;
+
+    #
+    # Build event -> rnc map
+    # AVC:SubNetwork=UK,SubNetwork=RNCBE2,MeContext=RNCBE2,ManagedElement=1,RncFunction=1,UtranCell=62936.availabilityStatus
+    #
+    my %eventToRncId = ();
+    my %rncToId = ();
+    my @rncList = ();
+    
+    for ( my $i = 0; $i <= $#map; $i++ )
+    {
+	$_ = $map[$i];	
+	my ($rnc) = /,MeContext=([^,]+)/;
+
+	my ($rncId);
+	if ( exists $rncToId{$rnc}  )
+	{
+	    $rncId = $rncToId{$rnc};
+	}
+	else
+	{
+	    $rncId = $#rncList + 1;
+	    $rncToId{$rnc} = $rncId;
+
+	    $rncList[$#rncList + 1] = $rnc;
+	}
+	
+	$eventToRncId{$i} = $rncId;
+    }
+    if ( $DEBUG > 2 ) 
+    { 
+	print Dumper( \%eventToRncId, \%rncToId ); 
+	print Dumper( \@map, undef );
+    }
+
+    #
+    # Process Event Data
+    #
+    my $currHour = -1;
+    my @countsByRnc = ();
+    foreach my $line ( @lines )
+    {
+	chop $line;
+	my @fields = split /,/, $line;
+	    
+	my $timestamp = shift @fields;
+	my @timeFields = localtime($timestamp+$timeOffset);
+
+	if ( $DEBUG > 1 ) 
+	{
+	    printf "Processing %s %02d-%02d-%02d:%02d:%02d:%02d\n" ,$timestamp ,
+	    $timeFields[3], $timeFields[4] + 1, $timeFields[5] - 100, $timeFields[2], $timeFields[1];
+	}
+
+
+	#
+	# If we are in a new hour, initialise the counts
+	# for that hour
+	#
+	if ( $timeFields[2] != $currHour )
+	{
+	    if ( $DEBUG > 0 ) { print "Updating currHour $currHour $timeFields[2] $timestamp\n"; }
+
+	    while ( $currHour < $timeFields[2] )
+	    {
+		$currHour++;
+		my $timeStampStr = sprintf "%02d-%02d-%02d:%02d:00:00", 
+		$timeFields[3], $timeFields[4] + 1, $timeFields[5] - 100, $currHour;
+		
+		my $r_HourStats = {
+		    'timestamp' => $timeStampStr,
+		    'counts'    => []
+		    };
+		for ( my $i = 0; $i <= $#rncList; $i++ )
+		{
+		    $r_HourStats->{'counts'}->[$i] = 0;
+		}
+		
+		push @countsByRnc, $r_HourStats;
+	    }
+	}
+
+	for ( my $i = 0; $i <= $#fields; $i += 2 )
+	{
+	    my $eventId = $fields[$i];
+	    my $eventCount = $fields[$i+1];
+
+	    $r_EventCount->{$eventId} += $eventCount;	    
+
+	    if ( exists $eventToRncId{$eventId} )
+	    {
+		$countsByRnc[$#countsByRnc]->{'counts'}->[$eventToRncId{$eventId}] += $eventCount;
+	    }
+	    else
+	    {
+		die "Could not map line $line";
+	    }
+	}
+
+    }
+
+    if ( $DEBUG > 2 ) { print Dumper( \@countsByRnc, undef ); }
+
+    my %rncTotals = ();
+    foreach my $rnc ( @rncList )
+    {
+	my $rncId = $rncToId{$rnc};
+	my $rncTotal = 0;
+	foreach my $r_HourStats ( @countsByRnc )
+	{
+	    $rncTotal += $r_HourStats->{'counts'}->[$rncId];
+	}
+	$rncTotals{$rncId} = $rncTotal;
+    }
+    if ( $DEBUG > 2 ) 
+    { 
+	print Dumper( \%rncTotals, \@rncList ); 
+    }
+
+    my @sortedRncIds = ();
+    getKeysSortedByValue( \%rncTotals, \@sortedRncIds );
+
+    my $numRncOut = 8;
+    if ( ($#sortedRncIds+1) < $numRncOut )
+    {
+	$numRncOut = $#sortedRncIds + 1;
+    }
+
+    print "RNC";
+    for ( my $i = 0; $i < $numRncOut; $i++ )
+    {
+	print " ", $rncList[$sortedRncIds[$i]];
+    }
+    print "\n";
+
+    
+    open PLOT_DATA, ">$plotDataFile" or die "Cannot open plotDataFile $plotDataFile";	
+    foreach my $r_HourStats ( @countsByRnc )
+    {
+	print PLOT_DATA $r_HourStats->{'timestamp'};
+	my $runningTotal = 0;
+	for ( my $i = 0; $i < $numRncOut; $i++ )
+	{
+	    print PLOT_DATA " ", ($r_HourStats->{'counts'}->[$sortedRncIds[$i]] + $runningTotal);
+	    $runningTotal += $r_HourStats->{'counts'}->[$sortedRncIds[$i]];
+	}
+	print PLOT_DATA "\n";
+    }
+    close PLOT_DATA;
+
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash, $r_Result ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+	my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+	$reverseHash{$reverseKey} = $key;
+	$counter++;
+    }
+
+    foreach my $reverseKey ( reverse sort by_number keys %reverseHash )
+    {
+	$r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+}
+
+sub by_number {
+    if ($a < $b) {
+        return -1;
+    } elsif ($a == $b) {
+        return 0;
+    } elsif ($a > $b) {
+        return 1;
+    }
+}

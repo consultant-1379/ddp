@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_private_network_count">
+  </table>
+
+  <services>
+    <service name="networkexplorer"/>
+  </services>
+
+  <events>
+      <!--STEREOTYPES_COUNT.BY.CATEGORY {"_Thread":"EJB default - 14","PrivatePrivateNetwork":1,"PublicPrivateNetwork":1}-->
+      <event name="STEREOTYPES_COUNT.BY.CATEGORY">
+          <metric source="PrivatePrivateNetwork" target="privatePrivateNetwork"/>
+          <metric source="PublicPrivateNetwork" target="publicPrivateNetwork"/>
+      </event>
+  </events>
+
+</modelledevents>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="enm_es_index_names.name">
+    <dbtables main="enm_eshistory_indices_stats">
+      <reference table="sites" condition="enm_eshistory_indices_stats.siteid = sites.id"/>
+      <reference table="enm_es_index_names" condition="enm_eshistory_indices_stats.indexId = enm_es_index_names.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="name"/>
+    <where>sites.name = '%s' AND enm_es_index_names.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="noOfDocs" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Number Of Docs"/>
+      <column db="noOfDocs" label = "Number Of Docs"/>
+    </graph>
+    <graph name="noOfDocsDeleted" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Number Of Docs Deleted"/>
+      <column db="noOfDocsDeleted" label = "Number Of Docs Deleted"/>
+    </graph>
+    <graph name="sizeOfIndex" type="tsc" ylabel="Size(MB)" forcelegend="true">
+      <title value="Size Of Index"/>
+      <column db="sizeOfIndex" label = "Size Of Index"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="indicesLog">
+      <member>noOfDocs</member>
+      <member>noOfDocsDeleted</member>
+      <member>sizeOfIndex</member>
+    </group>
+  </groups>
+
+</modelledgraphset>
+

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="xy"
+ ylabel="Count"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Command handler Statistics"/>
+  <queries>
+    <query timecol="time" multiseries="CONCAT('SUCCESS:', enm_cmd_handler_statistics.commandType)">
+      <dbtables main="enm_cmd_handler_statistics">
+        <reference table="sites" condition="enm_cmd_handler_statistics.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND numOfSuccessItems > 0</where>
+      <column db="numOfSuccessItems" label="Number Of Success Workflows"/>
+    </query>
+
+    <query timecol="time" multiseries="CONCAT('ERROR:', enm_cmd_handler_statistics.commandType)">
+      <dbtables main="enm_cmd_handler_statistics">
+        <reference table="sites" condition="enm_cmd_handler_statistics.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND numOfErrorItems > 0</where>
+      <column db="numOfErrorItems" label="Number Of Errror Workflows"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+
+</modelledgraph>

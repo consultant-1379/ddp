@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <table name="enm_dps_neo4jtx">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.datalayer.dps.neo4j.jca.instrumentation:type=Neo4jTransaction">
+      <metric source="ReadTx100MillisecondsCount" target="readTx100MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx10MillisecondsCount" target="readTx10MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx10SecondsCount" target="readTx10SecondsCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx1MinuteCount" target="readTx1MinuteCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx1SecondCount" target="readTx1SecondCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx2MinutesCount" target="readTx2MinutesCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx3MinutesCount" target="readTx3MinutesCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx4MinutesCount" target="readTx4MinutesCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx500MillisecondsCount" target="readTx500MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx50MillisecondsCount" target="readTx50MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx5MillisecondsCount" target="readTx5MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="ReadTx5MinutesCount" target="readTx5MinutesCount" delta="true" filteridle="true"/>
+      <metric source="ReadTxCount" target="readTxCount" delta="true" filteridle="true"/>
+      <metric source="ReadTxOver5MinutesCount" target="readTxOver5MinutesCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx100MillisecondsCount" target="writeTx100MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx10MillisecondsCount" target="writeTx10MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx10SecondsCount" target="writeTx10SecondsCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx1MinuteCount" target="writeTx1MinuteCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx1SecondCount" target="writeTx1SecondCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx2MinutesCount" target="writeTx2MinutesCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx3MinutesCount" target="writeTx3MinutesCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx4MinutesCount" target="writeTx4MinutesCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx500MillisecondsCount" target="writeTx500MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx50MillisecondsCount" target="writeTx50MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx5MillisecondsCount" target="writeTx5MillisecondsCount" delta="true" filteridle="true"/>
+      <metric source="WriteTx5MinutesCount" target="writeTx5MinutesCount" delta="true" filteridle="true"/>
+      <metric source="WriteTxCount" target="writeTxCount" delta="true" filteridle="true"/>
+      <metric source="WriteTxOver5MinutesCount" target="writeTxOver5MinutesCount" delta="true" filteridle="true"/>
+      <metric source="WriteTxWithoutChangesCount" target="writeTxWithoutChangesCount" delta="true" filteridle="true"/>
+      <metric source="TotalWriteOperationsPerformed" target="totalWriteOperationsPerformed" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.datalayer.dps.neo4j.jca.instrumentation:type=Neo4jTxPermitsAcquisition">
+      <metric source="AcquiredTxPermitsCount" target="acquiredTxPermitsCount" delta="true" filteridle="true"/>
+      <metric source="FailedToAcquireTxPermitsCount" target="failedToAcquireTxPermitsCount" delta="true" filteridle="true"/>
+      <metric source="FailureOrTimeoutCount" target="failureOrTimeoutCount" delta="true" filteridle="true"/>
+      <metric source="TotalDuration" target="totalDuration" delta="true" filteridle="true"/>
+      <metric source="TxPermitsProcedureCount" target="txPermitsProcedureCount" delta="true" filteridle="true"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

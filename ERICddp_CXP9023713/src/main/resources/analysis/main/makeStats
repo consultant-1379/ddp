@@ -1,0 +1,647 @@
+#!/bin/bash
+
+if [ $# -ne 8 ]; then
+    echo "Usage: $ARGV[0] date site statsroot site_type file_type config_file"
+    exit 1
+fi
+
+SITE=$2
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+
+DASH_DATE=${1}
+DATE=`echo ${1} | sed 's/-//g'`
+
+if [ -d /opt/csw ] ; then
+    export PATH=/opt/csw/gnu:/opt/csw/bin::$PATH
+    export LD_LIBRARY_PATH="/opt/csw/lib:$LD_LIBRARY_PATH"
+elif [ -d /opt/gnuplot ] ; then
+    export PATH="/usr/local/bin:/opt/gnuplot/bin:$PATH"
+else
+    export PATH="/data/gnuplot/bin:$PATH:/usr/X11R6/bin"
+fi
+
+#If the log format has not been declared above me, assume default
+# for a description of log line formats, see comments in outputProcessing.awk
+[ -z "$LOG_LINE_FORMAT" ] && LOG_LINE_FORMAT="Ts"
+. ${ANALYSIS_BIN}/common/functions.sh
+
+log "Start ${SITE} ${DASH_DATE}"
+
+STATS_ROOT=$3
+ANALYSIS_OUTPUT=${STATS_ROOT}/${SITE}/analysis/${DATE}
+DATADIR=${STATS_ROOT}/${SITE}/data/${DATE}
+
+if [ ! -d ${DATADIR} ] ; then
+    echo "ERROR: ${DATADIR} not found"
+    exit 1
+fi
+
+# Create 'processing.flag' file under ${DATADIR} directory to
+#  indicate that the file processing is presently in progress
+touch ${DATADIR}/processing.flag
+
+
+SITE_TYPE=$4
+SITE_TYPE=`echo ${SITE_TYPE} | tr "[:lower:]" "[:upper:]"`
+
+FILE_TYPE=$5
+
+# Default to running parallel with a job count of 2,
+# can be overridden in the config file
+PARALLEL_COUNT=2
+CONFIG_FILE=$6
+. ${CONFIG_FILE}
+export PARALLEL_COUNT
+
+export PRIVATE_ADDR=$7
+export DDP_FQDN=$8
+
+loadVictoriaMetrics() {
+    if [ -z "${EXTERNAL_STORE_ENDPOINT}" ] ; then
+        return
+    fi
+
+    ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/loadvm <<EOF
+SELECT id INTO @siteid FROM sites WHERE name = '${SITE}';
+use ddpadmin;
+SELECT loadvm FROM site_options WHERE siteid = @siteid;
+EOF
+    LOAD_VM=$(cat ${TMP_DIR}/loadvm)
+    if [ "${LOAD_VM}" = "1" ] || [ -r ${INCR_DIR}/loadmetrics ] ; then
+        ${ANALYSIS_BIN}/main/loadVictoriaMetrics ${SITE} ${REMOTE_WRITER_DIR} ${SQL_DATE} ${EXTERNAL_STORE_ENDPOINT} &
+    fi
+}
+
+processInstrDump() {
+    log "Processing remote_writer data"
+
+    local MODEL_ARGS="--model ${ANALYSIS_BIN}/modelled/instr/models/common"
+    local SITE_TYPE_MODELS=${ANALYSIS_BIN}/modelled/instr/models/${SITE_TYPE}
+    if [ -d ${SITE_TYPE_MODELS} ] ; then
+        MODEL_ARGS="${MODEL_ARGS} --model ${SITE_TYPE_MODELS}"
+    fi
+
+    local NAMESPACE_FILE=${DATADIR}/k8s/namespace
+    local NAMESPACE_ARG=""
+    if [ -s ${DATADIR}/k8s/namespace ] ; then
+        local NAMESPACE=$(cat ${DATADIR}/k8s/namespace)
+        NAMESPACE_ARG="--k8snamespace ${NAMESPACE}"
+    fi
+
+    local DISABLED_ARG=""
+    if [ -s ${TMP_DIR}/disabled_models.json ] ; then
+        DISABLED_ARG="--disabled ${TMP_DIR}/disabled_models.json"
+    fi
+
+    local DELETE_REQUIRED_ARG=""
+    if [ "${DDP_FIRST_TIME}" = "yes" ] ; then
+        DELETE_REQUIRED_ARG="--deleterequired 0"
+    fi
+
+    run ${ANALYSIS_BIN}/modelled/instr/parseInstrDump --site ${SITE} --data ${REMOTE_WRITER_DIR} --date ${SQL_DATE} \
+        --incr ${INCR_DIR}/parseInstrDump ${MODEL_ARGS} ${NAMESPACE_ARG} ${INCR_ARG} ${DISABLED_ARG} ${DELETE_REQUIRED_ARG} &
+
+    # wait for parseInstrDump to exit
+    wait
+}
+
+processK8sConfig() {
+    log "Processing k8s config"
+
+    if [ ! -d ${ANALYSIS_OUTPUT}/k8s ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/k8s
+    fi
+
+    if [ -r ${ANALYSIS_BIN}/k8s/appmap_${SITE_TYPE}.json ] ; then
+        APP_MAP_ARG="--appmap ${ANALYSIS_BIN}/k8s/appmap_${SITE_TYPE}.json"
+    else
+        APP_MAP_ARG=""
+    fi
+
+    run ${ANALYSIS_BIN}/k8s/parseConfig --dir ${DATADIR}/k8s --site ${SITE} --date ${SQL_DATE} \
+        --site_type ${SITE_TYPE} --outdir ${ANALYSIS_OUTPUT}/k8s ${APP_MAP_ARG}
+}
+
+processElasticSearch() {
+    log "Processing elasticsearch data"
+
+    local HANDLER_DIR_ARGS="--handlerdir ${ANALYSIS_BIN}/elasticsearch/handlers"
+    local SITE_TYPE_HANDLERS=${ANALYSIS_BIN}/${SITE_TYPE}/elasticsearch/handlers
+    if [ -d ${SITE_TYPE_HANDLERS} ] ; then
+        HANDLER_DIR_ARGS="${HANDLER_DIR_ARGS} --handlerdir ${SITE_TYPE_HANDLERS}"
+    fi
+
+    if [ ! -d ${ANALYSIS_OUTPUT}/logs ] ; then
+        mkdir ${ANALYSIS_OUTPUT}/logs
+    fi
+
+    run ${ANALYSIS_BIN}/elasticsearch/splitLog --indir ${DATADIR}/elasticsearch \
+        --analysisOut ${ANALYSIS_OUTPUT}/logs \
+        --site ${SITE} \
+        --date ${SQL_DATE} \
+        --datadir ${DATADIR} \
+        ${HANDLER_DIR_ARGS} \
+        --incr ${INCR_DIR}/splitLog.inc &
+}
+
+processFull() {
+    if [ -r ${ANALYSIS_BIN}/${SITE_TYPE}/makeStats ] ; then
+        run ${ANALYSIS_BIN}/${SITE_TYPE}/makeStats ${DASH_DATE} ${SITE} ${STATS_ROOT} INIT
+    fi
+
+    #
+    # General server stats
+    #
+    log "Server"
+    if [ -r ${DATADIR}/server/hostname ] ; then
+        if [ ! -d ${ANALYSIS_OUTPUT}/servers ] ; then
+            mkdir ${ANALYSIS_OUTPUT}/servers
+        fi
+
+        # TODO: We shouldn't have ENIQ Events specific stuff here
+        MATCHED_TYPE="MASTER"
+        if [ -f ${DATADIR}/ENIQ/eniq_reader_type ] ; then
+            TYPE = `cat ${DATADIR}/ENIQ/eniq_reader_type`
+            case ${TYPE} in
+                "dwh_reader_1") MATCHED_TYPE="READER_1" ;;
+                "dwh_reader_2") MATCHED_TYPE="READER_2" ;;
+            esac
+        fi
+
+        if [ -f ${DATADIR}/ENIQ/eniq_server_type ] ; then
+            TYPE=`cat ${DATADIR}/ENIQ/eniq_server_type`
+            case ${TYPE} in
+                "eniq_ui") MATCHED_TYPE="ENIQ_UI" ;;
+                "eniq_coordinator") MATCHED_TYPE="ENIQ_COORDINATOR" ;;
+                "eniq_mz") MATCHED_TYPE="ENIQ_MZ" ;;
+                "eniq_iqr") MATCHED_TYPE="ENIQ_IQR" ;;
+                # DEFTLITP-664: LTE Event Statistics
+                "eniq_es") MATCHED_TYPE="ENIQ_ES" ;;
+                # ENIQ 13 WP00011: CEP Mediation monitoring
+                "eniq_cep") MATCHED_TYPE="ENIQ_CEP" ;;
+                # HQ63006: SON Coordinator server type
+                "son_coordinator") MATCHED_TYPE="SON_COORDINATOR" ;;
+                # ENIQ 12 WP00060 - ENIQ 120M counters (IP: 601/15941-FCP 103 8147) [2012-04-18 RK]
+                "eniq_stats") MATCHED_TYPE="ENIQ_STATS" ;;
+                "stats_coordinator") MATCHED_TYPE="STATS_COORDINATOR" ;;
+                "stats_engine") MATCHED_TYPE="STATS_ENGINE" ;;
+                "stats_iqr") MATCHED_TYPE="STATS_IQR" ;;
+            esac
+        fi
+        if [ -f ${DATADIR}/TOR/tor_server_type ] ; then
+            TYPE=`cat ${DATADIR}/TOR/tor_server_type`
+            case ${TYPE} in
+                "management_server") MATCHED_TYPE="TOR_MANAGEMENT_SERVER" ;;
+                "monitoring") MATCHED_TYPE="MONITORING" ;;
+            esac
+        fi
+        TYPE=${MATCHED_TYPE}
+
+        run ${ANALYSIS_BIN}/server/analyseServer -i ${DATADIR}/server -o ${ANALYSIS_OUTPUT}/servers \
+            -s ${SITE} -d ${SQL_DATE} -t ${TYPE} -a ${DATADIR} -l ${TMP_DIR}/LAST_SAR_TIME
+
+        # Get the last SAR data availability time
+        LAST_SAR_DATA_TIME="UNDEF"
+        if [ -f ${TMP_DIR}/LAST_SAR_TIME ] ; then
+            LAST_SAR_DATA_TIME=$(cat ${TMP_DIR}/LAST_SAR_TIME)
+        fi
+
+        #
+        # Generic JMX stats
+        #
+        if [ -d ${DATADIR}/instr ] && [ -s ${DATADIR}/instr.txt ]; then
+            run ${ANALYSIS_BIN}/server/processGenericInstr -d ${DATADIR} -s ${DATADIR}/server -a ${DASH_DATE} -e ${SITE}
+        fi
+    fi
+
+    if [ -d ${DATADIR}/k8s ] ; then
+        processK8sConfig
+    fi
+
+    REMOTE_WRITER_DIR=${DATADIR}/remote_writer
+    if [ -d ${REMOTE_WRITER_DIR} ] ; then
+        loadVictoriaMetrics
+        processInstrDump
+    fi
+
+    #
+    # EMC Storage
+    #
+    if [ -d ${DATADIR}/clariion ] ; then
+        log "EMC Storage"
+        run ${ANALYSIS_BIN}/server/parseNar --dir ${DATADIR}/clariion --site ${SITE}
+        ARRAY_CONFIG_LIST=$(find ${DATADIR}/clariion -name 'arrayconfig.*.xml')
+        for ARRAY_CONFIG in ${ARRAY_CONFIG_LIST} ; do
+            run ${ANALYSIS_BIN}/server/parseEmcArrayConfig --config ${ARRAY_CONFIG} --date ${SQL_DATE} --site ${SITE}
+        done
+        run  ${ANALYSIS_BIN}/server/parseEmcSpLog --dir ${DATADIR}/clariion/ --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    if [ -d ${DATADIR}/unity ] ; then
+        log "EMC Unity"
+        ARRAY_CONFIG_LIST=$(find ${DATADIR}/unity -name '*_info.json')
+        for ARRAY_CONFIG in ${ARRAY_CONFIG_LIST} ; do
+            run ${ANALYSIS_BIN}/server/parseEmcArrayConfig --config ${ARRAY_CONFIG} --date ${SQL_DATE} --site ${SITE}
+        done
+        run ${ANALYSIS_BIN}/server/parseUnity --dir ${DATADIR}/unity --site ${SITE} --date ${SQL_DATE}
+    fi
+
+    if [ -d ${DATADIR}/vc ] ; then
+        log "VirtualConnect"
+        run ${ANALYSIS_BIN}/server/parseVC --dir ${DATADIR}/vc --site ${SITE}
+    fi
+
+    if [ -r ${ANALYSIS_BIN}/${SITE_TYPE}/makeStats ] ; then
+        run ${ANALYSIS_BIN}/${SITE_TYPE}/makeStats ${DASH_DATE} ${SITE} ${STATS_ROOT} FULL
+    fi
+
+   GENERIC_PROD_VER_FILE=${DATADIR}/plugin_data/ProductInfo.json
+   if [ -s ${GENERIC_PROD_VER_FILE} ] ; then
+       log "Parsing Product Version file ${GENERIC_PROD_VER_FILE}"
+       run ${ANALYSIS_BIN}/sql/setAppVer --app generic --site ${SITE} --date ${SQL_DATE} \
+           --ver_file ${GENERIC_PROD_VER_FILE}
+   fi
+
+   OMBS_ACTIVITY_MONITOR_FILE=$DATADIR/plugin_data/activity_monitor.json
+   if [ -s ${OMBS_ACTIVITY_MONITOR_FILE} ] ; then
+       log "Parsing OMBS Activity Monitor JSON file ${OMBS_ACTIVITY_MONITOR_FILE}"
+       run ${ANALYSIS_BIN}/${SITE_TYPE}/OMBS/parseActivityMonitor --site ${SITE} --date ${SQL_DATE} \
+           --dataFile ${OMBS_ACTIVITY_MONITOR_FILE}
+   fi
+
+    if [ -s ${DATADIR}/ilo/data.json ] ; then
+        log "ILO"
+        run ${ANALYSIS_BIN}/server/parseILO --site ${SITE} --date ${SQL_DATE} --data ${DATADIR}/ilo/data.json
+    fi
+
+    if [ -d ${DATADIR}/remotehosts ] ; then
+        log "Remote hosts"
+        run ${ANALYSIS_BIN}/server/remotehosts ${DATADIR} ${ANALYSIS_OUTPUT} \
+            ${DATE} ${SQL_DATE} ${DASH_DATE} ${SITE} &
+    fi
+
+    if [ -d ${DATADIR}/elasticsearch ] ; then
+        local FILE_LIST=$(find ${DATADIR}/elasticsearch -name 'elasticsearch.log*')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            processElasticSearch
+        fi
+    fi
+
+    # Wait for any background jobs to finish
+    wait
+
+}
+
+processDelta() {
+    TYPE="OTHER"
+    if [ -r ${DATADIR}/TOR/tor_server_type ] ; then
+        DDC_TYPE=$(cat ${DATADIR}/TOR/tor_server_type)
+        if [ "${DDC_TYPE}" = "management_server" ] ; then
+            TYPE="TOR_MANAGEMENT_SERVER"
+        fi
+    fi
+
+    MASTER_HOSTNAME=$(${ANALYSIS_BIN}/server/getHostname ${DATADIR}/server)
+    if [ $? -eq 0 ] ; then
+        SAR_FILE_LIST=$(find ${DATADIR}/delta/${MASTER_HOSTNAME} -name 'sar.*')
+        if [ ! -z "${SAR_FILE_LIST}" ] ; then
+            mv ${SAR_FILE_LIST} ${DATADIR}/server
+            run ${ANALYSIS_BIN}/server/analyseServer -i ${DATADIR}/server -o ${ANALYSIS_OUTPUT}/servers \
+                -s ${SITE} -d ${SQL_DATE} -t ${TYPE} -a ${DATADIR} -l ${TMP_DIR}/LAST_SAR_TIME -m DELTA
+
+            # Get the last SAR data availability time
+            LAST_SAR_DATA_TIME="UNDEF"
+            if [ -f ${TMP_DIR}/LAST_SAR_TIME ] ; then
+                LAST_SAR_DATA_TIME=$(cat ${TMP_DIR}/LAST_SAR_TIME)
+            fi
+        fi
+
+        INSTR_FILE_LIST=$(find ${DATADIR}/delta/${MASTER_HOSTNAME} -name 'instr.txt.*')
+        if [ ! -z "${INSTR_FILE_LIST}" ] ; then
+            mv ${INSTR_FILE_LIST} ${DATADIR}
+            run ${ANALYSIS_BIN}/server/processGenericInstr -d ${DATADIR} -s ${DATADIR}/server -a ${DASH_DATE} -e ${SITE}
+        fi
+    else
+        log "getHostName returned $MASTER_HOSTNAME"
+        MASTER_HOSTNAME=""
+    fi
+
+    if [ -d ${DATADIR}/delta/k8s ] ; then
+        EVENT_FILE_LIST=$(find ${DATADIR}/delta/k8s \( -name 'events.json.*' -o -name 'delta.json.*' \) )
+        if [ ! -z "${EVENT_FILE_LIST}" ] ; then
+            mv ${EVENT_FILE_LIST} ${DATADIR}/k8s
+            processK8sConfig
+        fi
+    fi
+
+    local DELTA_REMOTE_WRITER_DIR=${DATADIR}/delta/remote_writer
+    if [ -d ${DELTA_REMOTE_WRITER_DIR} ] ; then
+        local FILE_LIST=$(find ${DELTA_REMOTE_WRITER_DIR} -type f -name 'dump.*.gz')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            # Normally remote_writer dir will get created during the processing of the DDC_Data file
+            # TORF-640557 had a corner case where the directory didn't exist in the DDC_Data file
+            # but the later DDC_Delta files did have dump files
+            # So we need to check that the directory exists here and create it if it's missing
+            REMOTE_WRITER_DIR=${DATADIR}/remote_writer
+            if [ ! -d ${REMOTE_WRITER_DIR} ] ; then
+                mkdir ${REMOTE_WRITER_DIR}
+            fi
+            mv -f ${FILE_LIST} ${REMOTE_WRITER_DIR}/
+            loadVictoriaMetrics
+            processInstrDump
+        fi
+    fi
+
+    local DELTA_ELASTICSEARCH_DIR=${DATADIR}/delta/elasticsearch
+    local ELASTICSEARCH_DIR=${DATADIR}/elasticsearch
+    if [ -d ${DELTA_ELASTICSEARCH_DIR} ] && [ -d ${ELASTICSEARCH_DIR} ]; then
+        local FILE_LIST=$(find ${DELTA_ELASTICSEARCH_DIR} -type f -name 'elasticsearch.log.gz*')
+        if [ ! -z "${FILE_LIST}" ] ; then
+            mv -f ${FILE_LIST} ${ELASTICSEARCH_DIR}
+            processElasticSearch
+        fi
+    fi
+
+    if [ -r ${ANALYSIS_BIN}/${SITE_TYPE}/makeStats ] ; then
+        run ${ANALYSIS_BIN}/${SITE_TYPE}/makeStats ${DASH_DATE} ${SITE} ${STATS_ROOT} DELTA
+    fi
+
+    if [ -d ${DATADIR}/remotehosts ] ; then
+        log "Remote hosts"
+        run ${ANALYSIS_BIN}/server/remotehosts ${DATADIR} ${ANALYSIS_OUTPUT} \
+            ${DATE} ${SQL_DATE} ${DASH_DATE} ${SITE} &
+    fi
+
+    # Wait for any background jobs to finish
+    wait
+
+    # Now there shouldn't be any files left in the delta directory
+    REMAINING_FILES=$(find ${DATADIR}/delta -type f)
+    if [ ! -z "${REMAINING_FILES}" ] ; then
+        log "WARNING: File remain after processing ${REMAINING_FILES}"
+    fi
+    rm -rf ${DATADIR}/delta
+}
+
+processLoadMetrics() {
+    REMOTE_WRITER_DIR=${DATADIR}/remote_writer
+    if [ -d ${REMOTE_WRITER_DIR} ] ; then
+        ${ANALYSIS_BIN}/main/loadVictoriaMetrics ${SITE} ${REMOTE_WRITER_DIR} ${SQL_DATE} ${EXTERNAL_STORE_ENDPOINT}
+        # Get stats loaded for the rest of day
+        touch ${INCR_DIR}/loadmetrics
+
+        if [ -s ${DATADIR}/loadmetrics.txt ] ; then
+            local EMAIL=$(cat ${DATADIR}/loadmetrics.txt)
+            /bin/rm ${DATADIR}/loadmetrics.txt
+            PERL5OPT=-I${ANALYSIS_BIN}/common ${ANALYSIS_BIN}/../server_setup/sendEmail.pl \
+            --subject "Metrics Loading for ${SITE} for ${DASH_DATE}" \
+            --emails "${EMAIL}" \
+            --body "<p>Loading completed</p>" \
+            --mailhost ${PRIVATE_ADDR}
+        fi
+    fi
+}
+
+postArchive() {
+    #
+    # Update Site data under DB
+    #
+    for file in ${DATADIR}/pkginfo.txt ${DATADIR}/server/ERICddc.pkginfo ; do
+        if [ -f ${file} ] ; then
+            UTIL_VER=`awk '$1 ~ /^VERSION:$/ { print $2}' ${file}`
+        fi
+    done
+
+    if [ -f ${DATADIR}/server/ERICddc.rpminfo ] ; then
+        UTIL_VER=`grep "Version" ${DATADIR}/server/ERICddc.rpminfo | tr -cd '[0-9]. \n' | sed 's/[ ]*//g'`
+    elif [ -r ${DATADIR}/server/ERICddccore.rpminfo ] ; then
+        UTIL_VER=$(grep "Version" ${DATADIR}/server/ERICddccore.rpminfo | tr -cd '[0-9]. \n' | sed 's/[ ]*//g')
+    fi
+
+    ARCHIVE_TYPE="UNKNOWN"
+    if [ -r ${DATADIR}/ARCHIVE_TYPE ] ; then
+        ARCHIVE_TYPE=$(cat ${DATADIR}/ARCHIVE_TYPE)
+    fi
+    log "Archive Type ${ARCHIVE_TYPE}"
+
+    # If the tarball is from a DDC stop then we can
+    # remove the incr directory
+    COMPRESS_FILES=yes
+    if [ "${ARCHIVE_TYPE}" = "STOP" ] ; then
+        log "INFO: ARCHIVE_TYPE = STOP, removing ${INCR_DIR}"
+        /bin/rm -rf ${INCR_DIR}
+    elif [ "${ARCHIVE_TYPE}" = "MAKETAR" ] || [ "${ARCHIVE_TYPE}" = "DELTA" ] ; then
+        COMPRESS_FILES=no
+    fi
+
+    #
+    # Compress larger files
+    #
+    PENDING_DIR=${TMP_ROOT}/incr/compress_pending
+    if [ ! -d ${PENDING_DIR} ] ; then
+        if [ -d /data/tmp/compress_pending ] ; then
+            /bin/mv /data/tmp/compress_pending ${TMP_ROOT}/incr
+        else
+            mkdir ${PENDING_DIR}
+        fi
+    fi
+    PENDING_FILE=${PENDING_DIR}/${SITE}_${DATE}
+    if [ "${COMPRESS_FILES}" = "yes" ] ; then
+        log "Compress files"
+        run ${ANALYSIS_BIN}/main/compressFiles ${DATADIR}
+        if [ -r ${PENDING_FILE} ] ; then
+            rm -f ${PENDING_FILE}
+        fi
+    else
+        echo "${DATADIR}" > ${PENDING_FILE}
+    fi
+
+    [ -z "${UTIL_VER}" ] && UTIL_VER="UNDEF"
+
+    LAST_TIME_ARG=""
+    if [ -s ${DATADIR}/COLLECTION_START ] ; then
+        COLLECTION_START=$(cat ${DATADIR}/COLLECTION_START)
+        # Now we need to validate the value, i.e. it must contain todays date
+        # Currently, we're seeing it contain tomorrows date when the ARCHIVE comes from a STOP
+        if [ "${ARCHIVE_TYPE}" = "STOP" ] && [[ ! "${COLLECTION_START}" =~ ^${SQL_DATE} ]] ; then
+            log "WARN: Adjusting COLLECTION_START from ${COLLECTION_START} to ${SQL_DATE} 23:59:00"
+            COLLECTION_START="${SQL_DATE} 23:59:59"
+        fi
+        LAST_TIME_ARG="--collstart \"${COLLECTION_START}\""
+    elif [ ! -z "${LAST_SAR_DATA_TIME}" ] ; then
+        LAST_TIME_ARG="--lastSarDataTime ${LAST_SAR_DATA_TIME}"
+    fi
+    run ${ANALYSIS_BIN}/sql/updateSiteData --site "${SITE}" --utilver ${UTIL_VER} --date ${SQL_DATE} ${LAST_TIME_ARG}
+    if [ $? -ne 0 ] ; then
+        log "ERROR: updateSiteData failed for site ${SITE} utilver ${UTIL_VER} date ${SQL_DATE} lastSarDataTime ${LAST_SAR_DATA_TIME}"
+        exit 1
+    fi
+
+    # Update summary tables. For some tables, there is so much data that the queries
+    # required to generate daily summaries take too long (> 10 secs), e.g. genjmx, nic_stat
+    # Run rules for healthcheck
+    run ${ANALYSIS_BIN}/sql/updateSummaryTables -s "${SITE}" -d ${SQL_DATE} -t ${SITE_TYPE}
+
+    DDP_DIR=$(dirname ${ANALYSIS_BIN})
+    LC_SITE_TYPE=$(echo ${SITE_TYPE} | tr "[:upper:]" "[:lower:]")
+    if [ -r ${DDP_DIR}/rules/hc_${LC_SITE_TYPE}.xml ] ; then
+        if [ -z "${LAST_SAR_DATA_TIME}" ] ; then
+            DDC_END_TIME="23:59:59"
+            if [ -s ${DATADIR}/COLLECTION_START ] ; then
+                DDC_END_TIME=$(cat ${DATADIR}/COLLECTION_START | awk '{print $2}')
+            fi
+        else
+            DDC_END_TIME="${LAST_SAR_DATA_TIME}"
+        fi
+        run ${DDP_DIR}/rules/executeRules --site ${SITE} --date ${SQL_DATE} \
+            --oss ${LC_SITE_TYPE} --ddctime "${SQL_DATE} ${DDC_END_TIME}"
+
+        # After running the rules check for changes and send alerts.
+        run ${DDP_DIR}/rules/alertMe --site ${SITE} --fqdn "${DDP_FQDN}" --dir ${DATE} \
+            --date ${SQL_DATE} --time ${DDC_END_TIME} --oss ${LC_SITE_TYPE} --mailhost ${PRIVATE_ADDR}
+    fi
+
+    cat > ${TMP_DIR}/critical_errors.sql <<EOF
+use ddpadmin;
+SELECT id INTO @siteid FROM statsdb.sites WHERE statsdb.sites.name = '${SITE}';
+DELETE FROM critical_errors
+WHERE
+critical_errors.siteid = @siteid AND
+critical_errors.date = '${SQL_DATE}';
+EOF
+    if [ -s ${CRITICAL_ERROR_BCP} ] ; then
+        cat >> ${TMP_DIR}/critical_errors.sql <<EOF
+LOAD DATA LOCAL INFILE '${CRITICAL_ERROR_BCP}'
+INTO TABLE critical_errors (command)
+SET siteid = @siteid, date = '${SQL_DATE}';
+EOF
+    fi
+    ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/critical_errors.sql
+
+    if [ -z "${DEBUG}" ] ; then
+        rm -rf ${TMP_DIR}
+    else
+        log "Keeping ${TMP_DIR}"
+    fi
+}
+
+# Force no use of Unicode, grep of all.events goes from 4mins to 1sec!
+LANG=C
+export LANG
+
+#Put /data/tools/analysis/sql in Perl Lib path
+PERL5OPT="-I${ANALYSIS_BIN}/common"
+export PERL5OPT
+
+if [ -z "${TMP_ROOT}" ] ; then
+    TMP_ROOT=/data/tmp
+fi
+TMP_DIR="${TMP_ROOT}/makeStats_$$"
+export TMP_DIR
+
+mkdir -p ${TMP_DIR}
+
+if [ -z "${STATS_DB}" ] ; then
+    STATS_DB=statsdb
+fi
+
+if [ ! -d ${ANALYSIS_OUTPUT} ]; then
+    mkdir  -p ${ANALYSIS_OUTPUT}
+fi
+
+# Directory to store any incremental analysis files
+export INCR_DIR=${TMP_ROOT}/incr/${SITE}/${DATE}
+if [ ! -d ${INCR_DIR} ]; then
+    mkdir  -p ${INCR_DIR}
+fi
+
+export CRITICAL_ERROR_BCP=${TMP_DIR}/critical_errors.bcp
+
+# Setup stuff for PHP pages
+SQL_DATE=`echo ${DASH_DATE} | sed 's/\([0-9]*\)-\([0-9]*\)-\([0-9]*\)/20\3-\2-\1/g'`
+
+#
+# reorganise filesystem layout if required
+#
+log "Rearranging the filesystem if required"
+${ANALYSIS_BIN}/main/reorgFilesystem ${DATADIR}
+
+if [ -r ${DATADIR}/OSS/system.env ] ; then
+    SEG=`egrep "^SegmentName=" ${DATADIR}/OSS/system.env | awk -F= '{print $2}'`
+    # FlexDeployments seems to have removed SegmentName
+    if [ -z "${SEG}" ] ; then
+        SEG=`egrep "^SegmentCS=" ${DATADIR}/OSS/system.env | head --lines=1 | awk -F= '{print $2}' | sed 's/_CS$//'`
+    fi
+fi
+
+#
+# Start of processing section
+#
+
+# Get UTC offset in '+HH:MM' (or '-HH:MM') format for the timezone of MS
+export UTC_OFFSET="+00:00"
+if [ -f ${DATADIR}/server/tz.txt ] ; then
+    TZTEXT_FILE=${DATADIR}/server/tz.txt
+    export UTC_OFFSET=`cat ${TZTEXT_FILE} | sed 's/^.*::\([+-][0-9][0-9]\)\([0-9][0-9]\).*$/\1:\2/'`
+    TIMEZONE=`cat ${TZTEXT_FILE} | awk -F:: '{print $1}'`
+    export SITE_TZ="${TIMEZONE}"
+    log "TIMEZONE '${TIMEZONE}' UTC_OFFSET '${UTC_OFFSET}'"
+fi
+
+#
+# Figure out if we've processed this DDC file before
+# This gets used to decide whether to we need to delete
+# from the DB before loading
+#
+DDP_FIRST_TIME=no
+if [ -s ${DATADIR}/ARCHIVE_INDEX ] ; then
+    ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/processed_archive_index <<EOF
+SELECT id INTO @siteid FROM sites WHERE name = '${SITE}';
+use ddpadmin;
+SELECT archive_index FROM file_processed WHERE siteid = @siteid AND file_date = '${SQL_DATE}';
+EOF
+    if [ -s ${TMP_DIR}/processed_archive_index ] ; then
+        PROCESSED_ARCHIVE_INDEX=$(cat ${TMP_DIR}/processed_archive_index)
+        ARCHIVE_INDEX=$(cat ${DATADIR}/ARCHIVE_INDEX)
+        log "DDP_FIRST_TIME PROCESSED_ARCHIVE_INDEX: ${PROCESSED_ARCHIVE_INDEX}, ARCHIVE_INDEX: ${ARCHIVE_INDEX}"
+        if [ ${ARCHIVE_INDEX} -gt ${PROCESSED_ARCHIVE_INDEX} ] ; then
+            DDP_FIRST_TIME=yes
+        fi
+    else
+        # Double check - this might be a case of data processed before
+        # we started loading to the file_processed table.
+        ${ANALYSIS_BIN}/sql/runSql > ${TMP_DIR}/dataAvailabilityTime <<EOF
+SELECT dataAvailabilityTime
+FROM site_data
+JOIN sites ON site_data.siteid = sites.id
+WHERE
+ site_data.date = '${SQL_DATE}' AND
+ sites.name = '${SITE}'
+EOF
+        DAT=$(cat ${TMP_DIR}/dataAvailabilityTime)
+        log "DDP_FIRST_TIME DAT: ${DAT}"
+        if [ -z "${DAT}" ] ; then
+            DDP_FIRST_TIME=yes
+        fi
+    fi
+fi
+log "DDP_FIRST_TIME: ${DDP_FIRST_TIME}"
+export DDP_FIRST_TIME
+
+if [ "${FILE_TYPE}" = "Delta" ] ; then
+    processDelta
+elif [ "${FILE_TYPE}" = "Data" ] ; then
+    processFull
+elif [ "${FILE_TYPE}" = "LoadMetrics" ] ; then
+    processLoadMetrics
+fi
+
+if [ "${FILE_TYPE}" = "Delta" ] || [ "${FILE_TYPE}" = "Data" ] ; then
+    postArchive
+fi
+
+rm -f ${DATADIR}/processing.flag
+log "End"

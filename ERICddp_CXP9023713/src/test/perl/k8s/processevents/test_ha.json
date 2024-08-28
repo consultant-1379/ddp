@@ -1,0 +1,54 @@
+{
+    "desc": "Test HA event handling",
+    "deltafile": "delta_ha.json",
+    "expected_ha_events": [
+        {
+            "type": "UnhealthyStartup",
+            "time": "2021-05-20 00:23:14",
+            "timestamp": 1621466594,
+            "container": "cmevents",
+            "pod": "cmevents-6c5b8cc9db-v8cbs",
+            "worker": "ieatrcxb5933"
+          },
+          {
+            "pod": "comecimpolicy-bc5d878dd-dxjl5",
+            "container": "comecimpolicy",
+            "timestamp": 1621466658,
+            "time": "2021-05-20 00:24:18",
+            "type": "UnhealthyReadiness",
+            "worker": "ieatrcxb5930"
+          },
+          {
+            "type": "Kill",
+            "timestamp": 1621466682,
+            "time": "2021-05-20 00:24:42",
+            "container": "cmevents",
+            "pod": "cmevents-6c5b8cc9db-9d9xx",
+            "worker": "ieatrcxb5917"
+          },
+          {
+            "type": "UnhealthyLiveness",
+            "timestamp": 1621468563,
+            "time": "2021-05-20 00:56:03",
+            "container": "accesscontrol",
+            "pod": "accesscontrol-5d8f646479-gdtkb",
+            "worker": "ieatrcxb6366"
+          },
+          {
+            "timestamp": 1621499047,
+            "time": "2021-05-20 09:24:07",
+            "type": "BackOffRestart",
+            "pod": "sps-5d47bf95fb-49db9",
+            "container": "sps-httpd",
+            "worker": "ieatrcxb5916"
+          },
+          {
+            "pod": "itservices-0-b5dd558c-xc7s8",
+            "timestamp": 1687196944,
+            "worker": "ieatbmx7879-worker-7",
+            "time": "2023-06-19 18:49:04",
+            "container": "itservices",
+            "type": "UnhealthyReadiness"
+          }
+    ]
+}

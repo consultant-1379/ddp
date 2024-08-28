@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+>
+ <title value="Store Directory Size"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="enm_neo4j_srv_lr">
+     <reference table="sites" condition="enm_neo4j_srv_lr.siteid = sites.id"/>
+     <reference table="servers" condition="enm_neo4j_srv_lr.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s'</where>
+   <column db="totalMB" label="Store Directory Size"/>
+  </query>
+ </queries>
+ <size width="990" height="400"/>
+</modelledgraph>

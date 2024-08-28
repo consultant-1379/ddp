@@ -1,0 +1,840 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+use XML::Simple qw(:strict);
+use JSON;
+
+use String::CRC32;
+
+our $DEBUG = 0;
+
+our %CLUSTER_TYPES = (
+    'db_cluster' => {
+        'cluster_type' => 'DB',
+        'node_type' => 'ENM_DB_HOST',
+        'vm_cluster' => 0
+    },
+    'svc_cluster' => {
+        'cluster_type' => 'SERVICE',
+        'node_type' => 'ENM_SERVICE_HOST',
+        'vm_cluster' => 1
+    },
+    'scp_cluster' => {
+        'cluster_type' => 'SCRIPTING',
+        'node_type' => 'ENM_SCRIPTING_HOST',
+        'vm_cluster' => 1
+    },
+    'evt_cluster' => {
+        'cluster_type' => 'EVENT',
+        'node_type' => 'ENM_EVENT_HOST',
+        'vm_cluster' => 1
+    },
+    'str_cluster' => {
+        'cluster_type' => 'STREAMING',
+        'node_type' => 'ENM_STREAMING_HOST',
+        'vm_cluster' => 1
+    },
+    'aut_cluster' => {
+        'cluster_type' => 'AUTOMATION',
+        'node_type' => 'ENM_AUTOMATION_HOST',
+        'vm_cluster' => 1
+    },
+    'ebs_cluster' => {
+        'cluster_type' => 'EBS',
+        'node_type' => 'ENM_EBS_HOST',
+        'vm_cluster' => 1
+    },
+    'asr_cluster' => {
+        'cluster_type' => 'ASR',
+        'node_type' => 'ENM_ASR_HOST',
+        'vm_cluster' => 1
+    },
+    'esn_cluster' => {
+        'cluster_type' => 'ESN',
+        'node_type' => 'ENM_ESN_HOST',
+        'vm_cluster' => 1
+    },
+    'eba_cluster' => {
+        'cluster_type' => 'EBA',
+        'node_type' => 'ENM_EBA_HOST',
+        'vm_cluster' => 1
+    }
+);
+
+
+sub getClusters($$$) {
+    my ($r_rawModel,$dir,$date) = @_;
+
+    my %vmServiceMap = ();
+    foreach my $r_vmService ( @{$r_rawModel->{'litp:software'}->{'litp:software-services-collection'}->{'litp:vm-service'}} ) {
+        $vmServiceMap{$r_vmService->{'id'}} = $r_vmService;
+    }
+    if ( $DEBUG > 7 ) { my @vmIds = keys %vmServiceMap; print Dumper("getClusters: vmServiceMap keys", \@vmIds); }
+
+    my @clusters = ();
+    foreach my $r_modelCluster ( @{$r_rawModel->{'litp:root-deployments-collection'}->{'litp:deployment'}->{'litp:deployment-clusters-collection'}->{'litp:vcs-cluster'}} ) {
+        if ( $DEBUG > 9 ) { print Dumper("getClusters: r_modelCluster $r_modelCluster->{'id'}",$r_modelCluster); };
+        my %cluster = (
+            'name' => $r_modelCluster->{'id'},
+            'hosts' => {},
+            'services' => []
+            );
+        foreach my $r_modelNode ( @{$r_modelCluster->{'litp:cluster-nodes-collection'}->{'litp:node'}} ) {
+            $cluster{'hosts'}->{$r_modelNode->{'id'}} = $r_modelNode->{'hostname'};
+        }
+
+
+        my $resPrefix = "Res_App_" . $r_modelCluster->{'id'} . "_";
+        foreach my $r_modelSvc ( @{$r_modelCluster->{'litp:cluster-services-collection'}->{'litp:vcs-clustered-service'}} ) {
+            if ( $DEBUG > 9 ) { print Dumper("parseModel: r_modelSvc",$r_modelSvc); }
+
+            my @nodes = split(",", $r_modelSvc->{'node_list'});
+
+            my @appIds = ();
+            foreach my $key ( keys %{$r_modelSvc->{'litp:clustered-service-applications-collection'}} ) {
+                my $value = $r_modelSvc->{'litp:clustered-service-applications-collection'}->{$key};
+                if ( ref $value eq 'HASH' && exists $value->{'id'} ) {
+                    if ( $DEBUG > 7 ) { print "parseModel: apps key $key id $value->{'id'}\n"; }
+                    push @appIds, $value->{'id'};
+                }
+            }
+
+            foreach my $appId ( @appIds ) {
+                # VCS/LITP limits the length of the resource name to 60 chars
+                # http://jira-nam.lmera.ericsson.se/browse/LITPCDS-10914
+                # So if the name is longer then 60 chars we need to implement
+                # the same "mangling" algorithm
+                my $fullName = $r_modelSvc->{'name'} . '_' . $appId;
+                my $resName =  $resPrefix . $fullName;
+                if ( $DEBUG > 5 ) { print "getClusters: resName=$resName length=" . length($resName) . "\n"; }
+                if ( length($resName) >= 60 ) {
+                    my $crc32 = sprintf("%x", String::CRC32::crc32($resName));
+                    $fullName = substr($fullName, 0, 60 - length($resPrefix) - 10) . "_" . $crc32;
+                    if ( $DEBUG > 5 ) { print "getClusters: resName=$resName fullName=$fullName\n"; }
+                }
+
+                $fullName =~ s/-/_/g;
+
+                my $r_vmInfo = undef;
+                if ( exists $r_modelSvc->{'litp:clustered-service-applications-collection'}->{'litp:vm-service-inherit'} ) {
+                    my $r_vmInherit = $r_modelSvc->{'litp:clustered-service-applications-collection'}->{'litp:vm-service-inherit'};
+                    $r_vmInfo = {};
+                    my $source_path =  $r_vmInherit->{'source_path'};
+                    if ( $source_path =~ /\/software\/services\/([^\/]+)/ ) {
+                        my $service = $1;
+                        my $r_vmService = $vmServiceMap{$service};
+                        if ( defined $r_vmService ) {
+                            my $sgName = undef;
+                            if ( $DEBUG > 7 ) { print "getClusters: matched vmService $service\n"; }
+                            my $sgRPM = $r_vmService->{'litp:vm-service-vm_packages-collection'}->{'litp:vm-package'}->[0]->{'name'};
+                            if ( defined $sgRPM ) {
+                                if ( $sgRPM =~ /^ERICenmsg([^_]+)_CX\S+$/ ) {
+                                    $sgName = $1;
+                                    if ( $DEBUG > 6 ) { print "getClusters: sgName=$sgName\n"; }
+                                }
+                            }
+
+                            if ( defined $sgName ) {
+                                $r_vmInfo->{'sg'} = $sgName;
+                            } else {
+                                if ( $DEBUG > 8 ) { print Dumper("getClusters: failed to get sg for $service", $r_vmService ); }
+                            }
+                        }
+                    }
+
+                    my $node_hostname_map_str = $r_vmInherit->{'node_hostname_map'};
+                    $node_hostname_map_str =~ s/[' \{\}]//g;
+                    foreach my $pair ( split(",",$node_hostname_map_str) ) {
+                        my ($node,$hostname) = split(":",$pair);
+                        my $torServersPath = sprintf "%s/%s_TOR/%s/", $dir, $hostname, $date;
+                        if ( $DEBUG > 7 ) { print "getClusters: hostname=$hostname torServersPath=$torServersPath\n"; }
+                        if ( -r $torServersPath ) {
+                            $r_vmInfo->{'hostnames'}->{$node} = $hostname;
+                        }
+                    }
+                    if ( $DEBUG > 8 ) { print Dumper("getClusters: node_hostname_map", $r_vmInfo->{'hostnames'}); }
+
+                }
+
+                #{'litp:vm-service-vm_packages-collection'}
+                my %svc = (
+                    'name' => $r_modelSvc->{'name'},
+                    'fullname' => $fullName,
+                    'appid' => $appId,
+                    'nodes' => \@nodes,
+                    'activestandby' => $r_modelSvc->{'standby'}
+                    );
+                if ( defined $r_vmInfo ) {
+                    $svc{'vminfo'} = $r_vmInfo;
+                }
+                push @{$cluster{'services'}}, \%svc;
+            }
+        }
+
+        push @clusters, \%cluster;
+    }
+
+    return \@clusters;
+}
+
+sub getJGroupNICs($) {
+    my ($r_rawModel) = @_;
+
+    my %vmNics = ();
+    foreach my $r_vmservice ( @{$r_rawModel->{'litp:software'}->{'litp:software-services-collection'}->{'litp:vm-service'}} ) {
+        foreach my $r_vm_nic ( @{$r_vmservice->{'litp:vm-service-vm_network_interfaces-collection'}->{'litp:vm-network-interface'}} ) {
+            if ( $r_vm_nic->{'network_name'} eq 'jgroups' ) {
+                $vmNics{$r_vmservice->{'id'}} = $r_vm_nic->{'device_name'};
+            }
+        }
+    }
+    if ( $DEBUG > 3 ) { print Dumper("getJGroupNICs: vmNics", \%vmNics); }
+    return \%vmNics;
+}
+
+sub getIpMap($) {
+    my ($r_rawModel) = @_;
+
+    my %ipMap = ();
+    foreach my $r_modelCluster ( @{$r_rawModel->{'litp:root-deployments-collection'}->{'litp:deployment'}->{'litp:deployment-clusters-collection'}->{'litp:vcs-cluster'}} ) {
+        my $r_aliasArr = $r_modelCluster->{'litp:cluster-configs-collection'}->{'litp:alias-cluster-config'}->{'litp:alias-cluster-config-aliases-collection'}->{'litp:alias'};
+        if ( $DEBUG > 8 ) { print Dumper("getIpMap: r_aliasArr $r_modelCluster->{'id'}",$r_aliasArr); }
+        foreach my $r_alias ( @{$r_aliasArr} ) {
+            my @alias_names = split(",", $r_alias->{'alias_names'});
+            $ipMap{$r_alias->{'address'}} = $alias_names[0];
+        }
+    }
+
+    if ( $DEBUG > 2 ) { print Dumper("getIpMap: ipMap", \%ipMap); }
+
+    return \%ipMap;
+}
+
+sub parseModel($$$$$) {
+    my ($dataFile,$dir,$date,$site,$fsPrefixLink) = @_;
+
+    my $r_rawModel = XMLin($dataFile, ForceArray => ['litp:ha-service-config', 'litp:vm-service', 'litp:vm-package', 'litp:vcs-clustered-service', 'litp:node', 'litp:vm-network-interface', 'litp:sfs-pool'],  KeyAttr => []);
+    $Data::Dumper::Indent = 1;
+    if ( $DEBUG > 10 ) { print Dumper("parseModel: r_rawModel",$r_rawModel); }
+
+    getFileSystemPrefix($date,$site,$r_rawModel,$fsPrefixLink);
+
+    my $r_model = {
+        'clusters' => getClusters($r_rawModel,$dir,$date),
+        'jgroup_nics' => getJGroupNICs($r_rawModel),
+        'ipmap' => getIpMap($r_rawModel)
+    };
+    if ( $DEBUG > 8 ) { print Dumper("parseModel: r_model:",$r_model); }
+    return $r_model;
+}
+
+
+sub writeServerType($$$) {
+    my ($r_model,$dir,$date) = @_;
+
+    my @vmClusters = ();
+    foreach my $r_cluster ( @{$r_model->{'clusters'}} ) {
+        my $nodeType = 'OTHER';
+        if ( exists $CLUSTER_TYPES{$r_cluster->{'name'}} ) {
+            $nodeType = $CLUSTER_TYPES{$r_cluster->{'name'}}->{'node_type'};
+            if ( $CLUSTER_TYPES{$r_cluster->{'name'}}->{'vm_cluster'} ) {
+                push @vmClusters, $r_cluster;
+            }
+        }
+
+        if ( $DEBUG > 5 ) { printf "writeServerType: %s nodeType=$nodeType\n", $r_cluster->{'name'} }
+
+        if ( $nodeType ne 'OTHER' ) {
+            foreach my $node ( keys %{$r_cluster->{'hosts'}} ) {
+                my $host = $r_cluster->{'hosts'}->{$node};
+                my $torServerTypePath = sprintf "%s/%s_TOR/%s/TOR/tor_server_type", $dir, $host, $date;
+                if ( $DEBUG > 7 ) { print "writeServerType: host=$host torServerTypePath=$torServerTypePath\n"; }
+                if ( -r $torServerTypePath ) {
+                    open OUTPUT, ">$torServerTypePath" or die "Failed to open $torServerTypePath";
+                    print OUTPUT "$nodeType\n";
+                    close OUTPUT;
+                }
+            }
+        }
+    }
+
+    foreach my $r_vmCluster ( @vmClusters ) {
+        foreach my $r_svc ( @{$r_vmCluster->{'services'}} ) {
+            my @vmHosts = ();
+            if ( $r_svc->{'activestandby'} == 1 ) {
+                push @vmHosts, $r_svc->{'name'};
+            } else {
+                foreach my $node ( @{$r_svc->{'nodes'}} ) {
+                    push @vmHosts, $node . "-" . $r_svc->{'name'};
+                }
+            }
+
+            foreach my $vmHost ( @vmHosts ) {
+                my $torPath = sprintf "%s/%s_TOR/%s/TOR", $dir, $vmHost, $date;
+                if ( $DEBUG > 5 ) { printf "writeServerType: $vmHost torPath=$torPath\n"; }
+                if ( ! -d $torPath ) {
+                    # Workaround where we're getting .localdomain in some cases
+                    $torPath = sprintf "%s/%s.localdomain_TOR/%s/TOR", $dir, $vmHost, $date;
+                }
+                if ( -d $torPath ) {
+                    my $torServerTypePath = $torPath . "/tor_server_type";
+                    open OUTPUT, ">$torServerTypePath" or die "Failed to open $torServerTypePath";
+                    print OUTPUT "ENM_VM\n";
+                    close OUTPUT;
+                }
+            }
+        }
+    }
+}
+
+sub getSvcStates($$$) {
+    my ($r_model,$dir,$date) = @_;
+    foreach my $r_cluster ( @{$r_model->{'clusters'}} ) {
+        my $r_svcStates = undef;
+        foreach my $node ( keys %{$r_cluster->{'hosts'}} ) {
+            if ( ! defined $r_svcStates ) {
+                my $host = $r_cluster->{'hosts'}->{$node};
+                my $hastateFile = sprintf "%s/%s_TOR/%s/TOR/vcs/hastate", $dir, $host, $date;
+
+                if ( $DEBUG > 3 ) { print "getSvcStates: looking for $hastateFile\n"; }
+
+                if ( -r $hastateFile ) {
+                    open INPUT, $hastateFile or die "Failed to open $hastateFile";
+
+                    my $clusterName = $r_cluster->{'name'};
+                    my $regex = '^Res_App_' . $clusterName . '_(\S+)\s+State\s+(\S+)\s+(\S+)';
+                    while ( my $line = <INPUT> ) {
+                        if ($DEBUG > 9) { print "getSvcStates: line=$line"; }
+                        if ( $line =~ /^#Resource/ ) {
+                            foreach my $svcName (keys %{$r_svcStates}) {
+                                foreach my $system (keys %{$r_svcStates->{$svcName}}) {
+                                    $r_svcStates->{$svcName}->{$system} = 'OFFLINE';
+                                }
+                            }
+                        } elsif ( $line =~ /$regex/ ) {
+                            my ($svcName,$system,$state) = ($1,$2,$3);
+
+                            #TORF-230255 - set VM state as 'OTHER' for states other than 'ONLINE', 'OFFLINE' and 'FAILED'.
+                            if( $state !~ /ONLINE|OFFLINE|FAILED/ ) {
+                                $state = 'OTHER';
+                            }
+
+                            if ( $DEBUG > 7 ) { print "getSvcStates: svcName=$svcName system=$system state=$state\n"; }
+                            $r_svcStates->{$svcName}->{$system} = $state;
+                        }
+                    }
+                    close INPUT;
+                }
+            }
+        }
+        if ( $DEBUG > 8 ) { print Dumper("getSvcStates: " . $r_cluster->{'name'} . " r_svcStates", $r_svcStates); }
+        if ( defined $r_svcStates ) {
+            foreach my $r_svc ( @{$r_cluster->{'services'}} ) {
+                if ( $DEBUG > 7 ) { print "getSvcStates: Looking for state for $r_svc->{'fullname'}\n"; }
+                my $r_svcState = $r_svcStates->{$r_svc->{'fullname'}};
+                if ( defined $r_svcState ) {
+                    $r_svc->{'state'} = $r_svcState;
+                } else {
+                    print "WARN: Could not find svc state for $r_svc->{'name'}\n";
+                }
+            }
+        }
+    }
+
+    if ( $DEBUG > 6 ) { print Dumper("getSvcStates: r_model with states", $r_model); }
+}
+
+sub parseEngineLog($$$$$) {
+    my ($clusterName,$r_serviceNameMap,$engineLogFile,$logHost,$r_events) = @_;
+
+    my $svcResSubRegex = 'Res_App_';
+    my $svcResRegex = $svcResSubRegex . $clusterName . '_(\S+)';
+    my $svcGrpRegex = 'Grp_CS_' . $clusterName . '_(\S+)';
+
+    open INPUT, $engineLogFile or die "Failed to open $engineLogFile";
+    my $seqNum = 0; # Used to preserve the order of events
+    while ( my $line = <INPUT> ) {
+        if ($DEBUG > 9) { print "parseEngineLog: line=$line"; }
+
+        my $timestamp = undef;
+        my $message = undef;
+        if ( $line =~ /^([\d\/ :]{19,19})(.*)/ ) {
+            ($timestamp,$message) = ($1,$2);
+            $timestamp =~ s/\//-/g;
+        } else {
+            if ( $DEBUG > 8 ) { print "parseEngineLog: skipping $line\n"; }
+            next;
+        }
+
+        my ($service,$system,$event,$attempt);
+
+        if ( $message =~ /$svcResSubRegex/ ) {
+            if ( $DEBUG > 8 ) { print "parseEngineLog: Res_App match message=$message\n"; }
+
+            if ( $message =~ /Initiating (\S+) of Resource $svcResRegex .* on System (\S+)/ ) {
+                my $targetState = undef;
+                ($targetState, $service, $system) = ($1, $2, $3);
+                $event = ucfirst($targetState) . 'Start';
+            } elsif ( $message =~ /Resource $svcResRegex .* is (\S+) on (\S+)/ && $message !~ /\(First probe\)$/ ) {
+                my $state = undef;
+                ($service, $state, $system) = ($1, $2, $3);
+                $event = ucfirst($state) . 'Completed';
+            } elsif ( $message =~ /\(([^\)]+)\) Resource\($svcResRegex\) - monitor procedure did not complete within the expected time/ ) {
+                ($system, $service) = ($1, $2);
+                $event = 'MonitorTimeout';
+            } elsif ( $message =~ /\(([^\)]+)\) Resource\($svcResRegex\) has reported unexpected OFFLINE/ ) {
+                ($system, $service) = ($1, $2);
+                $event = 'MonitorOffline';
+            } elsif ( $message =~ /\(([^\)]+)\) Agent is calling clean for resource\($svcResRegex\)/ ) {
+                ($system, $service) = ($1, $2);
+                $event = 'CleanStart';
+            } elsif ( $message =~ /\(([^\)]+)\) Resource\($svcResRegex\) - clean completed successfully/ ) {
+                ($system, $service) = ($1, $2);
+                $event = 'CleanCompleted';
+            } elsif ( $message =~ /\(([^\)]+)\) The monitoring program for resource\($svcResRegex\) has consistently failed to determine the resource status within the expected time. Agent is restarting \(attempt number (\d+) of \d+\) the resource/ ||
+                      $message =~ /\(([^\)]+)\) Resource\($svcResRegex\) became OFFLINE unexpectedly on its own. Agent is restarting \(attempt number (\d+) of \d+\) the resource/) {
+                ($system, $service, $attempt) = ($1, $2, $3);
+                $event = 'RestartStart';
+            } elsif ( $message =~ /\(([^\)]+)\) Agent has successfully restarted resource\($svcResRegex\)/ ) {
+                my ($system, $service) = ($1, $2);
+                my $event = 'RestartCompleted';
+            }
+        } elsif ( $message=~ /User root fired command: hasys\s+((?:-\S+\s*)+)(\S+)\s+from/ ) {
+            # Parse the 'freeze' & 'unfreeze' events for all the available hosts
+            ($event, $system) = ($1, $2);
+            if ( $DEBUG > 8 ) { print "parseEngineLog: root fired command event=$event system=$system\n"; }
+            $event =~ s/-|\s*$//g;
+            $service = 'NO_SERVICE';
+        } elsif ( $message =~ /Grp_CS_/ ) {
+            if ( $DEBUG > 8 ) { print "parseEngineLogs: Grp__CS message=$message\n"; }
+
+            # 2017/10/13 11:21:20 VCS ERROR V-16-1-10205 Group Grp_CS_svc_cluster_sps is faulted on system con1e2c2s14
+            if ( $message =~ /ERROR.*Group.*Grp_CS_svc_cluster_(\S+)\sis faulted on system\s(\S+)/ ) {
+                ($system, $service) = ($2, $1);
+                $event = 'Faulted';
+            }
+        }
+
+        if ( $DEBUG > 8 ) { printf "parseEngineLog: event=%s\n", (defined $event ? $event : 'undef'); }
+
+        if ( defined $event ) {
+            my $appid = undef;
+            if ( exists $r_serviceNameMap->{$service} ) {
+                my $svcNameFromEngineLog = $service;
+                $service = $r_serviceNameMap->{$svcNameFromEngineLog}->{'name'};
+                $appid = $r_serviceNameMap->{$svcNameFromEngineLog}->{'appid'};
+            } elsif ( $service =~ /^versant_cluster_service_versant_\d+$/ ) {
+                # Hack here, for some reason the versant_db_service is renamed to versant_<number>
+                $service = $appid = 'versant_db_service';
+            } elsif ( $service =~ /(.*)_vm_service_/ ) {
+                $service = $appid = $1;
+            } elsif ( $service eq 'NO_SERVICE' ) {
+                $service = '';
+            } else {
+                print "WARN: Failed to map service $service\n";
+            }
+
+            my $r_event = {
+                'timestamp' => $timestamp,
+                'time'      => parseTime($timestamp, $StatsTime::TIME_YYYYMD_HMS),
+                'log'       => $logHost,
+                'seqno'     => $seqNum,
+                'host'      => $system,
+                'service'   => $service,
+                'event'     => $event
+            };
+            $seqNum++;
+            if ( defined $attempt ) {
+                $r_event->{'attempt'} = $attempt;
+            }
+            if ( defined $appid ) {
+                $r_event->{'appid'} = $appid;
+            }
+
+            if ( $DEBUG > 7 ) { print Dumper("parseEngineLog: adding r_event", $r_event); }
+
+            push @{$r_events}, $r_event;
+        }
+    }
+    close INPUT;
+}
+
+sub getEventKey($) {
+    my ($r_event) = @_;
+    my @eventKeyParts = ();
+    foreach my $name ( sort keys %{$r_event} ) {
+        if ( $name ne 'time' && $name ne 'timestamp' && $name ne 'log' && $name ne 'seqno' ) {
+            if ( defined $r_event->{$name} ) {
+                push @eventKeyParts, $r_event->{$name};
+            } else {
+                print Dumper("WARN: No value for $name", $r_event);
+            }
+        }
+    }
+    return join(':', @eventKeyParts);
+}
+
+sub compareEvents {
+    if ( $DEBUG > 9 ) { print Dumper("compareEvents", $a, $b); }
+
+    if ( $a->{'time'} != $b->{'time'} ) {
+        return $a->{'time'} <=> $b->{'time'};
+    } elsif ( $a->{'log'} ne $b->{'log'} ) {
+        return $a->{'log'} cmp $b->{'log'};
+    } else {
+        return $a->{'seqno'} <=> $b->{'seqno'};
+    }
+}
+
+sub removeDuplicates($) {
+    my ($r_events) = @_;
+
+    my @results = ();
+    my @sortedEvents = sort compareEvents @{$r_events};
+
+    if ( $DEBUG > 5 ) { print Dumper("removeDuplicates: sortedEvents", \@sortedEvents); }
+
+    # Holds the last time we saw an event
+    my %lastEventTime = ();
+
+    foreach my $r_event ( @sortedEvents ) {
+        my $eventKey = getEventKey($r_event);
+        my $lastEventTime = $lastEventTime{$eventKey};
+        if ( ! defined $lastEventTime ) {
+            $lastEventTime = 0;
+        }
+
+        if ( $DEBUG > 7 ) {
+            printf("removeDuplicates: event time=%d lastEventTime=%d eventKey=%s\n",
+                   $r_event->{'time'}, $lastEventTime, $eventKey);
+        }
+
+        if ( ($r_event->{'time'} - $lastEventTime) > 4 ) {
+            push @results, $r_event;
+            $lastEventTime{$eventKey} = $r_event->{'time'};
+        } else {
+            if ( $DEBUG > 5 ) { print "removeDuplicates: discarding $eventKey\n"; }
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("removeDuplicates: results", \@results); }
+
+    return \@results;
+}
+
+sub removeAlreadyProcessed($$$) {
+    my ($r_dedupedEvents,$r_incrData,$clusterName) = @_;
+
+    my $r_incrEvent = $r_incrData->{'vcs_events'}->{$clusterName};
+    if ( defined $r_incrEvent ) {
+        if ( $DEBUG > 4 ) { print Dumper("removeAlreadyProcessed $clusterName r_incrEvent", $r_incrEvent); }
+
+        # Discard any events that occurred before the incrEvent
+        while ( $#{$r_dedupedEvents} > -1 && $r_dedupedEvents->[0]->{'time'} < $r_incrEvent->{'time'} ) {
+            my $r_alreadyProcessedEvent = shift @{$r_dedupedEvents};
+            if ( $DEBUG > 4 ) {
+                printf("removeAlreadyProcessed: discarding older %s %s\n",
+                       $r_alreadyProcessedEvent->{'timestamp'}, getEventKey($r_alreadyProcessedEvent));
+            }
+        }
+
+        # Now examine the events that occurred at the same time, discard
+        # any event that is "before" the incrEvent as defined by the compareEvents
+        # function
+        my $foundEvent = 0;
+        $::b = $r_incrEvent;
+        while ( ($#{$r_dedupedEvents} > -1) &&
+                    ($r_dedupedEvents->[0]->{'time'} == $r_incrEvent->{'time'}) &&
+                    ($foundEvent == 0) ) {
+            $::a = $r_dedupedEvents->[0];
+            my $compareResult = compareEvents();
+            if ( $compareResult <= 0 ) {
+                my $r_alreadyProcessedEvent = shift @{$r_dedupedEvents};
+                if ( $DEBUG > 4 ) {
+                    printf("removeAlreadyProcessed: discarding prev %s %s\n",
+                           $r_alreadyProcessedEvent->{'timestamp'}, getEventKey($r_alreadyProcessedEvent));
+                }
+            }
+            if ( $compareResult != -1 ) {
+                $foundEvent = 1;
+            }
+        }
+        if ( $foundEvent == 0 ) {
+            printf("WARN: Didn't find match for incrEvent in $clusterName: %s %s\n",
+                   $r_incrEvent->{'timestamp'}, getEventKey($r_incrEvent));
+        }
+    }
+
+    if ( $#{$r_dedupedEvents} > -1 ) {
+        $r_incrData->{'vcs_events'}->{$clusterName} = $r_dedupedEvents->[$#{$r_dedupedEvents}];
+    }
+}
+
+sub parseEngineLogs($$$$) {
+    my ($r_model,$dir,$date,$r_incrData) = @_;
+
+    foreach my $r_cluster ( @{$r_model->{'clusters'}} ) {
+        my %serviceNameMap = ();
+        foreach my $r_service ( @{$r_cluster->{'services'}} ) {
+            $serviceNameMap{$r_service->{'fullname'}} = $r_service;
+        }
+        if ( $DEBUG > 6 ) { print Dumper("parseEngineLogs: serviceNameMap:",\%serviceNameMap); }
+
+        my @events = ();
+        foreach my $node ( sort keys %{$r_cluster->{'hosts'}} ) {
+            my $host = $r_cluster->{'hosts'}->{$node};
+            my $engineLogFile = sprintf "%s/%s_TOR/%s/TOR/vcs/engine_A.log", $dir, $host, $date;
+            if ( $DEBUG > 4 ) { print "parseEngineLogs: Checking $engineLogFile\n"; }
+
+            # Skip non-existant/empty engine log files
+            if ( ! -s $engineLogFile ) {
+                next;
+            }
+
+            print "parseEngineLogs: Parsing $engineLogFile\n";
+            parseEngineLog($r_cluster->{'name'},\%serviceNameMap,$engineLogFile,$host,\@events);
+        }
+
+        my $r_dedupedEvents = removeDuplicates(\@events);
+        removeAlreadyProcessed($r_dedupedEvents,$r_incrData,$r_cluster->{'name'});
+        $r_cluster->{'vcs_events'} = $r_dedupedEvents;
+    }
+}
+
+sub store($$$) {
+    my ($site,$date,$r_model) = @_;
+
+    setStatsDB_Debug($DEBUG);
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    dbDo($dbh,"DELETE FROM enm_cluster_host WHERE siteid = $siteId AND date = '$date'");
+    dbDo($dbh,"DELETE FROM enm_cluster_svc WHERE siteid = $siteId AND date = '$date'");
+    dbDo($dbh,"DELETE FROM enm_jgroup_nics WHERE siteid = $siteId AND date = '$date'");
+
+    my %allSvcNamesMap = ();
+    my %allAppIdsMap = ();
+    foreach my $r_cluster ( @{$r_model->{'clusters'}} ) {
+        foreach my $r_svc ( @{$r_cluster->{'services'}} ) {
+            $allSvcNamesMap{$r_svc->{'name'}} = 1;
+            $allAppIdsMap{$r_svc->{'appid'}} = 1;
+        }
+        foreach my $r_event ( @{$r_cluster->{'vcs_events'}} ) {
+            if ( ! exists $allSvcNamesMap{$r_event->{'service'}} ) {
+                $allSvcNamesMap{$r_event->{'service'}} = 1;
+            }
+        }
+    }
+    my @allSvcNames = keys %allSvcNamesMap;
+    my @allAppIds = keys %allAppIdsMap;
+    # A hack to allow 'VCS Event Details' table records which are not associated with any service
+    push (@allSvcNames, "");
+    push (@allAppIds, "");
+    my $r_svcIdMap = getIdMap($dbh, "enm_cluster_svc_names", "id", "name",  \@allSvcNames);
+    my $r_appIdMap = getIdMap($dbh, "enm_cluster_svc_app_ids", "id", "name",  \@allAppIds);
+    my $r_serverIdMap = getIdMap($dbh, "servers", "id", "hostname", [], $siteId);
+
+    foreach my $r_cluster ( @{$r_model->{'clusters'}} ) {
+        my $clusterType = 'UNKNOWN';
+        if ( exists $CLUSTER_TYPES{$r_cluster->{'name'}} ) {
+            $clusterType = $CLUSTER_TYPES{$r_cluster->{'name'}}->{'cluster_type'};
+        }
+
+        my %hostToNode = ();
+        foreach my $node ( keys %{$r_cluster->{'hosts'}} ) {
+            my $host = $r_cluster->{'hosts'}->{$node};
+            $hostToNode{$host} = $node;
+
+            my $serverId = $r_serverIdMap->{$host};
+            if ( ! defined $serverId ) {
+                $serverId = createServer( $dbh, $siteId, $host, $CLUSTER_TYPES{$r_cluster->{'name'}}->{'node_type'});
+                $r_serverIdMap->{$host} = $serverId;
+            }
+            dbDo($dbh,"INSERT INTO enm_cluster_host (siteid,date,clustertype,serverid,nodename) VALUES ($siteId,'$date','$clusterType',$serverId,'$node')")
+                or die "Failed to insert data";
+        }
+
+        foreach my $r_svc ( @{$r_cluster->{'services'}} ) {
+            if ( ! exists $r_svc->{'state'} ) {
+                print "WARN: No state info found for $r_svc->{'name'}\n";
+                next;
+            }
+            foreach my $server ( keys %{$r_svc->{'state'}} ) {
+                my $hostServerId = $r_serverIdMap->{$server};
+                if ( ! defined $hostServerId ) {
+                   printf "WARN: Cannot get serverId for %s for %s\n", $server, $r_svc->{'name'};
+                   next;
+                }
+
+                my $vmServerId = undef;
+                if ( exists $r_svc->{'vminfo'} ) {
+                    my $vmHostName = $r_svc->{'vminfo'}->{'hostnames'}->{$hostToNode{$server}};
+                    if ( defined $vmHostName ) {
+                        if ( exists $r_serverIdMap->{$vmHostName} ) {
+                            $vmServerId = $r_serverIdMap->{$vmHostName};
+                        } else {
+                            $vmServerId = createServer( $dbh, $siteId, $vmHostName, 'ENM_VM');
+                            $r_serverIdMap->{$vmHostName} = $vmServerId;
+                        }
+                    }
+                }
+                my $sql = undef;
+                if ( defined $vmServerId ) {
+                    $sql =sprintf("INSERT INTO enm_cluster_svc (siteid,date,hostserverid,serviceid,appid,state,actstand,vmserverid) VALUES (%d,'%s',%d,%d,%d,'%s',%d,%d)",
+                                  $siteId,$date,$r_serverIdMap->{$server},$r_svcIdMap->{$r_svc->{'name'}},
+                                  $r_appIdMap->{$r_svc->{'appid'}},$r_svc->{'state'}->{$server},
+                                  $r_svc->{'activestandby'},$vmServerId);
+                } else {
+                    $sql =sprintf("INSERT INTO enm_cluster_svc (siteid,date,hostserverid,serviceid,appid,state,actstand) VALUES (%d,'%s',%d,%d,%d,'%s',%d)",
+                                  $siteId,$date,$r_serverIdMap->{$server},$r_svcIdMap->{$r_svc->{'name'}},
+                                  $r_appIdMap->{$r_svc->{'appid'}},$r_svc->{'state'}->{$server},
+                                  $r_svc->{'activestandby'});
+                }
+                dbDo($dbh, $sql) or die "Failed to insert data";
+            }
+        }
+
+        if ( exists $r_cluster->{'vcs_events'} && $#{$r_cluster->{'vcs_events'}} > -1 ) {
+            dbDo($dbh,
+                 sprintf("DELETE FROM enm_vcs_events WHERE siteid = %d AND clustertype = '%s' AND time BETWEEN '%s' AND '%s'",
+                         $siteId, $clusterType,
+                         formatTime($r_cluster->{'vcs_events'}->[0]->{'time'}, $StatsTime::TIME_SQL),
+                         formatTime($r_cluster->{'vcs_events'}->[$#{$r_cluster->{'vcs_events'}}]->{'time'}, $StatsTime::TIME_SQL))
+             ) or die "Failed to delete from enm_vcs_events";
+
+            foreach my $r_vcsEvent ( @{$r_cluster->{'vcs_events'}} ) {
+                my $svcName = $r_vcsEvent->{'service'};
+                my $appId = $r_vcsEvent->{'appid'};
+                if ( ! defined $appId ) {
+                    $appId = '';
+                }
+                my $hostServerId = $r_serverIdMap->{$r_vcsEvent->{'host'}};
+                if ( ! defined $hostServerId ) {
+                   printf "WARN: Cannot get serverId for %s for enm_vcs_events\n", $r_vcsEvent->{'host'};
+                   next;
+                }
+                 dbDo($dbh,sprintf("INSERT INTO enm_vcs_events (time,siteid,clustertype,serverid,serviceid,appid,eventtype) VALUES ('%s',%d,'%s',%d,%d,%d,'%s')",
+                                  formatTime($r_vcsEvent->{'time'},$StatsTime::TIME_SQL), $siteId, $clusterType,
+                                  $hostServerId, $r_svcIdMap->{$svcName},
+                                  $r_appIdMap->{$appId}, $r_vcsEvent->{'event'}));
+            }
+        }
+
+        foreach my $r_svc ( @{$r_cluster->{'services'}} ) {
+            # At the moment only active/active services are using JGroups
+            if ( $r_svc->{'activestandby'} == 1 ) {
+                next;
+            }
+            my $jgroup_nic = $r_model->{'jgroup_nics'}->{$r_svc->{'name'}};
+            if ( ! defined $jgroup_nic ) {
+                next;
+            }
+
+            foreach my $node ( @{$r_svc->{'nodes'}} ) {
+                my $vm_hostname = $node . "-" . $r_svc->{'name'};
+                my $r_server_matches = dbSelectAllArr( $dbh, "SELECT id from servers where siteid = $siteId and hostname = '$vm_hostname'");
+                if ( $#{$r_server_matches} > -1 ) {
+                    my $vm_serverid = $r_server_matches->[0]->[0];
+                    my $r_nic_matches = dbSelectAllArr( $dbh, "SELECT id FROM network_interfaces WHERE serverid = $vm_serverid AND name = '$jgroup_nic'");
+                    if ( $#{$r_nic_matches} > -1 ) {
+                        my $jgroup_nicid = $r_nic_matches->[0]->[0];
+                        dbDo($dbh,"INSERT INTO enm_jgroup_nics (date,siteid,serverid,nicid) VALUES ('$date',$siteId,$vm_serverid,$jgroup_nicid)")
+                            or die "Failed to insert";
+                    }
+                }
+            }
+
+        }
+    }
+    $dbh->disconnect;
+}
+
+sub writeIpMap($$) {
+    my ($ipMapFile,$r_model) = @_;
+
+    open OUTPUT, ">$ipMapFile" or die "Cannot open $ipMapFile";
+    print OUTPUT Dumper($r_model->{'ipmap'});
+    close OUTPUT;
+}
+
+sub getFileSystemPrefix($$$$) {
+    my ($date,$site,$r_rawModel,$fsPrefixLink) = @_;
+
+    foreach my $r_pool ( @{$r_rawModel->{'litp:infrastructure'}->{'litp:storage'}->{'litp:storage-storage_providers-collection'}->{'litp:sfs-service'}->{'litp:sfs-service-pools-collection'}->{'litp:sfs-pool'}} ) {
+        open OUTPUT, ">$fsPrefixLink" or die "Cannot open $fsPrefixLink";
+        print OUTPUT $r_pool->{'name'};
+        close OUTPUT;
+    }
+}
+
+sub main() {
+    my ($modelFile,$site,$date,$torServersDir,$ipMap,$incrFile,$fsPrefixLink);
+    my $result = GetOptions(
+        "model=s" => \$modelFile,
+        "date=s" => \$date,
+        "site=s" => \$site,
+        "dir=s" => \$torServersDir,
+        "ipmap=s" => \$ipMap,
+        "incr=s" => \$incrFile,
+        "prefix=s" => \$fsPrefixLink,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+    ((defined $modelFile) && (defined $date)) or die "Missing args";
+
+    my %incrData = ();
+    if ( defined $incrFile && -r $incrFile ) {
+        my $dumperOutput;
+        do {
+            local $/ = undef;
+            open my $fh, "<", $incrFile or die "could not open $incrFile: $!";
+            $dumperOutput = <$fh>;
+            close $fh;
+        };
+        my $VAR1;
+        eval($dumperOutput);
+        %incrData = %{$VAR1};
+        if ( $DEBUG > 3 ) { print Dumper("main: incrData", \%incrData); }
+    }
+
+    setStatsDB_Debug($DEBUG);
+    my ($day,$month,$year) = $date =~ /^(\d{2,2})(\d{2,2})(\d{2,2})$/;
+    my $sqlDate = sprintf("20%02d-%02d-%02d", $year,$month,$day);
+
+    my $r_model = parseModel($modelFile,$torServersDir,$date,$site,$fsPrefixLink);
+
+    if ( defined $ipMap ) {
+        writeIpMap($ipMap,$r_model);
+    }
+
+    if ( defined $torServersDir ) {
+        getSvcStates($r_model,$torServersDir,$date);
+        parseEngineLogs($r_model,$torServersDir,$date,\%incrData);
+    }
+
+    if ( defined $site && defined $sqlDate ) {
+        writeServerType($r_model,$torServersDir,$date);
+        store($site,$sqlDate,$r_model);
+    }
+
+    if ( defined $incrFile ) {
+        my $incrDataStr = Dumper(\%incrData);
+        open INC, ">$incrFile";
+        print INC $incrDataStr;
+        close INC;
+    }
+
+}
+
+main();
+

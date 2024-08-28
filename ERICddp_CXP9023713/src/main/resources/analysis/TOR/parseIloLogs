@@ -1,0 +1,123 @@
+#!/usr/bin/env perl
+
+#=====================================================================
+## Script  : parseIloLogs
+## Author  : Sandhya P (xsandhy)
+# Purpose : The purpose of this script is to parse the ILO log (server/ILO_info.log)
+#           in order to extract health-check related data and store them under database.
+## Usage   : ${ANALYSIS_BIN}/TOR/parseIloLogs --logfile /data/stats/tor/${SITE}/data/${DATE}/server/ILO_info.log
+##            --site ${SITE} --date ${SQL_DATE}
+##=====================================================================
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsTime;
+use StatsDB;
+use EnmCluster;
+
+use DBI;
+
+our $DEBUG = 0;
+
+# Subroutine to parse the logs to fetch ILO data
+sub parseLog($) {
+    my ($logFile) = @_;
+    my $site = shift;
+    my $date = shift;
+
+    # There's a fault in the older ilo logs where the log
+    # contains the output from multiple executions
+    # We only want the last value
+    my %iloConfigs = ();
+
+    my $r_iloConfig = undef;
+    open (LOG, $logFile) or die "Failed to open ilo log file $logFile";
+    while (my $logLine = <LOG>) {
+        if ( $DEBUG > 9 ) { print "parseILO_info: Logline=$logLine"; }
+
+        if ( $logLine =~ /^BLADE:: (.*)/) {
+            $r_iloConfig = {
+                'blade' => $1,
+                'cmd_status' => '',
+                'blade_power_setting' => undef,
+                'sys_health_status' => undef
+            };
+            $iloConfigs{$r_iloConfig->{'blade'}} = $r_iloConfig;
+        } elsif ($logLine =~ /^status_tag=(.*)/) {
+            $r_iloConfig->{'cmd_status'} .= $1;
+        } elsif ( $logLine =~ /^\s*sys_health=(.*)/) {
+            $r_iloConfig->{'sys_health_status'} = $1;
+        } elsif ( $logLine =~ /^\s*oem(hp|HPE)_powerreg=(.*)/) {
+            $r_iloConfig->{'blade_power_setting'} = $2;
+        }
+    }
+    close( LOG );
+
+    my @iloConfigsArr = values %iloConfigs;
+    if ( $DEBUG > 3 ) { print Dumper("parse: iloConfigsArr", \@iloConfigsArr); }
+    return \@iloConfigsArr;
+}
+
+sub store($$$) {
+    my ($site,$date,$r_iloConfigs) = @_;
+
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    my $bcpFile = getBcpFileName("enm_ilo_info");
+    open (BCP, ">$bcpFile") or die "Couldn't open ilo output file";
+
+    foreach my $r_iloConfig ( @{$r_iloConfigs} ) {
+        if ( $r_iloConfig->{'cmd_status'} !~ '/FAILED/' ) {
+	    my $status = $r_iloConfig->{'sys_health_status'};
+	    my $power = $r_iloConfig->{'blade_power_setting'};
+            my @row = (
+                $siteId,
+                $date,
+                $r_iloConfig->{'blade'},
+                defined $status ? $status : '\N',
+                defined $power ? $power : '\N',
+            );
+            print BCP join("\t", @row), "\n";
+        } else {
+            print "WARNING: Discarding $r_iloConfig->{'blade'}\n";
+        }
+    }
+    close BCP;
+
+    # Delete the old records from 'enm_ilo_logs' table for the given date
+    dbDo( $dbh, sprintf("DELETE FROM enm_ilo_logs WHERE siteid = %d AND  date = '%s'",$siteId, $date))
+         or die "Failed to remove old data from 'enm_ilo_logs' table";
+    # Populate the 'enm_ilo_logs' DB table with the new records
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFile' INTO TABLE enm_ilo_logs" )
+         or die "Failed to load new data from '$bcpFile' file to 'enm_ilo_logs' table";
+    $dbh->disconnect();
+}
+
+sub main() {
+    my $logfile;
+    my $site;
+    my $date;
+
+    my $result = GetOptions (
+        "logfile=s" => \$logfile,
+        "site=s"   => \$site,
+        "date=s"   => \$date,
+        "debug=s"  => \$DEBUG
+        );
+
+    die "Invalid args"  if ( $result != 1 );
+
+    # Parse the logs to get the ILO health-check related data
+    my $r_iloConfigs = parseLog($logfile);
+    if ( $#{$r_iloConfigs} ) {
+        store($site, $date, $r_iloConfigs);
+    }
+}
+
+main();
+

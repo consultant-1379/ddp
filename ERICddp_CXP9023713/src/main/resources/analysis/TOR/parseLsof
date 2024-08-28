@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+our $DEBUG = 0;
+
+my ($state,$fhdr,$fdst,$pidst)=0;
+my ($proto,$access,$devn,$fd,$inode,$lock,$name)="";
+my ($offset,$size,$stream,$type)="";
+my ($devch,$cmd,$login,$pgrp,$pid,$ppid,$uid)="";
+my $zone="";
+# Process the ``lsof -F'' output a line at a time, gathering
+# the variables for a process together before printing them;
+# then gathering the variables for each file descriptor
+# together before printing them.
+
+sub main() {
+  my ($inputFile,$outputFile);
+  my $result = GetOptions("input=s"  => \$inputFile,
+               "output=s"  => \$outputFile,
+               "debug=s" => \$DEBUG );
+  open INPUT, "<$inputFile" or die "Cannot open input $inputFile";
+  open OUTPUT, ">$outputFile" or die "Cannot open table $outputFile";
+
+  while ( my $line = <INPUT> ) {
+    chop($line);
+    if ($line =~ /^p(.*)/) {
+      # A process set begins with a PID field whose ID character is `p'.
+      my $tpid = $1;
+      if ($pidst) { &list_proc }
+      $pidst = 1;
+      $pid = $tpid;
+      if ($fdst) { &list_fd; $fdst = 0; }
+      next;
+    }
+    # Save process-related values.
+    if ($line =~ /^g(.*)/) { $pgrp = $1; next; }
+    if ($line =~ /^c(.*)/) { $cmd = $1; next; }
+    if ($line =~ /^u(.*)/) { $uid = $1; next; }
+    if ($line =~ /^L(.*)/) { $login = $1; next; }
+    if ($line =~ /^R(.*)/) { $ppid = $1; next; }
+    if ($line =~ /^z(.*)/) { $zone = $1; next; }
+    if ($line =~ /^Z(.*)/) { next; }
+    # A file descriptor set begins with a file descriptor field whose ID
+    # character is `f'.
+    if ($line =~ /^f(.*)/) {
+      my $tfd = $1;
+      if ($pidst) { &list_proc }
+      if ($fdst) { &list_fd }
+      $fd = $tfd;
+      $fdst = 1;
+      next;
+    }
+    # Save file set information.
+    if ($line =~ /^a(.*)/) { $access = $1; next; }
+    if ($line =~ /^C(.*)/) { next; }
+    if ($line =~ /^d(.*)/) { $devch = $1; next; }
+    if ($line =~ /^D(.*)/) { $devn = $1; next; }
+    if ($line =~ /^F(.*)/) { next; }
+    if ($line =~ /^G(.*)/) { next; }
+    if ($line =~ /^i(.*)/) { $inode = $1; next; }
+    if ($line =~ /^k(.*)/) { next; }
+    if ($line =~ /^l(.*)/) { $lock = $1; next; }
+    if ($line =~ /^N(.*)/) { next; }
+    if ($line =~ /^o(.*)/) { $offset = $1; next; }
+    if ($line =~ /^P(.*)/) { $proto = $1; next; }
+    if ($line =~ /^s(.*)/) { $size = $1; next; }
+    if ($line =~ /^S(.*)/) { $stream = $1; next; }
+    if ($line =~ /^t(.*)/) { $type = $1; next; }
+    if ($line =~ /^T(.*)/) {
+      if ($state eq "") { $state = "(" . $1; }
+      else { $state = $state . " " . $1; }
+      next;
+    }
+    if ($line =~ /^n(.*)/) { $name = $1; next; }
+    #print "ERROR: unrecognized: \"$_\"\n";
+  }
+
+  # Flush any stored file or process output.
+
+  if ($fdst) { &list_fd }
+  if ($pidst) { &list_proc }
+  exit(0);
+
+}
+
+#  Values are stored inelegantly in global variables.
+
+sub list_fd {
+    my $tmp;
+    if ( ! $fhdr) {
+      # Print header once.
+
+      print OUTPUT "      FD   TYPE      DEVICE   SIZE/OFF      INODE  NAME\n";
+      $fhdr = 1;
+    }
+    printf OUTPUT "    %4s%1.1s%1.1s %4.4s", $fd, $access, $lock, $type;
+    $tmp = $devn; if ($devch ne "") { $tmp = $devch }
+    printf OUTPUT "  %10.10s", $tmp;
+    $tmp = $size; if ($offset ne "") { $tmp = $offset }
+    printf OUTPUT " %10.10s", $tmp;
+    $tmp = $inode; if ($proto ne "") { $tmp = $proto }
+    printf OUTPUT " %10.10s", $tmp;
+    $tmp = $stream; if ($name ne "") { $tmp = $name }
+    print OUTPUT "  ", $tmp;
+    if ($state ne 0) { printf OUTPUT " %s\n", $state; } else { print OUTPUT "\n"; }
+    # Clear variables.
+
+    $access = $devch = $devn = $fd = $inode = $lock = $name = "";
+    $offset = $proto = $size = $state = $stream = $type = "";
+}
+
+
+# Values are stored inelegantly in global variables.
+
+sub list_proc {
+    my $tmp;
+    print OUTPUT "COMMAND       PID    PGRP    PPID  USER   Zone\n";
+    $tmp = $uid; if ($login ne "") {$tmp = $login }
+    printf OUTPUT "%-9.9s  %6d  %6d  %6d  %s  %s\n", $cmd, $pid, $pgrp, $ppid, $tmp, $zone;
+    # Clear variables.
+    $cmd = $login = $pgrp = $pid = $uid = "";
+    $fhdr = $pidst = 0;
+}
+
+main();
+

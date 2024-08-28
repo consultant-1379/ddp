@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_trs_switchview"/>
+
+  <services>
+      <service name="cmutilities"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <events>
+      <!-- Switch_View {"_Thread":"ajp-executor-threads - 6888","View_Name":"InitialView-geo"} -->
+      <event name="Switch_View">
+        <metric source="View_Name" target="view"/>
+      </event>
+
+  </events>
+</modelledevents>
+

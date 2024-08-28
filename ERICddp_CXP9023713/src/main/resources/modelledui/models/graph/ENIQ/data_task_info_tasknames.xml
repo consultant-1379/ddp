@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Task Duration(sec)"
+>
+  <title value='%s'>
+    <param name="taskName"/>
+  </title>
+  <queries>
+    <query timecol="time" >
+      <dbtables main="eniq_meta_transfer_batches">
+        <reference table="sites" condition="eniq_meta_transfer_batches.siteid = sites.id"/>
+        <reference table="eniq_settype_names" condition="eniq_meta_transfer_batches.settype = eniq_settype_names.id"/>
+        <reference table="eniq_task_names" condition="eniq_meta_transfer_batches.taskid = eniq_task_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="taskId"/>
+      <param name="setTypeId"/>
+      <where>sites.name = '%s' AND eniq_task_names.id = '%d' AND eniq_settype_names.id = '%d'</where>
+      <column db="eniq_meta_transfer_batches.duration" label="Duration"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

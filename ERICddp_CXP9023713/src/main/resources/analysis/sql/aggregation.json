@@ -1,0 +1,383 @@
+{
+    "thresholds": [
+            {
+                "age": 12,
+                "interval": "hour"
+            },
+            {
+                "age": 2,
+                "interval": "fifteen_min"
+            }
+    ],
+    "tables": [
+        {
+            "name": "nic_stat_old",
+            "timecol": "time",
+            "groupby": [ "nicid" ],
+            "agg_columns": [
+                { "name": "ibytes_per_sec", "aggregation": "avg" },
+                { "name": "obytes_per_sec", "aggregation": "avg" },
+                { "name": "ipkts_per_sec", "aggregation": "avg" },
+                { "name": "opkts_per_sec", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "hires_disk_stat_old",
+            "timecol": "time",
+            "groupby": [ "diskid" ],
+            "agg_columns": [
+                { "name": "busy", "aggregation": "avg" },
+                { "name": "rws", "aggregation": "avg" },
+                { "name": "blks", "aggregation": "avg" },
+                { "name": "readblks", "aggregation": "avg" },
+                { "name": "avque", "aggregation": "avg" },
+                { "name": "avwait", "aggregation": "avg" },
+                { "name": "avserv", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "nic_stat",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "nicid" ],
+            "thresholds": [
+                {
+                    "age": 12,
+                    "interval": "hour"
+                },
+                {
+                    "age": 1,
+                    "interval": "fifteen_min"
+                }
+            ],
+            "agg_columns": [
+                { "name": "ibytes_per_sec", "aggregation": "avg" },
+                { "name": "obytes_per_sec", "aggregation": "avg" },
+                { "name": "ipkts_per_sec", "aggregation": "avg" },
+                { "name": "opkts_per_sec", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "hires_disk_stat",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "diskid" ],
+            "thresholds": [
+                {
+                    "age": 12,
+                    "interval": "hour"
+                },
+                {
+                    "age": 1,
+                    "interval": "fifteen_min"
+                }
+            ],
+            "agg_columns": [
+                { "name": "busy", "aggregation": "avg" },
+                { "name": "rws", "aggregation": "avg" },
+                { "name": "blks", "aggregation": "avg" },
+                { "name": "readblks", "aggregation": "avg" },
+                { "name": "avque", "aggregation": "avg" },
+                { "name": "avwait", "aggregation": "avg" },
+                { "name": "avserv", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "hires_server_stat",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid" ],
+            "agg_columns": [
+                { "name": "user", "aggregation": "avg" },
+                { "name": "sys", "aggregation": "avg" },
+                { "name": "iowait", "aggregation": "avg" },
+                { "name": "steal", "aggregation": "avg" },
+                { "name": "guest", "aggregation": "avg" },
+                { "name": "freeram", "aggregation": "avg" },
+                { "name": "freeswap", "aggregation": "avg" },
+                { "name": "numproc", "aggregation": "avg" },
+                { "name": "proc_s", "aggregation": "avg" },
+                { "name": "pgscan", "aggregation": "avg" },
+                { "name": "runq", "aggregation": "avg" },
+                { "name": "memused", "aggregation": "avg" },
+                { "name": "membuffers", "aggregation": "avg" },
+                { "name": "memcached", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "k8s_pod_cadvisor",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "appid" ],
+            "thresholds": [
+                {
+                    "age": 12,
+                    "interval": "hour"
+                },
+                {
+                    "age": 1,
+                    "interval": "fifteen_min"
+                }
+            ],
+            "agg_columns": [
+                { "name": "cpu_user", "aggregation": "sum" },
+                { "name": "cpu_sys", "aggregation": "sum" },
+                { "name": "cpu_throttled", "aggregation": "sum" },
+                { "name": "mem_mb", "aggregation": "avg" },
+                { "name": "mem_cache", "aggregation": "avg" },
+                { "name": "disk_read_mb", "aggregation": "sum" },
+                { "name": "disk_write_mb", "aggregation": "sum" },
+                { "name": "net_rx_mb", "aggregation": "sum" },
+                { "name": "net_tx_mb", "aggregation": "sum" },
+                { "name": "net_rx_kpkts", "aggregation": "sum" },
+                { "name": "net_tx_kpkts", "aggregation": "sum" },
+                { "name": "net_rx_err", "aggregation": "sum" },
+                { "name": "net_tx_err", "aggregation": "sum" },
+                { "name": "net_rx_drop", "aggregation": "sum" },
+                { "name": "net_tx_drop", "aggregation": "sum" }
+            ]
+        },
+        {
+            "name": "generic_jmx_stats",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "nameid" ],
+            "agg_columns": [
+                { "name": "hp_committed", "aggregation": "avg" },
+                { "name": "hp_init", "aggregation": "avg" },
+                { "name": "hp_max", "aggregation": "avg" },
+                { "name": "hp_used", "aggregation": "avg" },
+                { "name": "nh_committed", "aggregation": "avg" },
+                { "name": "nh_init", "aggregation": "avg" },
+                { "name": "nh_max", "aggregation": "avg" },
+                { "name": "nh_used", "aggregation": "avg" },
+                { "name": "nio_mem_direct", "aggregation": "avg" },
+                { "name": "nio_mem_mapped", "aggregation": "avg" },
+                { "name": "threadcount", "aggregation": "avg" },
+                { "name": "peakthreadcount", "aggregation": "avg" },
+                { "name": "cputime", "aggregation": "avg" },
+                { "name": "gc_youngcount", "aggregation": "avg" },
+                { "name": "gc_youngtime", "aggregation": "avg" },
+                { "name": "gc_oldcount", "aggregation": "avg" },
+                { "name": "gc_oldtime", "aggregation": "avg" },
+                { "name": "fd", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "vxstat",
+            "timecol": "time",
+            "groupby": [ "serverid", "volid" ],
+            "agg_columns": [
+                { "name": "rop", "aggregation": "avg" },
+                { "name": "wop", "aggregation": "avg" },
+                { "name": "rblk", "aggregation": "avg" },
+                { "name": "wblk", "aggregation": "avg" },
+                { "name": "rtime", "aggregation": "avg" },
+                { "name": "wtime", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "emc_lun_stats",
+            "timecol": "time",
+            "groupby": [ "lunid", "sysid" ],
+            "agg_columns": [
+                { "name": "utilization", "aggregation": "avg" },
+                { "name": "utilnonopt", "aggregation": "avg" },
+                { "name": "qlen", "aggregation": "avg" },
+                { "name": "qlenbusy", "aggregation": "avg" },
+                { "name": "resptime", "aggregation": "avg" },
+                { "name": "servtime", "aggregation": "avg" },
+                { "name": "readbw", "aggregation": "avg" },
+                { "name": "readiops", "aggregation": "avg" },
+                { "name": "writebw", "aggregation": "avg" },
+                { "name": "writeiops", "aggregation": "avg" },
+                { "name": "spc_read_hit", "aggregation": "avg" },
+                { "name": "spc_read_miss", "aggregation": "avg" },
+                { "name": "spc_write_hit", "aggregation": "avg" },
+                { "name": "spc_write_miss", "aggregation": "avg" },
+                { "name": "spc_forced_flush", "aggregation": "avg" },
+                { "name": "spc_write_rehit", "aggregation": "avg" },
+                { "name": "fsw", "aggregation": "avg" },
+                { "name": "disk_crossings", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "emc_rg_stats",
+            "timecol": "time",
+            "groupby": [ "rgid" ],
+            "agg_columns": [
+                { "name": "utilization", "aggregation": "avg" },
+                { "name": "qlen", "aggregation": "avg" },
+                { "name": "qlenbusy", "aggregation": "avg" },
+                { "name": "resptime", "aggregation": "avg" },
+                { "name": "servtime", "aggregation": "avg" },
+                { "name": "readbw", "aggregation": "avg" },
+                { "name": "readiops", "aggregation": "avg" },
+                { "name": "writebw", "aggregation": "avg" },
+                { "name": "writeiops", "aggregation": "avg" },
+                { "name": "avgseekdist", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "proc_stats",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "procid" ],
+            "thresholds": [
+                {
+                    "age": 12,
+                    "interval": "hour"
+                }
+            ],
+            "agg_columns": [
+                { "name": "cpu", "aggregation": "sum" },
+                { "name": "mem", "aggregation": "avg" },
+                { "name": "thr", "aggregation": "avg" },
+                { "name": "fd", "aggregation": "avg" },
+                { "name": "rss", "aggregation": "avg" },
+                { "name": "nproc", "aggregation": "avg" },
+                { "name": "sample_interval", "aggregation": "sum" }
+            ]
+        },
+        {
+            "name": "enm_route_instr",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "routeid" ],
+            "agg_columns": [
+                { "name": "ExchangesTotal", "aggregation": "sum" },
+                { "name": "ExchangesCompleted", "aggregation": "sum" },
+                { "name": "ExchangesFailed", "aggregation": "sum" },
+                { "name": "TotalProcessingTime", "aggregation": "sum" }
+            ]
+        },
+        {
+            "name": "enm_jboss_threadpools",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid" ],
+            "agg_columns": [
+                { "name": "async_completedTaskCount", "aggregation": "sum" },
+                { "name": "async_activeCount", "aggregation": "avg" },
+                { "name": "async_queueSize", "aggregation": "avg" },
+                { "name": "async_rejectedCount", "aggregation": "sum" },
+                { "name": "default_completedTaskCount", "aggregation": "sum" },
+                { "name": "default_activeCount", "aggregation": "avg" },
+                { "name": "default_queueSize", "aggregation": "avg" },
+                { "name": "default_rejectedCount", "aggregation": "sum" },
+                { "name": "workmanager_long_rejectedCount", "aggregation": "sum" },
+                { "name": "workmanager_long_queueSize", "aggregation": "avg" },
+                { "name": "workmanager_short_rejectedCount", "aggregation": "sum" },
+                { "name": "workmanager_short_queueSize", "aggregation": "avg" },
+                { "name": "http_executor_rejectedCount", "aggregation": "sum" },
+                { "name": "http_executor_queueSize", "aggregation": "avg" },
+                { "name": "ajp_executor_rejectedCount", "aggregation": "sum" },
+                { "name": "ajp_executor_queueSize", "aggregation": "avg" },
+                { "name": "ajp_executor_currentThreadCount", "aggregation": "avg" },
+                { "name": "http_executor_currentThreadCount", "aggregation": "avg" },
+                { "name": "workmanager_long_currentThreadCount", "aggregation": "avg" },
+                { "name": "workmanager_short_currentThreadCount", "aggregation": "avg" },
+                { "name": "job_executor_tp_currentThreadCount", "aggregation": "avg" },
+                { "name": "job_executor_tp_queueSize", "aggregation": "avg" },
+                { "name": "job_executor_tp_rejectedCount", "aggregation": "sum" }
+            ]
+        },
+        {
+            "name": "enm_jgroup_udp_stats",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "clusterid" ],
+            "thresholds": [
+                {
+                    "age": 3,
+                    "interval": "hour"
+                }
+            ],
+            "agg_columns": [
+                { "name": "count", "aggregation": "avg" },
+                { "name": "num_bytes_received", "aggregation": "sum" },
+                { "name": "num_single_msgs_sent", "aggregation": "sum" },
+                { "name": "num_single_msgs_received", "aggregation": "sum" },
+                { "name": "num_batches_sent", "aggregation": "sum" },
+                { "name": "num_rejected_msgs", "aggregation": "sum" },
+                { "name": "num_bytes_sent", "aggregation": "sum" },
+                { "name": "num_msgs_sent", "aggregation": "sum" },
+                { "name": "num_internal_msgs_received", "aggregation": "sum" },
+                { "name": "num_oob_msgs_received", "aggregation": "sum" },
+                { "name": "num_batches_received", "aggregation": "sum" },
+                { "name": "num_incoming_msgs_received", "aggregation": "sum" },
+                { "name": "num_msgs_received", "aggregation": "sum" }
+            ]
+        },
+        {
+            "name": "enm_dps_instr",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid" ],
+            "agg_columns": [
+                { "name": "n_findMo", "aggregation": "sum" },
+                { "name": "t_findMo", "aggregation": "sum" },
+                { "name": "n_findPo", "aggregation": "sum" },
+                { "name": "t_findPo", "aggregation": "sum" },
+                { "name": "n_createMo", "aggregation": "sum" },
+                { "name": "n_setAttribute", "aggregation": "sum" },
+                { "name": "n_createPo", "aggregation": "sum" },
+                { "name": "n_deleteMo", "aggregation": "sum" },
+                { "name": "n_deletePo", "aggregation": "sum" },
+                { "name": "n_addAssoc", "aggregation": "sum" },
+                { "name": "n_changelogQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_changelogQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_containmentQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_containmentQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_groupQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_groupQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnChangelogQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnChangelogQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnContainmentQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnContainmentQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnGroupQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnGroupQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnTypeContainmentQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnTypeContainmentQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnTypeQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_projectionsOnTypeQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_queriesCount", "aggregation": "sum" },
+                { "name": "n_removeAssoc", "aggregation": "sum" },
+                { "name": "n_transactionsWithEventsActive", "aggregation": "sum" },
+                { "name": "n_typeContainmentQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_typeContainmentQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_typeQueriesWithRestrictions", "aggregation": "sum" },
+                { "name": "n_typeQueriesWithoutRestrictions", "aggregation": "sum" },
+                { "name": "n_qOptNone", "aggregation": "sum" },
+                { "name": "n_qOptDescendantsAtMixedLevels", "aggregation": "sum" },
+                { "name": "n_qOptDescendantsAtOneLevel", "aggregation": "sum" },
+                { "name": "n_qOptDirectPathExpression", "aggregation": "sum" },
+                { "name": "n_qOptPathsWithRecursion", "aggregation": "sum" }
+            ]
+        },
+        {
+            "name": "nic_errors",
+            "timecol": "time",
+            "groupby": [ "siteid", "nicid" ],
+            "thresholds": [
+                {
+                    "age": 3,
+                    "interval": "hour"
+                }
+            ],
+            "agg_columns": [
+                { "name": "coll", "aggregation": "avg" },
+                { "name": "rxdrop", "aggregation": "avg" },
+                { "name": "rxerr", "aggregation": "avg" },
+                { "name": "rxfifo", "aggregation": "avg" },
+                { "name": "rxfram", "aggregation": "avg" },
+                { "name": "txcarr", "aggregation": "avg" },
+                { "name": "txdrop", "aggregation": "avg" },
+                { "name": "txerr", "aggregation": "avg" },
+                { "name": "txfifo", "aggregation": "avg" }
+            ]
+        },
+        {
+            "name": "enm_jmsqueue",
+            "timecol": "time",
+            "groupby": [ "siteid", "serverid", "queueid" ],
+            "agg_columns": [
+                { "name": "messageCount", "aggregation": "avg" },
+                { "name": "messagesAdded", "aggregation": "sum" },
+                { "name": "consumerCount", "aggregation": "avg" },
+                { "name": "deliveringCount", "aggregation": "avg" },
+                { "name": "scheduledCount", "aggregation": "avg" }
+            ]
+        }
+    ]
+}

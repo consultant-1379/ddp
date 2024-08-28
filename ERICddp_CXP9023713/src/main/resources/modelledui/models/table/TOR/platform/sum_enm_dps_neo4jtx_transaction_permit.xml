@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="sum_enm_dps_neo4jtx">
+    <reference table="sites" condition="sum_enm_dps_neo4jtx.siteid = sites.id"/>
+    <reference table="servers" condition="sum_enm_dps_neo4jtx.serverid = servers.id"/>
+    <reference table="enm_servicegroup_instances" condition="enm_servicegroup_instances.serverid = sum_enm_dps_neo4jtx.serverid"/>
+    <reference table="enm_servicegroup_names" condition="enm_servicegroup_instances.serviceid = enm_servicegroup_names.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND sum_enm_dps_neo4jtx.date = '%date%' AND enm_servicegroup_instances.siteid = sites.id AND enm_servicegroup_instances.date = '%date%'</where>
+
+  <groupby>
+    <column db="sg"/>
+  </groupby>
+
+  <column db="enm_servicegroup_names.name" label="Service Group" id="sg"/>
+  <column db="SUM(acquiredTxPermitsCount)" label="Acquired Tx Permits Count"/>
+  <column db="SUM(failedToAcquireTxPermitsCount)" label="Failed Tx Permits Count"/>
+  <column db="SUM(failureOrTimeoutCount)" label="Failure Timeout Count"/>
+  <column db="SUM(totalDuration)" label="Total Duration"/>
+  <column db="SUM(txPermitsProcedureCount)" label="Permits Procedure Count"/>
+
+  <ctxmenu keycol="sg" targettype="url">
+    <item id="plot" label="Plot"/>
+    <urltarget arg="clientDpsPermit"/>
+  </ctxmenu>
+
+</modelledtable>

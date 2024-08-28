@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_windows_interface_stats">
+    <reference table="sites" condition="eniq_windows_interface_stats.siteid = sites.id"/>
+    <reference table="servers" condition="eniq_windows_interface_stats.serverid = servers.id"/>
+    <reference table="eniq_server_info" condition="eniq_windows_interface_stats.serverid = eniq_server_info.serverid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="ocsType"/>
+
+  <where>sites.name = '%site%' AND eniq_server_info.type = '%ocsType%' AND eniq_windows_interface_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="DISTINCT eniq_windows_interface_stats.MDLReadHits" label="MDL Read Hits %"/>
+  <column db="eniq_windows_interface_stats.MDLReadsPerSec" label="MDL Reads Hits/Sec"/>
+  <column db="eniq_windows_interface_stats.usagePeak" label="Usage Peak"/>
+  <column db="eniq_windows_interface_stats.processorTime" label="Processor Time"/>
+  <column db="eniq_windows_interface_stats.userTime" label="User Time"/>
+  <column db="eniq_windows_interface_stats.elapsedTime" label="Elapsed Time"/>
+  <column db="eniq_windows_interface_stats.ioDataBytes" label="I/O Data Bytes/Sec"/>
+  <column db="eniq_windows_interface_stats.ioDataOperation" label="I/O Data Operation/Sec"/>
+  <column db="eniq_windows_interface_stats.ioOtherBytes" label="I/O Other Bytes/Sec"/>
+  <column db="eniq_windows_interface_stats.ioOtherOperation" label="I/O Other Operation/Sec"/>
+  <column db="eniq_windows_interface_stats.ioReadBytes" label="I/O Read Bytes/Sec"/>
+  <column db="eniq_windows_interface_stats.ioReadOperation" label="I/O Read Operation/Sec"/>
+  <column db="eniq_windows_interface_stats.ioWriteBytes" label="I/O Write Bytes/Sec"/>
+  <column db="eniq_windows_interface_stats.ioWriteOperation" label="I/O Write Operation/Sec"/>
+
+
+</modelledtable>

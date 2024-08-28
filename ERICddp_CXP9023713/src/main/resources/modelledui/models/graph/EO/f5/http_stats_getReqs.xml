@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="tsc"
+  timespan="day"
+>
+  <title value="GET Requests"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eo_f5_http_stats">
+        <reference table="sites" condition="eo_f5_http_stats.siteid = sites.id"/>
+      </dbtables>
+
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="eo_f5_http_stats.getReqs" label="GET Requests"/>
+    </query>
+  </queries>
+  <size width="600" height="240"/>
+</modelledgraph>

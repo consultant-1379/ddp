@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_filetransfer_connections">
+      <reference table="sites" condition="enm_filetransfer_connections.siteid = sites.id"/>
+      <reference table="servers" condition="enm_filetransfer_connections.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="Write" type="sb" ylabel="MB" forcelegend="true">
+      <title value="Transfer size"/>
+      <column db="readSize" label = "Read"/>
+      <column db="writeSize" label = "Write"/>
+    </graph>
+    <graph name="Status" type="sb" ylabel="Count" forcelegend="true">
+      <title value="Success and Failure Count"/>
+      <column db="successSessionCount" label = "Success"/>
+      <column db="numOfSessions-successSessionCount" label = "Failure"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>Write</member>
+      <member>Status</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

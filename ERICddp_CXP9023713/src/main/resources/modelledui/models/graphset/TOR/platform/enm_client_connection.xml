@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="enm_ingress_controller_traffic">
+      <reference table="sites" condition="enm_ingress_controller_traffic.siteid = sites.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="clientConn" type="tsc" forcelegend="true">
+      <title value="Current Client Connections"/>
+      <column db="clientConnActive" label = "Active"/>
+      <column db="clientConnRead" label = "Reading"/>
+      <column db="clientConnWrite" label = "Writing"/>
+      <column db="clientConnWait" label = "Waiting"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="clientConnection">
+      <member>clientConn</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

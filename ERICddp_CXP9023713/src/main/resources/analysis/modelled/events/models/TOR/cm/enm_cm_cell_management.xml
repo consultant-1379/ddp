@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_cm_cell_management">
+    <keycol name="usecaseid" reftable="enm_cm_cell_management_uc"/>
+    <keycol name="reltypeid" reftable="mo_names"/>
+    <keycol name="motypeid" reftable="mo_names"/>
+  </table>
+
+  <services>
+    <service name="autoprovisioning"/>
+    <service name="cellserv"/>
+    <service name="consautoprov"/>
+  </services>
+
+  <events>
+      <!--  -->
+      <event name="CELL_MGMT">
+        <metric source="UseCase" target="usecaseid"/>
+        <metric source="ExecutionTime" target="t_execution"/>
+        <metric source="RequestResult" target="result"/>
+        <metric source="RatTypes" target="rattypes" convert="tostring"/>
+        <metric source="RelationType" target="reltypeid"/>
+        <metric source="MoType" target="motypeid"/>
+        <metric source="Direction" target="direction"/>
+        <metric source="ResourceCount" target="rescount"/>
+      </event>
+  </events>
+</modelledevents>

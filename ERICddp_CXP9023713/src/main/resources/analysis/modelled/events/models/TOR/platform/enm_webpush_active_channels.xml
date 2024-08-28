@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_webpush_active_channels">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="channelid" reftable="enm_webpush_active_channel_names"/>
+  </table>
+
+  <services>
+    <service name="webpushservice"/>
+    <service name="httpd"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="host"/>
+      <groupby name="Channel"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="In" type="sum"/>
+      <aggregation name="Out" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+    <!--  WEB_PUSH.EVENTS_RECEIVED {\"_Thread\":\"EJB default - 1\",\"Events\":[{\"In\":894,\"Channel\":\"amossubscription:scp-1-scripting\",\"Out\":0} -->
+    <event name="WEB_PUSH.EVENTS_RECEIVED" explode_array="Events">
+      <metric source="host" target="serverid"/>
+      <metric source="Channel" target="channelid"/>
+      <metric source="In" target="incoming_events"/>
+      <metric source="Out" target="outgoing_events"/>
+    </event>
+  </events>
+</modelledevents>

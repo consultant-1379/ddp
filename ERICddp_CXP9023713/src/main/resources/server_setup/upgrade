@@ -1,0 +1,360 @@
+#!/bin/bash
+
+DDP_ROOT=/data/ddp
+STATSDB=statsdb
+DOMAIN=$(cat /data/ddp/env.php | grep "ddp_site_domainname" | sed "s/^.*\s*=\s*['\"]\(.*\)['\"].*$/\1/g")
+if [ -z "${DOMAIN}" ] ; then
+    DOMAIN=$(hostname -f)
+fi
+INSTANCE=$(echo ${DOMAIN} | cut -d'.' -f1)
+
+fail() {
+    ERROR=$1
+    ERR_CODE=$2
+    if [ ! -z "${NEW_DDP_VER}" ] ; then
+        if [ -d "${DDP_ROOT}/${NEW_DDP_VER}" ] ; then
+            rm -rf ${DDP_ROOT}/${NEW_DDP_VER}
+        fi
+    fi
+
+    echo ${ERROR}
+    exit ${ERR_CODE}
+}
+
+finish() {
+    end_time=$(date +'%Y-%m-%d %H-%M-%S')
+    mysql ddpadmin<< EOF
+UPDATE upgrade_history SET end_time="$end_time", status='Failed' ORDER by start_time desc limit 1;
+EOF
+}
+
+verToNum() {
+    local VER="$1"
+    echo "${VER}" | sed -e 's/^DDP-//' -e 's/-SNAPSHOT$//' | awk -F\. '{print ( lshift($1,24) + lshift($2,16) + $3)}'
+}
+
+ensureNewer() {
+    local CURRENT="$1"
+    local NEW="$2"
+
+    local CURRENT_NUM=$(verToNum "${CURRENT}")
+    local NEW_NUM=$(verToNum "${NEW}")
+
+    if [ ${CURRENT_NUM} -gt ${NEW_NUM} ] ; then
+        fail "ERROR: ${NEW} must be greater then ${CURRENT}" 1
+    fi
+}
+
+unpackNewVer() {
+    if [ ! -r "${NEW_DDP_FILE}" ] ; then
+        echo "ERROR: Cannot read ${NEW_DDP_FILE}"
+        exit 1
+    fi
+
+    if [ ! -d ${DDP_ROOT} ] ; then
+        echo "ERROR: Invalid ddp root directory  ${DDP_ROOT}"
+        exit 1
+    fi
+
+    ROOT_DIR=`dirname $0`
+    ROOT_DIR=`cd ${ROOT_DIR} ; pwd`
+
+    if [ -d ${DDP_ROOT}/${NEW_DDP_VER} ] ; then
+        # If this already exists, a previous successful upgrade to this
+        # version probably occured, and could be currently running.
+        echo "ERROR: ${DDP_ROOT}/${NEW_DDP_VER} already exists, aborting"
+        exit 1
+    fi
+
+    if [ -z "${CURR_DDP_VER}" ] ; then
+        fail "ERROR: Cannot determine current DDP version" 1
+        exit 1
+    fi
+
+    echo "Upgrading from ${CURR_DDP_VER} to ${NEW_DDP_VER}"
+    UPGRADE_DIR=${DDP_ROOT}/upgrade/${CURR_DDP_VER}-${NEW_DDP_VER}
+    if [ -d ${UPGRADE_DIR} ] ; then
+        rm -rf ${UPGRADE_DIR}
+    fi
+    mkdir -p ${UPGRADE_DIR}
+
+    ensureNewer "${CURR_DDP_VER}" "${NEW_DDP_VER}"
+
+    cd ${DDP_ROOT}
+    gzip -dc ${NEW_DDP_FILE} | tar xf -
+    if [ $? -ne 0 ] ; then
+        echo "ERROR: Failed to extract ${NEW_DDP_FILE}"
+        exit 1
+    fi
+
+    if [ ! -d ${DDP_ROOT}/${NEW_DDP_VER} ] ; then
+        fail "ERROR: Cound not find ${DDP_ROOT}/${NEW_DDP_VER} after extracting ${NEW_DDP_FILE}" 1
+        exit 1
+    fi
+
+    # Remove the tar/gz file
+    rm -f ${NEW_DDP_FILE}
+
+    for SCRIPT_DIR in analysis sitemgt rules ; do
+        chmod -R +rx ${DDP_ROOT}/${NEW_DDP_VER}/${SCRIPT_DIR}
+    done
+    chmod +x ${DDP_ROOT}/${NEW_DDP_VER}/server_setup/ddpd_sol
+
+    for READ_DIR in php plot adminui ; do
+        chmod -R +r ${DDP_ROOT}/${NEW_DDP_VER}/${READ_DIR}
+    done
+}
+
+verifyNewSchema() {
+    for DB in ddpadmin ${STATSDB} ; do
+        mkdir ${UPGRADE_DIR}/${DB}
+        if [ "${DB}" = "ddpadmin" ] ; then
+            DDL=ddpadmin.sql
+            MIGRATE_SQL=ddpadmin_migrate.sql
+        else
+            DDL=statsdb.ddl
+            MIGRATE_SQL=migrate.sql
+        fi
+        ${DDP_ROOT}/${NEW_DDP_VER}/server_setup/dbupgrade \
+                   -m ${DDP_ROOT}/${NEW_DDP_VER}/sql/${MIGRATE_SQL} -d ${DDP_ROOT}/${NEW_DDP_VER}/sql/${DDL} \
+                   -f "${CURR_DDP_VER}" -t "${NEW_DDP_VER}" -r ${DDP_ROOT} -s ${DB} -l ${UPGRADE_DIR}/${DB} \
+                   -a verify
+        # 0 Means there's no update
+        # 9 Means there's is an update and it looks valid
+        # Anything else means there's is an update and it's invalid
+        DB_VERIFY_RESULT=$?
+        if [ ${DB_VERIFY_RESULT} -gt 0 ] ; then
+            if [ ${DB_VERIFY_RESULT} -eq 9 ] ; then
+                echo "INFO: Schema update required for ${DB}"
+                DB_APPLY_REQUIRED=1
+            else
+                fail "ERROR: dbupgrade verify for ${DB} failed" 1
+            fi
+        fi
+    done
+}
+
+applyNewSchema() {
+    for DB in ddpadmin ${STATSDB} ; do
+        if [ "${DB}" = "ddpadmin" ] ; then
+            DDL=ddpadmin.sql
+            MIGRATE_SQL=ddpadmin_migrate.sql
+        else
+            DDL=statsdb.ddl
+            MIGRATE_SQL=migrate.sql
+        fi
+        ${DDP_ROOT}/${NEW_DDP_VER}/server_setup/dbupgrade \
+                   -m ${DDP_ROOT}/${NEW_DDP_VER}/sql/${MIGRATE_SQL} -d ${DDP_ROOT}/${NEW_DDP_VER}/sql/${DDL} \
+                   -f "${CURR_DDP_VER}" -t "${NEW_DDP_VER}" -r ${DDP_ROOT} -s ${DB} -l ${UPGRADE_DIR}/${DB} \
+                   -a apply
+        DB_UPGRAGE_RESULT=$?
+        if [ ${DB_UPGRAGE_RESULT} -ne 0 ] ; then
+            fail "ERROR: dbupgrade for ${DB} failed" 1
+            exit ${DB_UPGRAGE_RESULT}
+        else
+            export PERL5OPT="-I${DDP_ROOT}/${NEW_DDP_VER}/analysis/common"
+            echo "Running initial partitioning"
+            ${DDP_ROOT}/${NEW_DDP_VER}/analysis/sql/partitionManager --db ${DB} --action initial --table auto
+        fi
+    done
+}
+
+checkServiceScripts() {
+    #
+    # There are three "long-lived" scripts, if any of them have changed we must restart the service
+    #
+    for SCRIPT in server_setup/ddpd_sol analysis/main/manager analysis/main/worker ; do
+        diff -q ${DDP_ROOT}/current/${SCRIPT} ${DDP_ROOT}/${NEW_DDP_VER}/${SCRIPT}
+        if [ $? -ne 0 ] ; then
+            echo "INFO: ${SCRIPT} has been modified"
+            SERVICE_SCRIPTS_MODIFIED=1
+        fi
+    done
+}
+
+checkIndexPages() {
+    #
+    # Check the pages that put content into the ddp_cache, if any of them have changed then
+    # we need to clear the cache
+    #
+    for PAGE in index.php OSS/index_inc.php ENIQ/index_inc.php TOR/index_inc.php DDP/index_inc.php EO/index_inc.php ECSON/index_inc.php ; do
+        diff -q ${DDP_ROOT}/current/php/${PAGE} ${DDP_ROOT}/${NEW_DDP_VER}/php/${PAGE}
+        if [ $? -ne 0 ] ; then
+            echo "INFO: ${PAGE} has been modified"
+            INDEX_PAGES_MODIFIED=1
+        fi
+    done
+}
+
+checkModelledUIpyFiles() {
+    #
+    # Check if any python scripts from modelledui are changed in new version,
+    # if yes httpd needs restart
+    #
+    MODELLEDUI_PYTHONFILES_MODIFIED=0
+    for DIR in lib uiapp ; do
+        diff -qr ${DDP_ROOT}/current/modelledui/${DIR} ${DDP_ROOT}/${NEW_DDP_VER}/modelledui/${DIR}
+        if [ $? -ne 0 ] ; then
+            MODELLEDUI_PYTHONFILES_MODIFIED=1
+        fi
+    done
+}
+
+updateHelp() {
+    # Update help bubble content under DB
+    DDP_FQDN=$(egrep '^\$ddp_site_domainname' /data/ddp/env.php | awk -F= '{print $2}' | sed -e "s/ //g" -e "s/'//g" -e 's/"//' -e 's/;//')
+    if [ -z "${DDP_FQDN}" ] ; then
+        DDP_FQDN=$(hostname -f)
+    fi
+
+    export  PERL5OPT="-I${DDP_ROOT}/${NEW_DDP_VER}/analysis/common"
+    ${DDP_ROOT}/${NEW_DDP_VER}/analysis/common/parseConfluenceHelpPage --ddpfqdn ${DDP_FQDN} --helpdir /data/ddp/${NEW_DDP_VER}/help_content/
+    if [ $? -ne 0 ] ; then
+        fail "ERROR: Failed to parse help content" 1
+        exit 1
+    fi
+}
+
+doUpgrade() {
+    LOCK_FILE=/tmp/upgrade.lock
+    exec 3>${LOCK_FILE}
+    flock --exclusive --nonblock 3
+    if [ $? -ne 0 ] ; then
+        # Cannot use fail here as it may delete
+        # the new version that the other upgrade is creating
+        echo "ERROR: Upgrade already running"
+        exit 1
+    fi
+
+    start_time=$(date +'%Y-%m-%d %H-%M-%S')
+    IFS=','
+    read -a emails <<<"$EMAIL_ADDRESS"
+
+    mysql ddpadmin<< EOF
+INSERT into upgrade_history(from_version, to_version, start_time, status, initiator) values ("$CURR_DDP_VER", "$NEW_DDP_VER", "$start_time", "In Progress", "${emails[0]}");
+EOF
+
+    unpackNewVer
+
+    updateHelp
+
+    DB_APPLY_REQUIRED=0
+    verifyNewSchema
+
+    SERVICE_SCRIPTS_MODIFIED=0
+    checkServiceScripts
+
+    if [ ${SERVICE_SCRIPTS_MODIFIED} -eq 1 ] || [ ${DB_APPLY_REQUIRED} -eq 1 ] ; then
+        echo "INFO: Stopping ddpd service"
+        STATUS=$(/usr/bin/systemctl status ddpd.service | egrep '^ *Active' | awk '{print $2}')
+        if [ "${STATUS}" != "inactive" ] ; then
+            sudo /usr/bin/systemctl stop ddpd.service
+            if [ $? -ne 0 ] ; then
+                fail "ERROR: Failed to stop ddpd" 1
+                exit 1
+            fi
+        fi
+    else
+        echo "INFO: No service stop required"
+    fi
+
+    if [ ${DB_APPLY_REQUIRED} -eq 1 ] ; then
+        applyNewSchema
+    fi
+
+    # We must do this check before switching what current
+    # points at
+    INDEX_PAGES_MODIFIED=0
+    checkIndexPages
+    if [ ${INDEX_PAGES_MODIFIED} -eq 1 ] ; then
+        echo "INFO: Clearing ddp_cache"
+        mysql ddpadmin -e "TRUNCATE TABLE ddp_cache;"
+    fi
+
+    checkModelledUIpyFiles
+    if [ ${MODELLEDUI_PYTHONFILES_MODIFIED} -eq 1 ] ; then
+        echo "INFO: Restarting httpd"
+        sudo /usr/bin/systemctl restart httpd
+    fi
+
+    rm -f ${DDP_ROOT}/current
+    cd ${DDP_ROOT}
+    ln -s ${NEW_DDP_VER} current
+
+    # Might have new default groups so remove the grps.txt
+    if [ -r /data/tmp/grps.txt ] ; then
+        rm -f /data/tmp/grps.txt
+    fi
+
+    STATUS=$(/usr/bin/systemctl status ddpd.service | egrep '^ *Active' | awk '{print $2}')
+    if [ "${STATUS}" = "inactive" ] ; then
+        echo "Starting ddpd service"
+        sudo /usr/bin/systemctl start ddpd.service
+    fi
+
+    sudo /usr/bin/systemctl restart tomcat.service
+
+    echo "Upgrade to ${NEW_DDP_VER} completed"
+    end_time=$(date +'%Y-%m-%d %H-%M-%S')
+    mysql ddpadmin<< EOF
+UPDATE upgrade_history SET end_time="$end_time", status="Success" WHERE start_time = "$start_time";
+EOF
+
+    /bin/rm -f ${LOCK_FILE}
+    exit 0
+}
+
+sendEmail() {
+    echo "Subject: ${INSTANCE} Upgrade ${RESULT}" > /data/tmp/email.txt
+    cat ${UPGRADE_LOG} >> /data/tmp/email.txt
+    cat ${UPGRADE_LOG} > "${DDP_ROOT}/upgrade/${CURR_DDP_VER}-${NEW_DDP_VER}/upgrade.txt"
+
+    ${DDP_ROOT}/current/server_setup/notifDDPUpgrade --instance ${INSTANCE} --subject "${INSTANCE} Upgrade from ${CURR_DDP_VER} to ${NEW_DDP_VER} ${RESULT}" \
+        --tomail "${EMAIL_ADDRESS}" --contentfile "${UPGRADE_LOG}" --versions "${CURR_DDP_VER}-${NEW_DDP_VER}"
+    mv ${UPGRADE_LOG} /data/tmp/ddp_upgrade.last
+}
+
+# Check user
+# Must be running as statsadm
+ME=$(id | sed 's/^uid=[0-9]*(\([a-z].*\)) gid=.*$/\1/')
+if [ "${ME}" != "statsadm" ] ; then
+    exec /usr/bin/sudo -u statsadm /data/ddp/current/server_setup/upgrade $*
+fi
+
+# Source config to get TLS setting
+. /data/stats/config
+
+IS_CHILD=0
+while getopts  "f:r:s:e:c" flag
+do
+    case "$flag" in
+        f) NEW_DDP_FILE="${OPTARG}";;
+        r) DDP_ROOT="${OPTARG}";;
+        s) STATSDB="${OPTARG}";;
+        e) EMAIL_ADDRESS="${OPTARG}";;
+        c) IS_CHILD=1;;
+        *) printf "Usage: %s -f DDP package [-r ddp root directory ] [-s statsdb]\n" $0
+           exit 1;;
+    esac
+done
+
+CURR_DDP_VER=`ls -l /data/ddp/current | awk '{print $NF}'`
+CURR_DDP_VER=`basename ${CURR_DDP_VER}`
+NEW_DDP_VER=`basename ${NEW_DDP_FILE} .tar.gz`
+
+trap '[ "$?" -eq 0 ] || finish' EXIT
+
+if [ ! -z "${EMAIL_ADDRESS}" ] && [ ${IS_CHILD} -ne 1 ] ; then
+    UPGRADE_LOG=/data/tmp/upgradelog.$$
+    $0 "$@" -c > ${UPGRADE_LOG} 2>&1
+    if [ $? -eq 0 ] ; then
+        RESULT="Successfully completed"
+    else
+        RESULT="Failed"
+    fi
+    sendEmail ${UPGRADE_LOG} "$RESULT"
+    exit 0
+else
+    doUpgrade
+fi
+

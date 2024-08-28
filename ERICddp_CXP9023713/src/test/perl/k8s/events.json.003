@@ -1,0 +1,2174 @@
+[
+    {
+        "eventTime": "2021-05-07T11:45:35.502448Z",
+        "reportingInstance": "default-scheduler-ieatrcxb5913",
+        "firstTimestamp": null,
+        "lastTimestamp": null,
+        "source": {},
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "resourceVersion": "2589705",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "action": "Binding",
+        "message": "Successfully assigned enm420/eric-enm-models-post-install-job-dsmlw to ieatrcxb5934",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc63dfdf3df57",
+            "namespace": "enm420",
+            "resourceVersion": "2589709",
+            "creationTimestamp": "2021-05-07T11:45:35Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:reportingInstance": {},
+                        "f:regarding": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:eventTime": {},
+                        "f:note": {},
+                        "f:action": {},
+                        "f:reportingController": {}
+                    },
+                    "apiVersion": "events.k8s.io/v1",
+                    "manager": "kube-scheduler",
+                    "time": "2021-05-07T11:45:35Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc63dfdf3df57",
+            "uid": "2daf4213-dab3-49c5-8d69-cbd0671df7fd"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:47:38Z",
+        "lastTimestamp": "2021-05-07T11:47:38Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "FailedMount",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Unable to attach or mount volumes: unmounted volumes=[default-token-bfjvm mdt], unattached volumes=[default-token-bfjvm mdt]: timed out waiting for the condition",
+        "type": "Warning",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc65aa2b29bd4",
+            "namespace": "enm420",
+            "resourceVersion": "2590354",
+            "creationTimestamp": "2021-05-07T11:47:38Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:47:38Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc65aa2b29bd4",
+            "uid": "5f6f72a2-42ec-4c6b-8d2f-d4d43766691b"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:04Z",
+        "lastTimestamp": "2021-05-07T11:49:04Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Pulling",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{eric-enm-models-post-install-init}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Pulling image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\"",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66ec2cbac75",
+            "namespace": "enm420",
+            "resourceVersion": "2590823",
+            "creationTimestamp": "2021-05-07T11:49:04Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:04Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66ec2cbac75",
+            "uid": "fd7ebee5-da5a-4a07-9cd4-404475ef6858"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:05Z",
+        "lastTimestamp": "2021-05-07T11:49:05Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{eric-enm-models-post-install-init}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Successfully pulled image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26\" in 699.853596ms",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66eec82cf90",
+            "namespace": "enm420",
+            "resourceVersion": "2590829",
+            "creationTimestamp": "2021-05-07T11:49:05Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:05Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66eec82cf90",
+            "uid": "72776671-8fa5-49cd-b351-7b06e020126e"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:05Z",
+        "lastTimestamp": "2021-05-07T11:49:05Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Created",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{eric-enm-models-post-install-init}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Created container eric-enm-models-post-install-init",
+        "type": "Normal",
+        "_pod_info": {
+            "status": {
+                "initContainerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "eric-enm-models-post-install-init",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                        "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container@sha256:00cedba4d55ad4875abdc562596c9a723cf601ad8932382b1ebb95a5b8fe1929",
+                        "state": {
+                            "terminated": {
+                                "startedAt": "2021-05-07T11:49:06Z",
+                                "reason": "Completed",
+                                "finishedAt": "2021-05-07T11:49:06Z",
+                                "containerID": "docker://87ae64650c1efe8e3c87c406b6519b93b2a1262d5e868a6961d8443a69ae3181",
+                                "exitCode": 0
+                            }
+                        },
+                        "ready": true,
+                        "lastState": {},
+                        "containerID": "docker://87ae64650c1efe8e3c87c406b6519b93b2a1262d5e868a6961d8443a69ae3181"
+                    }
+                ],
+                "hostIP": "131.160.130.1",
+                "qosClass": "BestEffort",
+                "containerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "eric-enm-models-post-install",
+                        "started": false,
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-models-post-install:1.9.0-26",
+                        "imageID": "docker-pullable://armdocker.rnd.ericsson.se/proj-enm/eric-enm-models-post-install@sha256:00920bc7696b146cea7241022d552f33a8a24bb75f043be903a041afbdb51ed6",
+                        "state": {
+                            "terminated": {
+                                "startedAt": "2021-05-07T11:49:08Z",
+                                "reason": "Completed",
+                                "finishedAt": "2021-05-07T11:49:18Z",
+                                "containerID": "docker://71336fed12e6909c1a3d7233024d334ee2431dc187c3ecff87dfcaf80c879b5a",
+                                "exitCode": 0
+                            }
+                        },
+                        "ready": false,
+                        "lastState": {},
+                        "containerID": "docker://71336fed12e6909c1a3d7233024d334ee2431dc187c3ecff87dfcaf80c879b5a"
+                    }
+                ],
+                "podIP": "192.168.188.49",
+                "startTime": "2021-05-07T11:45:35Z",
+                "podIPs": [
+                    {
+                        "ip": "192.168.188.49"
+                    }
+                ],
+                "phase": "Succeeded",
+                "conditions": [
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "reason": "PodCompleted",
+                        "type": "Initialized",
+                        "lastTransitionTime": "2021-05-07T11:49:07Z"
+                    },
+                    {
+                        "status": "False",
+                        "lastProbeTime": null,
+                        "reason": "PodCompleted",
+                        "type": "Ready",
+                        "lastTransitionTime": "2021-05-07T11:49:19Z"
+                    },
+                    {
+                        "status": "False",
+                        "lastProbeTime": null,
+                        "reason": "PodCompleted",
+                        "type": "ContainersReady",
+                        "lastTransitionTime": "2021-05-07T11:49:19Z"
+                    },
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "PodScheduled",
+                        "lastTransitionTime": "2021-05-07T11:45:35Z"
+                    }
+                ]
+            },
+            "kind": "Pod",
+            "spec": {
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "serviceAccountName": "default",
+                "schedulerName": "default-scheduler",
+                "enableServiceLinks": true,
+                "serviceAccount": "default",
+                "priority": 0,
+                "terminationGracePeriodSeconds": 30,
+                "restartPolicy": "OnFailure",
+                "volumes": [
+                    {
+                        "name": "mdt",
+                        "persistentVolumeClaim": {
+                            "claimName": "mdt"
+                        }
+                    },
+                    {
+                        "secret": {
+                            "defaultMode": 420,
+                            "secretName": "default-token-bfjvm"
+                        },
+                        "name": "default-token-bfjvm"
+                    }
+                ],
+                "tolerations": [
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready"
+                    },
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable"
+                    }
+                ],
+                "preemptionPolicy": "PreemptLowerPriority",
+                "initContainers": [
+                    {
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "eric-enm-models-post-install-init",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-init-container:1.9.0-26",
+                        "volumeMounts": [
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "command": [
+                            "/bin/sh",
+                            "-c",
+                            "bash /var/tmp/check_service.sh -s eric-enm-modeldeployservice"
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {}
+                    }
+                ],
+                "imagePullSecrets": [
+                    {
+                        "name": "csar-secret"
+                    }
+                ],
+                "containers": [
+                    {
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "eric-enm-models-post-install",
+                        "image": "armdocker.rnd.ericsson.se/proj-enm/eric-enm-models-post-install:1.9.0-26",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/etc/opt/ericsson/ERICmodeldeployment",
+                                "name": "mdt"
+                            },
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "default-token-bfjvm"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "env": [
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            },
+                            {
+                                "valueFrom": {
+                                    "fieldRef": {
+                                        "fieldPath": "metadata.namespace",
+                                        "apiVersion": "v1"
+                                    }
+                                },
+                                "name": "NAMESPACE"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {}
+                    }
+                ],
+                "nodeName": "ieatrcxb5934"
+            },
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "eric-enm-models-post-install-job-dsmlw",
+                "labels": {
+                    "release": "eric-enm-stateless-integration-enm420",
+                    "job-name": "eric-enm-models-post-install-job",
+                    "heritage": "Helm",
+                    "chart": "eric-enm-stateless-integration-1.10.0-26",
+                    "controller-uid": "4b9c0ea9-6011-4ef4-97d4-bfe979d6ed49"
+                },
+                "namespace": "enm420",
+                "ownerReferences": [
+                    {
+                        "kind": "Job",
+                        "name": "eric-enm-models-post-install-job",
+                        "apiVersion": "batch/v1",
+                        "controller": true,
+                        "blockOwnerDeletion": true,
+                        "uid": "4b9c0ea9-6011-4ef4-97d4-bfe979d6ed49"
+                    }
+                ],
+                "resourceVersion": "2590902",
+                "generateName": "eric-enm-models-post-install-job-",
+                "creationTimestamp": "2021-05-07T11:45:35Z",
+                "managedFields": [
+                    {
+                        "fieldsV1": {
+                            "f:metadata": {
+                                "f:generateName": {},
+                                "f:labels": {
+                                    "f:job-name": {},
+                                    "f:heritage": {},
+                                    "f:release": {},
+                                    ".": {},
+                                    "f:chart": {},
+                                    "f:controller-uid": {}
+                                },
+                                "f:ownerReferences": {
+                                    "k:{\"uid\":\"4b9c0ea9-6011-4ef4-97d4-bfe979d6ed49\"}": {
+                                        "f:apiVersion": {},
+                                        "f:blockOwnerDeletion": {},
+                                        "f:uid": {},
+                                        "f:name": {},
+                                        "f:kind": {},
+                                        ".": {},
+                                        "f:controller": {}
+                                    },
+                                    ".": {}
+                                }
+                            },
+                            "f:spec": {
+                                "f:volumes": {
+                                    "k:{\"name\":\"mdt\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:securityContext": {},
+                                "f:enableServiceLinks": {},
+                                "f:imagePullSecrets": {
+                                    "k:{\"name\":\"csar-secret\"}": {
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:schedulerName": {},
+                                "f:containers": {
+                                    "k:{\"name\":\"eric-enm-models-post-install\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:volumeMounts": {
+                                            "k:{\"mountPath\":\"/etc/opt/ericsson/ERICmodeldeployment\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:name": {},
+                                        "f:resources": {},
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"NAMESPACE\"}": {
+                                                "f:valueFrom": {
+                                                    "f:fieldRef": {
+                                                        "f:apiVersion": {},
+                                                        "f:fieldPath": {},
+                                                        ".": {}
+                                                    },
+                                                    ".": {}
+                                                },
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    }
+                                },
+                                "f:restartPolicy": {},
+                                "f:dnsPolicy": {},
+                                "f:initContainers": {
+                                    "k:{\"name\":\"eric-enm-models-post-install-init\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:command": {},
+                                        "f:terminationMessagePath": {},
+                                        "f:name": {},
+                                        "f:resources": {},
+                                        "f:terminationMessagePolicy": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:terminationGracePeriodSeconds": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kube-controller-manager",
+                        "time": "2021-05-07T11:45:35Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    },
+                    {
+                        "fieldsV1": {
+                            "f:status": {
+                                "f:hostIP": {},
+                                "f:phase": {},
+                                "f:containerStatuses": {},
+                                "f:podIP": {},
+                                "f:initContainerStatuses": {},
+                                "f:podIPs": {
+                                    "k:{\"ip\":\"192.168.188.49\"}": {
+                                        "f:ip": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:conditions": {
+                                    "k:{\"type\":\"ContainersReady\"}": {
+                                        "f:status": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    },
+                                    "k:{\"type\":\"Ready\"}": {
+                                        "f:status": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    },
+                                    "k:{\"type\":\"Initialized\"}": {
+                                        "f:status": {},
+                                        ".": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:reason": {},
+                                        "f:type": {},
+                                        "f:lastProbeTime": {}
+                                    }
+                                },
+                                "f:startTime": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kubelet",
+                        "time": "2021-05-07T11:49:19Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    }
+                ],
+                "selfLink": "/api/v1/namespaces/enm420/pods/eric-enm-models-post-install-job-dsmlw",
+                "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+            }
+        },
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66eeffeb7db",
+            "namespace": "enm420",
+            "resourceVersion": "2590830",
+            "creationTimestamp": "2021-05-07T11:49:05Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:05Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66eeffeb7db",
+            "uid": "baa6a7de-dfdc-4941-8c29-84fde8d8beae"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:06Z",
+        "lastTimestamp": "2021-05-07T11:49:06Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Started",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.initContainers{eric-enm-models-post-install-init}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Started container eric-enm-models-post-install-init",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66f04a61701",
+            "namespace": "enm420",
+            "resourceVersion": "2590831",
+            "creationTimestamp": "2021-05-07T11:49:06Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:06Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66f04a61701",
+            "uid": "af773d50-db5a-4d09-a446-31c90be279ca"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:07Z",
+        "lastTimestamp": "2021-05-07T11:49:07Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Pulling",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-models-post-install}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Pulling image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-models-post-install:1.9.0-26\"",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66f464e22b4",
+            "namespace": "enm420",
+            "resourceVersion": "2590836",
+            "creationTimestamp": "2021-05-07T11:49:07Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:07Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66f464e22b4",
+            "uid": "171734e3-81f3-4823-8c98-a50d4bd1a718"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:07Z",
+        "lastTimestamp": "2021-05-07T11:49:07Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-models-post-install}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Successfully pulled image \"armdocker.rnd.ericsson.se/proj-enm/eric-enm-models-post-install:1.9.0-26\" in 750.181707ms",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66f73054b7d",
+            "namespace": "enm420",
+            "resourceVersion": "2590838",
+            "creationTimestamp": "2021-05-07T11:49:07Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:07Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66f73054b7d",
+            "uid": "4c24a0b9-54e6-4134-ab01-628dee232948"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:07Z",
+        "lastTimestamp": "2021-05-07T11:49:07Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Created",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-models-post-install}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Created container eric-enm-models-post-install",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66f755e8789",
+            "namespace": "enm420",
+            "resourceVersion": "2590839",
+            "creationTimestamp": "2021-05-07T11:49:07Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:07Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66f755e8789",
+            "uid": "b548acb6-00f0-44c2-941a-b7fc4c16536b"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:08Z",
+        "lastTimestamp": "2021-05-07T11:49:08Z",
+        "source": {
+            "host": "ieatrcxb5934",
+            "component": "kubelet"
+        },
+        "reason": "Started",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-models-post-install-job-dsmlw",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-models-post-install}",
+            "resourceVersion": "2589706",
+            "uid": "b0271972-0e35-4bf2-a9d1-57608a4b3cbe"
+        },
+        "message": "Started container eric-enm-models-post-install",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job-dsmlw.167cc66f87d48040",
+            "namespace": "enm420",
+            "resourceVersion": "2590844",
+            "creationTimestamp": "2021-05-07T11:49:08Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:49:08Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job-dsmlw.167cc66f87d48040",
+            "uid": "92433bf5-b9dc-4b80-81d6-e6c7725a2426"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:45:35Z",
+        "lastTimestamp": "2021-05-07T11:45:35Z",
+        "source": {
+            "component": "job-controller"
+        },
+        "reason": "SuccessfulCreate",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Job",
+            "name": "eric-enm-models-post-install-job",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1",
+            "resourceVersion": "2589703",
+            "uid": "4b9c0ea9-6011-4ef4-97d4-bfe979d6ed49"
+        },
+        "message": "Created pod: eric-enm-models-post-install-job-dsmlw",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job.167cc63dfda0629c",
+            "namespace": "enm420",
+            "resourceVersion": "2589707",
+            "creationTimestamp": "2021-05-07T11:45:35Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:45:35Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job.167cc63dfda0629c",
+            "uid": "f04aef10-3182-451b-985b-3eb0734980a7"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:49:19Z",
+        "lastTimestamp": "2021-05-07T11:49:19Z",
+        "source": {
+            "component": "job-controller"
+        },
+        "reason": "Completed",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Job",
+            "name": "eric-enm-models-post-install-job",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1",
+            "resourceVersion": "2589708",
+            "uid": "4b9c0ea9-6011-4ef4-97d4-bfe979d6ed49"
+        },
+        "message": "Job completed",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-models-post-install-job.167cc6723b958e8b",
+            "namespace": "enm420",
+            "resourceVersion": "2590903",
+            "creationTimestamp": "2021-05-07T11:49:19Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:49:19Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-models-post-install-job.167cc6723b958e8b",
+            "uid": "690e6f9c-18b8-42d2-bbbc-d284f3c978d3"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:36:56Z",
+        "lastTimestamp": "2021-05-07T11:36:56Z",
+        "source": {
+            "component": "job-controller"
+        },
+        "reason": "Completed",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Job",
+            "name": "eric-enm-monitoring-master-trigger-1620387300",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1",
+            "resourceVersion": "2585857",
+            "uid": "3440f95a-744f-45ce-92f8-cf8f258444ef"
+        },
+        "message": "Job completed",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620387300.167cc5c5270fc497",
+            "namespace": "enm420",
+            "resourceVersion": "2586909",
+            "creationTimestamp": "2021-05-07T11:36:56Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:36:56Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620387300.167cc5c5270fc497",
+            "uid": "587c399f-12f2-4e8f-8772-6acc7084e9ea"
+        }
+    },
+    {
+        "eventTime": "2021-05-07T11:50:00.571708Z",
+        "reportingInstance": "default-scheduler-ieatrcxb5913",
+        "firstTimestamp": null,
+        "lastTimestamp": null,
+        "source": {},
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "resourceVersion": "2591138",
+            "uid": "498efe03-37fd-4dff-88af-9ae2be59a317"
+        },
+        "action": "Binding",
+        "message": "Successfully assigned enm420/eric-enm-monitoring-master-trigger-1620388200-hzgcd to ieatrcxb5930",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc67bb54fc3a5",
+            "namespace": "enm420",
+            "resourceVersion": "2591142",
+            "creationTimestamp": "2021-05-07T11:50:00Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:reportingInstance": {},
+                        "f:regarding": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:eventTime": {},
+                        "f:note": {},
+                        "f:action": {},
+                        "f:reportingController": {}
+                    },
+                    "apiVersion": "events.k8s.io/v1",
+                    "manager": "kube-scheduler",
+                    "time": "2021-05-07T11:50:00Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc67bb54fc3a5",
+            "uid": "1817b0f9-c306-4f51-9a53-93b20dc02403"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:51:30Z",
+        "lastTimestamp": "2021-05-07T11:51:30Z",
+        "source": {
+            "host": "ieatrcxb5930",
+            "component": "kubelet"
+        },
+        "reason": "Pulling",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-monitoring-master-trigger}",
+            "resourceVersion": "2591140",
+            "uid": "498efe03-37fd-4dff-88af-9ae2be59a317"
+        },
+        "message": "Pulling image \"10.247.246.18:5000/proj_enm/eric-enm-ddcmaster:test1\"",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6908b2bf910",
+            "namespace": "enm420",
+            "resourceVersion": "2591610",
+            "creationTimestamp": "2021-05-07T11:51:30Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:51:30Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6908b2bf910",
+            "uid": "a3287b59-69ee-4e6d-8135-aed011d0ee58"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:51:30Z",
+        "lastTimestamp": "2021-05-07T11:51:30Z",
+        "source": {
+            "host": "ieatrcxb5930",
+            "component": "kubelet"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-monitoring-master-trigger}",
+            "resourceVersion": "2591140",
+            "uid": "498efe03-37fd-4dff-88af-9ae2be59a317"
+        },
+        "message": "Successfully pulled image \"10.247.246.18:5000/proj_enm/eric-enm-ddcmaster:test1\" in 22.266353ms",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6908c80164e",
+            "namespace": "enm420",
+            "resourceVersion": "2591611",
+            "creationTimestamp": "2021-05-07T11:51:30Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:51:30Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6908c80164e",
+            "uid": "af9c0ea6-877d-4d5b-9c88-4dcbb4b32806"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:51:30Z",
+        "lastTimestamp": "2021-05-07T11:51:30Z",
+        "source": {
+            "host": "ieatrcxb5930",
+            "component": "kubelet"
+        },
+        "reason": "Created",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-monitoring-master-trigger}",
+            "resourceVersion": "2591140",
+            "uid": "498efe03-37fd-4dff-88af-9ae2be59a317"
+        },
+        "message": "Created container eric-enm-monitoring-master-trigger",
+        "type": "Normal",
+        "_pod_info": {
+            "status": {
+                "hostIP": "131.160.129.253",
+                "qosClass": "BestEffort",
+                "containerStatuses": [
+                    {
+                        "restartCount": 0,
+                        "name": "eric-enm-monitoring-master-trigger",
+                        "started": true,
+                        "image": "10.247.246.18:5000/proj_enm/eric-enm-ddcmaster:test1",
+                        "imageID": "docker-pullable://10.247.246.18:5000/proj_enm/eric-enm-ddcmaster@sha256:768854d0a3d30e84aeaf7a196549a5e0413c62fc1f53b212c663907350fcf881",
+                        "state": {
+                            "running": {
+                                "startedAt": "2021-05-07T11:51:30Z"
+                            }
+                        },
+                        "ready": true,
+                        "lastState": {},
+                        "containerID": "docker://03d4447e0b647b1d9a78bda44933d391d1017294c63e3b93dc12ccacce6ad8fa"
+                    }
+                ],
+                "podIP": "192.168.235.252",
+                "startTime": "2021-05-07T11:50:00Z",
+                "podIPs": [
+                    {
+                        "ip": "192.168.235.252"
+                    }
+                ],
+                "phase": "Running",
+                "conditions": [
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "Initialized",
+                        "lastTransitionTime": "2021-05-07T11:50:00Z"
+                    },
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "Ready",
+                        "lastTransitionTime": "2021-05-07T11:51:31Z"
+                    },
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "ContainersReady",
+                        "lastTransitionTime": "2021-05-07T11:51:31Z"
+                    },
+                    {
+                        "status": "True",
+                        "lastProbeTime": null,
+                        "type": "PodScheduled",
+                        "lastTransitionTime": "2021-05-07T11:50:00Z"
+                    }
+                ]
+            },
+            "kind": "Pod",
+            "spec": {
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {},
+                "serviceAccountName": "ddc",
+                "schedulerName": "default-scheduler",
+                "enableServiceLinks": true,
+                "serviceAccount": "ddc",
+                "priority": 0,
+                "terminationGracePeriodSeconds": 30,
+                "restartPolicy": "OnFailure",
+                "volumes": [
+                    {
+                        "name": "ddcdata",
+                        "persistentVolumeClaim": {
+                            "claimName": "ddcdata"
+                        }
+                    },
+                    {
+                        "configMap": {
+                            "optional": true,
+                            "name": "product-info",
+                            "defaultMode": 420
+                        },
+                        "name": "product-info-volume"
+                    },
+                    {
+                        "secret": {
+                            "optional": true,
+                            "defaultMode": 420,
+                            "secretName": "monitoring-upload-secret"
+                        },
+                        "name": "secret-volume"
+                    },
+                    {
+                        "secret": {
+                            "optional": true,
+                            "defaultMode": 384,
+                            "secretName": "remote-servers"
+                        },
+                        "name": "remote-servers-volume"
+                    },
+                    {
+                        "secret": {
+                            "defaultMode": 420,
+                            "secretName": "ddc-token-ml9rl"
+                        },
+                        "name": "ddc-token-ml9rl"
+                    }
+                ],
+                "tolerations": [
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready"
+                    },
+                    {
+                        "operator": "Exists",
+                        "tolerationSeconds": 300,
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable"
+                    }
+                ],
+                "preemptionPolicy": "PreemptLowerPriority",
+                "imagePullSecrets": [
+                    {
+                        "name": "csar-secret"
+                    }
+                ],
+                "containers": [
+                    {
+                        "terminationMessagePath": "/dev/termination-log",
+                        "name": "eric-enm-monitoring-master-trigger",
+                        "image": "10.247.246.18:5000/proj_enm/eric-enm-ddcmaster:test1",
+                        "args": [
+                            "DIRECT",
+                            "TRIGGER"
+                        ],
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/var/ericsson/ddc_data",
+                                "name": "ddcdata"
+                            },
+                            {
+                                "mountPath": "/etc/app-volume/product-info/",
+                                "name": "product-info-volume"
+                            },
+                            {
+                                "mountPath": "/etc/secret-volume",
+                                "name": "secret-volume"
+                            },
+                            {
+                                "mountPath": "/etc/remote-servers-volume",
+                                "name": "remote-servers-volume"
+                            },
+                            {
+                                "readOnly": true,
+                                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                "name": "ddc-token-ml9rl"
+                            }
+                        ],
+                        "terminationMessagePolicy": "File",
+                        "command": [
+                            "/opt/ericsson/ERICddc/bin/ddc"
+                        ],
+                        "env": [
+                            {
+                                "name": "TZ",
+                                "value": "Europe/Dublin"
+                            },
+                            {
+                                "name": "POSTGRES_SERVICE",
+                                "value": "postgres"
+                            },
+                            {
+                                "name": "PROMETHEUS_SVC",
+                                "value": "eric-pm-server"
+                            }
+                        ],
+                        "imagePullPolicy": "Always",
+                        "resources": {}
+                    }
+                ],
+                "nodeName": "ieatrcxb5930"
+            },
+            "apiVersion": "v1",
+            "metadata": {
+                "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+                "labels": {
+                    "job-name": "eric-enm-monitoring-master-trigger-1620388200",
+                    "app.kubernetes.io/instance": "eric-enm-monitoring-integration-enm420",
+                    "controller-uid": "4b7d3fd8-f36a-45ce-93b0-874c018bf1c4",
+                    "app.kubernetes.io/version": "1.9.0-29",
+                    "app.kubernetes.io/name": "eric-enm-monitoring-master"
+                },
+                "namespace": "enm420",
+                "managedFields": [
+                    {
+                        "fieldsV1": {
+                            "f:metadata": {
+                                "f:generateName": {},
+                                "f:annotations": {
+                                    "f:ericsson.com/product-number": {},
+                                    "f:ericsson.com/product-revision": {},
+                                    "f:ericsson.com/product-name": {},
+                                    ".": {}
+                                },
+                                "f:labels": {
+                                    "f:app.kubernetes.io/version": {},
+                                    "f:job-name": {},
+                                    "f:app.kubernetes.io/instance": {},
+                                    ".": {},
+                                    "f:app.kubernetes.io/name": {},
+                                    "f:controller-uid": {}
+                                },
+                                "f:ownerReferences": {
+                                    "k:{\"uid\":\"4b7d3fd8-f36a-45ce-93b0-874c018bf1c4\"}": {
+                                        "f:apiVersion": {},
+                                        "f:blockOwnerDeletion": {},
+                                        "f:uid": {},
+                                        "f:name": {},
+                                        "f:kind": {},
+                                        ".": {},
+                                        "f:controller": {}
+                                    },
+                                    ".": {}
+                                }
+                            },
+                            "f:spec": {
+                                "f:volumes": {
+                                    "k:{\"name\":\"product-info-volume\"}": {
+                                        "f:configMap": {
+                                            "f:defaultMode": {},
+                                            "f:name": {},
+                                            "f:optional": {},
+                                            ".": {}
+                                        },
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"ddcdata\"}": {
+                                        "f:name": {},
+                                        "f:persistentVolumeClaim": {
+                                            "f:claimName": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"secret-volume\"}": {
+                                        "f:name": {},
+                                        "f:secret": {
+                                            "f:secretName": {},
+                                            "f:defaultMode": {},
+                                            "f:optional": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    "k:{\"name\":\"remote-servers-volume\"}": {
+                                        "f:name": {},
+                                        "f:secret": {
+                                            "f:secretName": {},
+                                            "f:defaultMode": {},
+                                            "f:optional": {},
+                                            ".": {}
+                                        },
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:securityContext": {},
+                                "f:terminationGracePeriodSeconds": {},
+                                "f:enableServiceLinks": {},
+                                "f:imagePullSecrets": {
+                                    "k:{\"name\":\"csar-secret\"}": {
+                                        "f:name": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:serviceAccount": {},
+                                "f:schedulerName": {},
+                                "f:containers": {
+                                    "k:{\"name\":\"eric-enm-monitoring-master-trigger\"}": {
+                                        "f:image": {},
+                                        "f:imagePullPolicy": {},
+                                        "f:command": {},
+                                        "f:volumeMounts": {
+                                            "k:{\"mountPath\":\"/etc/remote-servers-volume\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/var/ericsson/ddc_data\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/etc/secret-volume\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"mountPath\":\"/etc/app-volume/product-info/\"}": {
+                                                "f:mountPath": {},
+                                                "f:name": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:terminationMessagePath": {},
+                                        ".": {},
+                                        "f:args": {},
+                                        "f:resources": {},
+                                        "f:terminationMessagePolicy": {},
+                                        "f:env": {
+                                            "k:{\"name\":\"TZ\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"PROMETHEUS_SVC\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            "k:{\"name\":\"POSTGRES_SERVICE\"}": {
+                                                "f:name": {},
+                                                "f:value": {},
+                                                ".": {}
+                                            },
+                                            ".": {}
+                                        },
+                                        "f:name": {}
+                                    }
+                                },
+                                "f:restartPolicy": {},
+                                "f:dnsPolicy": {},
+                                "f:serviceAccountName": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kube-controller-manager",
+                        "time": "2021-05-07T11:50:00Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    },
+                    {
+                        "fieldsV1": {
+                            "f:status": {
+                                "f:hostIP": {},
+                                "f:phase": {},
+                                "f:containerStatuses": {},
+                                "f:podIP": {},
+                                "f:podIPs": {
+                                    "k:{\"ip\":\"192.168.235.252\"}": {
+                                        "f:ip": {},
+                                        ".": {}
+                                    },
+                                    ".": {}
+                                },
+                                "f:conditions": {
+                                    "k:{\"type\":\"ContainersReady\"}": {
+                                        "f:type": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:status": {},
+                                        "f:lastProbeTime": {},
+                                        ".": {}
+                                    },
+                                    "k:{\"type\":\"Ready\"}": {
+                                        "f:type": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:status": {},
+                                        "f:lastProbeTime": {},
+                                        ".": {}
+                                    },
+                                    "k:{\"type\":\"Initialized\"}": {
+                                        "f:type": {},
+                                        "f:lastTransitionTime": {},
+                                        "f:status": {},
+                                        "f:lastProbeTime": {},
+                                        ".": {}
+                                    }
+                                },
+                                "f:startTime": {}
+                            }
+                        },
+                        "apiVersion": "v1",
+                        "manager": "kubelet",
+                        "time": "2021-05-07T11:51:32Z",
+                        "operation": "Update",
+                        "fieldsType": "FieldsV1"
+                    }
+                ],
+                "ownerReferences": [
+                    {
+                        "kind": "Job",
+                        "name": "eric-enm-monitoring-master-trigger-1620388200",
+                        "apiVersion": "batch/v1",
+                        "controller": true,
+                        "blockOwnerDeletion": true,
+                        "uid": "4b7d3fd8-f36a-45ce-93b0-874c018bf1c4"
+                    }
+                ],
+                "resourceVersion": "2591635",
+                "generateName": "eric-enm-monitoring-master-trigger-1620388200-",
+                "creationTimestamp": "2021-05-07T11:50:00Z",
+                "annotations": {
+                    "ericsson.com/product-revision": "R10A",
+                    "ericsson.com/product-number": "CXC 174 2496",
+                    "ericsson.com/product-name": "eric-enm-monitoring-master"
+                },
+                "selfLink": "/api/v1/namespaces/enm420/pods/eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+                "uid": "498efe03-37fd-4dff-88af-9ae2be59a317"
+            }
+        },
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6908f8c9355",
+            "namespace": "enm420",
+            "resourceVersion": "2591612",
+            "creationTimestamp": "2021-05-07T11:51:30Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:51:30Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6908f8c9355",
+            "uid": "7b76cc80-9c62-47d8-a586-6e73889b4c20"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:51:30Z",
+        "lastTimestamp": "2021-05-07T11:51:30Z",
+        "source": {
+            "host": "ieatrcxb5930",
+            "component": "kubelet"
+        },
+        "reason": "Started",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{eric-enm-monitoring-master-trigger}",
+            "resourceVersion": "2591140",
+            "uid": "498efe03-37fd-4dff-88af-9ae2be59a317"
+        },
+        "message": "Started container eric-enm-monitoring-master-trigger",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6909cc39eff",
+            "namespace": "enm420",
+            "resourceVersion": "2591618",
+            "creationTimestamp": "2021-05-07T11:51:30Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:51:30Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620388200-hzgcd.167cc6909cc39eff",
+            "uid": "20fdfad2-56a4-440f-ae4f-b0fc186384c4"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:50:00Z",
+        "lastTimestamp": "2021-05-07T11:50:00Z",
+        "source": {
+            "component": "job-controller"
+        },
+        "reason": "SuccessfulCreate",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Job",
+            "name": "eric-enm-monitoring-master-trigger-1620388200",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1",
+            "resourceVersion": "2591135",
+            "uid": "4b7d3fd8-f36a-45ce-93b0-874c018bf1c4"
+        },
+        "message": "Created pod: eric-enm-monitoring-master-trigger-1620388200-hzgcd",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger-1620388200.167cc67bb4f6814e",
+            "namespace": "enm420",
+            "resourceVersion": "2591139",
+            "creationTimestamp": "2021-05-07T11:50:00Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:50:00Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger-1620388200.167cc67bb4f6814e",
+            "uid": "c3a3e076-7a58-4fe9-925a-d11fc8eabe82"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:36:56Z",
+        "lastTimestamp": "2021-05-07T11:36:56Z",
+        "source": {
+            "component": "cronjob-controller"
+        },
+        "reason": "SawCompletedJob",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "CronJob",
+            "name": "eric-enm-monitoring-master-trigger",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1beta1",
+            "resourceVersion": "2585853",
+            "uid": "c70b6f14-2a0a-4cb8-a3f0-ec73c3620871"
+        },
+        "message": "Saw completed job: eric-enm-monitoring-master-trigger-1620387300, status: Complete",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger.167cc5c529e862ba",
+            "namespace": "enm420",
+            "resourceVersion": "2586911",
+            "creationTimestamp": "2021-05-07T11:36:56Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:36:56Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger.167cc5c529e862ba",
+            "uid": "05831d87-0520-4684-af0c-c5fa5c580bd2"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:36:56Z",
+        "lastTimestamp": "2021-05-07T11:36:56Z",
+        "source": {
+            "component": "cronjob-controller"
+        },
+        "reason": "SuccessfulDelete",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "CronJob",
+            "name": "eric-enm-monitoring-master-trigger",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1beta1",
+            "resourceVersion": "2586912",
+            "uid": "c70b6f14-2a0a-4cb8-a3f0-ec73c3620871"
+        },
+        "message": "Deleted job eric-enm-monitoring-master-trigger-1620384600",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger.167cc5c52a7e6839",
+            "namespace": "enm420",
+            "resourceVersion": "2586914",
+            "creationTimestamp": "2021-05-07T11:36:56Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:36:56Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger.167cc5c52a7e6839",
+            "uid": "a46aab94-b7cb-4748-acee-50290c198b01"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:50:00Z",
+        "lastTimestamp": "2021-05-07T11:50:00Z",
+        "source": {
+            "component": "cronjob-controller"
+        },
+        "reason": "SuccessfulCreate",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "CronJob",
+            "name": "eric-enm-monitoring-master-trigger",
+            "namespace": "enm420",
+            "apiVersion": "batch/v1beta1",
+            "resourceVersion": "2586912",
+            "uid": "c70b6f14-2a0a-4cb8-a3f0-ec73c3620871"
+        },
+        "message": "Created job eric-enm-monitoring-master-trigger-1620388200",
+        "type": "Normal",
+        "metadata": {
+            "name": "eric-enm-monitoring-master-trigger.167cc67bb47fc91d",
+            "namespace": "enm420",
+            "resourceVersion": "2591136",
+            "creationTimestamp": "2021-05-07T11:50:00Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kube-controller-manager",
+                    "time": "2021-05-07T11:50:00Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/eric-enm-monitoring-master-trigger.167cc67bb47fc91d",
+            "uid": "38cecdf0-ae44-46ef-bced-99993a99fa61"
+        }
+    },
+    {
+        "count": 1,
+        "eventTime": null,
+        "reportingInstance": "",
+        "firstTimestamp": "2021-05-07T11:36:41Z",
+        "lastTimestamp": "2021-05-07T11:36:41Z",
+        "source": {
+            "host": "ieatrcxb5932",
+            "component": "kubelet"
+        },
+        "reason": "Started",
+        "reportingComponent": "",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "general-scripting-584f6c9687-7lwqp",
+            "namespace": "enm420",
+            "apiVersion": "v1",
+            "fieldPath": "spec.containers{general-scripting-httpd}",
+            "resourceVersion": "2569634",
+            "uid": "570f8112-3c0e-4087-8f49-4f5687fa3a15"
+        },
+        "message": "Started container general-scripting-httpd",
+        "type": "Normal",
+        "metadata": {
+            "name": "general-scripting-584f6c9687-7lwqp.167cc5c194cffe78",
+            "namespace": "enm420",
+            "resourceVersion": "2586807",
+            "creationTimestamp": "2021-05-07T11:36:41Z",
+            "managedFields": [
+                {
+                    "fieldsV1": {
+                        "f:source": {
+                            "f:host": {},
+                            "f:component": {}
+                        },
+                        "f:message": {},
+                        "f:involvedObject": {
+                            "f:apiVersion": {},
+                            "f:resourceVersion": {},
+                            "f:fieldPath": {},
+                            "f:uid": {},
+                            "f:name": {},
+                            "f:namespace": {},
+                            "f:kind": {}
+                        },
+                        "f:reason": {},
+                        "f:type": {},
+                        "f:lastTimestamp": {},
+                        "f:count": {},
+                        "f:firstTimestamp": {}
+                    },
+                    "apiVersion": "v1",
+                    "manager": "kubelet",
+                    "time": "2021-05-07T11:36:41Z",
+                    "operation": "Update",
+                    "fieldsType": "FieldsV1"
+                }
+            ],
+            "selfLink": "/api/v1/namespaces/enm420/events/general-scripting-584f6c9687-7lwqp.167cc5c194cffe78",
+            "uid": "4f5a1366-166f-44b6-b4b1-bf5b650e70c4"
+        }
+    }
+]

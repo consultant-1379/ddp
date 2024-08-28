@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="ncmagent"/>
+  </services>
+
+  <table name="enm_ncmagent_messageMbean_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+      <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=NcmAgentCliMessageMbean$">
+          <metric source="receivedCliMessageExec" target="receivedCliMessageExec" delta="true" filteridle="true"/>
+          <metric source="failedCliMessageExec" target="failedCliMessageExec" delta="true" filteridle="true"/>
+          <metric source="receivedCliMessageInvokeCandidate" target="receivedCliMessageInvokeCandidate" delta="true" filteridle="true"/>
+          <metric source="failedCliMessageInvokeCandidate" target="failedCliMessageInvokeCandidate" delta="true" filteridle="true"/>
+          <metric source="receivedCliMessageCommit" target="receivedCliMessageCommit" delta="true" filteridle="true"/>
+          <metric source="failedCliMessageCommit" target="failedCliMessageCommit" delta="true" filteridle="true"/>
+          <metric source="receivedCliMessageInvokeAutoCommit" target="receivedCliMessageInvokeAutoCommit" delta="true" filteridle="true"/>
+          <metric source="failedCliMessageInvokeAutoCommit" target="failedCliMessageInvokeAutoCommit" delta="true" filteridle="true"/>
+          <metric source="receivedCliMessageAbort" target="receivedCliMessageAbort" delta="true" filteridle="true"/>
+          <metric source="failedCliMessageAbort" target="failedCliMessageAbort" delta="true" filteridle="true"/>
+      </metricgroup>
+
+      <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=NcmAgentR6kCliMessageMbean$">
+          <metric source="receivedR6kCliMessageExec" target="receivedR6KCliMessageExec" delta="true" filteridle="true"/>
+          <metric source="failedR6kCliMessageExec" target="failedR6KCliMessageExec" delta="true" filteridle="true"/>
+          <metric source="receivedR6kCliMessageInvokeCandidate" target="receivedR6KCliMessageInvokeCandidate" delta="true" filteridle="true"/>
+          <metric source="failedR6kCliMessageInvokeCandidate" target="failedR6KCliMessageInvokeCandidate" delta="true" filteridle="true"/>
+          <metric source="receivedR6kCliMessageCommit" target="receivedR6KCliMessageCommit" delta="true" filteridle="true"/>
+          <metric source="failedR6kCliMessageCommit" target="failedR6KCliMessageCommit" delta="true" filteridle="true"/>
+          <metric source="receivedR6kCliMessageInvokeAutoCommit" target="receivedR6KCliMessageInvokeAutoCommit" delta="true" filteridle="true"/>
+          <metric source="failedR6kCliMessageInvokeAutoCommit" target="failedR6KCliMessageInvokeAutoCommit" delta="true" filteridle="true"/>
+          <metric source="receivedR6kCliMessageAbort" target="receivedR6KCliMessageAbort" delta="true" filteridle="true"/>
+          <metric source="failedR6kCliMessageAbort" target="failedR6KCliMessageAbort" delta="true" filteridle="true"/>
+          <metric source="successR6kCliMessageExecDuration" target="successR6KCliMessageExecDuration"/>
+          <metric source="failedR6kCliMessageExecDuration" target="failedR6KCliMessageExecDuration"/>
+          <metric source="successR6kCliMessageInvokeCandidateDuration" target="successR6KCliMessageInvokeCandidateDuration"/>
+          <metric source="failedR6kCliMessageInvokeCandidateDuration" target="failedR6KCliMessageInvokeCandidateDuration"/>
+          <metric source="successR6kCliMessageCommitDuration" target="successR6KCliMessageCommitDuration"/>
+          <metric source="failedR6kCliMessageCommitDuration" target="failedR6KCliMessageCommitDuration"/>
+          <metric source="successR6kCliMessageInvokeAutoCommitDuration" target="successR6KCliMessageInvokeAutoCommitDuration"/>
+          <metric source="failedR6kCliMessageInvokeAutoCommitDuration" target="failedR6KCliMessageInvokeAutoCommitDuration"/>
+          <metric source="successR6kCliMessageAbortDuration" target="successR6KCliMessageAbortDuration"/>
+          <metric source="failedR6kCliMessageAbortDuration" target="failedR6KCliMessageAbortDuration"/>
+      </metricgroup>
+
+      <metricgroup name="^%1%-com.ericsson.oss.services.ncm.agent.instrumentation.ncm-agent:type=NcmAgentMiniLinkCliMessageMbean$">
+          <metric source="receivedMiniLinkCliMessageExec" target="receivedMiniLinkCliMessageExec" delta="true" filteridle="true"/>
+          <metric source="failedMiniLinkCliMessageExec" target="failedMiniLinkCliMessageExec" delta="true" filteridle="true"/>
+          <metric source="receivedMiniLinkCliMessageInvokeCandidate" target="receivedMiniLinkCliMessageInvokeCandidate" delta="true" filteridle="true"/>
+          <metric source="failedMiniLinkCliMessageInvokeCandidate" target="failedMiniLinkCliMessageInvokeCandidate" delta="true" filteridle="true"/>
+          <metric source="receivedMiniLinkCliMessageCommit" target="receivedMiniLinkCliMessageCommit" delta="true" filteridle="true"/>
+          <metric source="failedMiniLinkCliMessageCommit" target="failedMiniLinkCliMessageCommit" delta="true" filteridle="true"/>
+          <metric source="receivedMiniLinkCliMessageInvokeAutoCommit" target="receivedMiniLinkCliMessageInvokeAutoCommit" delta="true" filteridle="true"/>
+          <metric source="failedMiniLinkCliMessageInvokeAutoCommit" target="failedMiniLinkCliMessageInvokeAutoCommit" delta="true" filteridle="true"/>
+          <metric source="receivedMiniLinkCliMessageAbort" target="receivedMiniLinkCliMessageAbort" delta="true" filteridle="true"/>
+          <metric source="failedMiniLinkCliMessageAbort" target="failedMiniLinkCliMessageAbort" delta="true" filteridle="true"/>
+          <metric source="successMiniLinkCliMessageExecDuration" target="successMiniLinkCliMessageExecDuration"/>
+          <metric source="failedMiniLinkCliMessageExecDuration" target="failedMiniLinkCliMessageExecDuration"/>
+          <metric source="successMiniLinkCliMessageInvokeCandidateDuration" target="successMiniLinkCliMessageInvokeCandidateDuration"/>
+          <metric source="failedMiniLinkCliMessageInvokeCandidateDuration" target="failedMiniLinkCliMessageInvokeCandidateDuration"/>
+          <metric source="successMiniLinkCliMessageCommitDuration" target="successMiniLinkCliMessageCommitDuration"/>
+          <metric source="failedMiniLinkCliMessageCommitDuration" target="failedMiniLinkCliMessageCommitDuration"/>
+          <metric source="successMiniLinkCliMessageInvokeAutoCommitDuration" target="successMiniLinkCliMessageInvokeAutoCommitDuration"/>
+          <metric source="failedMiniLinkCliMessageInvokeAutoCommitDuration" target="failedMiniLinkCliMessageInvokeAutoCommitDuration"/>
+          <metric source="successMiniLinkCliMessageAbortDuration" target="successMiniLinkCliMessageAbortDuration"/>
+          <metric source="failedMiniLinkCliMessageAbortDuration" target="failedMiniLinkCliMessageAbortDuration"/>
+      </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

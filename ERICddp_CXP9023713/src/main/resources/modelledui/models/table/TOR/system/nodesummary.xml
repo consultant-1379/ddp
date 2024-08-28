@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_network_element_details">
+    <reference table="sites" condition="enm_network_element_details.siteid = sites.id"/>
+    <reference table="enm_ne_release" condition="enm_network_element_details.releaseid = enm_ne_release.id"/>
+    <reference table="ne_types" condition="enm_network_element_details.netypeid = ne_types.id"/>
+    <reference table="enm_model_identity" condition="enm_network_element_details.modelid = enm_model_identity.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_network_element_details.date = '%date%'</where>
+
+  <groupby rollup="true">
+    <column db="ne_types.name"/>
+    <column db="IFNULL(enm_network_element_details.technology_domain, '')"/>
+    <column db="IFNULL(enm_ne_release.name,'')"/>
+    <column db="IFNULL(enm_model_identity.name,'')"/>
+  </groupby>
+
+  <column db="ne_types.name" label="NE Type"/>
+  <column db="enm_ne_release.name" label="Release"/>
+  <column db="enm_model_identity.name" label="Model Identity"/>
+  <column db="enm_network_element_details.technology_domain" label="Technology Domain"/>
+  <column db="SUM(count)" label="Count"/>
+  <column db="SUM(cm_supervised_count)" label="CM Supervised"/>
+  <column db="SUM(cm_synced_count)" label="CM Synced"/>
+  <column db="SUM(fm_supervised_count)" label="FM Supervised"/>
+  <column db="SUM(shm_synced_count)" label="SHM Synced"/>
+  <column db="SUM(pm_supervised_count)" label="PM Supervised"/>
+
+</modelledtable>

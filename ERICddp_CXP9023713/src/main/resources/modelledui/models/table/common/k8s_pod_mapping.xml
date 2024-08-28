@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="k8s_pod">
+    <reference table="sites" condition="k8s_pod.siteid = sites.id"/>
+    <reference table="servers podsrv" condition="k8s_pod.serverid = podsrv.id"/>
+    <reference table="k8s_pod_app_names" condition="k8s_pod.appid = k8s_pod_app_names.id"/>
+    <reference table="servers nodesrv" condition="k8s_pod.nodeid = nodesrv.id" join="LEFT OUTER JOIN"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND k8s_pod.date = '%date%' </where>
+
+  <column db="podsrv.hostname" label="Pod (Mapped)"/>
+  <column db="k8s_pod.pod" label="Pod (Source)"/>
+  <column db="k8s_pod.podIP" label="Pod IP"/>
+  <column db="k8s_pod_app_names.name" label="Application"/>
+  <column db="nodesrv.hostname" label="Worker"/>
+
+</modelledtable>

@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+
+use Data::Dumper;
+use DBI;
+use Getopt::Long;
+use StatsDB;
+use StatsTime;
+use strict;
+use warnings;
+
+our @date = ();
+our $DEBUG = 0;
+our $dbh;
+our $siteId;
+our $active_techpack_details_table = "active_techpack_details";
+
+sub main {
+    my ($techpackDetailsLogFile, $site);
+    if ($DEBUG > 0) { print "<techpackDetailsLogFile:$techpackDetailsLogFile|site:$site>\n"; }
+    my $result = GetOptions(
+        "logfile=s" => \$techpackDetailsLogFile,
+        "site=s"  => \$site,
+        "debug=s" => \$DEBUG
+        );
+
+    ($result == 1) or die "Invalid arguments. Usage: parseTechpackDetails --logfile <techpackDetailsLogFile>
+        --site <site> [ --debug <1-10> ]";
+    ( -r $techpackDetailsLogFile ) or die "Cannot read log file $techpackDetailsLogFile";
+
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime=getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    my $r_parsedTechpackStats = parseTechpackDetailsLog($techpackDetailsLogFile);
+    my $bcpFile = createBcpFile($r_parsedTechpackStats);
+    removeOldData();
+    loadDb($bcpFile);
+    unlink($bcpFile);
+    if($DEBUG > 1) {
+        $endTime=getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$startTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseTechpackDetailsLog {
+    my $logFile = shift;
+    if ($DEBUG > 2) { print "<Logfile being parsed:$logFile>\n"; }
+    my ($time, $techpack_name, $product_number, $r_state, $techpack_type, $techpack_status, $dwh_creation_date);
+    my @r_data = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    my $count = 0;
+    while (my $line = <FILE>){
+        $count++;
+        if ($DEBUG > 3) { print "<Logfile:$logFile>\n<Line being parsed:$line>\n"; }
+        # Example of what below regex would match
+        #2015-07-28 11:50:02;M_E_SGEH;CXC1730751;R9B_b259;MZ;ACTIVE;2015-05-06 18:45:26
+        if (($time, $techpack_name, $product_number, $r_state, $techpack_type, $techpack_status, $dwh_creation_date) = split(/;/, $line)) {
+            if ($DEBUG > 4) { print Data::Dumper->Dump([$time, $techpack_name, $product_number, $r_state, $techpack_type, $techpack_status, $dwh_creation_date],[qw(time techpack_name product_number r_state techpack_type techpack_status dwh_creation_date)]) };
+            @date = split(/\s/,$time);
+            if ($DEBUG > 5) { print "<Data being parsed are of the date:$date[0]>\n"; }
+            if ($DEBUG > 6) { print "<Logfile:$logFile>\n<Line number:$count|Line being parsed:$line>\n"; }
+            my %r_dataForLine = (
+                time => "$date[0]",
+                techpack_name => "$techpack_name",
+                product_number => "$product_number",
+                r_state => "$r_state",
+                techpack_type => "$techpack_type",
+                techpack_status => "$techpack_status",
+                dwh_creation_date => "$dwh_creation_date"
+            );
+            push (@r_data, \%r_dataForLine);
+        }
+    }
+    if ($DEBUG > 7) { print '@r_data: ' . Dumper \@r_data; }
+    return (\@r_data);
+}
+
+sub createBcpFile {
+    my $parsed_techpack_data = shift;
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+
+    my $techpackDetailsBcpFile = "${tmpDir}/techpack_details.bcp";
+    open BCP, ">$techpackDetailsBcpFile" or die "Cannot open BCPFile";
+    for my $techpack_data_element ( @$parsed_techpack_data ) {
+        printf BCP "%s|%d|%s|%s|%s|%s|%s|%s",
+            $techpack_data_element->{time},
+            $siteId,
+            $techpack_data_element->{techpack_name},
+            $techpack_data_element->{product_number},
+            $techpack_data_element->{r_state},
+            $techpack_data_element->{techpack_type},
+            $techpack_data_element->{techpack_status},
+            $techpack_data_element->{dwh_creation_date};
+    }
+    close BCP;
+    if ($DEBUG > 8) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $techpackDetailsBcpFile");
+    }
+    return $techpackDetailsBcpFile;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $active_techpack_details_table WHERE siteid = $siteId AND time = '$date[0]'";
+    if ($DEBUG > 9) { print "<deleteSql query removing the old data is:$deleteSql>\n"; }
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $active_techpack_details_table FIELDS TERMINATED BY \'|\'";
+    if ($DEBUG > 10) { print "<Query loading the data from BCP file:$bcpFile :$sth>\n"; }
+    dbDo($dbh,$sth) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

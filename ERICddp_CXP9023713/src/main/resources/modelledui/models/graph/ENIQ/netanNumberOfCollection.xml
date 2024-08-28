@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Number of Collections"
+>
+  <presetagg type="COUNT" interval="Daily"/>
+  <title value="Collections Defined"/>
+  <queries>
+    <query timecol="time" multiseries="eniq_netan_pmdb_collections_summary_details.collectionType">
+      <dbtables main="eniq_netan_pmdb_collections_summary_details">
+        <reference table="sites" condition="eniq_netan_pmdb_collections_summary_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' </where>
+
+      <column db="eniq_netan_pmdb_collections_summary_details.collectionType" label="Number Of Collections"/>
+    </query>
+  </queries>
+  <size width="540" height="240"/>
+</modelledgraph>

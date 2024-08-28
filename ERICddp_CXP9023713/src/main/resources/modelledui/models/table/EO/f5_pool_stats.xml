@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="f5_pool_stats">
+  <reference table="sites" condition="f5_pool_stats.siteid = sites.id"/>
+  <reference table="f5_pool_names" condition="f5_pool_stats.poolid = f5_pool_names.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND f5_pool_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby>
+    <column db="f5_pool_names.name"/>
+ </groupby>
+
+ <order columnid="requests" direction="DESC"/>
+
+ <column db="f5_pool_stats.poolid" id="poolid" label="poolid" visible="false"/>
+ <column db="f5_pool_names.name" label="Pool"/>
+ <column db="ROUND(AVG(f5_pool_stats.kbitsInPerSec))" label="Kbit/s In"/>
+ <column db="ROUND(AVG(f5_pool_stats.kbitsOutPerSec))" label="Kbit/s Out"/>
+ <column db="SUM(f5_pool_stats.connections)" label="Connections"/>
+ <column db="SUM(f5_pool_stats.requests)" label="Requests" id="requests"/>
+
+ <ctxmenu keycol="poolid" targettype="url" multiselect="true">
+  <item id="poolstats" label="Plot"/>
+  <urltarget arg="plot"/>
+ </ctxmenu>
+</modelledtable>

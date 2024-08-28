@@ -1,0 +1,7 @@
+{
+    "queries": [],
+    "dbDo": [
+        "DELETE FROM k8s_ha WHERE siteid = 1 AND time BETWEEN '2022-12-22 00:04:10' AND '2022-12-22 00:04:10'",
+        "INSERT INTO k8s_ha (siteid, time, pod, containerid, workerid, type) VALUES (1, '2022-12-22 00:04:10', 'pe-testware-k6-httpd', 1, 1, 'Kill')"
+    ]
+}

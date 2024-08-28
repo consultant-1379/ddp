@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="ebsm"/>
+    <service name="ebsflow"/>
+  </services>
+
+  <table name="enm_ebsm_inst_stats">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="epsid" reftable="enm_ebsm_epsid" refnamecol="EpsIdText"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^(%1%)-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Expected_Num_Input_Rops$">
+      <metric source="Count" target="expected_num_input_rop" delta="true" filteridle="true"/>
+      <property name="epsid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Rops_Received$">
+      <metric source="Count" target="rop_received" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Incomplete_Input_Rops$">
+      <metric source="Count" target="incomplete_input_rops" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Invalid_Events$">
+      <metric source="Count" target="invalid_events" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Files_Received$">
+      <metric source="Count" target="files_received" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Erroneous_Files$">
+      <metric source="Count" target="erroneous_files" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=File_Output_Time_In_Milli_Sec$">
+      <metric source="Count" target="file_output_time" delta="true" filteridle="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_LTE_Counters_Produced$">
+      <metric source="Count" target="countersproducedLTE" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_LTE_events_Processed$">
+      <metric source="Count" target="eventsprocessedLTE" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_LTE_Files_Written$">
+      <metric source="Count" target="numoffileswrittenLTE" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_MME_Counters_Produced$">
+      <metric source="Count" target="countersproducedMME" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_MME_events_Processed$">
+      <metric source="Count" target="eventsprocessedMME" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_MME_Files_Written$">
+      <metric source="Count" target="numoffileswrittenMME" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_Counters_Produced$">
+      <metric source="Count" target="countersproducedNR" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_events_Processed$">
+      <metric source="Count" target="eventsprocessedNR" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_Files_Written$">
+      <metric source="Count" target="numoffileswrittenNR" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_LTE_events_Ignored$">
+      <metric source="Count" target="numberOfEventsIgnoredLTE" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Number_Of_NR_events_Ignored$">
+      <metric source="Count" target="numberOfEventsIgnoredNR" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Index_Size_Of_Nr_Downlink_Non_Voice_Throughput_Counters$">
+      <metric source="Count" target="indexSizeOfDownlinkNonVoiceThroughputNR" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Index_Size_Of_Nr_Downlink_Voice_Throughput_Counters$">
+      <metric source="Count" target="indexSizeOfDownlinkVoiceThroughputNR" delta="true" filteridle="true"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.component.aia.services.eps.core.statistics.ebs-eps\d+:name=Index_Size_Of_Nr_Uplink_Throughput_Counters$">
+      <metric source="Count" target="indexSizeOfUplinkThroughputNR" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+</modelledinstr>
+

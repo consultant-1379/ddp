@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_vnflaf_wfexec">
+    <reference table="sites" condition="enm_vnflaf_wfexec.siteid = sites.id"/>
+    <reference table="enm_vnflaf_wfnames" condition="enm_vnflaf_wfexec.nameid= enm_vnflaf_wfnames.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where> sites.name = '%site%' AND (enm_vnflaf_wfexec.start BETWEEN '%date% 00:00:00' AND '%date% 23:59:59')
+  OR ( (enm_vnflaf_wfexec.start BETWEEN %date% - INTERVAL 1 DAY AND %date%) AND
+  (enm_vnflaf_wfexec.end BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' ))
+  </where>
+
+  <column db="CONCAT(enm_vnflaf_wfexec.instanceId,'@',enm_vnflaf_wfexec.start)" label="id" visible="false" id="instanceId"/>
+  <column db="enm_vnflaf_wfexec.start" label="Start" formatter = 'ddpFormatTime'/>
+  <column db="enm_vnflaf_wfexec.end" label="End" formatter = 'ddpFormatTime'/>
+  <column db="TIMEDIFF(enm_vnflaf_wfexec.end,enm_vnflaf_wfexec.start)" label="Duration"/>
+  <column db="enm_vnflaf_wfnames.name" label="Workflow"/>
+
+  <ctxmenu keycol="instanceId" targettype="url" multiselect="false">
+    <item id="instanceIdStartTime" label="Show Log"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+
+</modelledtable>

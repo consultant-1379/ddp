@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ ylabel="Count"
+ forcelegend="true"
+>
+ <title value="Failed Connections"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="enm_winfiol_services">
+     <reference table="sites" condition="enm_winfiol_services.siteid = sites.id"/>
+     <reference table="servers" condition="enm_winfiol_services.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <param name="service"/>
+   <where>sites.name = '%s' AND enm_winfiol_services.service = '%s'</where>
+   <column db="enm_winfiol_services.failedconnections" label="Failed Connections"/>
+  </query>
+ </queries>
+ <size width="560" height="320"/>
+</modelledgraph>

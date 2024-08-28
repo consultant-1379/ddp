@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="GB"
+ timespan="day"
+ forcelegend="true"
+>
+  <title value="Volume Space Used(GB)"/>
+  <queries>
+    <query timecol="date" multiseries="volumes.name">
+      <dbtables main="volume_stats">
+        <reference table="volumes" condition="volume_stats.volid = volumes.id"/>
+      </dbtables>
+
+      <param name="volids"/>
+      <param name="serverid"/>
+      <where>volumes.id IN (%s) AND volume_stats.serverid = %d</where>
+      <column db="volume_stats.used / 1024" label="Used"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

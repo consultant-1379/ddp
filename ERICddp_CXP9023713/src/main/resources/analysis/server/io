@@ -1,0 +1,1352 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use DataStore;
+
+our $DEBUG = 0;
+
+our @VALID_FS_TYPES = ( 'vxfs', 'ufs', 'zfs', 'nfs', 'reiserfs', 'ext3', 'ext4', 'vxfs', 'xfs' );
+
+# Should map a partition/disk to what appears in the sar file, e.g. sda => dev8-0
+our %sarMap = ();
+
+our $r_diskMap;
+
+our $DM_FIND_ROOT = 0;
+our $DM_IN_HIER = 1;
+our $DM_IN_PATH = 2;
+
+sub getDiskId($$$) {
+    my ($diskName,$dbh,$serverId) = @_;
+
+    my $diskId = $r_diskMap->{$diskName};
+    if ( ! defined $diskId ) {
+        # Try diskName + s2
+        $diskId = $r_diskMap->{$diskName. "s2"};
+    }
+
+    if ( ! defined $diskId ) {
+        $r_diskMap = getIdMap($dbh, "disks", "id", "name", [$diskName], $serverId, "serverid" );
+        $diskId = $r_diskMap->{$diskName};
+    }
+
+    return $diskId;
+}
+
+sub loadSarMap($) {
+    my ($serverDir) = @_;
+
+    my $diskMapFile = $serverDir . "/diskmap.txt";
+    my $partitionsFile = $serverDir . "/partitions";
+
+    if ( -r $diskMapFile ) {
+        open IN, $diskMapFile or die "Cannot open $diskMapFile";
+        while ( my $line = <IN> ) {
+            if ( $line =~ /^([^:]+):(\S+)/ ) {
+                my ($dev,$sar) = ($1,$2);
+                $sarMap{$dev} = $sar;
+            }
+        }
+        close IN;
+    }
+
+    if ( -r $partitionsFile ) {
+        open IN, $partitionsFile or die "Cannot open $partitionsFile";
+        while ( my $line = <IN> ) {
+            if ( $DEBUG > 9 ) { print "loadSarMap: line=$line"; }
+            my ($major,$minor,$blocks,$name) = $line =~ /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/;
+            if ( defined $name ) {
+                if ( $DEBUG > 5 ) { print "loadSarMap: major=$major minor=$minor blocks=$blocks name=$name\n"; }
+                $sarMap{$name} = sprintf("dev%d-%d",$major,$minor);
+            }
+        }
+        close IN;
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("loadSarMap: sarMap", \%sarMap); }
+}
+
+sub getSarId($) {
+    my ($dev) = @_;
+
+    my $sarId = $sarMap{$dev};
+    if ( ! defined $sarId ) {
+        $sarId = $sarMap{$dev . "s2"};
+    }
+    if ( $DEBUG > 8 ) { print "getSarId: dev=$dev sarId=", ((defined $sarId) ? $sarId : "undef"), "\n"; }
+
+    return $sarId;
+}
+
+sub parseMnttab($) {
+    my ($file) = @_;
+
+
+    my %validFsTypeMap = ();
+    foreach my $fsType ( @VALID_FS_TYPES ) {
+        $validFsTypeMap{$fsType} = 1;
+    }
+
+    open IN, $file or die "Cannot open $file";
+    my @results = ();
+    while ( my $line = <IN> ) {
+        my ($special,$mntpnt,$fstype,$options) = $line =~ /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/;
+        if ( $validFsTypeMap{$fstype} ) {
+            my $r_fsInfo = {
+                'type' => $fstype,
+                'special' => $special,
+                'mntpnt' => $mntpnt,
+                'options' => $options
+            };
+            push @results, $r_fsInfo;
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseMnttab: results", \@results); }
+    return \@results;
+}
+
+sub parseVxDmpListEnclosure($) {
+    my ($serverDir) = @_;
+
+    my @enclosures = ();
+    my $filePath = $serverDir . "/vxdmpadm_listenclosure.txt";
+    if ( -r $filePath ) {
+        open INPUT, $filePath or die "Failed to open $filePath";
+        while ( my $line = <INPUT> ) {
+            if ( $line =~ /EMC_CLARiiON\s+(\S+)/ ) {
+                push @enclosures, $1;
+            }
+        }
+        close INPUT;
+    }
+
+    return \@enclosures;
+}
+
+sub parseVxdisk($) {
+    my ($serverDir) = @_;
+
+    my %dgDisks = ();
+    open IN, $serverDir . "/vxdisk_list.txt" or die "Cannot open vxdisk_list.txt";
+    while ( my $line = <IN> ) {
+        $line =~ s/ (shared\S*)/$1/;
+        $line =~ s/ (invalid\S*)/$1/;
+        $line =~ s/ (clone_disk\S*)/$1/;
+        $line =~ s/ (thin\S*)/$1/;
+
+        my ($device,$type,$disk,$dg,$status,$osDev) = split(/\s+/, $line);
+        if ( $status =~ /^online/ ) {
+            my $r_disk = {
+                'disk' => $disk,
+                'osdev' => $osDev
+            };
+            my $r_diskList = $dgDisks{$dg};
+            if ( ! defined $r_diskList ) {
+                $r_diskList = [];
+                $dgDisks{$dg} = $r_diskList;
+            }
+            push @{$r_diskList}, $r_disk;
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseVxdisk: dgDisks", \%dgDisks); }
+    return \%dgDisks;
+}
+
+sub parseVxStorageDisk($) {
+    my ($serverDir) = @_;
+
+    my %diskToStoragePool = ();
+    my $sfsDiskFile = $serverDir . "/../storage_disk_list.txt";
+    if ( -r $sfsDiskFile ) {
+        open IN, $sfsDiskFile or die "Failed to open storage_disk_list.txt";
+        while ( my $line = <IN> ) {
+            my ($disk,$pool) = split(/\s+/,$line);
+            $diskToStoragePool{$disk} = $pool;
+        }
+        close IN;
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseVxdisk: diskToStoragePool", \%diskToStoragePool); }
+
+    return \%diskToStoragePool;
+}
+
+sub parseVxSubpathsNew($) {
+    my ($r_devToDmp) = @_;
+
+    my %dmpSubPaths = ();
+    while ( my $line = <IN> ) {
+        if ( $DEBUG > 9 ) { print "parseVxSubpathsNew: line=$line"; }
+        my @fields = split(/\s+/, $line);
+        if ( $DEBUG > 8 ) { print Dumper("parseVxSubpathsNew: fields", \@fields); }
+        if ( $#fields < 3 ) {
+            next;
+        }
+        my $dev   = $fields[0];
+        my $state = $fields[1];
+        my $dmp   = $fields[3];
+
+        my $r_dmpSubPaths = $dmpSubPaths{$dmp};
+        if ( ! defined $r_dmpSubPaths ) {
+            $r_dmpSubPaths = {
+                'dmp' => $dmp,
+                'subpaths' => []
+            };
+            $dmpSubPaths{$dmp} = $r_dmpSubPaths;
+        }
+
+        if ( $state eq 'ENABLED(A)' ) {
+            push @{$r_dmpSubPaths->{'subpaths'}}, $dev;
+        }
+        $r_devToDmp->{$dev} = $r_dmpSubPaths;
+
+        if ( $DEBUG > 6 ) { print Dumper("parseVxSubpathsNew: dev=$dev dmp=$dmp r_dmpSubPaths", $r_dmpSubPaths); }
+    }
+}
+
+sub parseVxSubpathsOld($$) {
+    my ($r_devToDmp,$r_dgDisks) = @_;
+
+    # First name line is already read
+    <IN>; #Skip === line
+
+    my $r_currGroup = [];
+    my %pathToGroup = ();
+
+    while ( my $line = <IN> ) {
+        if ( $line =~ /^NAME/ ) {
+            <IN>; #Skip === line
+            $r_currGroup = [];
+        } elsif ( $line =~ /(\S+)\s+(\S+)/ ) {
+            my ($path,$state) = ($1,$2);
+            if ( $state eq 'ENABLED(A)' ) {
+                push @{$r_currGroup}, $path;
+                $pathToGroup{$path} = $r_currGroup;
+            }
+        }
+    }
+
+    foreach my $dg ( keys %{$r_dgDisks} ) {
+        foreach my $r_vxDisk ( @{$r_dgDisks->{$dg}} ) {
+            my $r_paths = $pathToGroup{$r_vxDisk->{'osdev'}};
+            if ( defined $r_paths ) {
+                $r_devToDmp->{$r_vxDisk->{'osdev'}} = {
+                    'dmp' => $r_vxDisk->{'osdev'},
+                    'subpaths' => $r_paths
+                };
+            }
+        }
+    }
+}
+
+sub parseVxSubpaths($$) {
+    my ($serverDir,$r_dgDisks) = @_;
+
+    my %devToDmp = ();
+    my $file = $serverDir . "/vxdmpadm_getsubpaths.txt";
+    if ( -r $file ) {
+        open IN, $file or die "Failed to open $file";
+        my $header = <IN>;
+        if ( $header =~ /DMPNODENAME/ ) {
+            parseVxSubpathsNew(\%devToDmp);
+        } else {
+            parseVxSubpathsOld(\%devToDmp,$r_dgDisks);
+        }
+        close IN;
+    }
+
+    if ( $DEBUG > 5) { print Dumper("parseVxSubpaths: devToDmp", \%devToDmp); }
+
+    return \%devToDmp;
+}
+
+sub processVxfs($$$$$$) {
+    my ($r_fsInfoList,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    my %diskGroupsHash = ();
+    my @vxfsList = ();
+    foreach my $r_fsInfo ( @{$r_fsInfoList} ) {
+        if ( $r_fsInfo->{'type'} eq 'vxfs' ) {
+        if ( $DEBUG > 7 ) { print Dumper("processVxfs: r_fsInfo", $r_fsInfo); }
+            push @vxfsList, $r_fsInfo;
+            my @devFields = split("\/",$r_fsInfo->{'special'});
+            if ( $DEBUG > 8 ) { print Dumper("processVxfs: devFields", \@devFields); }
+            $diskGroupsHash{$devFields[4]}++;
+        }
+    }
+    my @diskGroups = keys %diskGroupsHash;
+    if ( $DEBUG > 5 ) { print "processVxfs: dgs=" . join(",", @diskGroups) . "\n"; }
+
+    if ( $#diskGroups == -1 ) {
+        return;
+    }
+
+    my $r_diskToStoragePool = parseVxStorageDisk($serverDir);
+    my $r_dgDisks = parseVxdisk($serverDir);
+    my $r_devSubPaths = parseVxSubpaths($serverDir,$r_dgDisks);
+
+
+    dbDo($dbh, "DELETE FROM vrts_disks WHERE serverid = $serverId AND date = '$date'");
+
+    my @vrtsPaths = ();
+    foreach my $dg ( @diskGroups ) {
+        foreach my $r_diskInfo ( @{$r_dgDisks->{$dg}} ) {
+            my $dgColValue = $dg;
+            # Hack here for SFS, more use to use the storage pool name
+            if ( $dg eq 'sfsdg' ) {
+                my $storagePool = $r_diskToStoragePool->{$r_diskInfo->{'disk'}};
+                if ( defined $storagePool ) {
+                    $dgColValue = $storagePool;
+                }
+            }
+
+            my $r_pathDevs;
+            my $r_diskDmpInfo = $r_devSubPaths->{$r_diskInfo->{'osdev'}};
+            if ( defined $r_diskDmpInfo ) {
+                $r_pathDevs = $r_diskDmpInfo->{'subpaths'};
+            } else {
+                $r_pathDevs = [ $r_diskInfo->{'osdev'} ];
+            }
+            if ( $DEBUG > 5 ) { print Dumper("processVxfs: dg=$dg", $r_diskInfo, $r_pathDevs); }
+            my $multiPath = $#{$r_pathDevs} > 0;
+            foreach my $r_pathDev ( @{$r_pathDevs} ) {
+                my $sarId = getSarId($r_pathDev);
+                if ( $sarId ) {
+                    my $diskName = $r_diskInfo->{'disk'};
+                    if ( $multiPath ) {
+                        $diskName .= "." . $r_pathDev;
+                    }
+                    my $diskId = getDiskId($diskName, $dbh, $serverId);
+
+                    dbDo($dbh, "INSERT INTO vrts_disks (date,serverid,dg,diskid) VALUES ('$date', $serverId, '$dgColValue', $diskId)") or
+                        die "Failed to insert $diskName into vrts_disks";
+
+                    push @{$r_sarList}, { 'sarid' => $sarId, 'diskid' => $diskId, 'name' => $diskName };
+                    if ( $DEBUG > 7 ) { print Dumper("processVxfs: Added to sarList", $r_sarList->[$#{$r_sarList}]); }
+                }
+            }
+        }
+    }
+}
+
+sub processSVM($$$$$$) {
+    my ($r_fsInfoList,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    my %svmMDmap = ();
+    foreach my $r_fsInfo ( @{$r_fsInfoList} ) {
+        if ( $r_fsInfo->{'type'} eq 'ufs' ) {
+            if ( $DEBUG > 7 ) { print Dumper("procesSVM: r_fsInfo", $r_fsInfo); }
+            my @devFields = split("\/",$r_fsInfo->{'special'});
+            if ( $DEBUG > 8 ) { print Dumper("procesSVM: devFields", \@devFields); }
+            if ( $devFields[2] eq 'md' ) {
+                $svmMDmap{$devFields[4]}++;
+            }
+        }
+    }
+    my @svmMDs = keys %svmMDmap;
+    if ( $DEBUG > 5 ) { print "processSVM: svmMDs=" . join(",", @svmMDs) . "\n"; }
+    if ( $#svmMDs == -1 ) {
+        return;
+    }
+
+    dbDo($dbh, "DELETE FROM svm_disks WHERE serverid = $serverId AND date = '$date'");
+    foreach my $diskName ( @svmMDs ) {
+        my $diskId = getDiskId($diskName, $dbh, $serverId);
+        dbDo($dbh, "INSERT INTO svm_disks (date,serverid,md,diskid) VALUES ('$date',$serverId,'$diskName',$diskId)");
+
+        push @{$r_sarList}, { 'sarid' => "m" . $diskName, 'diskid' => $diskId, 'name' => $diskName };
+        if ( $DEBUG > 7 ) { print Dumper("processSVM: Added to sarList", $r_sarList->[$#{$r_sarList}]); }
+    }
+}
+
+sub processNFS($$$$$$) {
+    my ($r_fsInfoList,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    my %nfsDevice = ();
+    foreach my $r_fsInfo ( @{$r_fsInfoList} ) {
+        if ( $r_fsInfo->{'type'} eq 'nfs' ) {
+            if ( $DEBUG > 7 ) { print Dumper("processNFS: r_fsInfo", $r_fsInfo); }
+            if ( ($r_fsInfo->{'special'} !~ /:vold/) && ($r_fsInfo->{'mntpnt'} !~ /^\/net/) ) {
+                my ($devNum) = $r_fsInfo->{'options'} =~ /,dev=(.*)/;
+                $devNum = hex($devNum) & 0x3ffff;
+                $nfsDevice{$r_fsInfo->{'special'}} = $devNum;
+            }
+        }
+    }
+    my @nfsShares = keys %nfsDevice;
+    if ( $DEBUG > 5 ) { print Dumper("processNFS: nfsShares", \@nfsShares); }
+
+    if ( $#nfsShares == -1 ) {
+        return;
+    }
+
+    my %nfsServerIpMap = ();
+    my $nfsServersFile = $serverDir . "/nfsservers.txt";
+    if ( -r $nfsServersFile ) {
+        open INPUT, $nfsServersFile or die "Failed to open $nfsServersFile";
+        while ( my $line = <INPUT> ) {
+            if ( $line =~ /^([\d\.]+)\s+(\S+)/ ) {
+                $nfsServerIpMap{$2} = $1;
+            }
+        }
+        close INPUT;
+    }
+
+    dbDo($dbh, "DELETE FROM nfs_mounts WHERE serverid = $serverId AND date = '$date'");
+    foreach my $nfsShare ( @nfsShares ) {
+        my $sarId = "nfs" . $nfsDevice{$nfsShare};
+        my $diskId = getDiskId($nfsShare, $dbh,$serverId);
+
+        my ($nfsSrv,$directory) = $nfsShare =~ /^([^:]+):(.*)/;
+        my $nfsSrvIp = '\N';
+        if ( exists $nfsServerIpMap{$nfsSrv} ) {
+            $nfsSrvIp = $nfsServerIpMap{$nfsSrv};
+        } elsif ( $nfsSrv =~ /^[\d\.]+$/ ) {
+            $nfsSrvIp = $nfsSrv;
+        }
+
+        dbDo($dbh, "INSERT INTO nfs_mounts (date,serverid,mnt,remoteip,diskid) VALUES ('$date',$serverId,'$nfsShare','$nfsSrvIp',$diskId)");
+        push @{$r_sarList}, { 'sarid' => $sarId, 'diskid' => $diskId, 'name' => $nfsShare };
+        if ( $DEBUG > 7 ) { print Dumper("processNFS: Added to sarList", $r_sarList->[$#{$r_sarList}]); }
+    }
+}
+
+sub processZFS($$$$$$) {
+    my ($r_fsInfoList,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    my %zpoolHash = ();
+    foreach my $r_fsInfo ( @{$r_fsInfoList} ) {
+        if ( $r_fsInfo->{'type'} eq 'zfs' ) {
+            if ( $DEBUG > 7 ) { print Dumper("processZFS: r_fsInfo", $r_fsInfo); }
+            my @devFields = split("\/",$r_fsInfo->{'special'});
+            $zpoolHash{$devFields[0]}++;
+        }
+    }
+    my @zpools = keys %zpoolHash;
+    if ( $#zpools == -1 ) {
+        return;
+    }
+
+    my %devToPool =();
+    my $zpoolStatusFile = $serverDir . "/zfs/zpool.status";
+    if ( -r $zpoolStatusFile ) {
+        open IN, $zpoolStatusFile or die "Cannot open $zpoolStatusFile";
+        my $currZpool = "";
+        while ( my $line = <IN> ) {
+            if ( $DEBUG > 9 ) { print "processZFS: line=$line"; }
+            if ( $currZpool eq "" ) {
+                if ( $line =~ /^\s+NAME/ ) {
+                    $line = <IN>;
+                    ($currZpool) = $line =~ /^\s+(\S+)/;
+                    if ( $DEBUG > 7 ) { print "processZFS: currZpool=$currZpool\n"; }
+                }
+            } else {
+                if ( $line =~ /^\s*$/ ) {
+                    $currZpool = "";
+                } else {
+                    if ( $line =~ /^\s+(\S+)\s+(\S+)/ ) {
+                        my ($dev,$status) = ($1,$2);
+                        if ( $DEBUG > 7 ) { print "processZFS: dev=$dev status=$status\n"; }
+                        if ( ($dev !~ /mirror|raidz|spare/) && ($status eq 'ONLINE') ) {
+                            if ( $DEBUG > 6 ) { print "processZFS: matched dev=$dev in $currZpool\n"; }
+                            $devToPool{$dev} = $currZpool;
+                        }
+                    }
+                }
+            }
+        }
+        close IN;
+    }
+    if ( $DEBUG > 5 ) { print Dumper("processZFS: devToPool", \%devToPool); }
+
+    dbDo($dbh,"DELETE FROM zfs_disks WHERE serverid = $serverId AND date = '$date'");
+    foreach my $dev ( keys %devToPool ) {
+        my $zpool = $devToPool{$dev};
+        if ( exists $zpoolHash{$zpool} ) {
+            my $sarId = getSarId($dev);
+            if ( defined $sarId ) {
+                my $diskId = getDiskId($dev, $dbh, $serverId);
+                dbDo($dbh, "INSERT INTO zfs_disks (date,serverid,pool,diskid) VALUES ('$date', $serverId, '$zpool', $diskId)") or
+                        die "Failed to insert $dev into zfs_disks";
+
+                push @{$r_sarList}, { 'sarid' => $sarId, 'diskid' => $diskId, 'name' => $dev };
+                if ( $DEBUG > 7 ) { print Dumper("processZFS: Added to sarList", $r_sarList->[$#{$r_sarList}]); }
+            }
+        }
+    }
+}
+
+sub parseSolMPath($) {
+    my ($serverDir) = @_;
+
+    my $listLuFile = $serverDir . "/mpath/mpathadm_list_lu.txt";
+    if ( ! -r $listLuFile ) {
+        return []
+    }
+
+    my %enclosures = ();
+    open INPUT, $listLuFile or die "Cannot open $listLuFile";
+    my @devList = ();
+    while ( my $line = <INPUT> ) {
+        if ( $line =~ /^\s+\/dev\/rdsk\/(\S+)/ ) {
+            push @devList, $1;
+        }
+    }
+    close INPUT;
+    if ( $DEBUG > 3 ) { print Dumper("parseSolMPath: devList", \@devList); }
+
+    foreach my $device ( @devList ) {
+        my $luxadmFile = $serverDir . "/mpath/luxadm_display.$device";
+        if ( -r $luxadmFile ) {
+            open INPUT, $luxadmFile or die "Cannot open $luxadmFile";
+            my $vendor = "";
+            while ( my $line = <INPUT> ) {
+                if ( $line =~ /^\s+Vendor:\s+(\S+)/ ) {
+                    $vendor = $1;
+                } elsif ( $line =~ /^\s+Serial Num:\s+(\S+)/ ) {
+                    my $serialNum = $1;
+                    if ( $DEBUG > 3 ) { print "parseSolMPath: device=$device vendor=$vendor serialNum=$serialNum\n"; }
+                    if ( $vendor eq "DGC" ) {
+                        $enclosures{$serialNum} = 1;
+                    }
+                }
+            }
+            close INPUT;
+        }
+    }
+
+    my @results = keys %enclosures;
+    return \@results;
+}
+
+sub handleRaw($$$$$$) {
+    my ($r_rawdevs,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    if ( $DEBUG > 5 ) { print Dumper("handleRaw: r_rawdevs", $r_rawdevs); }
+    dbDo($dbh, "DELETE FROM raw_devices WHERE serverid = $serverId AND date = '$date'");
+    for my $r_rawdev ( @{$r_rawdevs} ) {
+        my $sarId = getSarId($r_rawdev->{'dev'});
+        if ( defined $sarId ) {
+            my $diskId = getDiskId($r_rawdev->{'desc'},$dbh,$serverId);
+            dbDo($dbh, "INSERT INTO raw_devices (date,serverid,diskid) VALUES ('$date', $serverId, $diskId)");
+
+            push @{$r_sarList}, { 'sarid' => $sarId, 'diskid' => $diskId, 'name' => $r_rawdev->{'desc'} };
+            if ( $DEBUG > 7 ) { print Dumper("handleRaw: Added to sarList", $r_sarList->[$#{$r_sarList}]); }
+        } else {
+            if ( $DEBUG ) { print "handleRaw: no sarId for " . $r_rawdev->{'dev'} . "\n"; }
+        }
+    }
+}
+
+sub processRaw($$$$$$) {
+    my ($r_fsInfoList,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    opendir(DIR,$serverDir);
+    my @files = readdir(DIR);
+    closedir(DIR);
+    my @rawdevs = ();
+    foreach my $file ( @files ) {
+        if ( $file =~ /^rawdevices/ ) {
+            if ( $DEBUG > 4 ) { print "processRaw: parsing $file\n"; }
+            my $filePath = $serverDir . "/" . $file;
+            open IN, $filePath or die "Failed to open $file";
+            while ( my $line = <IN> ) {
+                my ($dev,$type,$name) = $line =~ /^(\S+);(\S+) (\S+)/;
+                my $description = $type . ":" . $name;
+                my @devFields = split("/", $dev);
+
+                # We need to search for s2 as this is whats in the diskmap.txt
+                my $s2dev = $devFields[$#devFields];
+                $s2dev =~ s/s\d+$/s2/;
+
+                push @rawdevs, { 'dev' => $s2dev, 'desc' => $description }
+            }
+            close IN;
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("processRaw: rawdevs", \@rawdevs); }
+    if ( $#rawdevs == -1 ) {
+        return;
+    }
+
+    handleRaw(\@rawdevs,$serverId,$date,$serverDir,$dbh,$r_sarList)
+}
+
+sub parseDmSetup($) {
+    my ($file) = @_;
+
+    #
+    # Build a tree structure where the "root" nodes are the disks/luns
+    #  The node shows it's phyiscal path devices and the volumes it contains
+    #       'mpathb' => {
+    #                     'dmdev' => 'dm-3',
+    #                     'devnum' => '253:3',
+    #                     'children' => {
+    #                                     'vg_data-data' => {
+    #                                                         'dmdev' => 'dm-5',
+    #                                                         'devnum' => '253:5',
+    #                                                         'children' => {}
+    #                                                       },
+    #                                     'vg_data-db' => {
+    #                                                       'dmdev' => 'dm-6',
+    #                                                       'devnum' => '253:6',
+    #                                                       'children' => {}
+    #                                                     }
+    #                                   },
+    #                     'paths' => {
+    #                                  'sdn' => '8:208',
+    #                                  'sdq' => '65:0',
+    #                                  'sdf' => '8:80',
+    #                                  'sdi' => '8:128'
+    #                                }
+    #                   },
+    #       'mpathc' => {
+    #
+    my %results = ();
+    open IN, $file or die "Cannot open $file";
+    my $r_hier = [];
+    my $state = $DM_FIND_ROOT;
+    while ( my $line = <IN> ) {
+        $line =~ s/[\|`]/ /g;
+        if ( $DEBUG > 9 ) { print "parseDmSetup: state=$state line=$line"; }
+        if ( $DEBUG > 10 ) { print Dumper("parseDmSetup: r_hier", $r_hier); }
+
+        if ( $line =~ /^(\S+) \<(\S+)\> \(([\d:]+)\)/ ) {
+            # Top level volume node
+            my ( $node, $dmdev, $majmin ) = ( $1, $2, $3 );
+            if ( $DEBUG > 5 ) { print "parseDmSetup: top node=$node dmdev=$dmdev majmin=$majmin\n"; }
+            my $r_element = { 'node' => $node, 'dmdev' => $dmdev, 'devnum' => $majmin  };
+            $r_hier = [ $r_element ];
+            $state = $DM_IN_HIER;
+        } elsif ( $line =~ /^\s+-(\S+) \<(\S+)\> \(([\d:]+)\)/ ) {
+            # Intermediddate nodes, e.g. strip elements
+            my ( $node, $dmdev, $majmin ) = ( $1, $2, $3 );
+            if ( $DEBUG > 5 ) { print "parseDmSetup: sub node=$node dmdev=$dmdev majmin=$majmin\n"; }
+
+            if ( $state == $DM_IN_PATH ) {
+                # This means we have finished the paths of the previous node
+                # so remove it from the hierarcy
+                shift @{$r_hier};
+                $state = $DM_IN_HIER;
+            }
+
+            # We're only interested in intermediate node that are for mpath, other ones
+            # (like those created for LVM snapshots can be ignored)
+            if ( $node =~ /^mpath/ ) {
+                my $r_element = { 'node' => $node, 'dmdev' => $dmdev, 'devnum' => $majmin  };
+                unshift(@{$r_hier},$r_element);
+            }
+        } elsif ( $line =~ /^\s+- \<(\S+)\> \(([\d:]+)\)/ ) {
+            # Phyiscal paths
+            my ($path,$majmin) = ($1,$2);
+            if ( $DEBUG > 5 ) { print "parseDmSetup: path=$path majmin=$majmin\n"; }
+
+            # If there's no-multi-pathing, then we need to insert a dummy
+            # entry in the hierarcy as a place holder
+            if ( $#{$r_hier} == 0 ) {
+                my $r_element = { 'node' => $path, 'dmdev' => 'undef', 'devnum' => $majmin };
+                unshift(@{$r_hier},$r_element);
+            }
+
+            if ( $state == $DM_IN_HIER ) {
+                # This is the first path for this hierarcy
+                # Make sure all the dm nodes in the hierarcy are in the result tree
+                my $r_currentLevel = \%results;
+                foreach my $r_element ( @{$r_hier} ) {
+                    my $r_thisLevel = $r_currentLevel->{$r_element->{'node'}};
+                    if ( ! defined $r_thisLevel ) {
+                        $r_thisLevel = {
+                            'dmdev' => $r_element->{'dmdev'},
+                            'devnum' => $r_element->{'devnum'},
+                            'children' => {},
+                        };
+                        $r_currentLevel->{$r_element->{'node'}} = $r_thisLevel;
+                    }
+                    $r_currentLevel = $r_thisLevel->{'children'};
+                }
+            }
+            $state = $DM_IN_PATH;
+
+            # For the root of the hierarcy, add this as a path
+            my $r_rootNode = $results{$r_hier->[0]->{'node'}};
+            my $r_paths = $r_rootNode->{'paths'};
+            if ( ! defined $r_paths ) {
+                $r_paths = {};
+                $r_rootNode->{'paths'} = $r_paths;
+            }
+            $r_paths->{$path} = $majmin;
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseDmSetup: results", \%results); }
+
+    return \%results;
+}
+
+sub parseMultiPath($) {
+    my ($file) = @_;
+
+    my %results = ();
+    open IN, $file or die "Cannot open $file";
+    my $pathActive = 0;
+    my $currDm;
+    while ( my $line = <IN> ) {
+        if ( $line =~ /^(\S+) \(\S+\) (\S+)/ ) {
+            my ($alias,$dm) = ($1,$2);
+            <IN>; # Skip size line
+            my $r_device = {
+                'alias'     => $alias,
+                'active_paths'  => {},
+                'enabled_paths' => {}
+            };
+            $results{$dm} = $r_device;
+            $currDm = $dm;
+        } elsif ( $line =~ /policy=.* status=(\S+)/ ) {
+            my $status = $1;
+            if ( $status eq 'active' ) {
+                $pathActive = 1;
+            } else {
+                $pathActive = 0;
+            }
+        } elsif ( $line =~ /- ([\d:]+) (\S+) (\d+):(\d+)/ ) {
+            my ($id,$path,$major,$minor) = ($1,$2,$3,$4);
+            my $r_paths;
+            if ( $pathActive ) {
+                $r_paths = $results{$currDm}->{'active_paths'};
+            } else {
+                $r_paths = $results{$currDm}->{'enabled_paths'};
+            }
+            $r_paths->{$path} = sprintf("%d:%d", $major,$minor);
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseMultiPath: results", \%results); }
+
+    return \%results;
+}
+
+
+sub mapDmChildren($$$$);
+
+sub mapDmChildren($$$$) {
+    my ($top,$dev,$r_children,$r_topDev) = @_;
+    if ( $DEBUG > 7 ) { print "mapDmChildren: top=$top dev=$dev\n"; }
+
+    my @childDevs = keys %{$r_children};
+    if ( $#childDevs == -1 ) {
+        my $r_devs = $r_topDev->{$dev};
+        if ( ! defined $r_devs ) {
+            $r_devs = [];
+            $r_topDev->{$dev} = $r_devs;
+        }
+        push @{$r_devs}, $top;
+    } else {
+        foreach my $childDev ( @childDevs ) {
+            mapDmChildren($top,$childDev,$r_children->{$childDev}->{'children'},$r_topDev);
+        }
+    }
+}
+
+sub parseVxDmpDir($) {
+    my ($serverDir) = @_;
+
+    my $dirFile = $serverDir . "/vxdmp_dir.txt";
+    if ( ! -r $dirFile ) {
+        return undef;
+    }
+
+    my %devMap = ();
+    open IN, $dirFile or die "Cannot open $dirFile";
+    while ( my $line = <IN> ) {
+        chop $line;
+        my @parts = split(/\s+/, $line);
+        if ( $DEBUG > 8 ) { print Dumper("parseVxDmpDir: parts", \@parts); }
+        my ($major,$minor,$disk) = ($parts[4],$parts[5],$parts[9]);
+        if ( defined $major ) {
+            $major =~ s/,$//;
+            $devMap{$major . ":" . $minor} = $disk;
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseVxDmpDir: devMap", \%devMap); }
+
+    return \%devMap;
+}
+
+sub parsePVS($) {
+    my ($file) = @_;
+
+    my %pvToVg = ();
+    open INPUT, $file or die "Cannot open $file";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parsePVS: line=$line"; }
+        chop $line;
+        $line =~ s/^\s+//;
+        my ($dev,$vg,$fmt,$attr,$psize,$pfree) = split(",",$line);
+        $pvToVg{$dev} = $vg;
+    }
+    close INPUT;
+
+    # Now iterate through the PV looking for anywhere we've used
+    # the partition instead of the whole disk, we're looking for
+    # where there is only one vg on the disk containing the partition
+    my %diskToVg = ();
+    while ( my ($dev,$vg) = each %pvToVg ) {
+        my $fullDiskDev = undef;
+        if ( $dev =~ /mpath([a-z]+)p\d+$/ ) {
+            $fullDiskDev = "/dev/mapper/mpath" . $1;
+        } elsif ( $dev =~ /^\/dev\/([a-z]+)\d+/ ) {
+            $fullDiskDev = "/dev/" . $1;
+        }
+
+        if ( defined $fullDiskDev ) {
+            if ( ! exists $diskToVg{$fullDiskDev} ) {
+                $diskToVg{$fullDiskDev} = [];
+            }
+            push @{$diskToVg{$fullDiskDev}}, $vg;
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("parsePVS: diskToVg", \%diskToVg); }
+    while ( my ($fullDiskDev,$r_vg) = each %diskToVg ) {
+        if ( $#{$r_vg} == 0 ) {
+            my $vg = $r_vg->[0];
+            if ( $DEBUG > 5 ) { print "parsePVS: adding $fullDiskDev for $vg\n"; }
+            $pvToVg{$fullDiskDev} = $vg;
+        }
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parsePVS: pvToVg", \%pvToVg); }
+    return \%pvToVg;
+}
+
+# For the given partition device, returns the key to to sarMap
+# that points at the whole disk
+# e.g. for partition sda2 that points at dev8-2, we'll
+# return sda that points at dev8-0
+sub getDiskForPartition($) {
+    my ($partitionDev) = @_;
+
+    my $sarId = getSarId($partitionDev);
+    if ( ! defined $sarId ) {
+        print "WARN: Could not map $partitionDev\n";
+        return undef;
+    }
+
+    # Main disk device is the -0, e.g. for dev8-3, disk is dev8-0
+    my $diskDevSarId = $sarId;
+    $diskDevSarId =~ s/-\d+$/-0/;
+    # Iterate through the entries in sarMap to find the
+    # one that maps to the main disk dev
+    while ( my ($key,$value) = each %sarMap ) {
+        if ( $value eq $diskDevSarId ) {
+            if ( $DEBUG > 6 ) { print "getDiskForPartition: partitionDev=$partitionDev matched $value returning $key"; }
+            return $key;
+        }
+    }
+
+    print "WARN: Could not find key for $diskDevSarId for partitionDev $partitionDev\n";
+    return undef;
+}
+
+sub getMajorDevForDeviceMapper($$$$$$$$) {
+    my ($dm,$r_topDev,$r_deviceMapper,$r_multiPaths,$r_vxDmpPaths,$r_devToVxDev,$r_devToLvmVg,$r_majorDev) = @_;
+
+    my $r_containingDm = $r_topDev->{$dm};
+    if ( ! defined $r_containingDm ) {
+        print "WARN: Failed to map $dm\n";
+        return;
+    }
+
+    if ( $DEBUG > 5 ) { print "getMajorDevForDeviceMapper: r_containingDm=" . join(",",@{$r_containingDm}) . "\n"; }
+    foreach my $containingDm ( @{$r_containingDm} ) {
+        my $containingDmDev = $r_deviceMapper->{$containingDm}->{'dmdev'};
+        if ( $DEBUG > 5 ) { printf("getMajorDevForDeviceMapper: containingDmDev=%s\n", ( (defined $containingDmDev) ? $containingDmDev : "undef") ); }
+        my $r_paths;
+        if ( $containingDm =~ /^VxDMP/ ) {
+            # Need to map from the VxDMP device -> Vertias disk -> subpath devices
+            if ( defined $r_vxDmpPaths && defined $r_devToVxDev ) {
+                # See if we have the major:minor number for the VxDMP device
+                my $devnum = undef;
+                if ( exists $r_deviceMapper->{$containingDm}->{'devnum'} ) {
+                    $devnum = $r_deviceMapper->{$containingDm}->{'devnum'};
+                }
+                if ( $DEBUG > 5 ) { printf("getMajorDevForDeviceMapper: VxDMP devnum=%s\n", ( (defined $devnum) ? $devnum : "undef") ); }
+                if ( defined $devnum ) {
+                    # See if we can map the major:minor num to a Veritas device
+                    my $vxdev = $r_devToVxDev->{$devnum};
+                    if ( $DEBUG > 5 ) { printf("getMajorDevForDeviceMapper: VxDMP vxdev=%s\n", ( (defined $vxdev) ? $vxdev : "undef") ); }
+                    if ( defined $vxdev ) {
+                        # containingDm is used to "name" the device, so lets use the vxdev name
+                        $containingDm = $vxdev;
+
+                        # See if we can be the subpaths for the device
+                        my $r_subpaths = $r_vxDmpPaths->{$vxdev};
+                        if ( defined $r_subpaths ) {
+                            if ( $DEBUG > 5 ) { print Dumper("getMajorDevForDeviceMapper: r_subpaths", $r_subpaths); }
+
+                            $r_paths = {};
+                            foreach my $r_subpath ( @{$r_subpaths} ) {
+                                $r_paths->{$r_subpath} = $sarMap{$r_subpath};
+                            }
+                        }
+                    }
+                }
+            }
+        } elsif ( exists $r_multiPaths->{$containingDmDev} ) {
+            if ( $DEBUG > 5 ) { print "getMajorDevForDeviceMapper: using active_paths for $containingDm $containingDmDev\n"; }
+            $r_paths = $r_multiPaths->{$containingDmDev}->{'active_paths'};
+            # containingDm is used to "name" the device, so if the mpath device is
+            # PV in an LVM VG, lets "tag" on the vg name
+            my $vg = $r_devToLvmVg->{"/dev/mapper/" . $containingDm};
+            if ( defined $vg ) {
+                if ( $DEBUG > 5 ) { print "getMajorDevForDeviceMapper: adding VG $vg to $containingDm\n"; }
+                $containingDm = $vg . "." . $containingDm;
+            }
+
+        } else {
+            if ( $DEBUG > 5 ) { print "getMajorDevForDeviceMapper: using paths for $containingDm\n"; }
+            $r_paths = $r_deviceMapper->{$containingDm}->{'paths'};
+            # containingDm is used to "name" the device, so if the mpath device is
+            # PV in an LVM VG, lets "tag" on the vg name
+            my $vg = $r_devToLvmVg->{"/dev/" . $containingDm};
+            if ( defined $vg ) {
+                if ( $DEBUG > 5 ) { print "getMajorDevForDeviceMapper: adding VG $vg to $containingDm\n"; }
+                $containingDm = $vg;
+            }
+        }
+        foreach my $pathDev ( keys %{$r_paths} ) {
+            # Map partition devices to whole disk devices
+            if ( $pathDev =~ /^[a-z]d[a-z]+\d+$/ ) {
+                $pathDev =~ s/\d+$//;
+            } elsif ( $pathDev =~ /mpath[a-z]+p\d+$/ ) {
+                $pathDev =~ s/p\d+$//;
+            }
+
+            my $value = $containingDm . "." . $pathDev;
+            if ( ! exists $r_majorDev->{$pathDev} ) {
+                if ( $DEBUG > 5 ) { print "getMajorDevForDeviceMapper: add path $pathDev => $value\n"; }
+                $r_majorDev->{$pathDev} = $value;
+            }
+        }
+    }
+}
+
+#
+# Objective here is store the stats for any disk that we have mounted partitions
+# on. In the case of multi-pathed disks (VxDMP or native multipath), we'll be
+# storing stats for each path to the disk
+#
+sub processLinPartitons($$$$$$) {
+    my ($r_fsInfoList,$serverId,$date,$serverDir,$dbh,$r_sarList) = @_;
+
+    my $multiPathFile = $serverDir . "/multipath.txt";
+    my $r_multiPaths = {};
+    if ( -r $multiPathFile ) {
+        $r_multiPaths = parseMultiPath($multiPathFile);
+    }
+
+    my $dmSetupFile = $serverDir . "/dmsetup.txt";
+    my $r_deviceMapper = {};
+    if ( -r $dmSetupFile ) {
+        $r_deviceMapper = parseDmSetup($dmSetupFile);
+    }
+    my %topDev = ();
+    foreach my $dev ( keys %{$r_deviceMapper} ) {
+        mapDmChildren($dev,"NA",$r_deviceMapper->{$dev}->{'children'},\%topDev);
+    }
+    if ( $DEBUG > 5 ) { print Dumper("processLinPartitons: topDev", \%topDev); }
+
+    #
+    # Now we need to check if any of the "disks" are using VxDMP
+    #
+    my $hasVxDMP = 0;
+    foreach my $r_devList ( values %topDev ) {
+        foreach my $dev ( @{$r_devList} ) {
+            if ( $dev =~ /^VxDMP/ ) {
+                $hasVxDMP = 1;
+            }
+        }
+    }
+    if ( $DEBUG > 5 ) { print "processLinPartitons: hasVxDMP=$hasVxDMP\n"; }
+    my $r_vxDmpPaths = undef;
+    my $r_devToVxDev = undef;
+    if ( $hasVxDMP ) {
+        my $r_vxDevToDmp = parseVxSubpaths($serverDir,undef);
+        $r_vxDmpPaths = {};
+        foreach my $r_vxpath ( keys %{$r_vxDevToDmp} ) {
+            $r_vxDmpPaths->{$r_vxDevToDmp->{$r_vxpath}->{'dmp'}} = $r_vxDevToDmp->{$r_vxpath}->{'subpaths'};
+        }
+        if ( $DEBUG > 5 ) { print Dumper("processLinPartitons: r_vxDmpPaths", $r_vxDmpPaths); }
+        $r_devToVxDev = parseVxDmpDir($serverDir);
+    }
+
+    my $r_devToLvmVg = {};
+    my $pvsFile = $serverDir . "/pvs.txt";
+    if ( -r $pvsFile ) {
+        $r_devToLvmVg = parsePVS($pvsFile);
+    }
+
+    #
+    # For now, we just store the stats of each disk
+    #
+    my %majorDev = (); # key is the path device to the disk, value is the "label"
+    my @nonDmPartitions = ();
+    foreach my $r_fsInfo ( @{$r_fsInfoList} ) {
+        if ( $DEBUG > 4 ) { print "processLinPartitons: r_fsInfo special=" . $r_fsInfo->{'special'} . "\n"; }
+
+        if ( $r_fsInfo->{'special'} =~ /^\/dev\/mapper\/(.*)/ ) {
+            my $dmDev = $1;
+            if ( $DEBUG > 5 ) { print "processLinPartitons: deviceMapper dm=$dmDev\n"; }
+            getMajorDevForDeviceMapper($dmDev,\%topDev,$r_deviceMapper,$r_multiPaths,$r_vxDmpPaths,$r_devToVxDev,$r_devToLvmVg,\%majorDev);
+        } else {
+            if ( $DEBUG > 5 ) { print "processLinPartitons: non-devmapper fs type=" . $r_fsInfo->{'type'} . "\n"; }
+
+            if ( $r_fsInfo->{'type'} eq 'ext3' || $r_fsInfo->{'type'} eq 'ext4' || $r_fsInfo->{'type'} eq 'reiserfs' || $r_fsInfo->{'type'} eq 'xfs' ) {
+                my $dev = $r_fsInfo->{'special'};
+                $dev =~ s/^\/dev\///;
+                push @nonDmPartitions, $dev;
+            }
+        }
+    }
+
+    #
+    # For direct mounted devices (i.e. non-devicemapper), we just want the disks stats
+    # not the partition stats
+    #
+    if ( $DEBUG > 5 ) { print "processLinPartitons: nonDmPartitions=" . join(",", @nonDmPartitions) . "\n"; }
+    foreach my $partition ( @nonDmPartitions ) {
+        my $diskKey = getDiskForPartition($partition);
+        if ( (defined $diskKey) && (! exists $majorDev{$diskKey}) ) {
+            if ( $DEBUG > 6 ) { print "processLinPartitons: adding $diskKey for $partition\n"; }
+            $majorDev{$diskKey} = $diskKey;
+        }
+    }
+    if ( $DEBUG > 5 ) { print Dumper("processLinPartitons: majorDev", \%majorDev); }
+
+    my @rawdevs = ();
+    while ( my ($dev,$label) = each %majorDev ) {
+        push @rawdevs, { 'desc' => $label, 'dev' => $dev };
+    }
+
+    if ( $#rawdevs > -1 ) {
+        handleRaw(\@rawdevs,$serverId,$date,$serverDir,$dbh,$r_sarList);
+    }
+}
+
+sub parseCsvHeader($$$$) {
+    my ($r_colNames,$r_sarIds,$isLinux,$r_diskDataCol) = @_;
+
+    #
+    # Seems to be a bug in ksar where the columns are not contiguous, e.g.
+    # s39 avserv is not directly after read+write
+    # Disk sd39 %busy;Disk sd39 avque;Disk sd39 avwait;Disk sd39 block/s;Disk sd39 read+write/s;Disk sd39,c %busy;...Disk sd39,ravserv/ms;Disk sd39avserv/ms
+    #
+    my $index = 0;
+    foreach my $colName ( @{$r_colNames} ) {
+        my $sarName;
+        my $colLabel;
+        if ( $isLinux ) {
+            if ( $colName =~ /^Disk (\S+)\s*(avgqu-sz|avgrq-sz|await|svctm|util%|Bytes read\/s|Read\/s|Transfer\/s|Write\/s)$/ ) {
+                ($sarName,$colLabel) = ($1,$2);
+            }
+        } else {
+            if ( $colName =~ /^Disk (\S+)\s*(%busy|avque|avwait|block\/s|read\+write\/s|avserv\/ms)$/ ) {
+                ($sarName,$colLabel) = ($1,$2);
+            }
+        }
+
+        if ( defined $sarName ) {
+            if ( $DEBUG > 7 ) { print "parseCsvHeader: colName=$colName sarName=$sarName colLabel=$colLabel\n"; }
+            my $diskId = $r_sarIds->{$sarName};
+            if ( defined $diskId ) {
+                if ( $DEBUG > 6 ) { print "parseCsvHeader: found $sarName on col $index\n"; }
+                my $r_colIndices = $r_diskDataCol->{$diskId};
+                if ( ! defined $r_colIndices ) {
+                    $r_colIndices = {};
+                    $r_diskDataCol->{$diskId} = $r_colIndices;
+                }
+                $r_colIndices->{$colLabel} = $index;
+            }
+        }
+        $index++;
+    }
+    if ( $DEBUG > 3 ) { print Dumper("parseCsvHeader: r_diskDataCol", $r_diskDataCol); }
+}
+
+sub parseCsv($$$$) {
+    my ($csvFile,$isLinux,$r_sarDisks,$r_colNames) = @_;
+
+    my %sarIds = ();
+    foreach my $r_diskInfo ( @{$r_sarDisks} ) {
+        $sarIds{$r_diskInfo->{'sarid'}} = $r_diskInfo->{'diskid'};
+    }
+
+    my $lineNum = 0;
+    my %diskDataCol = ();
+    my $totalStatsLines = 0;
+    my $faultyStatsLines = 0;
+
+    my %statsByDiskId = ();
+    open IN, $csvFile or die "Cannot open $csvFile";
+    while ( my $line = <IN> ) {
+        $lineNum++;
+        if ( $DEBUG > 9 ) { print "parseCsv: lineNum=$lineNum line=$line"; }
+        chop $line;
+
+        my @cols = split(/;/, $line);
+
+        if ( $cols[0] eq 'Date' ) {
+            parseCsvHeader(\@cols,\%sarIds,$isLinux,\%diskDataCol);
+            <IN>;
+        } else {
+            $totalStatsLines++;
+
+            my $timeStamp = undef;
+            my $timeStr = undef;
+            # Handle different time formats, (kSar => Thu Mar 16 13:01:01 GMT 2017, parseIncrSar => 2017-03-16 13:01:01)
+            if ( $cols[0] =~ /^2/ ) {
+                $timeStr = $cols[0];
+                $timeStamp = parseTime( $cols[0], $StatsTime::TIME_SQL );
+            } else {
+                $timeStamp = parseTime( $cols[0], $StatsTime::TIME_DAY_MON_DD_HHMMSS_TZ_YYYY );
+                $timeStr = formatTime($timeStamp, $StatsTime::TIME_SQL);
+            }
+
+            if ( $cols[1] eq '' ) {
+                print "WARN: Invalid line=$lineNum line=$line\n";
+                next;
+            }
+
+            my $isLineOkay = 1;
+            foreach my $diskId ( keys %diskDataCol ) {
+                my $r_colIndices = $diskDataCol{$diskId};
+                if ( $DEBUG > 8 ) {
+                    print "parseCsv: diskId=$diskId\n";
+                    foreach my $colLabel ( keys %{$r_colIndices} ) {
+                        printf "parseCsv: colLabel=%-17s colIndex=%3d value=%-5s\n",
+                        $colLabel, $r_colIndices->{$colLabel},
+                        $cols[$r_colIndices->{$colLabel}];
+                    };
+                }
+
+                my %stats = ('timestamp' => $timeStr, 'time' => $timeStamp );
+                if ( $isLinux ) {
+                    # time,diskid,busy,avque,avwait,blks,rws,avserv
+                    $stats{'busy'} = $cols[$r_colIndices->{'util%'}];
+                    $stats{'avque'} = $cols[$r_colIndices->{'avgqu-sz'}];
+                    $stats{'avwait'} = $cols[$r_colIndices->{'await'}];
+                    my $reads = $cols[$r_colIndices->{'Read/s'}];
+                    my $writes = $cols[$r_colIndices->{'Write/s'}];
+                    if ( (!defined $reads) || (! defined $writes) || ($reads eq '') || ($writes eq '') ) {
+                        printf "WARN: problem with diskId %d defined reads=%d defined writes=%d\n", $diskId,
+                        (defined $reads), (defined $writes);
+                    } else {
+                        $stats{'blks'} = $reads + $writes;
+                        $stats{'readblks'} = $reads;
+                    }
+                    $stats{'rws'} = $cols[$r_colIndices->{'Transfer/s'}];
+                    $stats{'avserv'} = $cols[$r_colIndices->{'svctm'}];
+                } else {
+                    $stats{'busy'} = $cols[$r_colIndices->{'%busy'}];
+                    $stats{'avque'} = $cols[$r_colIndices->{'avque'}];
+                    $stats{'avwait'} = $cols[$r_colIndices->{'avwait'}];
+                    $stats{'blks'} = $cols[$r_colIndices->{'block/s'}];
+                    $stats{'rws'} = $cols[$r_colIndices->{'read+write/s'}];
+                    $stats{'avserv'} = $cols[$r_colIndices->{'avserv/ms'}];
+                }
+
+                my $statsOkay = 1;
+                foreach my $key ( @{$r_colNames} ) {
+                    if ( (!defined $stats{$key}) || ($stats{$key} eq '') ) {
+                        $statsOkay = 0;
+                        $isLineOkay = 0;
+                        last;
+                    }
+                }
+                if ( $statsOkay == 1 ) {
+                    my $r_samples = $statsByDiskId{$diskId};
+                    if ( ! defined $r_samples ) {
+                        $r_samples = [];
+                        $statsByDiskId{$diskId} = $r_samples;
+                    }
+                    push @{$r_samples}, \%stats;
+                }
+            }
+            if ( $isLineOkay == 0 ) {
+                $faultyStatsLines++;
+            }
+        }
+    }
+
+    if ( $faultyStatsLines > 0 ) {
+        print "WARN: $faultyStatsLines of $totalStatsLines lines faulty\n";
+    }
+
+    close IN;
+
+    return \%statsByDiskId;
+}
+
+sub storeEnclosures($$$$) {
+    my ($siteId,$date,$dbh,$r_enclosures) = @_;
+
+    if ( $DEBUG > 1 ) { print Dumper("storeEnclosures: r_enclosures", $r_enclosures); }
+
+    my $r_sysToId = getIdMap($dbh, "emc_sys", "id", "name", $r_enclosures );
+    foreach my $sys ( @{$r_enclosures} ) {
+        my $sysId = $r_sysToId->{$sys};
+        my $r_rows = dbSelectAllArr($dbh, "SELECT COUNT(*) FROM emc_site WHERE sysid = $sysId AND siteid = $siteId AND filedate = '$date'");
+        if ( $r_rows->[0]->[0] == 0 ) {
+            dbDo($dbh, sprintf("INSERT INTO emc_site (sysid,siteid,filedate) VALUES (%d,%d,'%s')",
+                               $sysId, $siteId, $date))
+                or die "Cannot insert site reference";
+        }
+    }
+}
+
+sub storeSar($$$$$$$$$) {
+    my ($site,$hostname,$siteId,$serverId,$service,
+        $r_statsByDiskId,$r_sarDisks,$r_colNames,$incremental) = @_;
+
+    my %tableModel = (
+        'name' => 'hires_disk_stat',
+        'keycol' => [
+            { 'name' => 'serverid', 'reftable' => 'servers' },
+            { 'name' => 'diskid', 'reftable' => 'disks', 'reffiltercol' => 'serverid' }
+        ]
+    );
+
+    my %commonProps = (
+        'site' => $site,
+        'server' => $hostname,
+        'siteid' => $siteId,
+        'serverid' => $serverId,
+        'incremental' => $incremental
+        );
+
+
+    my %columnMap = ();
+    foreach my $column ( @{$r_colNames} ) {
+        $columnMap{$column} = $column;
+    }
+
+    my %diskIdToName = ();
+    foreach my $r_diskInfo ( @{$r_sarDisks} ) {
+        $diskIdToName{$r_diskInfo->{'diskid'}} = $r_diskInfo->{'name'};
+    }
+
+    my @dataSets = ();
+    while ( my ($diskId,$r_samples) = each %{$r_statsByDiskId} ) {
+        my %setProps = ( 'diskid' => { 'sourcevalue' => $diskIdToName{$diskId} } );
+        push @dataSets, { 'properties' => \%setProps, 'samples' => $r_samples };
+    }
+
+    DataStore::storePeriodicData($DataStore::ONE_MINUTE,
+                                 \%tableModel,
+                                 undef,
+                                 $service,
+                                 \%commonProps,
+                                 \%columnMap,
+                                 \@dataSets );
+}
+
+sub main() {
+
+    my ($serverDir,$site,$server,$date,$csvFile,$service);
+    my $incremental = 0;
+    my $result = GetOptions(
+        "dir=s" => \$serverDir,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        'date=s' => \$date,
+        'csv=s' => \$csvFile,
+        'incr' => \$incremental,
+        "service=s" => \$service,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    ($serverId > -1 ) or die "Failed to get serverId for $server";
+
+    my $mnttabFile = $serverDir . "/mnttab";
+    my $mtabFile = $serverDir . "/mtab";
+    my $r_fsInfo;
+    if ( -r $mnttabFile ) {
+        $r_fsInfo = parseMnttab($mnttabFile);
+    } else {
+        $r_fsInfo = parseMnttab($mtabFile);
+    }
+
+    loadSarMap($serverDir);
+
+    my @sarDisks = ();
+    $r_diskMap = getIdMap($dbh, "disks", "id", "name", [], $serverId, "serverid" );
+
+    processVxfs($r_fsInfo,$serverId,$date,$serverDir,$dbh,\@sarDisks);
+    processSVM($r_fsInfo,$serverId,$date,$serverDir,$dbh,\@sarDisks);
+    if ( -r $mnttabFile ) { # NFS mounted file systems aren't in sar on Linux
+        processNFS($r_fsInfo,$serverId,$date,$serverDir,$dbh,\@sarDisks);
+    }
+    processZFS($r_fsInfo,$serverId,$date,$serverDir,$dbh,\@sarDisks);
+    processRaw($r_fsInfo,$serverId,$date,$serverDir,$dbh,\@sarDisks);
+    processLinPartitons($r_fsInfo,$serverId,$date,$serverDir,$dbh,\@sarDisks);
+
+    if ( $DEBUG > 3 ) { print Dumper("main: sarDisks", \@sarDisks); }
+
+    my $isLinux = 0;
+    if ( -r ($serverDir . "/mtab") ) {
+        $isLinux = 1;
+    }
+
+    if ( (defined $csvFile) && (-r $csvFile) ) {
+        if ( $#sarDisks == -1 ) {
+            print "WARN: No disk information found\n";
+        } else {
+            my @colNames = ();
+            if ( $isLinux ) {
+                @colNames = ( 'busy', 'avque', 'avwait', 'blks', 'readblks', 'rws', 'avserv' );
+            } else {
+                @colNames = ( 'busy', 'avque', 'avwait', 'blks', 'rws', 'avserv' )
+            }
+
+            my $r_statsByDiskId = parseCsv($csvFile,$isLinux,\@sarDisks,\@colNames);
+
+            storeSar($site,$server,$siteId,$serverId,$service,
+                     $r_statsByDiskId,\@sarDisks,
+                     \@colNames,$incremental);
+        }
+    }
+
+    # If we can "detect" any Clariions/VNXs then register connection
+    my $r_enclosures = parseVxDmpListEnclosure($serverDir);
+    if ( $#{$r_enclosures} == -1 ) {
+        $r_enclosures = parseSolMPath($serverDir);
+    }
+    if ( $#{$r_enclosures} > -1 ) {
+        storeEnclosures($siteId,$date,$dbh,$r_enclosures);
+    }
+}
+
+main();

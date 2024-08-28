@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+      <service name="cmutilities"/>
+      <service name="conscmeditor"/>
+  </services>
+
+  <table name="enm_cmutilities">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cts.rest.resources.v1.TemplateResourceV1.configuration-templates-service-service:type=createTemplateWithContent\(interface org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput\)$">
+      <metric source="methodInvocations" target="createTWCMethodInvocations" delta="true"/>
+      <metric source="executionTimeTotalMillis" target="createTWCExecutionTimeTotalMillis" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cts.rest.resources.v1.TemplateResourceV1.configuration-templates-service-service:type=deleteTemplate\(class java.lang.String\)$">
+      <metric source="methodInvocations" target="deleteTMethodInvocations" delta="true"/>
+      <metric source="executionTimeTotalMillis" target="deleteTExecutionTimeTotalMillis" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cts.rest.resources.v1.TemplateResourceV1.configuration-templates-service-service:type=getTemplate\(class java.lang.String_class java.lang.String_class java.lang.String\)$">
+      <metric source="methodInvocations" target="getTMethodInvocations" delta="true"/>
+      <metric source="executionTimeTotalMillis" target="getTExecutionTimeTotalMillis" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cts.rest.resources.v1.TemplateResourceV1.configuration-templates-service-service:type=getTemplateByName$">
+      <metric source="methodInvocations" target="getTBNMethodInvocations" delta="true"/>
+      <metric source="executionTimeTotalMillis" target="getTBNExecutionTimeTotalMillis" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cts.rest.resources.v1.TemplateResourceV1.configuration-templates-service-service:type=getTemplates\(interface java.util.List_interface java.util.List_interface java.util.List_interface java.util.List\)$">
+      <metric source="methodInvocations" target="getTSMethodInvocations" delta="true"/>
+      <metric source="executionTimeTotalMillis" target="getTSExecutionTimeTotalMillis" delta="true"/>
+    </metricgroup>
+
+    <metricgroup name="^%1%-com.ericsson.oss.services.cts.rest.configuration-templates-service-service:type=ConfigurationTemplateRestStatistics$">
+      <metric source="numTemplatesCreated" target="numTemplatesCreated" delta="true"/>
+      <metric source="numTemplatesListed" target="numTemplatesListed" delta="true"/>
+      <metric source="numTemplatesDeleted" target="numTemplatesDeleted" delta="true"/>
+      <metric source="numTemplatesRetrieved" target="numTemplatesRetrieved" delta="true"/>
+    </metricgroup>
+
+  </metricgroups>
+</modelledinstr>

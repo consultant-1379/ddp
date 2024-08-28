@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_event_data_collector">
+  <reference table="sites" condition="ecson_event_data_collector.siteid = sites.id"/>
+  <reference table="servers" condition="ecson_event_data_collector.serverid = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_event_data_collector.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Instance"/>
+ <column db="SUM(ecson_event_data_collector.pm_parser_files)" label="Total Parsed Files"/>
+ <column db="SUM(ecson_event_data_collector.pm_parser_events)" label="Total Parsed Events"/>
+
+</modelledtable>

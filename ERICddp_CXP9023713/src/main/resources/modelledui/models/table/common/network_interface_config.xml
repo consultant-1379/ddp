@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="network_interface_config">
+  <reference table="network_interfaces" condition="network_interface_config.ifid = network_interfaces.id"/>
+ </dbtables>
+
+ <param name="serverid"/>
+ <param name="date"/>
+ <where>network_interfaces.serverid = %serverid% AND network_interface_config.date = '%date%' AND network_interfaces.serverid = %serverid%</where>
+
+ <column db="network_interfaces.name" id="nic" label="Interface Name"/>
+ <column db="network_interface_config.speed" label="Speed"/>
+ <column db="network_interface_config.duplex" label="Duplex"/>
+ <column db="network_interface_config.drv" label="Driver Version"/>
+ <column db="network_interface_config.fw" label="Firmware Version"/>
+
+</modelledtable>

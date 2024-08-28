@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+
+  <table name="enm_winfiol_sessions">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="ops"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="host"/>
+      <groupby name="state"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="n_sessions" type="count"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <!-- OPS_WinFIOL_Session {"state":"Connected", "neId":"AP04"} -->
+      <event name="OPS_WinFIOL_Session">
+        <metric source="host" target="serverid"/>
+        <metric source="state" target="state"/>
+        <metric source="n_sessions" target="n_sessions"/>
+      </event>
+  </events>
+
+</modelledevents>

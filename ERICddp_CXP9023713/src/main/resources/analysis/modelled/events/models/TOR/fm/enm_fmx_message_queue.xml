@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmx_message_queue" timecol="startTime">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid" />
+  </table>
+
+  <services>
+    <service name="fmx" />
+    <service name="fmx-engine" />
+  </services>
+
+  <hooks module="TOR::FMX">
+    <hook>preprocess</hook>
+  </hooks>
+
+  <events>
+    <!--  fmx_mq
+    {\"allQueueLength\":0,\"allQueueRate\":0.0,\"contextsQueueLength\":0,\"contextsQueueRate\":0.0}" -->
+    <event name="fmx_mq">
+      <metric source="host" target="serverid" />
+      <metric source="allQueueLength" target="allQueueLength" filteridle="true" />
+      <metric source="allQueueRate" target="allQueueRate" filteridle="true" />
+      <metric source="contextsQueueLength" target="contextsQueueLength" filteridle="true" />
+      <metric source="contextsQueueRate" target="contextsQueueRate" filteridle="true" />
+    </event>
+  </events>
+</modelledevents>

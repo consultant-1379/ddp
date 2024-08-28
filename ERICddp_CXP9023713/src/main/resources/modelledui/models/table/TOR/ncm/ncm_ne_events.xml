@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ncm_node_events_recieved">
+    <reference table="sites" condition="enm_ncm_node_events_recieved.siteid = sites.id"/>
+    <reference table="servers" condition="enm_ncm_node_events_recieved.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_ne.id = enm_ncm_node_events_recieved.neid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ncm_node_events_recieved.date = '%date%'</where>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_ne.name" label="Network Element"/>
+  <column db="ncmNodeId" label="NcmNodeId"/>
+  <column db="eventType" label="EventType"/>
+  <column db="count" label="Count"/>
+
+</modelledtable>

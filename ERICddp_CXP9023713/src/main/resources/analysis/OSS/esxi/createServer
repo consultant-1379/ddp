@@ -1,0 +1,38 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use DBI;
+use Time::Local;
+
+use StatsDB;
+
+our $DEBUG=0;
+
+main();
+
+sub main
+{
+    my ($dirlist,$date,$site,$sth);
+    my $result = GetOptions("site=s"  => \$site,
+        "dirlist=s"  => \$dirlist,
+        "date=s" =>\$date,
+        "debug=s" => \$DEBUG
+        );
+    ($result == 1) or die "Invalid args";
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    my $sql = "SELECT id from esxi_servers where siteid = $siteId and hostname = '" . $dirlist . "' and date like '$date%'";
+    $sth = $dbh->prepare($sql)
+        or print "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute()             # Execute the query
+        or die "Couldn't execute statement: " . $sth->errstr;
+    if ($sth->rows == 0)
+    {
+        dbDo($dbh,"INSERT into esxi_servers (date,siteid,hostname) VALUES ( '$date',$siteId,'$dirlist')"),
+          or print "Failed to insert $dirlist ";
+    }
+    $sth->finish();
+    $dbh->disconnect();
+}

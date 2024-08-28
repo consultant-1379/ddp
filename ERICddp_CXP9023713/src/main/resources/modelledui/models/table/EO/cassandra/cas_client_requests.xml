@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_cassandra_stats">
+    <reference table="sites" condition="eo_cassandra_stats.siteid = sites.id"/>
+    <reference table="servers" condition="eo_cassandra_stats.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_cassandra_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.id" label="Instance" visible="false" id="InstanceId"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="ROUND(AVG(casReadLatency))" label=" Average CAS Read Latency (µs)"/>
+  <column db="ROUND(AVG(casWriteLatency))" label="Average CAS Write Latency (µs)"/>
+  <column db="ROUND(SUM(casReadTimeouts))" label="Total CAS Read Timeouts"/>
+  <column db="ROUND(SUM(casWriteTimeouts))" label="Total CAS Write Timeouts"/>
+  <column db="ROUND(SUM(casReadFailures))" label="Total CAS Read Failures"/>
+  <column db="ROUND(SUM(casWriteFailures))" label="Total CAS Write Failures"/>
+  <column db="ROUND(SUM(casReadUnavailables))" label="Total CAS Read Unavailables"/>
+  <column db="ROUND(SUM(casWriteUnavailables))" label="Total CAS Write Unavailables"/>
+
+  <ctxmenu keycol="InstanceId" targettype="url" multiselect="true">
+    <item id="ccr" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>
+

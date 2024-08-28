@@ -1,0 +1,386 @@
+#!/bin/sh
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd ../.. ; pwd`
+
+CS_DATA_DIR=$1
+OUTPUT_DIR=$2
+DASH_DATE=$3
+SITE=$4
+SQL_DATE=$5
+
+# Log stuff
+LOG_LINE_FORMAT="s"
+DATE=`echo ${SQL_DATE} | sed 's/^20//' | awk -F\- '{printf "%02d%02d%02d", $3, $2, $1}'`
+export ANALYSIS_BIN SITE DATE LOG_LINE_FORMAT
+. ${ANALYSIS_BIN}/common/functions.sh
+
+processVersantDB()
+{
+    VDB=$1
+
+    VDB_OUT_DIR=${OUTPUT_DIR}/vdb/${VDB}
+    if [ ! -d ${VDB_OUT_DIR} ] ; then
+	mkdir ${VDB_OUT_DIR}
+    fi
+
+
+#VDB
+#1     STAT_DB_DATA_LOCATED,
+#2     STAT_DB_DATA_READS,
+#3     STAT_DB_DATA_WRITES,
+#4     STAT_DB_BF_LLOG_BYTES_WRITTEN,
+#5     STAT_DB_BF_PLOG_BYTES_WRITTEN,
+#6     STAT_DB_LOCK_TIMEOUTS,
+#7     STAT_DB_LOCK_WAITS,
+#8     STAT_DB_XACT_ACTIVE,
+#9     STAT_DB_XACT_COMMITTED,
+#10     STAT_DB_XACT_ROLLED_BACK
+
+    egrep "^[0-9].*VDB_${VDB} " ${DATA_DIR}/instr.txt | sed 's/^\([0-9\-]*\) \([0-9:]*\)\.[0-9]* [^ ]* /\1:\2 /' > ${TMP_DIR}/${VDB}_instr.txt
+    NUM_LINES=`wc -l ${TMP_DIR}/${VDB}_instr.txt | awk '{print $1}'`
+    if [ ${NUM_LINES} -eq 0 ] ; then
+	echo " WARN: no data found for ${VDB}"
+	return
+    fi
+
+    ${ANALYSIS_BIN}/common/deltaInstr --in ${TMP_DIR}/${VDB}_instr.txt --out ${TMP_DIR}/${VDB}_instr_delta.txt --cols 1 2 3 4 5 6 7 9 10
+# be_cache_hit_ratio db = be_data_located db / (be_data_located db + be_data_reads db)
+    cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk '{if ( ( $2 + $3 ) > 0 ) print $1, ( ( $2 * 100 ) / ( $2 + $3 ) ), $2, $3}' > ${TMP_DIR}/${VDB}_cache_hit_ratio.txt
+    cat > ${TMP_DIR}/${VDB}_plot.cmd <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set format x "%H:%M"
+set terminal jpeg medium size 800,400
+
+set output "${VDB_OUT_DIR}/tx_active.jpg
+set title "Active Tx"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:9 notitle with lines
+
+set output "${VDB_OUT_DIR}/tx_commit.jpg
+set title "Commits"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:10 title "Commited" with lines
+
+set output "${VDB_OUT_DIR}/tx_rb.jpg
+set title "Rollbacks"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:11 title "Rolled back" with lines
+	    
+set output "${VDB_OUT_DIR}/locks.jpg
+set title "Lock Timeouts/Waits"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:7 title "Timeouts" with lines, "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:8 title "Waits" with lines
+
+set output "${VDB_OUT_DIR}/log_writes.jpg
+set title "Log Writes (Bytes)"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:5 title "Logical" with lines, "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:6 title "Physical" with lines
+
+set output "${VDB_OUT_DIR}/data_io.jpg
+set title "Data Page I/O"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:3 title "Read" with lines, "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:4 title "Written" with lines
+
+set out "${VDB_OUT_DIR}/cache.jpg
+set title "Cache Hit Ratio"
+plot "${TMP_DIR}/${VDB}_cache_hit_ratio.txt" using 1:2 notitle with lines
+EOF
+
+    if [ ${HAS_RUNNING_THREADS} -eq 1 ] ; then
+	cat >> ${TMP_DIR}/${VDB}_plot.cmd <<EOF
+set output "${VDB_OUT_DIR}/run_thr.jpg
+set title "Running Threads"
+plot "${TMP_DIR}/${VDB}_instr_delta.txt" using 1:15 notitle with lines
+EOF
+    fi
+
+    gnuplot ${TMP_DIR}/${VDB}_plot.cmd 
+
+    TOTAL_DATA_READ=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $3 } END {print s}'`
+    TOTAL_DATA_WRITE=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $4 } END {print s}'`
+    TOTAL_LLOG_WRITE=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= ($5/(1024*1024)) } END {print s}'`
+    TOTAL_PLOG_WRITE=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= ($6/(1024*1024)) } END {print s}'`
+    TOTAL_LOCK_TIMEOUT=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $7 } END {print s}'`
+    TOTAL_LOCK_WAIT=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $8 } END {print s}'`
+    AVG_TX_ACTIVE=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $9 } END {printf ("%d", s/NR)}'`
+    TOTAL_TX_COMMIT=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $10 } END {printf s}'`
+    TOTAL_TX_ROLLBACK=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk 'BEGIN {s = 0} { s+= $11 } END {printf s}'`
+
+    AVG_CACHE_HIT_RATE=100
+    if [ "${TOTAL_DATA_READ}" -gt 0 ] ; then
+	AVG_CACHE_HIT_RATE=`cat ${TMP_DIR}/${VDB}_instr_delta.txt | awk -v sdr=${TOTAL_DATA_READ} '{ sdl += $2 } END { printf (sdl/(sdl + sdr)) }'`
+    fi
+
+    cat > ${TMP_DIR}/${VDB}.sql <<EOF
+SET @siteid=(SELECT id FROM sites WHERE sites.name = "${SITE}");
+SET @vdbid=(SELECT id FROM vdb_names WHERE vdb_names.name = "${VDB}");
+UPDATE vdb SET pageread=${TOTAL_DATA_READ},pagewrite=${TOTAL_DATA_WRITE},llogwrite=${TOTAL_LLOG_WRITE},plogwrite=${TOTAL_PLOG_WRITE},lktimeout=${TOTAL_LOCK_TIMEOUT},lkwait=${TOTAL_LOCK_WAIT},txactive=${AVG_TX_ACTIVE},txcommit=${TOTAL_TX_COMMIT},txrollback=${TOTAL_TX_ROLLBACK},hitrate="${AVG_CACHE_HIT_RATE}" WHERE siteid=@siteid and date="${SQL_DATE}" AND vdbid = @vdbib;
+EOF
+    ${ANALYSIS_BIN}/sql/runSql ${TMP_DIR}/${VDB}.sql
+    if [ $? -ne 0 ] ; then
+	echo " WARN: Failed to store stats for ${VDB}"
+	cat ${TMP_DIR}/${VDB}.sql
+    fi
+}
+
+# Assume CS_DATA_DIR=${DATA_DIR}/OSS/cs
+DATA_DIR=${CS_DATA_DIR}/../..
+
+HAS_CS_LIB=0
+if [ -r ${DATA_DIR}/instr.cfg ] ; then
+    egrep '^JMXPROPS,.*-ConfigHome' ${DATA_DIR}/instr.cfg > /dev/null
+    if [ $? -eq 0 ] ; then
+	HAS_CS_LIB=1
+
+	if [ ! -d ${OUTPUT_DIR}/cslib ] ; then
+	    mkdir ${OUTPUT_DIR}/cslib
+	fi
+	CSLIB_TXLOG_MAP="
+ARNECSTransaction:ARNE
+MAFCSTransaction:MAF
+ONRM_CSTransaction:ONRM
+Reg:Region
+Seg:SegCS
+"
+    fi
+fi
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ -d ${OUTPUT_DIR}/cs ] ; then
+    rm -rf ${OUTPUT_DIR}/cs
+fi
+mkdir ${OUTPUT_DIR}/cs
+
+# Include trimTxName for parseEventLog
+if [ -z "${PERL5OPT}" ] ; then
+    PERL5OPT=""
+fi
+PERL5OPT="${PERL5OPT} -I${ANALYSIS_BIN}/cs/r3"
+export PERL5OPT
+
+CS_NAMES=""
+EVENT_LOG_FILES=`find ${CS_DATA_DIR} -name 'parsed.event-log-*'`
+for EVENT_LOG_FILE in ${EVENT_LOG_FILES}; do
+    CS_NAME=`echo ${EVENT_LOG_FILE} | sed 's/.*parsed\.event-log-\(.*\)/\1/g'`
+    echo " ${CS_NAME}"
+    CS_NAMES="${CS_NAMES} ${CS_NAME}"
+
+    if [ ${HAS_CS_LIB} -eq 1 ] ; then
+	CS_OUT_DIR=${OUTPUT_DIR}/cslib/${CS_NAME}
+	
+	# See if we need to make the cs log name to a directory directory
+	for CSLIB_TXLOG in ${CSLIB_TXLOG_MAP} ; do
+	    LOG=`echo ${CSLIB_TXLOG} | awk -F: '{print $1}'`
+	    CSLIB=`echo ${CSLIB_TXLOG} | awk -F: '{print $2}'`
+	    if [ "${CS_NAME}" = "${LOG}" ] ; then
+		CS_OUT_DIR=${OUTPUT_DIR}/cslib/${CSLIB}
+	    fi
+	done
+    else
+	CS_OUT_DIR=${OUTPUT_DIR}/cs/${CS_NAME}
+    fi
+   
+    if [ ! -d ${CS_OUT_DIR} ]; then
+	mkdir ${CS_OUT_DIR}
+    fi
+
+    #
+    # Parse event(Transaction) logs
+    #
+    TX_NAMES=`${ANALYSIS_BIN}/cs/r3/parseEventLog --input ${EVENT_LOG_FILE} --outputdir ${CS_OUT_DIR} --data ${TMP_DIR}/data.txt | egrep "^TX_NAMES"`
+    NUM_DATA_LINES=`wc -l ${TMP_DIR}/data.txt | awk '{print $1}'`
+    if [ ${NUM_DATA_LINES} -gt 0 ] ; then
+	INDEX=`echo ${TX_NAMES} | awk -F@ '{print NF}'`
+	
+	CREATE=""
+	COMMIT=""
+	ROLLBACK=""
+	while [ ${INDEX} -gt 1 ] ; do
+	    if [ ! -z "${CREATE}" ] ; then
+		CREATE="${CREATE}, "
+		COMMIT="${COMMIT}, "
+		ROLLBACK="${ROLLBACK}, "
+	    fi
+	    TX_NAME=`echo ${TX_NAMES} | awk -F@ -v varind="${INDEX}" '{print $varind}'`
+	    
+	    COL_INDEX=`expr \( ${INDEX} - 1 \) '*' 3 - 1`
+	    
+	    CREATE="${CREATE} \"${TMP_DIR}/data.txt\" using 1:${COL_INDEX} title \"${TX_NAME}\" with boxes"
+	    COL_INDEX=`expr ${COL_INDEX} + 1`
+	    COMMIT="${COMMIT} \"${TMP_DIR}/data.txt\" using 1:${COL_INDEX} title \"${TX_NAME}\" with boxes"
+	    COL_INDEX=`expr ${COL_INDEX} + 1`
+	    ROLLBACK="${ROLLBACK} \"${TMP_DIR}/data.txt\" using 1:${COL_INDEX} title \"${TX_NAME}\" with boxes"
+	    
+	    INDEX=`expr ${INDEX} - 1`
+	done
+	cat > ${TMP_DIR}/cmd.txt <<EOF
+set xdata time
+set timefmt "%H:%M"
+set xrange [ "00:00":"23:59" ]
+set yrange [ 0: ]
+set format x "%H:%M"
+set terminal jpeg
+set style fill solid
+set output "${CS_OUT_DIR}/create.jpg"
+plot ${CREATE}
+set output "${CS_OUT_DIR}/commit.jpg"
+plot ${COMMIT}
+set output "${CS_OUT_DIR}/rollback.jpg"
+plot ${ROLLBACK}
+EOF
+
+	gnuplot ${TMP_DIR}/cmd.txt
+	if [ $? -eq 0 ]; then
+	    rm ${TMP_DIR}/data.txt ${TMP_DIR}/cmd.txt
+	else
+	    exit 1
+	fi
+    fi
+
+    #
+    # Parse Resource logs
+    #
+    if [ -r ${CS_DATA_DIR}/CS.${CS_NAME}.stats ] ; then 
+	tail --lines=+2 ${CS_DATA_DIR}/CS.${CS_NAME}.stats | egrep "^${DASH_DATE}" > ${TMP_DIR}/cs.stats
+	NUM_DATA_LINES=`wc -l ${TMP_DIR}/cs.stats | awk '{print $1}'`
+	if [ ${NUM_DATA_LINES} -gt 0 ] ; then
+	    FORMAT=`head --lines=1 ${CS_DATA_DIR}/CS.${CS_NAME}.stats | awk -F= '{print $2}'`
+
+            # Convert data to format for plotHeap
+	    if [ ${FORMAT} -eq 1 ] ; then
+		cat ${TMP_DIR}/cs.stats |  awk '{print $1 ".000 mc",$6,$7}' | sed 's/\-\([0-9]*\):/\-\1 /g' > ${TMP_DIR}/heap.txt
+		THREAD_INDEX=2
+	    else
+		cat ${TMP_DIR}/cs.stats |  awk '{print $1 ".000 mc",$8,$9}' | sed 's/\-\([0-9]*\):/\-\1 /g' > ${TMP_DIR}/heap.txt
+		THREAD_INDEX=4
+	    fi
+	    ${ANALYSIS_BIN}/server/plotHeap ${TMP_DIR}/heap.txt mc ${DASH_DATE} ${CS_OUT_DIR}/heap.jpg 
+	    
+	    SYS_THR=`expr ${THREAD_INDEX} + 1`
+	    VBJ_THR=`expr ${THREAD_INDEX} + 2`
+	    OTHER_THR=`expr ${THREAD_INDEX} + 3`
+
+	    cat > ${TMP_DIR}/cmd.txt<<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set yrange [ 0: ]
+set format x "%H:%M"
+set terminal jpeg
+set output "${CS_OUT_DIR}/threads.jpg
+set title "Threads"
+plot "${TMP_DIR}/cs.stats" using 1:${THREAD_INDEX} title "Total" with lines, "${TMP_DIR}/cs.stats" using 1:${SYS_THR} title "System" with lines, "${TMP_DIR}/cs.stats" using 1:${VBJ_THR} title "VBJ" with lines, "${TMP_DIR}/cs.stats" using 1:${OTHER_THR} title "Other" with lines
+EOF
+
+	    if [ ${FORMAT} -eq 2 ] ; then 
+		cat >> ${TMP_DIR}/cmd.txt<<EOF
+set title "Ongoing sesions"
+set output "${CS_OUT_DIR}/ongoing_sessions.jpg
+plot "${TMP_DIR}/cs.stats" using 1:2 notitle with steps
+set title "Ongoing Transactions"
+set output "${CS_OUT_DIR}/ongoing_transactions.jpg
+plot "${TMP_DIR}/cs.stats" using 1:3 notitle with steps
+EOF
+	    fi
+
+	    gnuplot ${TMP_DIR}/cmd.txt
+	    if [ $? -eq 0 ]; then
+		rm ${TMP_DIR}/data.txt ${TMP_DIR}/cs.stats ${TMP_DIR}/heap.txt
+	    else
+		exit 1
+	    fi
+	fi
+    fi
+
+    if [ -r ${DATA_DIR}/OSS/error.log ] ; then
+	cat ${DATA_DIR}/OSS/error.log | egrep "^[0-9\-]+ [0-9:\.]+ ${CS_NAME}" | grep LockHolder > ${TMP_DIR}/${CS_NAME}.locks
+	NUM_LOCKS=`wc -l ${TMP_DIR}/${CS_NAME}.locks | awk '{print $1}'`
+	if [ ${NUM_LOCKS} -gt 0 ] ; then
+	    run ${ANALYSIS_BIN}/cs/r3/parseLocks --input ${TMP_DIR}/${CS_NAME}.locks --output ${CS_OUT_DIR}/locks.html	
+	fi
+    fi
+
+done
+
+#
+# Workaround for DDC fault were the raw txlog logs were being collected
+#
+find ${CS_DATA_DIR} -name '*.txlog' -exec rm {} \;
+
+#
+# Rename dbtool_Fv files to dbspace files
+#
+DBTOOL_F_FILES=`find ${CS_DATA_DIR} -name '*.dbtool_F*'`
+if [ ! -z "${DBTOOL_F_FILES}" ] ; then
+    for DBTOOL_F_FILE in ${DBTOOL_F_FILES} ; do
+	CS_NAME=`basename ${DBTOOL_F_FILE} | awk -F. '{print $1}'`
+	mv ${DBTOOL_F_FILE} ${CS_DATA_DIR}/${CS_NAME}.dbspace
+    done
+fi
+
+if [ -r ${CS_DATA_DIR}/ONRM_CS.objects -o -r ${CS_DATA_DIR}/Region_CS.objects ] ; then
+    run ${ANALYSIS_BIN}/cs/r3/storeCs --indir ${CS_DATA_DIR} --outdir ${OUTPUT_DIR}/cs --site ${SITE} --date ${SQL_DATE}	
+fi
+
+
+if [ -r ${DATA_DIR}/instr.cfg ] ; then
+
+    CS_MC_LIST=`egrep '^JMX,[^,]*_CS' ${DATA_DIR}/instr.cfg | awk -F, '{print $2}'`
+    if [ ! -z "${CS_MC_LIST}" ] ; then
+	for CS_MC in ${CS_MC_LIST}; do
+	    CS_OUT_DIR=${OUTPUT_DIR}/cs/${CS_MC}
+	    if [ ! -d ${CS_OUT_DIR} ] ; then
+		mkdir ${CS_OUT_DIR}
+	    fi
+
+	    # JMX Instr format: date time JMX_CS usedKB commitedKB threadcount
+	    # plotHeap format : date time MC totalbytes freebytes
+	    # Seems to be a problem with max != total
+	    egrep "^[0-9].*JMX_${CS_MC} " ${DATA_DIR}/instr.txt | awk '{print $1, $2, $3, $5 * 1024, ($5 - $4) * 1024 }' > ${TMP_DIR}/${CS_MC}_heap.txt
+	    ${ANALYSIS_BIN}/server/plotHeap ${TMP_DIR}/${CS_MC}_heap.txt JMX_${CS_MC} ${DASH_DATE} ${CS_OUT_DIR}/heap.jpg 1,0.5 ${CS_DATA_DIR}/${CS_MC}_heap.txt
+
+	    egrep "^[0-9].*JMX_${CS_MC} " ${DATA_DIR}/instr.txt | awk '{print $1 ":" $2, $6}' | sed 's/^\([^\.]*\)\.[0-9]* /\1 /' > ${TMP_DIR}/${CS_MC}_threadcount.txt
+	    cat > ${TMP_DIR}/${CS_MC}_threadcount.cmd <<EOF
+set xdata time
+set timefmt "%d-%m-%y:%H:%M:%S"
+set xrange [ "${DASH_DATE}:00:00":"${DASH_DATE}:23:59" ]
+set format x "%H:%M"
+set terminal jpeg
+set output "${CS_OUT_DIR}/threads.jpg
+set title "Threads"
+plot "${TMP_DIR}/${CS_MC}_threadcount.txt" using 1:2 title "Total" with lines
+EOF
+	    gnuplot ${TMP_DIR}/${CS_MC}_threadcount.cmd
+	done
+    fi
+
+    # VDB_LIST=`egrep '^VDB' ${DATA_DIR}/instr.cfg | awk -F, '{print $2}'`
+    # HAS_RUNNING_THREADS=0
+    # grep STAT_DB_RUNNING_THREADS ${DATA_DIR}/instr.cfg > /dev/null
+    # if [ $? -eq 0 ] ; then
+    # 	HAS_RUNNING_THREADS=1
+    # fi
+    # if [ ! -z "${VDB_LIST}" ] ; then
+    # 	echo " Versant stats"
+    # 	if [ ! -d ${OUTPUT_DIR}/vdb ] ; then
+    # 	    mkdir ${OUTPUT_DIR}/vdb
+    # 	fi
+
+    # 	for VDB in ${VDB_LIST}; do
+    # 	    processVersantDB ${VDB}
+    # 	done
+    # fi
+
+fi
+
+#
+# Process all the DBs in once go (so we only have to parse lsof/jps once)
+#
+if [ ! -z "${VDB_LIST}" ] && [ -r ${DATA_DIR}/server/lsof.txt ]  ; then
+    DB_ARG=""
+    for VDB in ${VDB_LIST}; do
+	DB_ARG="${DB_ARG} --db ${VDB}"
+    done
+    run ${ANALYSIS_BIN}/cs/r3/getUsers --lsof ${DATA_DIR}/server/lsof.txt --jps ${DATA_DIR}/server/jps.log --site ${SITE} --date ${SQL_DATE} ${DB_ARG}
+fi
+	    

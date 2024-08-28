@@ -1,0 +1,156 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+
+use StatsDB;
+use StatsTime;
+use EnmServiceGroup;
+
+our $DEBUG = 0;
+
+sub parseLog($) {
+    my ($coFile) = @_;
+
+    my @results = ();
+    my $r_currSample = undef;
+    open INPUT, $coFile or die "Cannot open $coFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseLog: line=$line\n"; }
+        if ( $line =~ /^(\d{6,6}:\d{2,2}:\d{2,2})$/ ) {
+            my $timestamp = formatTime(parseTime($1,$StatsTime::TIME_DDMMYY_HM),$StatsTime::TIME_SQL);
+            if ( $DEBUG > 7 ) { print "parseLog: sample start @ $timestamp\n"; }
+            $r_currSample = { 'time' => $timestamp, 'members' => [] };
+            push @results, $r_currSample;
+        } elsif ( $line =~ /^([a-z-\d\.]+):([A-Z]+):(.*):([A-Z]+)/ ) {
+            push @{$r_currSample->{'members'}}, { 'ip' => $1, 'dbname' => "dps", 'role' => $2, 'id' => $3 };
+            push @{$r_currSample->{'members'}}, { 'ip' => $1, 'dbname' => "system", 'role' => $4, 'id' => $3 };
+        } elsif ( $line =~ /^([a-z-\d\.]+):([A-Z]+):(.*)/ ) {
+            # Accept IP address or valid DNS name in the first field
+            push @{$r_currSample->{'members'}}, { 'ip' => $1, 'dbname' => "graph.db", 'role' => $2, 'id' => $3 };
+        }
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseLog: results", \@results); }
+    return \@results;
+}
+
+sub storeData($$$) {
+    my ($site,$date,$r_clusterStates) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    # In cloud this is enough as the VM only has the neo4j SG
+    my $r_neo4jSrv = enmGetServiceGroupInstances($site,$date,"neo4j");
+    my %neo4jSrvIds = ();
+    while ( my ($hostname,$srvId) = each %{$r_neo4jSrv} ) {
+        $neo4jSrvIds{$srvId} = 1;
+    }
+
+    # But for phyiscal there are other SG on the blade, so also try and get the servers from
+    # the enm_neo4j_srv table
+    my $r_rows = dbSelectAllArr($dbh,"SELECT DISTINCT(serverid) FROM enm_neo4j_srv WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'");
+    foreach my $r_row ( @{$r_rows} ) {
+        $neo4jSrvIds{$r_row->[0]} = 1;
+    }
+
+    my $srvIdsStr = join(",", keys %neo4jSrvIds);
+    my %hostnameToSrvId = ();
+    $r_rows = dbSelectAllArr($dbh,"SELECT id, hostname FROM servers WHERE id IN ($srvIdsStr)");
+    foreach my $r_row ( @{$r_rows} ) {
+        $hostnameToSrvId{$r_row->[1]} = $r_row->[0];
+    }
+
+    $r_rows = dbSelectAllArr($dbh,"
+SELECT
+ network_interface_ip.ipaddress,
+ servers.id
+FROM
+ servers, network_interfaces, network_interface_ip
+WHERE
+ servers.siteid = $siteId AND
+ servers.id IN ( $srvIdsStr ) AND
+ network_interface_ip.date = '$date' AND
+ network_interface_ip.ifid = network_interfaces.id AND
+ network_interfaces.serverid = servers.id
+") or die "Failed to query for neo4j IP addrs";
+    my %ipToSrvId = ();
+    foreach my $r_row ( @{$r_rows} ) {
+        if ( ! exists $ipToSrvId{$r_row->[0]} ) {
+            $ipToSrvId{$r_row->[0]} = $r_row->[1];
+        }
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("storeData: ipToSrvId", \%ipToSrvId);
+        print Dumper("storeData: hostnameToSrvId", \%hostnameToSrvId);
+    }
+
+    my $currentLeaderIP = undef;
+    my @leaders = ();
+    foreach my $r_clusterState ( @{$r_clusterStates} ) {
+        my $leaderIP = undef;
+        my $dbname = undef;
+        foreach my $r_member ( @{$r_clusterState->{'members'}} ) {
+            if ( $DEBUG > 6 ) { print Dumper("storeData: r_member", $r_member); }
+
+            if ( $r_member->{'role'} eq 'LEADER' ) {
+                $leaderIP = $r_member->{'ip'};
+                $dbname = $r_member->{'dbname'};
+            }
+        }
+        if ( defined $leaderIP ) {
+            if ( ! defined $currentLeaderIP || $leaderIP ne $currentLeaderIP ) {
+                my $srvId = $ipToSrvId{$leaderIP};
+                if ( ! defined $srvId ) {
+                    # Maybe it's a hostname (cENM)
+                    my @parts = split(/\./, $leaderIP);
+                    $srvId = $hostnameToSrvId{$parts[0]};
+                }
+                if ( defined $srvId ) {
+                    push @leaders, { 'time' => $r_clusterState->{'time'}, 'srvid' => $srvId, 'dbname' => $dbname };
+                } else {
+                    printf "WARN: Cannot determine server id for %s\n", $leaderIP;
+                }
+                $currentLeaderIP = $leaderIP;
+            }
+        }
+    }
+    if ( $DEBUG > 4 ) { print Dumper("storeData: leaders", \@leaders); }
+
+    dbDo($dbh, sprintf("DELETE FROM enm_neo4j_leader WHERE siteid = %d AND time BETWEEN '%s' AND '%s'",
+                       $siteId, $leaders[0]->{'time'}, $leaders[$#leaders]->{'time'}))
+        or die "Failed to remove old data";
+    my $isFirst = 1;
+    foreach my $r_leader ( @leaders ) {
+        dbDo($dbh,sprintf("INSERT INTO enm_neo4j_leader (siteid,time,serverid,init,dbname) VALUES (%d,'%s',%d,%d,'%s')",
+                          $siteId, $r_leader->{'time'}, $r_leader->{'srvid'}, $isFirst, $r_leader->{'dbname'}))
+            or die "Failed to insert data";
+        $isFirst = 0;
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($coFile,$site,$date);
+    my $result = GetOptions(
+        "cluster_overview=s" => \$coFile,
+        "site=s" => \$site,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_clusterStates = parseLog($coFile);
+    storeData($site,$date,$r_clusterStates);
+}
+
+main();

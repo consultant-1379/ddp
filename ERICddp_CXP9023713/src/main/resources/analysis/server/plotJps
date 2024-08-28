@@ -1,0 +1,56 @@
+#!/bin/bash
+
+ANALYSIS_BIN=`dirname $0`
+ANALYSIS_BIN=`cd ${ANALYSIS_BIN} ; cd .. ; pwd`
+
+while getopts ":j:o:s:d:v:i:" o ; do
+        case $o in
+                j ) JPS_LOG=$OPTARG;;
+                o ) OS=$OPTARG;;
+                s ) SITE=$OPTARG;;
+                d ) SQL_DATE=$OPTARG;;
+                v ) SERVER=$OPTARG;;
+                i ) INCR_FILE=$OPTARG;;
+        esac
+done
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+SEG=""
+HOST=""
+
+DATA_DIR=`dirname ${JPS_LOG}`
+if [ -r ${DATA_DIR}/OSS/system.env ] ; then
+    SEG=`grep SegmentName ${DATA_DIR}/OSS/system.env | awk -F= '{print $2}'`
+    if [ ! -z "${SEG}" ] ; then
+	SEG="--segname ${SEG}"
+    fi
+    
+    HOST=`grep MasterHost ${DATA_DIR}/OSS/system.env | awk -F= '{print $2}'`
+    if [ ! -z "${HOST}" ] ; then
+	HOST="--host ${HOST}"
+    fi
+fi
+
+OMC=`grep --max-count=1 /fm_context_d ${JPS_LOG} | awk '{print $10}'`
+if [ ! -z "${OMC}" ] ; then
+    OMC="--omc ${OMC}"
+fi
+
+INCR_OPT=""
+if [ ! -z "${INCR_FILE}" ] ; then
+    INCR_OPT="--incr ${INCR_FILE}"
+fi
+
+OS_OPT=""
+if [ ! -z "${OS}" ] ; then
+    OS_OPT="--os ${OS}"
+fi
+${ANALYSIS_BIN}/server/parseJps --input ${JPS_LOG} --site ${SITE} --server ${SERVER} --sqldate "${SQL_DATE}" ${OMC} ${SEG} ${HOST} ${INCR_OPT} ${OS_OPT}
+if [ $? -ne 0 ] ; then
+    echo "ERROR: parseJps failed"
+    exit 1
+fi
+

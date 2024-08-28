@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="enm_webpush_active_channel_names.name">
+    <dbtables main="enm_webpush_active_channels">
+      <reference table="sites" condition="enm_webpush_active_channels.siteid = sites.id"/>
+      <reference table="servers" condition="enm_webpush_active_channels.serverid = servers.id"/>
+      <reference table="enm_webpush_active_channel_names" condition="enm_webpush_active_channels.channelid = enm_webpush_active_channel_names.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <param name="channelid"/>
+    <where>sites.name = '%s' AND enm_webpush_active_channels.serverid IN ( %s ) AND enm_webpush_active_channels.channelid IN ( %s ) </where>
+  </query>
+
+  <graphs>
+    <graph name="IncomingEvents" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Incoming Events/Channel"/>
+      <column db="incoming_events" label = "Incoming Events/Channel"/>
+    </graph>
+    <graph name="OutgoingEvents" type="tsc" ylabel="Count" forcelegend="true">
+      <title value="Outgoing Events/Channel"/>
+      <column db="outgoing_events" label = "Outgoing Events/Channel"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="all">
+      <member>IncomingEvents</member>
+      <member>OutgoingEvents</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

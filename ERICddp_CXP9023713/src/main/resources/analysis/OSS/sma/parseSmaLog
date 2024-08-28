@@ -1,0 +1,195 @@
+#!/usr/bin/env perl
+
+# Libraries
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+# Declare variables
+our $DEBUG = 0;
+our ($site, $dbh, $file, $siteid, $DEBUG);
+our (%dump);
+
+our $table="hires_sma_stat";
+our %cols = (
+    "ADJUST_NUMCALLS" => "adj_ncalls",
+    "ALIVE_NODES" => "alive",
+    "AVEDELAYMECONTEXTWRITE" => "avg_me_write_delay",
+    "AVERAGE_SYNC_TIME_STN" => "avg_sync_time_stn",
+    "COMPATIBLE_NODES" => "comp_nodes",
+    "DEAD_NODES" => "dead_nodes",
+    "MAX_SYNC_TIME_STN" => "max_sync_time_stn",
+    "MIN_SYNC_TIME_STN" => "min_sync_time_stn",
+    "NEVERCONNECTED_NODES" => "nvr_connected_nodes",
+    "NUFAILEDMECONTEXTWRITES" => "num_fail_me_writes",
+    "NUIGNOREDATTACHDETACH" => "num_ignored_att_detach",
+    "NUMBER_OF_THREADS_SYSTEM" => "num_threads_sys",
+    "NUM_STN_SYNCS_FINISHED_LAST_OUTPUT_PERIOD" => "num_stn_syncs_finish_lop",
+    "NUM_STN_SYNCS_STARTED_LAST_OUTPUT_PERIOD" => "num_stn_syncs_start_lop",
+    "NUREMOVEDMECONTEXT" => "num_removed_me",
+    "NUSUCCMECONTEXTWRITES" => "num_succ_me_writes",
+    "SYNCED_NODES" => "synched",
+    "THREADPOOL2_COMPLETED" => "tp2_comp",
+    "THREADPOOL2_QUEUED" => "tp2_queued",
+    "THREADPOOL_EXECUTING" => "tp_exe",
+    "THREADPOOL_WAITING" => "tp_wait",
+    "TOTAL_NODES" => "total",
+    "UNSYNCED_NODES" => "unsynched",
+    "UPGRADE_ATTEMPTS" => "ug_attempts",
+    "UPGRADE_SUCCESSES" => "ug_succ"
+);
+
+# Date hash
+our %datehash=(
+    "Jan" => "01",
+    "Feb" => "02",
+    "Mar" => "03",
+    "Apr" => "04",
+    "May" => "05",
+    "Jun" => "06",
+    "Jul" => "07",
+    "Aug" => "08",
+    "Sep" => "09",
+    "Oct" => "10",
+    "Nov" => "11",
+    "Dec" => "12"
+);
+
+main();
+exit 0;
+
+###############
+# SUBROUTINES
+###############
+sub main{
+    my $result = GetOptions(
+        "file=s" => \$file,
+        "site=s" => \$site,
+        "debug=s" => \$DEBUG
+    );
+
+    # Validate the parameters passed
+    if ( ! $file ) {
+        printUsageAndExit("No feed file specified");
+    }
+    if ( ! $site ) {
+        printUsageAndExit("No site specified");
+    }
+
+    processSmaLog();
+
+    # Get the siteid
+    $dbh = connect_db();
+    $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # Import stats to hires_sma_stat table
+    truncateData();
+    importData();
+
+    $dbh->disconnect;
+    return(0);
+}
+
+sub getSqlDate{
+    open FILE, "<$file" or die "Failed to open file: " . $file . "\n";
+    my @lines = <FILE>;
+    close FILE;
+
+    while (my $line = pop @lines){
+        chomp($line);
+        if($line =~ /DUMP START \S+ (.*)$/){
+            my ($m, $d, $t, $y) = $1 =~ /^(\S+) (\d{2,2}) (\d{2,2}:\d{2,2}:\d{2,2}) \S+ (2[0-1][0-9][0-9])$/;
+            return($y . "-" . $datehash{$m} . "-" . $d);
+        }
+    }
+    return(-1);
+}
+
+sub truncateData {
+    # Get latest timestamp from $file
+    my $sqlDate = getSqlDate();
+
+    # Debug steps
+    if($sqlDate == -1){ die "ERROR: Error SQL Date not retrieved from file " . $file . "\n"; }
+    if ($DEBUG > 4) { print "truncateData: Date for table truncation - " . $sqlDate . "\n"; }
+
+    # Set up the DELETE statement for hires_sma_stat table
+    my $sql= "DELETE FROM $table WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid;
+    if ($DEBUG > 4) { print "truncateData: " . $sql. "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $sql) or die "ERROR: Failed to clear data from " . $table . " for " . $sqlDate . " with statement " . $sql. "\n";
+}
+
+sub importData {
+    my @cols = keys %cols;
+    #my @cols = values %cols;
+    my $sql = "INSERT INTO " . $table . " (time, siteid";
+    for my $col (@cols) {
+        $sql .= "," . $cols{$col};
+    }
+    $sql .= ") VALUES \n";
+
+    my $delim = "";
+    for my $ts ( reverse sort keys %dump) {
+        $sql .= $delim . "('" . $ts . "'," . $siteid;
+        for my $col (@cols) {
+            $sql .= "," . $dump{$ts}{$col};
+        }
+        $sql .= ")\n";
+        $delim = ",";
+    }
+    if ($DEBUG > 4) { print STDOUT "SQL: " . $sql; }
+
+    dbDo($dbh, $sql) or die "ERROR: Failed to insert data to " . $table . " for SMA Import sql statement " . $sql. "\n";
+}
+
+sub processSmaLog{
+    my(@lines, @datetime, @params);
+    my($param);
+
+    # Read sma log  file
+    open(FILE, "< $file");
+    @lines=<FILE>;
+    close(FILE);
+
+    ########################################
+    
+     my $datetime = "";
+     my %currData = ();
+
+     # Process file
+     foreach my $line (@lines) {
+         chomp($line);
+         if($line =~ /DUMP START \S+ (.*)$/){
+             # Jul 18 23:26:50 IST 2011
+             my ($m, $d, $t, $y) = $1 =~ /^(\S+) (\d{2,2}) (\d{2,2}:\d{2,2}:\d{2,2}) \S+ (2[0-1][0-9][0-9])$/;
+             $datetime = $y . "-" . $datehash{$m} . "-" . $d . " " . $t;
+             next;
+         }
+
+         if ($datetime != "") {
+             if ($line =~ /^(\S+) = ([0-9]+)/) {
+                 my ($param, $val) = ($1, $2);
+                 $currData{$param} = $val;
+             }
+             elsif($line =~ /DUMP STOP/){
+                 $dump{$datetime} = { %currData };
+                 $datetime = "";
+             }
+         }
+     }
+    return(0);
+}
+
+sub printUsageAndExit
+{
+        my ($errMsg) = @_;
+        print "Error: $errMsg\n";
+        print "Usage: parseSmaLog --file File --site Site --debug Debug\n";
+        exit(1);
+}
+

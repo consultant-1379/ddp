@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_amos_commands" timecol="date">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="amos"/>
+    <service name="generalscripting"/>
+    <service name="general-scripting"/>
+  </services>
+
+  <aggregate interval="1440">
+    <grouping>
+      <groupby name="command"/>
+      <groupby name="host"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="count" type="sum"/>
+      <aggregation name="success" type="sum"/>
+      <aggregation name="failed" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+    <!-- AMOS.COMMAND {"count":1,"failed":0,"success":1,"command":"get 0"} -->
+    <event name="AMOS.COMMAND">
+      <metric source="host" target="serverid"/>
+      <metric source="command" target="cmdName"/>
+      <metric source="success" target="successcount"/>
+      <metric source="failed" target="failurecount"/>
+    </event>
+  </events>
+</modelledevents>

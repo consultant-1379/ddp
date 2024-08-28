@@ -1,0 +1,1795 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Data::Dumper;
+use strict;
+use DBI;
+use StatsDB;
+use Time::Local;
+use PmMOM;
+
+our $DEBUG=0;
+our $NODES_PER_ROW = 3;
+
+our $RBS_NODE = 0;
+our $RNC_NODE = 1;
+our $RANAG_NODE = 2;
+our $PRBS_NODE = 3;
+our $ERBS_NODE= 4;
+our $DSC_NODE = 5;
+
+our $STATS_FILE = 1;
+our $UETR_FILE = 2;
+our $CTR_FILE = 3;
+our $GPEH_FILE = 4;
+
+# TR #: HP61270 - Added new profile id 138 [150312 eronkeo]
+# OSS-147756 - Added new profile id's 163, 164, 210, 211
+our %PROFILE_TYPE =
+(
+ 1   => 'UETR',
+ 2   => 'CTR',
+ 4   => 'GPEH_RNC',
+ 8   => 'STATS',
+ 16  => 'SYSTEM',
+ 32  => 'MO_INSTANCE',
+ 64  => 'GPEH_RBS',
+ 128 => 'UTRAN_RELATION_STATS',
+ 130 => 'LTE_RBS_STATS',
+ 132 => 'LTE_CELL_TRACE',
+ 134 => 'EXT_LTE_CELL_TRACE',
+ 136 => 'LTE_UE_TRACE',
+ 138 => 'CONTINUOUS_ERBS_CELL_TRACE',
+ 150 => 'ALL_USER_WRAN_STATS_HOLDER',
+ 151 => 'ALL_UETR_TYPES_HOLDER',
+ 152 => 'ALL_CTR_TYPES_HOLDER',
+ 153 => 'ALL_GPEH_RNC_TYPES_HOLDER',
+ 154 => 'ALL_GPEH_RBS_TYPES_HOLDER',
+ 160 => 'ECIM_MEASUREMENT_STATS',
+ 161 => 'ECIM_THRESHOLD_STATS',
+ 162 => 'ECIM_REALTIME_STATS',
+ 163 => 'ECIM_SGSN_MME',
+ 164 => 'ECIM_MO_INSTANCE_BASED_STATS',
+ 210 => 'ALL_RDT_RNC_TYPES_HOLDER',
+ 211 => 'RDT_RNC'
+ );
+
+our %PROFILE_ADMIN =
+(
+ 0 => 'INACTIVE',
+ 1 => 'ACTIVE',
+ 2 => 'SCHEDULED'
+ );
+
+our $PREDEF_DIR = ".";
+
+#============================================
+# Initialize variables
+our %neTypeMap = (
+    1 => 'RNC',
+    2 => 'RBS',
+    3 => 'RANAG',
+    4 => 'ERBS',
+    5 => 'UNDEF',
+    6 => 'UNDEF',
+    7 => 'MGW',
+    8 => 'UNDEF',
+    9 => 'MSC',
+    10 => 'GGSN',
+    11 => 'CPG',
+    12 => 'SGSN',
+    13 => 'DNS',
+    14 => 'UNDEF',
+    15 => 'STN',
+    16 => 'UNDEF',
+    17 => 'EPG',
+    18 => 'MTAS',
+    19 => 'CSCF',
+    20 => 'H2S',
+    21 => 'DSC',
+    22 => 'UNDEF',
+    23 => 'UNDEF',
+    24 => 'UNDEF',
+    25 => 'UNDEF',
+    26 => 'PRBS',
+    27 => 'UNDEF'
+);
+
+our %myNeTypeMap = (
+    "RNC" => $RNC_NODE,
+    "RBS" => $RBS_NODE,
+    "RANAG" => $RANAG_NODE,
+    "PRBS" => $PRBS_NODE,
+    "ERBS" => $ERBS_NODE,
+    "DSC" => $DSC_NODE
+);
+
+# Used to cache Local time to UTC mappings
+our %localToUtc = ();
+
+our $COLLECTION_DISTRIBUTION_INTERVAL = 3;
+
+main();
+
+sub main
+{
+    my $offset = "";
+    my ($eventsFile,$scannerListFile,
+       $site,$date,
+       $plotDir,
+       $profile,
+       $moCount,
+       $meListFile,
+       $dataFile,$outputDir,$calculatedMissingFile,$rncMissingFile,$collDistribFile,$incrFile);
+    my $result = GetOptions("events=s"  => \$eventsFile,
+                         "scannerlist=s" => \$scannerListFile,
+                         "data=s"    => \$dataFile,
+                         "outputdir=s" => \$outputDir,
+                         "rncmissing=s" => \$rncMissingFile,
+                         "calmissing=s" => \$calculatedMissingFile,
+                         "offset=s" => \$offset,
+                         "colldistrib=s" => \$collDistribFile,
+                         "site=s" => \$site,
+                         "date=s" => \$date,
+                         "plotdir=s" => \$plotDir,
+                         "profile=s" => \$profile,
+                         "mocount=s" => \$moCount,
+                         "melist=s" => \$meListFile,
+                         "predef=s" => \$PREDEF_DIR,
+                         "incr=s" => \$incrFile,
+                         "debug=s" => \$DEBUG
+                         );
+
+
+    ($result == 1) or die "Invalid args";
+    if ( $scannerListFile )
+    {
+       ( -r $scannerListFile ) or die "$scannerListFile cannot be read";
+    }
+
+    my $r_profiles;
+    if ( $profile )
+    {
+       $r_profiles = readProfiles($profile);
+    }
+
+    my $r_mocounts;
+    if ( $moCount )
+    {
+       $r_mocounts = readMoCounts($moCount);
+    }
+
+    #
+    # Total counts
+    #
+    my %totals =
+       (
+        'collected'       => 0,
+        'notCollected'    => 0,
+        'shouldCollected' => 0
+        );
+
+    my $totalRopDuration = 0;
+    my $avgRopDuration = 0;
+    my $maxRopDuration = 0;
+
+    my %statsByNodeType = ();
+
+    # Retrieve node type mapping
+    our %nodeMap=mapNeTypes($meListFile);
+
+    # activeScannerList contains the list of ACTIVE scanners
+    # Initially, it is populated from the scannerlist file. Then if we
+    # "find" any other scanners while processing the 1p1 events, they are
+    # added to the list
+    my %activeScannerList = ();
+
+    #
+    # If the scannerList is available then use that to calculate the total number of files
+    # that should of been collect
+    #
+    my $numRops = 0;
+    my %userDefProfiles = ();
+    if ( $scannerListFile )
+    {
+        $numRops = readScannerFile( $scannerListFile, \%activeScannerList, \%userDefProfiles, \%nodeMap );
+        #if ( $site )
+        #{
+        #    storeUserDefProfiles($site,$date,\%userDefProfiles);
+        #}
+    }
+
+    my %mimVer = ();
+    if ( $meListFile )
+    {
+        readMeList( $meListFile, \%mimVer );
+    }
+
+    my $r_rncTotals;
+    if ( $r_profiles && $r_mocounts )
+    {
+        $r_rncTotals = calCounters( $r_profiles, $r_mocounts, \%activeScannerList, \%mimVer, $outputDir );
+    }
+
+    if ( defined $eventsFile )
+    {
+        my %firstMissedByNode = ();
+
+
+        # Foreach ROP has the
+        # - start time
+        # - time last file was collected
+        # - timestamp (as in the file name)
+        # - number of files collected in this ROP
+        # - number of files collected in this ROP that should have been collected in a previous ROP
+        # - counts per 3min of files collect in ROP
+        my @ropData = ();
+        # Maps the file timestamp to the corresponding index in the ropData array
+        my %tsToRopIndex = ();
+        initRopData( \@ropData, \%tsToRopIndex, $numRops, $offset, $date );
+
+
+        #
+        # Collection containing an entry for each file that should be collected
+        #  ropStartTime -> scannerId
+        #
+        my %toBeCollected = ();
+        foreach my $scanner ( keys %activeScannerList )
+        {
+            addNode( \%toBeCollected, \@ropData, $scanner );
+        }
+
+        # Process the 1p1 events
+        my %reportedNotCollected = (); # Files PMS reported as FILE_NOT_COLLECTED: Key node, value count
+        my %collectedOutSide = ();  # Files PMS collected "outside" normal ROP: Key node, value count
+        readEvents( $eventsFile, \@ropData, \%tsToRopIndex, \%toBeCollected, \%activeScannerList,
+                    \%totals, \%reportedNotCollected, \%collectedOutSide, $outputDir, $incrFile );
+
+
+
+        # scalar returns the number of entires in the list (NOT the index of the last entry like $#)
+        # Total collected is the number of distinct node, the number of distinct scanners
+        my %activeNodes = ();
+        foreach my $scannerId ( keys %activeScannerList )
+        {
+            my ($meConFdn) = $scannerId =~ /(.*)_\d?$/;
+            $activeNodes{$meConFdn}++;
+        }
+        $totals{'shouldCollected'} =  (scalar keys %activeNodes) * $numRops;
+        if ( $DEBUG > 0 )
+        {
+            printf("main: numActiveNodes=%d numActiveScanners=%d numRops=%d shouldCollected=%d\n",
+                   (scalar keys %activeNodes),
+                   (scalar keys %activeScannerList),
+                   $numRops,
+                   $totals{'shouldCollected'} );
+        }
+
+        if ( $outputDir )
+        {
+            #
+            # Write table of files per node reported as not collected by PMS
+            #
+            printTable( "$outputDir/pms_ReportedNotCollected.html", \%reportedNotCollected );
+
+
+            #
+            # Write a table listing the nodes where the file was collected outside the normal ROP peroid
+            #
+            printTable( "$outputDir/pms_OutSide.html", \%collectedOutSide );
+
+            # If the scannerListFile has been provided use it to calculate the success ratio
+            my $successRatio = 0;
+            if ( $scannerListFile )
+            {
+                if ( $totals{'shouldCollected'} == 0 )
+                {
+                    $successRatio = 100;
+                }
+                else
+                {
+                    $successRatio = ($totals{'collected'} * 100)/$totals{'shouldCollected'};
+                }
+            }
+            else # successRatio based on ratio on PMS events
+            {
+                if ( ($totals{'collected'} + $totals{'notCollected'}) == 0 )
+                {
+                    $successRatio = 0;
+                }
+                else
+                {
+                    $successRatio =  ($totals{'collected'} * 100) / ($totals{'collected'} + $totals{'notCollected'});
+                }
+            }
+        }
+
+        my %calNotCollected = ();
+        my $validRopCount = 0;
+
+        #
+        # Write out the rate of files reported
+        #
+        # HH:MM #NumCollected #NumCollectedOutRop #ropDuration #notCollected
+
+        if ( $dataFile )
+        {
+            open DATA, ">$dataFile" or die "Cannot write to $dataFile";
+        }
+
+        if ( $plotDir )
+        {
+            open PLOT, ">$plotDir/pms_collected.txt" or die "Cannot write to $plotDir";
+            print PLOT "tsc;second;Stats;UETR;CTR;GPEH\n";
+
+            open PLOT_TIME, ">$plotDir/pms_ropduration.txt" or die "Cannot write to $plotDir";
+            print PLOT_TIME "tsc;second;Duration\n";
+        }
+
+        foreach my $r_Rop ( @ropData )
+        {
+            my $ropDuration = $r_Rop->{'last'} - $r_Rop->{'start'};
+
+            if ( $r_Rop->{'total'} > 0 )
+            {
+                $totalRopDuration += $ropDuration;
+                if ( $ropDuration > $maxRopDuration )
+                {
+                    $maxRopDuration = $ropDuration;
+                }
+                $validRopCount++;
+            }
+
+            my $r_NotCollectedRop = $toBeCollected{ $r_Rop->{'start'} };
+            my @notCollectedScanners = keys %{$r_NotCollectedRop};
+
+            my @binFilesCollected = ( 0, 0, 0 );
+            foreach my $fileType ( $UETR_FILE, $CTR_FILE, $GPEH_FILE )
+            {
+                if ( exists $r_Rop->{'total_bin'}->{$fileType} ) {
+                    $binFilesCollected[$fileType - $UETR_FILE] = $r_Rop->{'total_bin'}->{$fileType};
+                }
+            }
+
+            if ( $dataFile )
+            {
+                printf DATA "%02d:%02d %d %d %d %d %d %d %d %d\n",
+                $r_Rop->{'start'} / 3600, ($r_Rop->{'start'} % 3600) / 60,
+                $r_Rop->{'total'}, $r_Rop->{'outside'}, $ropDuration, ($#notCollectedScanners + 1),
+                $binFilesCollected[0], $binFilesCollected[1], $binFilesCollected[2],
+                $r_Rop->{'notCollected'};
+            }
+
+            if ( $plotDir )
+            {
+                printf PLOT "%s:%02d:%02d:00 %d %d %d %d\n",
+                $date,
+                $r_Rop->{'start'} / 3600, ($r_Rop->{'start'} % 3600) / 60,
+                $r_Rop->{'total'},
+                $binFilesCollected[0], $binFilesCollected[1], $binFilesCollected[2];
+
+                printf PLOT_TIME "%s:%02d:%02d:00 %d\n",
+                $date,
+                $r_Rop->{'start'} / 3600, ($r_Rop->{'start'} % 3600) / 60,
+                $ropDuration;
+            }
+
+            foreach my $scanner ( @notCollectedScanners )
+            {
+                if ( $DEBUG > 3 ) { print " $scanner\n" };
+
+                $_ = $scanner;
+                my ($meConFdn) = /(.*)_\d?$/;
+                my $node = getShortNode($meConFdn);
+                $calNotCollected{$node}++;
+            }
+        }
+        if ($dataFile)
+        {
+            close DATA;
+        }
+
+        if ( $plotDir )
+        {
+            printf PLOT "\nplot;tsc;Files Collected Per ROP;Time;Number of Files Collected\n";
+            close PLOT;
+
+            printf PLOT_TIME "\nplot;tsc;ROP Duration;Time;Seconds taken to collect files\n";
+            close PLOT_TIME;
+        }
+
+        if ( $outputDir )
+        {
+            printTable( "$outputDir/pms_CalNotCollected.html", \%calNotCollected );
+        }
+
+       if ( $totalRopDuration > 0 )
+       {
+           $avgRopDuration = ($totalRopDuration/($validRopCount));
+       }
+
+
+       #
+       # Calcuate collection % by node type
+       #
+       my %processedNodes = ();
+       getStatsByNodeType(  \%activeScannerList, $numRops, \%calNotCollected, \%statsByNodeType, \%nodeMap );
+
+
+       #
+       # If the calmissing specifed, then write out all the files
+       # calcauted as not collected
+       #
+       if ( $calculatedMissingFile )
+       {
+           open CALMISSED, ">$calculatedMissingFile" or die "Cannot open $calculatedMissingFile";
+           foreach my $r_Rop ( @ropData )
+           {
+              my $time = $r_Rop->{'start'};
+              my $timestamp = getTimeStr($time);
+              my $r_NotCollectedRop = $toBeCollected{$time};
+              my @notCollectedScanners = keys %{$r_NotCollectedRop};
+              foreach my $scanner ( @notCollectedScanners )
+              {
+                  print CALMISSED $timestamp, "::", $scanner, "\n";
+              }
+           }
+           close NOTFOUND;
+       }
+
+       #
+       # If the calmissing specifed, then write out all the files
+       # calcauted as not collected
+       #
+       if ( $rncMissingFile )
+       {
+           printRncMissing( \@ropData, \%toBeCollected, $rncMissingFile );
+       }
+
+       #
+       # Write out the collection distribution
+       #
+       if ( $collDistribFile )
+       {
+           printCollDistrib(\@ropData, $collDistribFile );
+       }
+    }
+
+    if ( $site ) {
+       storeStats( $site, $date,
+                  \%totals, $avgRopDuration, $maxRopDuration,
+                  $r_profiles, $r_rncTotals, \%statsByNodeType, $offset );
+    }
+}
+
+sub printCollDistrib
+{
+    my ( $r_ropData, $file ) = @_;
+
+    open OUTPUT, ">$file" or die "Cannot open $file";
+    foreach my $r_Rop ( @{$r_ropData} )
+    {
+       my $time = $r_Rop->{'start'};
+       my $timestamp = getTimeStr($time);
+       print OUTPUT $timestamp;
+
+       my $count = 0;
+       for ( my $i = 0; $i < int(15 / $COLLECTION_DISTRIBUTION_INTERVAL); $i++ )
+       {
+           $count += $r_Rop->{'colldistrib'}->[$i];
+           print OUTPUT " ", $count;
+       }
+       print OUTPUT "\n";
+    }
+    close OUTPUT;
+}
+
+sub printRncMissing
+{
+    my ( $r_ropData, $r_toBeCollected, $rncMissingFile ) = @_;
+
+    open CALMISSED, ">$rncMissingFile" or die "Cannot open $rncMissingFile";
+    foreach my $r_Rop ( @{$r_ropData} )
+    {
+       my $time = $r_Rop->{'start'};
+       my $timestamp = getTimeStr($time);
+       my $r_NotCollectedRop = $r_toBeCollected->{$time};
+       my @notCollectedScanners = keys %{$r_NotCollectedRop};
+
+       my @rncList = ();
+       foreach my $scanner ( @notCollectedScanners )
+       {
+           if ( $scanner =~ /SubNetwork=[^,]+,SubNetwork=([^,]+),MeContext=(.*)_$/ )
+           {
+              my ($rns,$me) = ( $1 , $2 );
+              if ( $rns eq $me )
+              {
+
+                  if ( $DEBUG > 5 ) { print "printRncMissing: time=$time me=$me\n"; }
+                  push @rncList, $me;
+              }
+           }
+       }
+
+       if ( $#rncList > -1 )
+       {
+           my @sortedList = sort @rncList;
+           print CALMISSED "$timestamp";
+           for my $rnc ( @sortedList )
+           {
+              print CALMISSED " ", $rnc;
+           }
+           print CALMISSED "\n";
+       }
+    }
+    close CALMISSED;
+}
+
+sub readProfiles
+{
+    my ($proFile) = @_;
+
+    open INPUT, $proFile or die "Cannot open $proFile";
+    my %profiles = ();
+    my $currId;
+    my $currProto;
+    while ( my $line = <INPUT> )
+    {
+       my ($name,$value) = $line =~ /^([^=]+)=(.*)/;
+       if ( $name eq "id" )
+       {
+           $currId = $value;
+       }
+       elsif ( $name eq "name" )
+       {
+           $profiles{$currId}->{'name'} = $value;
+       }
+       elsif ( $name eq "status.admin_state" )
+       {
+           $profiles{$currId}->{'admin_state'} = $value;
+       }
+       elsif ( $name =~ /^status\.(active|inactive)_elements\.length/ )
+       {
+           $profiles{$currId}->{'numne'} += $value;
+       }
+       elsif ( $name =~ /^status.active_elements.\d+/ )
+       {
+           $profiles{$currId}->{'activene'}->{$value} = 1;
+       }
+       elsif ( $name eq 'type' )
+       {
+           $profiles{$currId}->{'type'} = $value;
+       }
+       elsif ( $name =~ /events.length$/ )
+       {
+           $profiles{$currId}->{'cntr'} = $value;
+       }
+       elsif ( $name =~ /attribute_list.length$/ )
+       {
+           $profiles{$currId}->{'cntr'} += $value;
+       }
+       elsif ( ($name =~ /protocol_type$/) || ($name =~ /mo_class$/) )
+       {
+           $currProto = $value;
+           if ( ! exists $profiles{$currId}->{'cntrlist'}->{$currProto} )
+           {
+              $profiles{$currId}->{'cntrlist'}->{$currProto} = [];
+           }
+       }
+       elsif ( ($name =~ /message_name$/) || ($name =~ /attribute_list.\d+$/) )
+       {
+           push @{$profiles{$currId}->{'cntrlist'}->{$currProto}}, $value;
+       }
+    }
+
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("readProfiles: profiles", \%profiles); }
+
+    return \%profiles;
+}
+
+
+
+
+#exit 1;
+
+sub by_number {
+    if ($a > $b) {
+        return -1;
+    } elsif ($a == $b) {
+        return 0;
+    } elsif ($a < $b) {
+        return 1;
+    }
+}
+
+sub addNode
+{
+    my ($r_ToBeCollected,$r_RopData,$scanner) = @_;
+
+    if ( $DEBUG > 8 ) { print "addNode: scanner=$scanner\n"; }
+
+    foreach my $r_Rop ( @{$r_RopData} )
+    {
+       $r_ToBeCollected->{$r_Rop->{'start'}}->{$scanner} = 1;
+    }
+}
+
+sub getKeysSortedByValue
+{
+    my ( $r_Hash, $r_Result ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} )
+    {
+       my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+       $reverseHash{$reverseKey} = $key;
+       $counter++;
+    }
+
+    foreach my $reverseKey ( sort by_number keys %reverseHash )
+    {
+       $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+}
+
+sub getShortNode
+{
+    my ($meCon) = @_;
+
+    $_ = $meCon;
+    my ($node) = /^SubNetwork=[^,]+,(.*)/;
+    if ( $node =~ /^SubNetwork/ )
+    {
+       $_ = $node;
+       my ($rns,$me) = /^SubNetwork=([^,]+),MeContext=(.*)$/;
+       $node = $rns . "," . $me;
+    }
+    else
+    {
+       $_ = $node;
+       my ($me) = /^MeContext=(.*)$/;
+       $node = $me;
+    }
+
+    return $node;
+}
+
+sub printTable
+{
+    my ($fileName, $r_Data) = @_;
+
+    my @sortedKeys = ();
+    getKeysSortedByValue( $r_Data, \@sortedKeys );
+
+    open TABLE, ">$fileName" or die "Cannot open $fileName";
+    print TABLE "<table border>\n";
+
+    print TABLE " <tr>";
+    for ( my $i = 0; $i < $NODES_PER_ROW; $i++ )
+    {
+       print TABLE "<th>Count<\/th> <th>Node<\/th>";
+    }
+    print TABLE " <\/tr>\n";
+
+    my $nodesInRow = 0;
+    foreach my $node ( @sortedKeys )
+    {
+       if ( $nodesInRow == 0 )
+       {
+           print TABLE " <tr>";
+       }
+
+       print TABLE "<td>$r_Data->{$node}<\/td> <td>$node<\/td>";
+
+       $nodesInRow++;
+       if ( $nodesInRow == $NODES_PER_ROW )
+       {
+           print TABLE " <\/tr>\n";
+           $nodesInRow = 0;
+       }
+    }
+
+    print TABLE "<\/table>\n";
+    close TABLE;
+}
+
+sub getTimeStr
+{
+    my ($time) = @_;
+    my $timeStr = sprintf "%02d:%02d", int ($time/3600), int ( ($time % 3600) / 60);
+    return $timeStr;
+}
+
+
+sub getNodeType
+{
+    my ($meConFdn,$r_myNodeTypes) = @_;
+
+    my ($nodeType);
+
+    my $preNodeType=getMapNodeType($meConFdn,$r_myNodeTypes);
+
+    if($preNodeType =~ /UNDEF/){
+        if ( $meConFdn =~ /^SubNetwork=[^,]+,SubNetwork=([^,]+),MeContext=(.*)$/ )
+        {
+            my ($rns,$meCon) = ($1,$2);
+
+            if ( $rns eq $meCon )
+            {
+                $nodeType = $RNC_NODE;
+            }
+            else
+            {
+                if($meCon =~ /PRBS/) { $nodeType = $PRBS_NODE; }
+                elsif ($meCon =~ /ERBS/ ) { $nodeType = $ERBS_NODE; }
+                elsif ($meCon =~ /DSC/ ) { $nodeType = $DSC_NODE; }
+                else { $nodeType = $RBS_NODE; }
+            }
+        }
+        else
+        {
+            $nodeType = $RANAG_NODE;
+        }
+    } else {
+        $nodeType=$myNeTypeMap{$preNodeType};
+    }
+
+    if ( $DEBUG > 9 ) { print "getNodeType: nodeType=$nodeType meConFdn=$meConFdn\n"; }
+
+    return $nodeType;
+}
+
+sub readScannerFile
+{
+    my ( $scannerListFile, $r_activeScannerList, $r_userDefProfiles, $r_nodeMap ) = @_;
+
+    open SCANNERLIST, "$scannerListFile" or die "Cannot open $scannerListFile";
+
+    # Calculate the number of ROP Peroids that have occurred based on the
+    # time the list was taken
+    $_ = <SCANNERLIST>;
+    my ($hour,$min) = /^(\d+):(\d+)/;
+    my $listTime = ( $hour * 60 ) + $min;
+    my $numRops = 0;
+    for ( my $ropTime = 5; $ropTime < $listTime; $ropTime+= 15 )
+    {
+       $numRops++;
+    }
+
+    #
+    # Now figure out the number of active scanners
+    #
+    my $validFormat = 0;
+    while ( my $line = <SCANNERLIST> )
+    {
+       chop $line;
+       $_ = $line;
+       my ($node,$scannerId,$scannerName,$scannerState) = /^([^:]*):([^:]*):([^:]*):([^:]*)$/;
+       if ( ! $node or ($node !~ /^SubNetwork/ ) )
+       {
+           if ( $DEBUG > 2 ) { print "readScannerFile: Invalid line in scanner file: ", $line, "\n"; }
+           next;
+       }
+       else
+       {
+           $validFormat = 1;
+       }
+       if ( $DEBUG > 4 ) { print "readScannerFile: node=$node scannerId=$scannerId scannerName=$scannerName scannerState=$scannerState\n"; }
+       #
+       # Only interested in STATS scanners
+       # UETR, GPEH, etc only last a short time so this snapshot isn't much
+       # use for monitoring these types of scanners
+       #
+       if ( ($scannerState eq "ACTIVE") and ($scannerName =~ /STATS$/) )
+       {
+        my $nodeType = getNodeType($node,$r_nodeMap);
+           if ( ($nodeType == $RBS_NODE) || ($nodeType == $RANAG_NODE) || ($nodeType == $ERBS_NODE) || ($nodeType == $PRBS_NODE) || ($nodeType == $DSC_NODE) )
+           {
+            $r_activeScannerList->{$node . "_"}++;
+           }
+           elsif ($nodeType == $RNC_NODE) {
+            if ( $scannerName =~ /^PREDEF\.RNC\.STATS$/ )
+            {
+                $r_activeScannerList->{$node . "_" . "2"}++;
+            }
+            else
+            {
+                $r_activeScannerList->{$node . "_"}++;
+            }
+           }
+       }
+
+       if ( $scannerName =~ /^USERDEF\.(.*)\.Continuous=Y\.STATS$/ )
+       {
+           my $profileName = $1;
+           $r_userDefProfiles->{$profileName}++;
+       }
+    }
+    close SCANNERLIST;
+
+    if ( $DEBUG > 5 ) {       print Dumper( "activeScannerList", $r_activeScannerList ); }
+    if ( $DEBUG > 5 ) {       print Dumper( "userDefProfiles", $r_userDefProfiles ); }
+
+    return $numRops;
+}
+
+sub initRopData
+{
+    my ($r_ropData, $r_tsToRopIndex, $numRops,$offset, $date) = @_;
+
+    my ($year,$month,$day) = $date =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})$/;
+    my $basetime = timelocal(0,0,0,$day,$month-1,$year-1900);
+
+    for ( my $hour = 0; $hour < 24 && ($#{$r_ropData} < $numRops); $hour++ )
+    {
+       for ( my $min = 5; $min < 60 && ($#{$r_ropData} < $numRops); $min += 15 )
+       {
+           my $r_colldistrib = [];
+           for ( my $i = 0; $i < int (15 / $COLLECTION_DISTRIBUTION_INTERVAL); $i++ )
+           {
+              $r_colldistrib->[$i] = 0;
+           }
+
+           my $r_Rop = {
+              'start'   => ($hour*3600) + ($min*60), # Time ROP starts
+              'last'    =>  ($hour*3600) + ($min*60),  # Time last file was collected in the rop
+              'fileTs'  => "",
+              'total'   => 0,
+              'outside' => 0,
+              'notCollected' => 0,
+              'colldistrib' => $r_colldistrib
+              };
+           push @{$r_ropData}, $r_Rop;
+
+           if ( $offset ne "" )
+           {
+                my $ropFileStart = $basetime + ( ($hour - $offset) * 3600 ) + ( ($min - 20) * 60 );
+                my @ropFileTsFields = localtime($ropFileStart);
+              my $fileTs = sprintf "%04d%02d%02d.%02d%02d", $ropFileTsFields[5] + 1900, $ropFileTsFields[4] + 1, $ropFileTsFields[3], $ropFileTsFields[2], $ropFileTsFields[1];
+                if ( $DEBUG > 5 ) { printf "initRopData: fileTs for %02d:%02d is %s\n", $hour, $min, $fileTs; }
+              $r_Rop->{'fileTs'} = $fileTs;
+              $r_tsToRopIndex->{$fileTs} = $#{$r_ropData};
+           }
+       }
+    }
+
+
+    if ( $DEBUG > 4 )
+    {
+       print Dumper( "ropData", $r_ropData );
+       print Dumper( "tsToRopIndex", $r_tsToRopIndex );
+    }
+}
+
+sub readEvents
+{
+    my ($eventsFile,             # File containing the 1p1 events to be processed
+       $r_ropData,              # Stats for each rop (See comments in main above initRopData)
+       $r_tsToRopIndex,         # Maps the file timestamp to the corresponding index in the ropData array
+       $r_toBeCollected,        # Map containing an entry for each file that should be collected ropStartTime -> scannerId
+       $r_activeScannerList,    # list of ACTIVE scanners
+       $r_totals,
+       $r_reportedNotCollected, #
+       $r_collectedOutSide,
+       $outputDir,
+       $incrFile ) = @_;
+
+    open EVENTS, "$eventsFile" or die die "Cannot open $eventsFile";
+
+    my $ropIndex = 0; # Index into ropData to "current" ROP
+    my $lastTime = 0; # Make time is increasing, need to deal with DST
+
+    if ( $DEBUG > 5 ) { print "readerEvents: incrFile=$incrFile\n"; }
+
+    if ( -r $incrFile ) {
+       my $fileSize;
+       readIncr($incrFile,
+               $r_ropData, $r_toBeCollected, $r_totals,
+               $r_reportedNotCollected, $r_collectedOutSide,
+               \$ropIndex,
+               \$lastTime,
+               \$fileSize);
+
+       seek EVENTS, $fileSize, 0;
+    }
+
+    while ( my $r_event = readEvent() )
+    {
+       my $eventHeader = shift @{$r_event};
+       my ($day, $month, $year, $hour, $min,$sec, $result) = $eventHeader =~
+           /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+)\.\d+ .* NOTIFY_PERFORMANCE_(\S+)$/;
+
+
+       my $eventLine = shift @{$r_event};
+       my ($meCon) = $eventLine =~ /^\s+NV_MANAGED_OBJECT_INSTANCE=\"(\S+)\"$/;
+       if ( ! defined $meCon )
+       {
+           print "ERROR: Could not extract meContext from $eventLine\n";
+           next;
+       }
+       my $node = getShortNode($meCon);
+
+       shift @{$r_event}; # NV_NOTIFICATION_ID
+       shift @{$r_event}; # NV_EVENT_TIME
+       shift @{$r_event}; # NV_SYSTEM_DN
+       $eventLine = shift @{$r_event}; # PERFORMANCE_MONITORING_ID
+       if ( $DEBUG > 7 ) { print "readEvent scanner eventLine = $eventLine\n" };
+       my $scannerId =  "";
+       if ( $eventLine =~ /^\s+PERFORMANCE_MONITORING_ID/ )
+       {
+           ($scannerId) = $eventLine =~ /_(\d+)\"?$/;
+           shift @{$r_event}; # NV_SEGMENT_DN
+
+           if ( $DEBUG > 7 ) { print "readEvents: scannerId = $scannerId\n" };
+       }
+       $eventLine = shift @{$r_event};
+       if ( $DEBUG > 6 ) { print "readEvents: remainderOfBody eventLine = $eventLine\n" };
+
+       my ($url) = $eventLine =~ /^\s+remainderOfBody: \"([^\"]*)\"$/;
+       if ( ! defined $url )
+       {
+           print "ERROR: Could not extract url from $eventLine\n";
+           next;
+       }
+        if ( $DEBUG > 5 ) { print "readEvents: Event $hour:$min:$sec : res=$result, node=$node, url=$url\n" };
+
+       # Hack/workaround for PMS bug where they were not removing the gz ext
+       if ( $url =~ /xml\.gz$/ )
+       {
+           $url =~ s/\.gz$//;
+           if ( $DEBUG > 7 ) { print "getFileType: stripped gz from url, url now=", $url, "\n"; }
+       }
+       # End hack
+
+       my $fileType = getFileType($url);
+       if ( $fileType == -1 )
+       {
+           if ( $DEBUG > 0 ) { print "WARN: cannot establish file type for url=$url time=$hour:$min:$sec\n"; }
+           next;
+       }
+
+       my $time = ( ($hour*3600)+ ($min*60) + $sec );
+       # This is to deal with daylight saving time, where time can step backwards
+       # Allow need to handle the fact we have a multiple threads in notif, printing
+       # the notifications so allow one second
+       if ( $time >= ($lastTime-1) )
+       {
+           $ropIndex = getRopIndex( $r_ropData, $ropIndex, $time );
+       }
+       else
+       {
+           print "WARN: Time has stepped backwards ($hour:$min:$sec), search from the start for the ropIndex\n";
+           $ropIndex = getRopIndex( $r_ropData, 0, $time );
+       }
+       $lastTime = $time;
+
+       if ( $time > $r_ropData->[$ropIndex]->{'last'} )
+       {
+           if ( $DEBUG > 5 ) { print "readEvents: setting last for ropIndex=$ropIndex to $time\n"; }
+           $r_ropData->[$ropIndex]->{'last'} = $time;
+       }
+
+
+       if ( $result eq "FILE_NOT_COLLECTED" )
+       {
+           $r_totals->{'notCollected'}++;
+           $r_reportedNotCollected->{$node}++;
+           $r_ropData->[$ropIndex]->{'notCollected'}++;
+       }
+       else # result = DATA_AVAILABLE
+       {
+           #
+           # Calculate the distribution of file collections across the rop peroid
+           #
+           my $offsetFromRopStart = $time - $r_ropData->[$ropIndex]->{'start'};
+           my $distribBucket = int( $offsetFromRopStart / ( $COLLECTION_DISTRIBUTION_INTERVAL * 60 ) );
+           if ( $DEBUG > 5 ) { print "readEvents: offsetFromRopStart=$offsetFromRopStart distribBucket=$distribBucket\n"; }
+           $r_ropData->[$ropIndex]->{'colldistrib'}->[$distribBucket]++;
+
+           #file://atrcus8/var/opt/ericsson/nms_umts_pms_seg/segment1/SubNetwork=blgru23/MeContext=rbs31071/A20050316.0000-0015_SubNetwork=IE,SubNetwork=blgru23,MeContext=rbs31071_statsfile.xml
+
+           if ( $fileType == $STATS_FILE )
+           {
+              handleCollectedStatsFile($eventHeader,$url,$meCon,$node,$ropIndex,$r_tsToRopIndex,$hour,$min,$sec,
+                                    $r_activeScannerList,
+                                    $r_ropData,$r_collectedOutSide,$r_toBeCollected,$r_totals);
+           }
+           else
+           {
+              $r_totals->{'collected_bin'}->{$fileType}++;
+              $r_ropData->[$ropIndex]->{'total_bin'}->{$fileType}++;
+           }
+
+       }
+    }
+    close EVENTS;
+
+    #
+    # Store data for incr processing
+    #
+    my @fileStats = stat $eventsFile;
+    my $fileSize = $fileStats[7];
+    storeIncr($incrFile, $r_ropData, $r_toBeCollected, $r_totals,
+             $r_reportedNotCollected, $r_collectedOutSide,
+             $ropIndex, $lastTime, $fileSize);
+
+    if ( $DEBUG > 3 ) { print Dumper("readEvents ropData", $r_ropData); }
+}
+
+sub handleCollectedStatsFile
+{
+    my ($eventHeader,$url,$meCon,$node,$ropIndex,$r_tsToRopIndex,$hour,$min,$sec,
+       $r_activeScannerList,
+       $r_ropData,$r_collectedOutSide,$r_toBeCollected,$r_totals) = @_;
+
+    my ($file,$fileNum) = $url =~
+       /^file:\/\/\S+\/MeContext=\S+\/(\S+)_SubNetwork.*_statsfile(\d?)\.xml$/;
+    if ( $DEBUG > 4 ) { print "handleCollectedStatsFile: file = $file, fileNum = $fileNum\n"; }
+    my $scanner = $meCon . "_" . $fileNum;
+    #
+    # If the fileTs field is defined, check if this file was collected when it was supposed to be
+    #
+    my $collectRopIndex = $ropIndex;
+
+    if ( $r_ropData->[$ropIndex]->{'fileTs'} ne "" )
+    {
+       my ($fileDate, $fileRopPeroid) = $file =~ /^A(\d+)\.([^_]+)/;
+       my $fileTs;
+       if ( $fileRopPeroid =~ /^(\d{4,4})-\d{4,4}$/ )
+       {
+           $fileTs = $fileDate . "." . $1;
+       }
+       else
+       {
+           $fileTs = getUtcFromLocal($fileDate,$fileRopPeroid);
+       }
+
+       if ( $DEBUG > 4 )
+       {
+           printf "handleCollectedStatsFile ropStart = %s, ropFileTs = %s, fileTs = %s\n",
+           getTimeStr($r_ropData->[$ropIndex]->{'start'}), $r_ropData->[$ropIndex]->{'fileTs'},
+           $fileTs;
+       }
+
+       if ( $fileTs ne  $r_ropData->[$ropIndex]->{'fileTs'} )
+       {
+           $r_ropData->[$ropIndex]->{'outside'}++;
+
+           if ( exists $r_tsToRopIndex->{$fileTs} )
+           {
+              $collectRopIndex = $r_tsToRopIndex->{$fileTs};
+           }
+           else
+           {
+              if ( $DEBUG > 0 ) { print "handleCollectedStatsFile: file collected for outside current day fileTs=$fileTs eventHeader=$eventHeader\n"; }
+              $collectRopIndex = -1;
+           }
+
+           $r_collectedOutSide->{$node}++;
+       }
+    }
+
+    $r_ropData->[$ropIndex]->{'total'}++;
+
+    #
+    # Check if this xml file came from a
+    # "known" scanner. If not, add this scanner to the known list
+    #
+    if ( ! exists $r_activeScannerList->{$scanner} )
+    {
+       if ( $DEBUG > 2 ) { print "handleCollectedStatsFile: Found file from unknown scanner on meCon=$meCon fileNum=$fileNum\n"; }
+
+       $r_activeScannerList->{$scanner}++;
+       addNode($r_toBeCollected, $r_ropData, $scanner);
+
+       if ( $DEBUG > 9 )
+       {
+           foreach my $r_Rop ( @{$r_ropData} )
+           {
+              print "handleCollectedStatsFile: r_Rop.start=", $r_Rop->{'start'}, " r_Rop.fileTs=", $r_Rop->{'fileTs'},
+              " toBeCollected=$r_toBeCollected->{$r_Rop->{'start'}}->{$scanner}\n";
+              #$r_ToBeCollected->{$r_Rop->{'start'}}->{$scanner} = 1;
+           }
+       }
+    }
+
+
+    if ( $collectRopIndex != -1 )
+    {
+       if ( $DEBUG > 4  )
+       {
+           printf "handleCollectedStatsFile: node=%s collectRopIndex=%d, start=%s, fileTs=%s toBeCollected=%s\n",
+           $node, $collectRopIndex,
+           $r_ropData->[$collectRopIndex]->{'start'}, $r_ropData->[$collectRopIndex]->{'fileTs'},
+           $r_toBeCollected->{$r_ropData->[$collectRopIndex]->{'start'}}->{$scanner};
+       }
+
+       if ( exists $r_toBeCollected->{$r_ropData->[$collectRopIndex]->{'start'}}->{$scanner} )
+       {
+           delete $r_toBeCollected->{$r_ropData->[$collectRopIndex]->{'start'}}->{$scanner};
+       }
+       else
+       {
+           if ( $DEBUG > 1 ) { print "readEvents: missing toBeCollected for $r_ropData->[$collectRopIndex]->{'start'} $scanner\n;" }
+       }
+    }
+    else
+    {
+       $r_totals->{'extraCollected'}++;
+    }
+
+    $r_totals->{'collected'}++;
+}
+
+sub getUtcFromLocal
+{
+    my ($fileDate,$fileRopPeroid) = @_;
+
+    if ( ! exists $localToUtc{$fileDate . "." . $fileRopPeroid} )
+    {
+       my ($ropStartHour,$ropStartMin,$plusMinus,$offsetHour,$offSetMin) = $fileRopPeroid =~ /^(\d{2,2})(\d{2,2})([-\+])(\d{2,2})(\d{2,2})/;
+
+       if ( $DEBUG > 5 ) { print "getUtcFromLocal: timezone fileRopPeroid=$fileRopPeroid $ropStartHour,$ropStartMin,$plusMinus,$offsetHour,$offSetMin\n"; }
+       my ($fyear,$fmonth,$fday) = $fileDate =~ /^(\d{4,4})(\d{2,2})(\d{2,2})$/;
+       if ( $plusMinus eq '+' )
+       {
+           $offsetHour = 0 - $offsetHour;
+           $offSetMin  = 0 - $offSetMin;
+       }
+       my $basetime = timelocal(0,0,0,$fday,$fmonth-1,$fyear-1900);
+       my @thisRopTime = localtime( $basetime + ( ($ropStartHour + $offsetHour) * 3600 ) + ( ($ropStartMin + $offSetMin) * 60 ) );
+
+       $localToUtc{$fileDate . "." . $fileRopPeroid} =
+           sprintf("%04d%02d%02d.%02d%02d" , $thisRopTime[5] + 1900, $thisRopTime[4] + 1, $thisRopTime[3],
+                  $thisRopTime[2], $thisRopTime[1]);
+       if ( $DEBUG > 3 ) { print "getUtcFromLocal: mapping $fileDate", ".", "$fileRopPeroid to ", $localToUtc{$fileDate . "." . $fileRopPeroid}, "\n"; }
+    }
+
+    my $fileTs = $localToUtc{$fileDate . "." . $fileRopPeroid};
+    return $fileTs;
+}
+
+sub getFileType
+{
+    my ($url) = @_;
+
+    my $fileType = -1;
+    if ( $url =~/xml$/ )
+    {
+       $fileType = $STATS_FILE;
+    }
+    elsif  ( $url =~ /uetr/i )
+    {
+       $fileType = $UETR_FILE;
+    }
+    elsif ( $url =~ /ctr/i )
+    {
+       $fileType = $CTR_FILE;
+    }
+    elsif ( $url =~ /gpeh/i )
+    {
+       $fileType = $GPEH_FILE;
+    }
+    else
+    {
+       $fileType = -1;
+    }
+
+    return $fileType;
+}
+
+sub getRopIndex
+{
+    my ($r_ropData,$ropIndex,$time) = @_;
+
+    #
+    # Figure out if this is part of the "current ROP peroid".
+    #
+    if ( $ropIndex < $#{$r_ropData} )
+    {
+       while ( ($ropIndex < $#{$r_ropData}) &&
+              ($time >= ($r_ropData->[$ropIndex]->{'start'} + (15*60))) )
+       {
+           $ropIndex++;
+           if ( $DEBUG > 4 ) { printf "getRopIndex: Moving to ropIndex %d, time = %s, ropData start=%s\n", $ropIndex, $time,  $r_ropData->[$ropIndex]->{'start'}; }
+       }
+    }
+
+    return $ropIndex;
+}
+
+sub readEvent
+{
+    my @eventLines = ();
+    my $line;
+    while (( $line = <EVENTS>) && ($line !~ /^$/) )
+    {
+       chop $line;
+       push @eventLines, $line;
+    }
+
+    my $result;
+    if ( $#eventLines > -1 )
+    {
+       $result = \@eventLines;
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("readEvent: result", $result); }
+
+    return $result;
+}
+
+
+sub storeStats
+{
+    my ( $site, $date, $r_totals, $avgRopDuration, $maxRopDuration, $r_profiles, $r_rncTotals, $r_statsByNodeType, $offset ) = @_;
+
+    if ( $DEBUG > 1 ) { print Dumper("storeStats: r_totals", $r_totals); }
+
+    my $dbh = connect_db();
+
+    my $siteId = getSiteId($dbh,$site);
+    if ( $DEBUG > 1 ) { print "storeStats: site=$site, siteId=$siteId\n"; }
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    if ( defined $r_totals ) {
+       $dbh->do("DELETE FROM pms_stats WHERE siteid = $siteId AND date = \'" . $date . "\'");
+       my $sql = sprintf("INSERT INTO pms_stats (date,siteid,avgroptime,maxroptime,uetr,ctr,gpeh,rncavail,rncmiss,rbsavail,rbsmiss,rxiavail,rximiss,extra,tzoffset,prbsavail,prbsmiss,erbsavail,erbsmiss,dscavail,dscmiss) VALUES (\'%s',%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)",
+                       $date,$siteId,
+                       $avgRopDuration, $maxRopDuration,
+                       $r_totals->{'collected_bin'}->{$UETR_FILE}, $r_totals->{'collected_bin'}->{$CTR_FILE}, $r_totals->{'collected_bin'}->{$GPEH_FILE},
+                       $r_statsByNodeType->{$RNC_NODE}->{'shouldCollected'}, $r_statsByNodeType->{$RNC_NODE}->{'notCollected'},
+                       $r_statsByNodeType->{$RBS_NODE}->{'shouldCollected'}, $r_statsByNodeType->{$RBS_NODE}->{'notCollected'},
+                       $r_statsByNodeType->{$RANAG_NODE}->{'shouldCollected'}, $r_statsByNodeType->{$RANAG_NODE}->{'notCollected'},
+                       $r_totals->{'extraCollected'}, $offset,
+                       $r_statsByNodeType->{$PRBS_NODE}->{'shouldCollected'}, $r_statsByNodeType->{$PRBS_NODE}->{'notCollected'},
+                       $r_statsByNodeType->{$ERBS_NODE}->{'shouldCollected'}, $r_statsByNodeType->{$ERBS_NODE}->{'notCollected'},
+                       $r_statsByNodeType->{$DSC_NODE}->{'shouldCollected'}, $r_statsByNodeType->{$DSC_NODE}->{'notCollected'}
+           );
+       if ( $DEBUG > 1 ) { print "storeStats: insert sql = \"$sql\"\n"; }
+       $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+    }
+
+    if ( $r_profiles )
+    {
+       my $r_cntrList = getCntrList($r_profiles);
+       my $r_idMap = getIdMap($dbh, "pms_profile_detail", "id", "list", $r_cntrList );
+
+       $dbh->do("DELETE FROM pms_profile WHERE siteid = $siteId AND date = \'" . $date . "\'");
+       foreach my $proId ( keys %{$r_profiles} )
+       {
+           if ( $DEBUG > 2 ) { print Dumper("storeStats: profile $proId", $r_profiles->{$proId}); }
+
+           my $sql;
+           if ( $r_profiles->{$proId}->{'type'} == 16 ) # System
+           {
+              $sql = sprintf("INSERT INTO pms_profile (date,siteid,admin_state,name,type) VALUES (\'%s',%d, '%s', '%s','%s')",
+                            $date,$siteId,
+                            $PROFILE_ADMIN{$r_profiles->{$proId}->{'admin_state'}},
+                            $r_profiles->{$proId}->{'name'},
+                            $PROFILE_TYPE{$r_profiles->{$proId}->{'type'}}
+                            );
+           }
+           else
+           {
+              my $cntrStr = getCntrStr($r_profiles->{$proId}->{'cntrlist'});
+              $sql = sprintf("INSERT INTO pms_profile (date,siteid,admin_state,name,type,numne,detailid) VALUES (\'%s',%d, '%s', %s,'%s',%d,%d)",
+                            $date,$siteId,
+                            $PROFILE_ADMIN{$r_profiles->{$proId}->{'admin_state'}},
+                            $dbh->quote($r_profiles->{$proId}->{'name'}),
+                            $PROFILE_TYPE{$r_profiles->{$proId}->{'type'}},
+                            $r_profiles->{$proId}->{'numne'},
+                            $r_idMap->{$cntrStr}
+                            );
+           }
+           if ( $DEBUG > 1 ) { print "storeStats: insert sql = \"$sql\"\n"; }
+           $dbh->do($sql) or die "Failed to insert sample with \"$sql\" " . $dbh->errstr;
+       }
+    }
+
+
+    if ( $r_rncTotals )
+    {
+       my @rncList = keys %{$r_rncTotals};
+       my $r_idMap = getIdMap($dbh, "rns", "id", "name", \@rncList );
+
+       $dbh->do("DELETE FROM pms_rnc_counters WHERE siteid = $siteId AND date = \'" . $date . "\'");
+       foreach my $rnc ( @rncList )
+       {
+           my $sql = sprintf ("INSERT INTO pms_rnc_counters (date,siteid,rnsid,numCntr) VALUES (\'%s',%d,%d,%d)",
+                            $date,$siteId, $r_idMap->{$rnc}, $r_rncTotals->{$rnc});
+           if ( $DEBUG > 1 ) { print "storeStats: insert sql = \"$sql\"\n"; }
+           $dbh->do($sql) or die "Failed to insert sample with \"$sql\" " . $dbh->errstr;
+       }
+    }
+
+    $dbh->disconnect;
+}
+
+sub storeUserDefProfiles
+{
+    my ( $site, $date, $r_userDefProfiles ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+
+    $dbh->do("DELETE FROM pms_userdef WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+    my $r_userDefIdMap = getUserDefId($dbh);
+    my $reload = 0;
+    foreach my $userDef ( keys %{$r_userDefProfiles} )
+    {
+       $userDef =~ s/\.Profile=.*//;
+
+       if ( ! exists $r_userDefIdMap->{$userDef} )
+       {
+           my $sql = sprintf("INSERT INTO pms_userdef_names (name) VALUES (\'%s\')", $userDef );
+           if ( $DEBUG > 2 ) { print "storeUserDefProfiles: $sql\n"; }
+           $dbh->do($sql) or die "Failed to insert $userDef " . $dbh->errstr;
+           $reload = 1;
+       }
+    }
+    if ( $reload )
+    {
+       $r_userDefIdMap = getUserDefId($dbh);
+    }
+
+    foreach my $userDef ( keys %{$r_userDefProfiles} )
+    {
+       my ($userDefShort) = $userDef =~ /(.*)\.Profile=.*/;
+
+       my $sql = sprintf("INSERT INTO pms_userdef (siteid,date,nameid,numscanners) VALUES (%d, \'%s\', %d, %d)",
+                       $siteId, $date, $r_userDefIdMap->{$userDefShort}, $r_userDefProfiles->{$userDef});
+       if ( $DEBUG > 2 ) { print "storeUserDefProfiles: $sql\n"; }
+       $dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+    }
+
+    $dbh->disconnect;
+}
+
+
+sub getUserDefId
+{
+    my ($dbh) = @_;
+
+    my %userDefIdMap = ();
+    my $sth = $dbh->prepare('SELECT name,id FROM pms_userdef_names')
+       or die "Couldn't prepare statement: " . $dbh->errstr;
+    $sth->execute()             # Execute the query
+       or die "Couldn't execute statement: " . $sth->errstr;
+
+    while ( my $r_row = $sth->fetchrow_arrayref() )
+    {
+       if ( $DEBUG > 5 ) { print Dumper("getDefDefId row", $r_row); };
+       $userDefIdMap{$r_row->[0]} = $r_row->[1];
+    }
+    $sth->finish;
+
+    if ( $DEBUG > 2 ) { print Dumper("getUserDefId userDefIdMap", \%userDefIdMap); };
+
+    return \%userDefIdMap;
+}
+
+sub getCntrList
+{
+    my ($r_profiles) = @_;
+
+    my %cntrList = ();
+    foreach my $proId ( keys %{$r_profiles} )
+    {
+       if ( ($r_profiles->{$proId}->{'admin_state'} == 1) && ($r_profiles->{$proId}->{'type'} != 16) )
+       {
+
+           my $str = getCntrStr($r_profiles->{$proId}->{'cntrlist'});
+           if ( $DEBUG > 4 ) { print Dumper("getCntrList $proId cntrlist", $r_profiles->{$proId}->{'cntrlist'} ); }
+           $cntrList{$str} = 1;
+       }
+    }
+
+    my @cntrListArr = sort keys %cntrList;
+    if ( $DEBUG > 3 ) { print Dumper("getCntrList: cntrListArr", \@cntrListArr); }
+
+    return \@cntrListArr;
+}
+
+sub getCntrStr
+{
+    my ($r_cntrHash) = @_;
+
+    my $str = "";
+    my $first = 1;
+    foreach my $proto ( sort keys %{$r_cntrHash} )
+    {
+       if ( ! $first )
+       {
+           $str .= ",";
+       }
+       else
+       {
+           $first = 0;
+       }
+
+       $str .= $proto;
+       foreach my $value ( sort @{$r_cntrHash->{$proto}} )
+       {
+           $str .= ":" . $value;
+       }
+    };
+
+    return $str;
+}
+
+sub readMoCounts
+{
+    my ($mocountFile) = @_;
+
+    my %moCounts = ();
+
+    open MO_COUNT, $mocountFile or die "Cannot open $mocountFile";
+
+    my $rnc;
+    while ( my $line = <MO_COUNT> )
+    {
+       if ( $line =~ /^BEGIN (.*)/ )
+       {
+           $rnc = $1;
+       }
+       elsif ( $line =~ /^(\S+) (\d+)$/ )
+       {
+           $moCounts{$rnc}->{$1} = $2;
+       }
+       elsif ( $line =~ /^END / )
+       {
+           $rnc = "";
+       }
+    }
+    close MO_COUNT;
+
+    return \%moCounts;
+}
+
+sub calCounters
+{
+    my ( $r_profiles, $r_mocounts, $r_activeScannerList, $r_mimVer, $outputDir ) = @_;
+
+
+    my $r_rncTotals = {};
+
+    foreach my $rnc ( keys %{$r_mocounts} )
+    {
+       my @moLines = ();
+
+       if ( $DEBUG > 3 ) { print "calCounters: processing RNC $rnc mimVer=\"$r_mimVer->{$rnc}\"\n"; }
+
+       my $r_moMap = $r_mocounts->{$rnc};
+
+       my $r_PdfMap;
+       if ( exists $r_mimVer->{$rnc} && $r_mimVer->{$rnc} =~ /^v/ ) {
+           $r_PdfMap = getPdf($PREDEF_DIR,$r_mimVer->{$rnc});
+       } else {
+           $r_PdfMap = {};
+       }
+
+       my %activeCounters = ();
+       # Predefined scanner
+       if ( exists $r_activeScannerList->{$rnc . "_"} )
+       {
+           if ( $DEBUG > 5 ) { print "calCounters adding counters from predef\n"; }
+           addCounters( getPreDef($rnc,$r_mimVer->{$rnc}), \%activeCounters );
+       }
+
+       foreach my $r_profile ( values %{$r_profiles} )
+       {
+           if ( $PROFILE_TYPE{$r_profile->{'type'}} eq 'STATS' )
+           {
+              if ( $DEBUG > 6 ) { print "calCounters: $r_profile->{'name'} admin_state=$r_profile->{'admin_state'}\n"; }
+
+              if ( $r_profile->{'admin_state'} == 1 &&
+                   exists $r_profile->{'activene'}->{$rnc} )
+              {
+                  if ( $DEBUG > 5 ) { print "calCounters adding counters from profile $r_profile->{'name'}\n"; }
+                  addCounters( $r_profile->{'cntrlist'}, \%activeCounters );
+              }
+           }
+       }
+
+       my $totalCounters = 0;
+       foreach my $moType ( sort keys %activeCounters )
+       {
+           my @cntrList = keys %{$activeCounters{$moType}};
+           my $numCntrs = 0;
+           foreach my $cntrName ( keys %{$activeCounters{$moType}} )
+           {
+              #
+              # The same counter can be present in more then one profile, each one is counted
+              # as a counter instance
+              #
+              if ( exists $r_PdfMap->{$moType}->{$cntrName} )
+              {
+                  $numCntrs += ($activeCounters{$moType}->{$cntrName} * $r_PdfMap->{$moType}->{$cntrName});
+              }
+              else
+              {
+                  $numCntrs += $activeCounters{$moType}->{$cntrName};
+              }
+           }
+           my $numMo = getMoCount($rnc,$moType,$r_mocounts);
+
+           my $moTypeTotal = $numMo * $numCntrs;
+           if ( $numMo == 0 )
+           {
+              $numMo = "";
+              $moTypeTotal = "";
+           }
+           push @moLines, sprintf( "<tr> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> </tr>\n",
+                                $moType, $numCntrs, $numMo, $moTypeTotal );
+
+           if ( $DEBUG > 5 ) { print "calCounters moType=$moType numCntrs=$numCntrs numMo=$numMo\n"; }
+           $totalCounters +=  $numMo * $numCntrs;
+       }
+
+       my ($rncField) = $rnc =~ /=([^=]+)$/;
+
+       open CNTR_CNT, ">$outputDir/rnc_counters/$rncField";
+       print CNTR_CNT @moLines;
+       close CNTR_CNT;
+
+       $r_rncTotals->{$rncField} = $totalCounters;
+    }
+
+
+    return $r_rncTotals;
+}
+
+sub getPreDef
+{
+    my ($rnc,$neMimVer) = @_;
+
+    my $r_cntrlist = {};
+
+    my ($letter,$major,$minor) = $neMimVer =~ /^v([A-Z])\.(\d+)\.(\d+)$/;
+    my $fileName = sprintf "%s/%s.%s.%s", $PREDEF_DIR, $letter,$major,$minor;
+
+    if ( $DEBUG > 4 ) { print "getPreDef: looking for fileName=$fileName for rnc=$rnc neMimVer=$neMimVer\n"; }
+
+    if ( open CNTR_LIST, $fileName )
+    {
+       while ( my $line = <CNTR_LIST> )
+       {
+           if ( $line !~ /^\#/ && $line !~ /^SubNetwork=/ )
+           {
+              chop $line;
+              my @cntrs = split / /, $line;
+              my $moType = shift @cntrs;
+
+              my $numCntrs = $#cntrs + 1;
+              if ( exists $r_cntrlist->{$moType} )
+              {
+                  if ( $DEBUG > 5 ) { print "getPreDef: add $numCntrs counters to moType=$moType\n"; }
+                  push @{$r_cntrlist->{$moType}}, @cntrs;
+              }
+              else
+              {
+                  if ( $DEBUG > 5 ) { print "getPreDef: found $numCntrs counters for moType=$moType\n"; }
+                  $r_cntrlist->{$moType} = \@cntrs;
+              }
+           }
+       }
+       close CNTR_LIST;
+    }
+    else
+    {
+       print "ERROR: could not find predef counters for mim version $neMimVer\n";
+    }
+
+    return $r_cntrlist;
+}
+
+sub addCounters
+{
+    my ( $r_CntrList, $r_activeCounters ) = @_;
+
+    if ( $DEBUG > 8 ) { print Dumper("addCounters: r_CntrList", $r_CntrList); }
+
+    foreach my $moType ( keys %{$r_CntrList} )
+    {
+       if ( $DEBUG > 9 ) { print "addCounters: #numCntr for $moType=", ($#{$r_CntrList->{$moType}} + 1), "\n"; }
+
+       foreach my $cntr ( @{$r_CntrList->{$moType}} )
+       {
+           if ( $DEBUG > 9 ) { print "addCounters: adding $moType.$cntr\n"; }
+           $r_activeCounters->{$moType}->{$cntr}++;
+       }
+    }
+}
+
+sub getMoCount
+{
+    my ($rnc,$moType,$r_mocount) = @_;
+
+    my $numMo = 0;
+    if ( exists $r_mocount->{$rnc}->{$moType} )
+    {
+       $numMo = $r_mocount->{$rnc}->{$moType};
+    }
+    else
+    {
+       if ( $DEBUG > 0 ) { print "getMoCount: no MO count found for $moType $rnc\n"; }
+    }
+
+    return $numMo;
+}
+
+
+sub readMeList
+{
+    my ($meListFile,$r_mimVer) = @_;
+
+    open ME_LIST, $meListFile or die "Cannot open $meListFile";
+    while ( my $line = <ME_LIST> )
+    {
+       my @fields = split /@/, $line;
+       $r_mimVer->{$fields[0]} = $fields[2];
+    }
+    close ME_LIST;
+
+    if ( $DEBUG > 9 ) { print Dumper("readMeList: r_mimVer", $r_mimVer); }
+}
+
+sub getStatsByNodeType
+{
+    my ( $r_activeScannerList, $numRops, $r_calNotCollected, $r_statsByNodeType, $r_nodeMap ) = @_;
+
+    my %processedNodes = ();
+    foreach my $scannerId ( keys %{$r_activeScannerList} )
+    {
+       my ($meConFdn) = $scannerId =~ /(.*)_\d?$/;
+
+       if ( ! exists $processedNodes{$meConFdn} )
+       {
+        my $nodeType = getNodeType($meConFdn,$r_nodeMap);
+           my $node = getShortNode($meConFdn);
+
+        if ( $DEBUG > 2 ) { print "getStatsByNodeType: meConFdn=$meConFdn nodeType=$nodeType node=$node missing=$r_calNotCollected->{$node}\n"; }
+
+           $r_statsByNodeType->{$nodeType}->{'shouldCollected'} += $numRops;
+           $r_statsByNodeType->{$nodeType}->{'notCollected'} += $r_calNotCollected->{$node};
+
+           $processedNodes{$meConFdn} = 1;
+       }
+       else
+       {
+           if ( $DEBUG > 1 ) { print "getStatsByNodeType: Already processed meConFdn=$meConFdn\n"; }
+       }
+    }
+
+    if ( $DEBUG > 1 ) { print Dumper("getStatsByNodeType: statsByNodeType",$r_statsByNodeType); }
+}
+
+sub storeIncr {
+    my ( $incrFile, $r_ropData, $r_toBeCollected, $r_totals,
+        $r_reportedNotCollected, $r_collectedOutSide,
+        $ropIndex,$lastTime,
+        $fileSize ) = @_;
+
+    my %incrData = (
+       'ropData'      =>  $r_ropData,
+       'toBeCollected' => $r_toBeCollected,
+       'totals'        => $r_totals,
+       'reportedNotCollected' => $r_reportedNotCollected,
+       'collectedOutSide' => $r_collectedOutSide,
+       'fileSize'       => $fileSize,
+       'ropIndex'       => $ropIndex,
+       'lastTime'       => $lastTime
+       );
+
+    my $defaultIndent = $Data::Dumper::Indent;
+    $Data::Dumper::Indent = 0;
+    my $incrDataStr = Dumper(\%incrData);
+    $Data::Dumper::Indent = $defaultIndent;
+
+    open INC, ">$incrFile";
+    print INC $incrDataStr;
+    close INC;
+}
+
+sub readIncr {
+    my ( $incrFile, $r_ropData, $r_toBeCollected, $r_totals,
+        $r_reportedNotCollected, $r_collectedOutSide,
+        $r_ropIndex,$r_lastTime,
+        $r_fileSize ) = @_;
+
+    my $dumperOutput;
+    do {
+       local $/ = undef;
+       open my $fh, "<", $incrFile
+           or die "could not open $incrFile: $!";
+       $dumperOutput = <$fh>;
+       close $fh;
+    };
+
+    if ( $DEBUG > 8 ) { print "readIncr: dumperOutput=$dumperOutput\n"; }
+
+    my $VAR1;
+    eval($dumperOutput);
+    if ( $DEBUG > 7 ) { print Dumper("readIncr: VAR", $VAR1); }
+
+    # ropData
+    for ( my $index = 0; $index <= $#{$VAR1->{'ropData'}}; $index++ ) {
+       $r_ropData->[$index] = $VAR1->{'ropData'}->[$index];
+    }
+
+    # toBeCollected
+    foreach my $start ( keys %{$VAR1->{'toBeCollected'}} ) {
+       $r_toBeCollected->{$start} = $VAR1->{'toBeCollected'}->{$start};
+    }
+
+    # totals
+    %{$r_totals} = %{$VAR1->{'totals'}};
+
+    # reportedNotCollected
+    %{$r_reportedNotCollected} = %{$VAR1->{'reportedNotCollected'}};
+
+    # collectedOutSide
+    %{$r_collectedOutSide} = %{$VAR1->{'collectedOutSide'}};
+
+    # fileSize
+    ${$r_fileSize} = $VAR1->{'fileSize'};
+
+    # ropIndex
+    ${$r_ropIndex} = $VAR1->{'ropIndex'};
+
+    # lastTime
+    ${$r_lastTime} = $VAR1->{'lastTime'};
+
+}
+
+
+#==========================================================
+#
+sub mapNeTypes {
+    #============================================
+    # Declare variables
+    my ($myMeList) = @_;
+    my ($line,$neName);
+    my (@lines,@vals);
+    my (%nodeTypes);
+
+    #============================================
+    # Parse melist file
+    open(FILE, "<$myMeList");
+    @lines=<FILE>;
+    close(FILE);
+
+    #============================================
+    # Iterate thru array and add values to hash
+    foreach $line (@lines) {
+        # Split line elements into array
+        @vals=split(/@/,$line);
+
+        # Extract values for hash
+        ($neName) = $vals[0] =~ /MeContext=(.*)$/;
+
+        # Write values to hash
+        $nodeTypes{$vals[0]}=$neTypeMap{$vals[3]};
+    }
+
+    if($DEBUG > 8) { print Dumper("nodeTypes: ", %nodeTypes); }
+
+    # Return hash
+    return %nodeTypes;
+}
+
+# Map node type
+sub getMapNodeType {
+    my ($nodeMapType,$r_myNodeTypes) = @_;
+
+    if(length($r_myNodeTypes->{$nodeMapType}) == 0) { return "UNDEF"; }
+    else { return $r_myNodeTypes->{$nodeMapType}; }
+}
+
+

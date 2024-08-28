@@ -1,0 +1,45 @@
+{
+    "desc": "Test sample from old node_exporter where the instance has the host ip address",
+    "ts": {
+        "Labels": {
+            "__name__": "node_cpu_seconds_total",
+            "cpu": "0",
+            "endpoint": "metrics",
+            "instance": "10.0.10.104:9690",
+            "job": "nodeexporter",
+            "kubernetes_pod_node_name": "pool1-n116-vpod1-pool1-n5",
+            "mode": "idle",
+            "namespace": "enm116",
+            "node_ip_address": "10.0.10.104",
+            "pod": "eric-pm-node-exporter-6w4dv",
+            "service": "eric-pm-node-exporter"
+        },
+        "Values": [
+            1
+        ],
+        "Timestamps": [
+            10
+        ]
+    },
+    "instance_map": {
+        "pool1-n116-vpod1-pool1-n5": {}
+    },
+    "expected": {
+        "pool1-n116-vpod1-pool1-n5": {
+            "metrics": {
+                "node_exporter": {
+                    "cpu:0": {
+                        "idle": {
+                            "timestamps": [
+                                10
+                            ],
+                            "values": [
+                                1
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

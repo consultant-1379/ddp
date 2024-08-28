@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_sync_status_changes">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="mssnmpcm"/>
+  </services>
+
+  <events>
+    <!--2021-10-20T04:36:54.092+01:00@svc-9-mssnmpcm@JBOSS@[com.ericsson.oss.itpf.EVENT_DATA_LOGGER] SNMP.CMSYNC_STATE_CHANGE_LOG {"reason":"SW sync started","networkElement":"CORE23MLTN001","_Thread":"Thread-28 (HornetQ-client-global-threads-792284628)","syncStatus":"PENDING"}-->
+    <event name="SNMP.CMSYNC_STATE_CHANGE_LOG">
+      <metric source="host" target="serverid"/>
+      <metric source="syncStatus" target="syncStatus"/>
+      <metric source="networkElement" target="neid" filtervalue="^[^=,]+$"/>
+      <metric source="reason" target="reason"/>
+    </event>
+  </events>
+</modelledevents>

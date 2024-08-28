@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="MB"
+>
+  <title value="Database Sizes"/>
+  <queries>
+    <query timecol="date" multiseries="enm_postgres_names.name">
+      <dbtables main="enm_postgres_dbsize">
+        <reference table="sites" condition="enm_postgres_dbsize.siteid = sites.id"/>
+        <reference table="enm_postgres_names" condition="enm_postgres_dbsize.dbid  = enm_postgres_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where> sites.name = '%s' </where>
+      <column db="enm_postgres_dbsize.sizemb" label="Database Sizes"/>
+    </query>
+  </queries>
+  <size width="800" height="400"/>
+</modelledgraph>

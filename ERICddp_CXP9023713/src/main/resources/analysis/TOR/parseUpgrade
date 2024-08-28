@@ -1,0 +1,1213 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use File::Basename;
+use StatsDB;
+use StatsTime;
+use JSON;
+use Storable qw(dclone);
+
+our $DEBUG = 0;
+
+sub parseHistory($) {
+    my ($log) = @_;
+
+    my @events = ();
+    open INPUT, $log or die "Cannot open $log";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+           print "parseHistory: $. line=$line";
+      }
+
+        my $r_event = undef;
+        if ( $line =~ /ISO Version: ([\d\.]+).* on (\d{2,2})\/(\d{2,2})\/(\d{4,4}) at (\S+)/ ) {
+            my ($isoVer,$day,$month,$year,$time) = ($1,$2,$3,$4,$5);
+            my $r_event = { 'time' => sprintf("%04d-%02d-%02d %s",$year,$month,$day,$time),
+                                'ver' => $isoVer };
+         if ( $DEBUG > 4 ) {
+            print Dumper("parseHistory: r_event",$r_event);
+       }
+            push @events, $r_event;
+        }
+    }
+
+    if ( $DEBUG > 3 ) {
+        print Dumper("parseHistory: events",\@events);
+    }
+
+    return \@events;
+}
+
+sub findFrom($$) {
+    my ($r_historyEvents,$time) = @_;
+
+    if ( $DEBUG > 3 ) {
+        print "findFrom: time=$time\n";
+   }
+
+    for ( my $index = 0; $index <= $#{$r_historyEvents} ; $index++ ) {
+        if ( $DEBUG > 3 ) {
+            print "findFrom: history time=" . $r_historyEvents->[$index]->{'time'} . ", ver=" . $r_historyEvents->[$index]->{'ver'} . "\n";
+        }
+        # If this event is before $time
+        if ( parseTime($time,$StatsTime::TIME_SQL) > parseTime($r_historyEvents->[$index]->{'time'},$StatsTime::TIME_SQL) ) {
+            # And if there's another event
+            if ( $index < $#{$r_historyEvents} ) {
+                # Verify that it's after $time
+                if ( parseTime($time,$StatsTime::TIME_SQL) < parseTime($r_historyEvents->[$index+1]->{'time'},$StatsTime::TIME_SQL) ) {
+                    return $r_historyEvents->[$index]->{'ver'};
+                }
+            } else {
+                # No more events so just using this one
+                return $r_historyEvents->[$index]->{'ver'};
+            }
+        }
+    }
+
+    return undef;
+}
+
+sub getEnmInstLogMsg() {
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "getEnmInstLogMsg: line=$line";
+        }
+        my ($date,$time,$msg) = $line =~ /^(\S+)\s+(\S+)\s+(.*)/;
+        if ( $DEBUG > 8 ) {
+            print "getEnmInstLogMsg: time=$time msg=$msg\n";
+        }
+        if ( $msg !~ /^DEBUG/ ) {
+            return ("$date $time",$msg);
+        }
+    }
+    return;
+}
+sub parseLog($$$) {
+    my ($log,$r_history,$hasLitpMetrics) = @_;
+
+    my @events = ();
+
+    open INPUT, $log or die "Cannot open $log";
+
+    my $planExecuting = 0;
+    my $foundUpgradeStart = 0;
+    my $hcUnexpectedEnd=0;
+    my $snapUnexpectedEnd=0;
+    my $planUnexpectedEnd = 0;
+    my $verifyXmlUnexpectedEnd=0;
+    my $monitorImportTimedOut=0;
+
+    my $currentItem = undef;
+    my $taskState = undef;
+    my $currentCluster = undef;
+
+    my $activeActivity = "";
+
+    my $beforeKernalReboot = 0;
+    my $preInfraHC = 1;
+
+    my @planLines = ();
+
+    my $r_releaseInfo = {};
+    my $infraUpgrade = "No";
+
+    while ( my ($timestamp,$msg) = getEnmInstLogMsg() ) {
+        if($timestamp =~ /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\.\d/)
+        {
+            $timestamp=$1." ".$2;
+        }
+        my $r_event = undef;
+
+        if ( $planExecuting == 0 ) {
+            if ( $msg =~ /^INFO\s+infrastructure_changes\s+:\s+Update infrastructure is required/ ) {
+                $beforeKernalReboot = 1;
+                $infraUpgrade = "Yes";
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Update Infrastructure$/ ) {
+                $preInfraHC = 0;
+            } elsif ( $msg =~ /^INFO\s+_handle_exec_process\s+:\s+Shutting down the system\. Please continue the upgrade after restart/ || $msg =~ /^INFO\s+handle_reboot\s+:\s+Please shutdown the system manually\. Please continue the upgrade after restart to propagate the updates to peer nodes/ ) {
+                $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'KERNEL_REBOOT',
+                        'state' => 'START'
+                };
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Process Upgrade options$/ && $beforeKernalReboot == 0 ) {
+                $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'KERNEL_REBOOT',
+                        'state' => 'END'
+                };
+            } elsif ( $msg =~ /^(- )|(.\/)upgrade_enm.sh\s+/ ) {
+                $foundUpgradeStart = 1;
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'START'
+                };
+                if ( $msg =~ /-e\s+(\S+)/ || $msg =~ /--enm_iso\s+(\S+)/ ) {
+                    my $enmIsoFile = basename($1);
+                    my $enmVer = $enmIsoFile;
+                    if ( $enmIsoFile =~ /^ERICenm_CXP9027091-(\S+)\.iso$/ ) {
+                        $enmVer = $1;
+                    }
+                    $r_event->{'enm_iso'} = $enmVer;
+                }
+
+                if ( $msg =~ /--litp_iso\s+(\S+)/ ) {
+                    $r_event->{'litp_iso'} = basename($1);
+                    if ( $r_event->{'litp_iso'} =~ /.*(\d+\.\d+\.\d+).*/ ) {
+                        $r_event->{'litp_iso'} = $1;
+                    }
+                }
+
+                my $from = findFrom($r_history,$timestamp);
+                if ( defined $from ) {
+                    $r_event->{'from_ver'} = $from;
+                }
+                $r_event->{'infra_upgrade'} = $infraUpgrade;
+                $r_releaseInfo = {};
+            } elsif ( $msg =~ /^INFO\s+display_release_info\s+:\s+(\S+) \b(Release|Version)\b info\s+ : (.*)/ && $beforeKernalReboot == 0 ) {
+                $r_releaseInfo->{$1} = $3;
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Executing Healthchecks/ ) {
+                if ( $preInfraHC == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'ENM_UPGRADE_HEALTH_CHECKS',
+                        'state' => 'START'
+                    };
+                } elsif ( $preInfraHC == 1  ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'PRE_INFRASTRUCTURE_HEALTH_CHECKS',
+                        'state' => 'START'
+                    };
+                }
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+ENM System Healthcheck errors!/ ) {
+                if ( $preInfraHC == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'ENM_UPGRADE_HEALTH_CHECKS',
+                        'state' => 'END',
+                        'completion_status' => 'FAILURE'
+                    };
+                } elsif ( $preInfraHC == 1  ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'PRE_INFRASTRUCTURE_HEALTH_CHECKS',
+                        'state' => 'END',
+                        'completion_status' => 'FAILURE'
+                    };
+                }
+                $hcUnexpectedEnd = 1;
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Successfully Completed ENM System Healthcheck/ ){
+                if ( $preInfraHC == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'ENM_UPGRADE_HEALTH_CHECKS',
+                        'state' => 'END'
+                    };
+                } elsif ( $preInfraHC == 1  ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'PRE_INFRASTRUCTURE_HEALTH_CHECKS',
+                        'state' => 'END'
+                    };
+                }
+            } elsif ( $msg =~ /^ERROR\s+verify_xml\s+:\s+Parameter %%host_system_identifer%% not substituted/ ){
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'BUILD_PARAM_FILE',
+                        'state' => 'END',
+                        'completion_status' => 'FAILURE'
+                };
+                $verifyXmlUnexpectedEnd = 1;
+            } elsif ( $msg =~ /^ERROR\s+monitor_import_progress\s+:\s+Timeout limit reached/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'MONITOR_IMPORT_PROGRESS',
+                        'state' => 'END',
+                        'completion_status' => 'FAILURE'
+                };
+                $monitorImportTimedOut = 1;
+            } elsif ( $msg =~ /^ERROR\s+execute_stages\s+:\s+System\s+upgrade\s+failed/ ) {
+                if ( $hcUnexpectedEnd==1 ){
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failure(ENM Health Check has failed with Errors)'
+                    };
+                   $hcUnexpectedEnd = 0;
+                   $foundUpgradeStart = 0;
+                } elsif ( $snapUnexpectedEnd==1 ) {
+                      $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failure(Unexpected Snapshots have been found)'
+                    };
+                   $snapUnexpectedEnd = 0;
+                   $foundUpgradeStart = 0;
+                } elsif ( $planUnexpectedEnd==1 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failure(Litp Plan has ended up unexpectedly)'
+                    };
+                    $planUnexpectedEnd = 0;
+                    $foundUpgradeStart = 0;
+                } elsif ( $verifyXmlUnexpectedEnd==1 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failure(Verify Xml has ended up unexpectedly)'
+                    };
+                    $verifyXmlUnexpectedEnd = 0;
+                    $foundUpgradeStart = 0;
+                } elsif ( $monitorImportTimedOut==1 ) {
+                     $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failure(Monitor Import Progress has timed out for LITP import_iso command)'
+                    };
+                    $monitorImportTimedOut = 0;
+                    $foundUpgradeStart = 0;
+                } else {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failed Upgrade with errors'
+                    };
+                }
+
+            } elsif ( $msg =~ /^INFO\s+execute_.*\s+:\s+System successfully upgraded/ ) {
+                push @events, {
+                    'time' => $timestamp,
+                    'stage' => 'UPGRADE_ENM',
+                    'state' => 'END',
+                    'completion_status' => 'SUCCESS',
+                    'release_info' => encode_json($r_releaseInfo)
+                };
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'POST_UPGRADE',
+                    'state' => 'END'
+                };
+                $foundUpgradeStart = 0;
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Create the snapshots/ ) {
+                push @events, {
+                    'time' => $timestamp,
+                        'stage' => 'PRE_UPGRADE_SNAPSHOTS',
+                        'state' => 'START'
+                };
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'CREATE_SNAP',
+                        'state' => 'START'
+                };
+            } elsif ( $msg =~ /INFO\s+manage_enminst_snapshots\s+:\s+ENM create_snapshot finished successfully$/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'PRE_UPGRADE_SNAPSHOTS',
+                    'state' => 'END'
+                };
+                $beforeKernalReboot = 0;
+            } elsif ( $msg =~ /^INFO\s+manage_enminst_snapshots\s+:\s+ENM validate_snapshot finished successfully/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'CREATE_SNAP',
+                        'state' => 'END',
+                        'completion_status' => 'SUCCESS'
+                };
+            } elsif ( $msg =~ /^ERROR\s+prepare_snapshot\s+:\s+Stop execution - unexpected snapshots have been found/ ) {
+                 $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'CREATE_SNAP',
+                        'state' => 'END',
+                        'completion_status' => 'FAILURE'
+                };
+                $snapUnexpectedEnd = 1;
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Upgrade LITP/ && $beforeKernalReboot == 0 ) {
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'IMPORT_LITP_ISO',
+                        'state' => 'START'
+                };
+                $activeActivity = "import_litp_iso";
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Import ENM ISO/ && $beforeKernalReboot == 0 ) {
+                if ( $activeActivity eq "import_litp_iso" ) {
+                    $activeActivity = "";
+                    push @events, {
+                        'time' => $timestamp,
+                            'stage' => 'IMPORT_LITP_ISO',
+                            'state' => 'END'
+                    };
+                }
+
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'IMPORT_ENM_ISO',
+                        'state' => 'START'
+                };
+                $activeActivity = "import_enm_iso";
+            } elsif ( $activeActivity eq "import_enm_iso" &&
+                      ($msg =~ /^INFO\s+update_enminst_working\s+:\s+Getting UUID of root disk/ ||
+                       $msg =~ /^INFO\s+info\s+:\s+Checking images repository ENM/) && $beforeKernalReboot == 0 ) {
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'IMPORT_ENM_ISO',
+                        'state' => 'END'
+                };
+                $activeActivity = "";
+            } elsif ( $msg =~ /^INFO\s+create_plan\s+:\s+Creating LITP plan: plan/ ) {
+                if ( $beforeKernalReboot == 1 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'INFRASTRUCTURE_CREATE_PLAN',
+                        'state' => 'START'
+                    };
+                } elsif ( $beforeKernalReboot == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'CREATE_PLAN',
+                        'state' => 'START'
+                    };
+                }
+            } elsif ( $msg =~ /^INFO\s+exec_time\s+:\s+Completed Plan Creation/ ) {
+                if ( $beforeKernalReboot == 1 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'INFRASTRUCTURE_CREATE_PLAN',
+                        'state' => 'END'
+                    };
+                } elsif ( $beforeKernalReboot == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'CREATE_PLAN',
+                        'state' => 'END'
+                    };
+                }
+                # Skip "Plan Creation took" line
+                <INPUT>;
+
+                $r_event->{'planphases'} = readAndExtractPlanPhases();
+            } elsif ( $msg =~ /^INFO\s+monitorinfo\s+:\s+Current running tasks/ ) {
+                if ( $beforeKernalReboot == 1 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'INFRASTRUCTURE_RUN_PLAN',
+                        'state' => 'START'
+                    };
+                } elsif ( $beforeKernalReboot == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'RUN_PLAN',
+                        'state' => 'START'
+                    };
+                }
+                $activeActivity = "";
+                $planExecuting = 1;
+            } elsif ( $msg =~ /^INFO\s+monitorinfo\s+:\s+Task:\s+[^\>]+\>(\S+)/ ) {
+                # Looks like we started parsing in the middle of an upgrade
+                $taskState = $1;
+                if ( $taskState eq 'Running' ) {
+                    $taskState = 'START';
+                } elsif ( $taskState eq 'Success' ) {
+                    $taskState = 'END';
+                }
+
+                $planExecuting = 1;
+
+                if ( $DEBUG > 6 ) {
+                    print "parseLog: Detected running upgrade task state = $taskState\n";
+                }
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Apply OS Patches$/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'RHEL_OS_PATCHES',
+                    'state' => 'START'
+                };
+            } elsif ( $msg=~ /^INFO\s+_handle_exec_process\s+:\s+Query kernel packages$/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'RHEL_OS_PATCHES',
+                    'state' => 'END'
+                };
+            } elsif ( $msg =~ /^INFO\s*log_header\s*:\s*Load XML Plan$/ && $beforeKernalReboot == 0 ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'LOAD_DD_XML',
+                    'state' => 'START'
+                };
+            } elsif ( $msg =~ /^INFO\s+load_xml\s+:\s+Load XML Plan completed successfully$/ && $beforeKernalReboot == 0 ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'LOAD_DD_XML',
+                    'state' => 'END'
+                };
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Remove items from the runtime model$/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'REMOVE_MODELS',
+                    'state' => 'START'
+                };
+            } elsif ( $msg =~ /^INFO\s+remove_items_from_model\s+:\s+Runtime model update finished$/ ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'REMOVE_MODELS',
+                    'state' => 'END'
+                };
+            } elsif ( $msg =~ /^INFO\s+log_header\s+:\s+Post upgrade$/ && $beforeKernalReboot == 0 ) {
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => 'POST_UPGRADE',
+                    'state' => 'START'
+                };
+            }
+        } else { # Plan is executing
+            # We now looking for the plan execution to end
+            # In all cases we expect that when a plan execution ends we get a
+            # RUN_PLAN END
+            # SHOW_PLAN BEGIN
+            #  <Plan Content>
+            # SHOW_PLAN END
+            if ( $msg =~ /^INFO\s+monitorinfo\s+:\s+RUN_PLAN END/ ) {
+                if ( $beforeKernalReboot == 1 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'INFRASTRUCTURE_RUN_PLAN',
+                        'state' => 'END'
+                    };
+                } elsif ( $beforeKernalReboot == 0 ) {
+                    $r_event = {
+                        'time' => $timestamp,
+                        'stage' => 'RUN_PLAN',
+                        'state' => 'END'
+                    };
+                }
+                $planExecuting = 0;
+
+                $r_event->{'planphases'} = readAndExtractPlanPhases();
+
+                # If the plan executed successfully then the SHOW_PLAN END should be followed by a
+                # "Plan completed successfully"
+                my ($planTs,$planMsg) = getEnmInstLogMsg();
+                if ( $planMsg =~ /^INFO\s+monitorinfo\s+:\s+Plan completed successfully/ ) {
+                    $planUnexpectedEnd = 0;
+                } else {
+                    $planUnexpectedEnd = 1;
+                }
+            } elsif ( $msg =~ /^ERROR\s+deploy\s+:\s+An error occurred running ENM Deployment/ ) {
+                # Complete failure
+                $r_event = {
+                    'time' => $timestamp,
+                        'stage' => 'UPGRADE_ENM',
+                        'state' => 'END',
+                        'completion_status' => 'Failure(enminst has failed unexpectedly)'
+                };
+                $planExecuting = 0;
+                $foundUpgradeStart = 0;
+                $beforeKernalReboot = 0;
+            }
+        }
+
+        if ( defined $r_event ) {
+            if ( $DEBUG > 5 ) {
+                print Dumper("parseLog: r_event", $r_event);
+            }
+            push @events, $r_event;
+        }
+    }
+
+    close INPUT;
+    if ( $DEBUG > 3 ) { print Dumper("parseLog: events", \@events); }
+    return \@events;
+}
+
+sub parseRH6toRH7Log($$$) {
+    my ($log,$r_history,$hasLitpMetrics) = @_;
+    my @events = ();
+
+    if ( $log =~ /gz$/ ) {
+        open INPUT, "<:gzip", "$log" or die "Cannot open $log: $!";
+    } else {
+        open INPUT, $log or die "Cannot open $log";
+    }
+    my $foundUpgradeStart = 0;
+    my $activeActivity = "";
+
+    my @planLines = ();
+
+    my $r_releaseInfo = {};
+    my $infraUpgrade = "No";
+
+    while ( my ($timestamp,$msg) = getEnmInstLogMsg() ) {
+        if($timestamp =~ /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\.\d/)
+        {
+            $timestamp=$1." ".$2;
+        }
+        my $r_event = undef;
+        my $stage = undef;
+        my $stageid = undef;
+
+        if ( $msg =~ /^INFO\s+execute_ddp_log\s+:\s+Upgrade has been started/) {
+            $foundUpgradeStart = 1;
+            $r_event = {
+                'time' => $timestamp,
+                'stage' => 'UPGRADE_ENM',
+                'state' => 'START'
+            };
+            my $from = findFrom($r_history,$timestamp);
+            if ( defined $from ) {
+                $r_event->{'from_ver'} = $from;
+            }
+        } elsif ( $msg =~ /^INFO\s+_print_message\s+:\s+.*Commencing stage\s+(\d+)\s+(\S+)\s+at.*$/ ) {
+                $stageid=$1;
+                $stage=uc($2);
+                $stage=~s/-/_/g;
+                if ( $stage =~ /UPGRADE_PRECHECKS_AND_HEALTH_CHECKS/ ) {
+                    $stage=$stageid . "_" . $stage;
+                }
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => $stage,
+                    'state' => 'START'
+                };
+        } elsif ( $msg =~ /^INFO\s+_print_success\s+:\s+.*\s+PASSED:\s+Finished stage\s+(\d+)\s+(\S+)\s+at.*$/ ) {
+                $stageid=$1;
+                $stage=uc($2);
+                $stage=~s/-/_/g;
+                if ( $stage =~ /UPGRADE_PRECHECKS_AND_HEALTH_CHECKS/ ) {
+                    $stage=$stageid . "_" . $stage;
+                }
+                $r_event = {
+                    'time' => $timestamp,
+                    'stage' => $stage,
+                    'state' => 'END'
+                };
+        } elsif ( $msg =~ /^INFO\s+execute_.*\s+:\s+System successfully upgraded/ ) {
+            push @events, {
+                'time' => $timestamp,
+                'stage' => 'UPGRADE_ENM',
+                'state' => 'END',
+                'completion_status' => 'SUCCESS'
+            };
+            $r_event = {
+                'time' => $timestamp,
+                'stage' => 'POST_UPGRADE',
+                'state' => 'END'
+            };
+            $foundUpgradeStart = 0;
+        }
+
+        if ( defined $r_event ) {
+             if ( $DEBUG > 5 ) {
+                 print Dumper("parseLog: r_event", $r_event);
+            }
+             push @events, $r_event;
+        }
+     }
+
+     close INPUT;
+     if ( $DEBUG > 3 ) { print Dumper("parseLog: events", \@events); }
+     return \@events;
+}
+
+sub storeEvents($$) {
+    my ($site,$r_events) = @_;
+
+    my %stageNamesHash = ();
+    foreach my $r_event ( @{$r_events} ) {
+        $stageNamesHash{$r_event->{'stage'}} = 1;
+    }
+    my @stageNames = keys %stageNamesHash;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $r_stageNameIdMap = getIdMap($dbh, "enm_upgrade_stage_names", "id", "name", \@stageNames );
+
+    dbDo($dbh,sprintf("DELETE FROM enm_upgrade_events WHERE siteid = %d AND time BETWEEN '%s' AND '%s'",
+                      $siteId, $r_events->[0]->{'time'}, $r_events->[$#{$r_events}]->{'time'}))
+        or die "Failed to remove old data";
+
+    # sequenceNumber is so we can preserve the order of events that have the same timestamp
+    my $sequenceNumber = 0;
+    my $lastTime = "";
+    foreach my $r_event ( @{$r_events} ) {
+        my @addInfoParts = ();
+
+        foreach my $extraField ( 'litp_iso', 'enm_iso', 'cluster', 'node', 'from_ver', 'completion_status', 'release_info', 'infra_upgrade' ) {
+            if ( exists $r_event->{$extraField} ) {
+                push @addInfoParts, "$extraField=" . $r_event->{$extraField};
+            }
+        }
+        my $addInfoStr = "NULL";
+        if ( $#addInfoParts > -1 ) {
+            $addInfoStr = "'" . join(";",@addInfoParts) . "'";
+        }
+
+        if ( $r_event->{'time'} ne $lastTime ) {
+            $sequenceNumber = 0;
+        } else {
+            $sequenceNumber++;
+        }
+        $lastTime = $r_event->{'time'};
+
+        dbDo($dbh, sprintf("INSERT INTO enm_upgrade_events (siteid,time,seqno,stageid,state,additionalInfo) VALUES (%d,'%s',%d,%d,'%s',%s)",
+                           $siteId, $r_event->{'time'}, $sequenceNumber, $r_stageNameIdMap->{$r_event->{'stage'}}, $r_event->{'state'}, $addInfoStr))
+            or die "Failed to insert";
+    }
+
+    $dbh->disconnect();
+}
+
+#
+# In order to use the LITP metrics.log, we need to know what
+# each phase is doing and this info isn't in the metrics.log
+# So we need to get the plan from the enminst.log and extract
+# the phases/tasks
+#
+# Returns an hash of hashes where the key is the phase number and
+# the value is an array of hashes, each containing a task, e.g.
+#
+# '206' => [
+#   {
+#     'info' => 'Remove Item',
+#     'item' => '/software/services/flsserv/vm_aliases/svc-1-apserv_alias'
+#   },
+#   {
+#     'info' => 'Remove Item',
+#     'item' => '/deployments/enm/clusters/svc_cluster/services/fmalarmprocessing/applications/vm-service_fmalarmprocessing/vm_aliases/svc-6-msnetlog_alias'
+#   },
+# All show plans should now start with a "SHOW_PLAN BEGIN" and end with a "SHOW_PLAN END"
+sub readAndExtractPlanPhases() {
+
+    # Spin here until we get a SHOW_PLAN BEGIN
+    my $inPrintPlan = 0;
+    while ( $inPrintPlan == 0 ) {
+        my ($planTs,$planMsg) = getEnmInstLogMsg();
+        if ( defined $planTs ) {
+            if ( $planMsg =~ /SHOW_PLAN BEGIN/ ) {
+                $inPrintPlan = 1;
+            }
+        } else {
+            # We got to the end of the file without finding a SHOW_PLAN BEGIN
+            print "WARN: No SHOW_PLAN BEGIN found\n";
+            return {};
+        }
+    }
+
+    # Now keep reading until we get a SHOW_PLAN END
+    my $r_planLines = [];
+    while ( $inPrintPlan == 1 ) {
+        my ($planTs,$planMsg) = getEnmInstLogMsg();
+        if ( $planMsg =~ /^INFO\s+monitorinfo\s+: (.*)/ ) {
+            my $planLine = $1;
+            if ( $planLine =~ /SHOW_PLAN END/ ) {
+                $inPrintPlan = 0;
+            } else {
+                push @{$r_planLines}, $planLine;
+            }
+        } else {
+            $inPrintPlan = 0;
+        }
+    }
+
+    my %planPhases = ();
+    my $currentPhase = undef;
+    my $index = 0;
+    while ( $index <= $#{$r_planLines} ) {
+        if ( $DEBUG > 8 ) {
+            print "extractPlanPhases: index=$index line=$r_planLines->[$index]\n";
+        }
+        if ( $r_planLines->[$index] =~ /^Phase (\d+) tasks:/ ) {
+            $currentPhase = $1;
+            $planPhases{$currentPhase} = [];
+        } elsif ( $r_planLines->[$index] =~ /^\s+Task/ ) {
+            $index++;
+            my ($item) = $r_planLines->[$index] =~ /\s+Item: (\S+)/;
+            $index++;
+            # Info can span multiple lines
+            my ($info) = $r_planLines->[$index] =~ /\s+Info: (.+)/;
+            while ( $r_planLines->[$index+1] =~ /^          (.+)/ ) {
+                $info = $info . " " . $1;
+                $index++;
+            }
+            my $r_taskInfo = { 'item' => $item, 'info' => $info };
+            if ( $DEBUG > 7 ) {
+                print Dumper("extractPlanPhases: taskInfo", $r_taskInfo);
+            }
+
+
+            if ( ! defined $currentPhase ) {
+                # Assume we missing the first line of the plan
+                # so we're on phase 1
+                $currentPhase = 1;
+            }
+            push @{$planPhases{$currentPhase}}, $r_taskInfo;
+        }
+        $index++;
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("extractPlanPhases: planPhases", \%planPhases);
+    }
+    return \%planPhases;
+}
+
+#
+# return array of hash, one for each phase executed
+# hash contains the following
+#
+#  {
+#   'time' => 1484658766,
+#   'phase' => 1,
+#   'SuccessfulTasks' => '22',
+#   'ConfigTasks' => '22',
+#   'duration' => 240,
+#   'StoppedTasks' => '0',
+#   'FailedTasks' => '0'
+# }
+sub parseLitpMetrics($) {
+    my ($litpMetricsFile) = @_;
+
+    my $currentPhase = 0;
+    my @litpPhaseInfo = ();
+
+    # A phases is active from the first time we see in the log until
+    # we see the TimeTaken log entry
+    my %activePhases = ();
+    open INPUT, $litpMetricsFile or die "Could not open $litpMetricsFile";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) { print "parseLitpMetrics: line=$line"; }
+        my ($date,$time,$msg) = $line =~ /^([\d-]+) ([\d:]+)\.\d+,(.*)/;
+        $msg =~ s/\[//g;
+        my @msgParts = split("]",$msg);
+        if ( $DEBUG > 8 ) { print "parseLitpMetrics: $time " . join(" ",@msgParts) . "\n"; }
+
+        if ( $#msgParts >= 4 ) {
+            if ( $msgParts[1] eq 'PLAN' && $msgParts[2] eq 'Run' ) {
+                if ( $msgParts[3] =~ /Phase(\d+)/ ) {
+                    my $phaseNumber = $1;
+                    my $r_phaseInfo = $activePhases{$phaseNumber};
+                    if ( ! defined $r_phaseInfo ) {
+                        $r_phaseInfo = { 'phase' => $phaseNumber };
+                        $activePhases{$phaseNumber} = $r_phaseInfo;
+                        push @litpPhaseInfo, $r_phaseInfo;
+                    }
+
+                    if ( $msgParts[4] =~ /\.NoOf(\S+)=(\d+)/ ) {
+                        $r_phaseInfo->{$1} = $2;
+                    } elsif ( $msgParts[4] =~ /\.TimeTaken=([\d\.]+)/ ) {
+                        # Time of the phase should be the time it completed so set the value here
+                        $r_phaseInfo->{'time'} = parseTime("$date $time", $StatsTime::TIME_SQL);
+                        $r_phaseInfo->{'duration'} = int($1+0.5);
+                        delete $activePhases{$phaseNumber};
+                    }
+                } elsif ( $msgParts[3] =~ /^\.Status/ ) {
+                    # Plan is finished so delete any activePhases
+                    foreach my $phaseNumber ( keys %activePhases ) {
+                        print "WARN: Plan completed buy Phase $phaseNumber is still active\n";
+                        delete $activePhases{$phaseNumber};
+                    }
+                }
+            }
+        }
+    }
+    close INPUT;
+
+    # Remove any incomplete phases (to be complete a phase must have time and duration)
+    my @results = ();
+    foreach my $r_phaseInfo ( @litpPhaseInfo ) {
+        if ( exists $r_phaseInfo->{'time'} && exists $r_phaseInfo->{'duration'} ) {
+            push @results, $r_phaseInfo;
+        } else {
+            print "WARN: Discarding incomplete phase " . $r_phaseInfo->{'phase'} . "\n";
+        }
+    }
+
+    if ( $DEBUG > 5 ) {
+        print Dumper("parseLitpMetrics: results", \@results);
+    }
+    return \@results;
+}
+
+#
+# Return an array of the phases executed between the from and to times. If to is undef
+# then all phases executed >= from will be returned
+# hash key is the phase number, hash value is a hash with the structure described by
+# parseLitpMetrics
+#
+sub getPlanPhaseInfo($$$) {
+    my ($r_litpPhaseInfo,$from,$to) = @_;
+
+    if ( $DEBUG > 5 ) {
+        print "getPlanPhaseInfo: from=" . (defined $from ? $from : "undef") . ", to=", (defined $to ? $to : "undef"), "\n";
+    }
+
+    my $index = 0;
+    if ( defined $from ) {
+        while ( $index <= $#{$r_litpPhaseInfo} && $r_litpPhaseInfo->[$index]->{'time'} < $from ) {
+            if ( $DEBUG > 6 ) {
+                print "getPlanPhaseInfo: looking for from : index=$index " . $r_litpPhaseInfo->[$index]->{'time'} . "\n";
+            }
+            $index++;
+        }
+    }
+
+    my @phaseInfos = ();
+    while ( $index <= $#{$r_litpPhaseInfo} && ((!defined $to) || $r_litpPhaseInfo->[$index]->{'time'} <= $to) ) {
+        if ( $DEBUG > 6 ) { print "getPlanPhaseInfo: looking for to : index=$index ", $r_litpPhaseInfo->[$index]->{'time'}, "\n"; }
+        push @phaseInfos, $r_litpPhaseInfo->[$index];
+        $index++;
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("getPlanPhaseInfo: phaseInfos", @phaseInfos); }
+    return \@phaseInfos;
+}
+
+#
+# Write a file containing the plan tasks executed
+#
+sub writePlanTasks($$$$$) {
+    my ($r_planPhases,$r_litpPhaseInfo,$from,$to,$outdir) = @_;
+
+    my $fileName = $outdir . "/PLAN_TASKS_";
+    if ( defined $from ) {
+        $fileName .= $from . "_";
+    } else {
+        $fileName .= "NA_";
+    }
+
+    if ( defined $to ) {
+        $fileName .= $to . ".json";
+    } else {
+        $fileName .= "NA.json";
+    }
+
+    my @phaseExec = ();
+    foreach my $r_litpPhaseInfo ( @{$r_litpPhaseInfo} ) {
+        my $phaseNumber = $r_litpPhaseInfo->{'phase'};
+        my $r_phaseTasks = $r_planPhases->{$phaseNumber};
+        if ( ! defined $r_phaseTasks  ) {
+            if ( $DEBUG > 0 ) { print "writePlanTasks: $phaseNumber not found in r_planPhases ", Dumper($r_litpPhaseInfo); }
+            next;
+        }
+        my $r_phaseExec = dclone($r_litpPhaseInfo);
+        $r_phaseExec->{'task_info'} = $r_phaseTasks;
+        $r_phaseExec->{'end_time'} = formatTime($r_phaseExec->{'time'}, $StatsTime::TIME_SQL);
+        $r_phaseExec->{'start_time'} = formatTime($r_phaseExec->{'time'} - $r_phaseExec->{'duration'}, $StatsTime::TIME_SQL);
+
+        push @phaseExec, $r_phaseExec;
+    }
+
+    open OUTPUT, ">$fileName" or die "Cannot open $fileName";
+    print OUTPUT encode_json(\@phaseExec);
+    close OUTPUT;
+}
+
+#
+# Build an array of UPGRADE_CLUSTER, LOCK_NODE, UNLOCK_NODE events from
+# the supplied array of litpPhaseInfo. We use the r_planPhases to figure
+# out what each phase is doing and the litpPhaseInfo to get the timing info
+# If havePlanStart is set, then we know we need to prepend a UPGRADE_CLUSTER START
+# If havePlanEnd is set, then we know we need to append a UPGRADE_CLUSTER END
+# event after the last UNLOCK_NODE END
+sub getPlanPhaseEvents($$$$) {
+    my ($r_planPhases,$r_litpPhaseInfo,$havePlanStart,$havePlanEnd) = @_;
+
+    # In we need to know the first and last node to be upgraded in a cluster
+    # in order to know when the cluster upgrade starts/stops
+    # Note: we can't assume it's in numerical order (e.g. DB cluster always starts with Versant)
+    my %nodeOrderByCluster = ();
+
+    # This has the phases for each cluster, we use it to track
+    # whether we "saw" the start/end of each cluster
+    my %phasesByCluster = ();
+
+    #
+    # We're only interested in the phases associated with the upgrade of the clusters
+    # So ignore all events until we see a cluster node being locked
+    #
+    my $foundFirstLock = 0;
+
+    foreach my $planPhaseNumber ( sort { $a <=> $b } keys %{$r_planPhases} ) {
+        my $r_firstTaskInPhase = $r_planPhases->{$planPhaseNumber}->[0];
+        if ( $DEBUG > 3 ) { print "getPlanPhaseEvents: foundFirstLock=$foundFirstLock planPhaseNumber=$planPhaseNumber first task $r_firstTaskInPhase->{'item'}  $r_firstTaskInPhase->{'info'}\n"; }
+
+        # Identify the nodes in a cluster
+        if ( $r_firstTaskInPhase->{'info'} =~ /^Lock VCS on node "\S+"/ ) {
+            $foundFirstLock = 1;
+            my ($cluster,$node) = $r_firstTaskInPhase->{'item'} =~ /^\/deployments\/enm\/clusters\/([^\/]+)\/nodes\/(\S+)/;
+            my $r_nodeOrder = $nodeOrderByCluster{$cluster};
+            if ( ! defined $r_nodeOrder ) {
+                $r_nodeOrder = [];
+                $nodeOrderByCluster{$cluster} = $r_nodeOrder;
+            }
+            push @{$r_nodeOrder}, $node;
+        } elsif ( ! $foundFirstLock ) {
+            next;
+        }
+
+        if ( $r_firstTaskInPhase->{'item'} =~ /^\/deployments\/enm\/clusters\/([^\/]+)/ ) {
+            my $cluster = $1;
+            my $r_phases = $phasesByCluster{$cluster};
+            # In some cases, there are phases for the cluster that aren't
+            # part of the cluster upgrade, generally this are post-install/upgrade
+            # tasks that occur at the end of the upgrade, e.g.
+            #  Item: /deployments/enm/clusters/db_cluster
+            #  Info: A callback task to execute the mdt post-install on
+            #        nodes
+            # So once we see the first phase we verify for all subsequent
+            # phase X, that we have phase X-1
+            my $isFirstPhase = 0;
+            if ( ! defined $r_phases ) {
+                $r_phases = {};
+                $phasesByCluster{$cluster} = $r_phases;
+                $isFirstPhase = 1;
+            }
+            my $includePhase = 1;
+            if ( ! $isFirstPhase ) {
+                if ( ! exists $r_phases->{$planPhaseNumber-1} ) {
+                    if ( $DEBUG > 0 ) { print Dumper("getPlanPhaseEvents: Skipping non-sequential phase $planPhaseNumber for $cluster", $r_phases); }
+                    $includePhase = 0;
+                }
+            }
+            if ( $includePhase ) {
+               $r_phases->{$planPhaseNumber} = undef;
+            }
+        }
+    }
+
+    if ( $DEBUG > 3 ) { print "getPlanPhaseEvents: nodeOrderByCluster ", Dumper(\%nodeOrderByCluster); }
+    if ( $DEBUG > 3 ) { print "getPlanPhaseEvents: phasesPerCluster ", Dumper(\%phasesByCluster); }
+
+    my %planEventsByCluster = ();
+
+    foreach my $r_litpPhaseInfo ( @{$r_litpPhaseInfo} ) {
+        my $phaseNumber = $r_litpPhaseInfo->{'phase'};
+        if ( ! exists $r_planPhases->{$phaseNumber} ) {
+            if ( $DEBUG > 0 ) { print "getPlanPhaseEvents: $phaseNumber not found in r_planPhases ", Dumper($r_litpPhaseInfo); }
+            next;
+        }
+
+        my $r_firstTaskInPhase = $r_planPhases->{$phaseNumber}->[0];
+        if ( $DEBUG > 6 ) { print Dumper("getPlanPhaseEvents: phaseNumber=$phaseNumber r_firstTaskInPhase", $r_firstTaskInPhase); }
+
+        if ( $r_firstTaskInPhase->{'info'} =~ /^(\S+) VCS on node "(\S+)"/ ) {
+            my ($action,$host) = ($1,$2);
+            my ($cluster,$node) = $r_firstTaskInPhase->{'item'} =~ /^\/deployments\/enm\/clusters\/([^\/]+)\/nodes\/(\S+)/;
+            if ( $DEBUG > 6 ) { print "getPlanPhaseEvents: action=$action host=$host cluster=$cluster node=$node\n"; }
+
+            my $endTime = formatTime($r_litpPhaseInfo->{'time'}, $StatsTime::TIME_SQL);
+            my $startTime = formatTime(  $r_litpPhaseInfo->{'time'} - $r_litpPhaseInfo->{'duration'},
+                                         $StatsTime::TIME_SQL);
+            my ($nodeIndex) = $node =~ /-(\d+)$/;
+
+            my $r_eventsForCluster = $planEventsByCluster{$cluster};
+            if ( ! defined $r_eventsForCluster ) {
+                $r_eventsForCluster = [];
+                $planEventsByCluster{$cluster} = $r_eventsForCluster;
+            }
+
+            push @{$r_eventsForCluster}, {
+                'time' => $startTime,
+                'timestamp' => $r_litpPhaseInfo->{'time'} - $r_litpPhaseInfo->{'duration'},
+                'stage' => uc($action) . "_NODE",
+                'state' => 'START',
+                'cluster' => $cluster,
+                'node' => $node,
+                'host' => $host
+            };
+
+            push @{$r_eventsForCluster}, {
+                'time' => $endTime,
+                'timestamp' => $r_litpPhaseInfo->{'time'},
+                'stage' => uc($action) . "_NODE",
+                'state' => 'END',
+                'cluster' => $cluster,
+                'node' => $node,
+                'host' => $host
+            };
+        }
+
+        if ( $r_firstTaskInPhase->{'item'} =~ /^\/deployments\/enm\/clusters\/([^\/]+)/ ) {
+            my $cluster = $1;
+            my $r_eventsForCluster = $planEventsByCluster{$cluster};
+            if ( ! defined $r_eventsForCluster ) {
+                $r_eventsForCluster = [];
+                $planEventsByCluster{$cluster} = $r_eventsForCluster;
+            }
+            if ( $DEBUG > 6 ) { print "getPlanPhaseEvents: checking phase $phaseNumber for cluster $cluster\n"; }
+            if ( exists $phasesByCluster{$cluster}->{$phaseNumber} ) {
+                $phasesByCluster{$cluster}->{$phaseNumber} = {
+                    'time' => $r_litpPhaseInfo->{'time'},
+                    'duration' => $r_litpPhaseInfo->{'duration'}
+                };
+            }
+        }
+    }
+
+    my @planEvents = ();
+    while ( my ($cluster,$r_eventsForCluster) = each %planEventsByCluster ) {
+        my $r_phasesExecuted = $phasesByCluster{$cluster};
+        if ( $DEBUG > 7 ) { print "getPlanPhaseEvents: cluster start-end $cluster r_phasesExecuted ", Dumper($r_phasesExecuted); }
+
+        my @phaseNumbers = sort { $a <=> $b } keys %{$r_phasesExecuted};
+        my $r_firstPhaseExecuted = $r_phasesExecuted->{$phaseNumbers[0]};
+        my $r_lastPhaseExecuted = $r_phasesExecuted->{$phaseNumbers[$#phaseNumbers]};
+        if ( $DEBUG > 6 ) {
+            printf "getPlanPhaseEvents: cluster start-end first %d=%s last %d=%s\n",
+               $phaseNumbers[0], Dumper($r_firstPhaseExecuted),
+               $phaseNumbers[$#phaseNumbers], Dumper($r_lastPhaseExecuted);
+        }
+
+        # If we have the first phase executed for the cluster pre-pend the
+        # UPGRADE_CLUSTER START event
+        if ( defined $r_firstPhaseExecuted ) {
+            my $phaseStartTime = $r_firstPhaseExecuted->{'time'} - $r_firstPhaseExecuted->{'duration'};
+            unshift @{$r_eventsForCluster}, {
+                'timestamp' => $phaseStartTime,
+                'time' => formatTime( $phaseStartTime, $StatsTime::TIME_SQL ),
+                'stage' => "UPGRADE_CLUSTER",
+                'state' => 'START',
+                'cluster' => $cluster
+            };
+        }
+
+        # If we have the last phase executed for the cluster append the
+        # UPGRADE_CLUSTER END event
+        if ( defined $r_lastPhaseExecuted ) {
+            my $phaseEndTime = $r_lastPhaseExecuted->{'time'};
+            push @{$r_eventsForCluster}, {
+                'timestamp' => $phaseEndTime,
+                'time' => formatTime( $phaseEndTime, $StatsTime::TIME_SQL ),
+                'stage' => "UPGRADE_CLUSTER",
+                'state' => 'END',
+                'cluster' => $cluster
+            };
+        }
+        if ( $DEBUG > 6 ) { print "getPlanPhaseEvents: cluster start/end r_eventsForCluster ", Dumper($r_eventsForCluster); }
+        push @planEvents, @{$r_eventsForCluster};
+    }
+
+    my @sortedEvents = sort { $a->{'timestamp'} <=> $b->{'timestamp'} } @planEvents;
+
+    if ( $DEBUG > 5 ) { print "getPlanPhaseEvents: sortedEvents ", Dumper(\@sortedEvents); }
+    return \@sortedEvents;
+}
+
+sub addEventsFromLitpMetrics($$$) {
+    my ($r_events,$litpMetricsFile,$outdir) = @_;
+
+    my $r_litpPlanPhases = parseLitpMetrics($litpMetricsFile);
+
+    # Now foreach plan executed, build the UPGRADE_CLUSTER/LOCK_NODE/UNLOCK_NODE events
+    # from the plan and LIPT metrics and insert them in the r_events list
+    my $eventIndex = 0;
+    while ( $eventIndex <= $#{$r_events} ) {
+        if ( $DEBUG > 6 ) {
+            print "addEventsFromLitpMetrics: eventIndex=$eventIndex stage=", $r_events->[$eventIndex]->{'stage'}, " state=", $r_events->[$eventIndex]->{'state'}, "\n";
+        }
+
+        if ( $r_events->[$eventIndex]->{'stage'} eq 'CREATE_PLAN' && $r_events->[$eventIndex]->{'state'} eq 'END' ) {
+            my $r_planPhases = $r_events->[$eventIndex]->{'planphases'};
+            $eventIndex++;
+
+            if ( $eventIndex <= $#{$r_events} ) {
+                my $startRunPlanEvent = $r_events->[$eventIndex];
+                if ( $DEBUG > 5 ) { print Dumper("addEventsFromLitpMetrics: startRunPlanEvent", $startRunPlanEvent); }
+                $eventIndex++;
+
+                if ( $startRunPlanEvent->{'stage'} eq 'RUN_PLAN' && $startRunPlanEvent->{'state'} eq 'START' ) {
+                    my $startRunPlanEventIndex = $eventIndex - 1;
+                    my $from = parseTime($startRunPlanEvent->{'time'},$StatsTime::TIME_SQL);
+
+                    my $to = undef;
+                    if ( $eventIndex <= $#{$r_events} ) {
+                        my $endRunPlanEvent = $r_events->[$eventIndex];
+                        if ( $DEBUG > 5 ) { print Dumper("addEventsFromLitpMetrics: endRunPlanEvent", $endRunPlanEvent); }
+                        if ( $endRunPlanEvent->{'stage'} eq 'RUN_PLAN' && $endRunPlanEvent->{'state'} eq 'END' ) {
+                            $to = parseTime($endRunPlanEvent->{'time'},$StatsTime::TIME_SQL);
+                            $eventIndex++;
+                        }
+                    }
+                    my $r_litpPhasesThisPlan = getPlanPhaseInfo($r_litpPlanPhases,$from,$to);
+                    my $r_planPhaseEvents = getPlanPhaseEvents($r_planPhases,$r_litpPhasesThisPlan,1,defined $to);
+                    if ( $#{$r_planPhaseEvents} > -1 ) {
+                        splice @{$r_events}, $startRunPlanEventIndex + 1, 0, @{$r_planPhaseEvents};
+                        if ( $DEBUG > 9 ) { print Dumper("addEventsFromLitpMetrics: after start add r_events",$r_events); }
+                        $eventIndex += $#{$r_planPhaseEvents} + 1;
+                    }
+
+                    writePlanTasks($r_planPhases, $r_litpPhasesThisPlan, $from, $to, $outdir);
+                }
+            }
+        } elsif ( $r_events->[$eventIndex]->{'stage'} eq 'RUN_PLAN' && $r_events->[$eventIndex]->{'state'} eq 'END' ) {
+            # If we get here it means we got a RUN_PLAN end without seeing the CREATE_PLAN END/RUN_PLAN START
+            # So assume we've got an upgrade we didn't see the start of
+            my $r_planPhases = $r_events->[$eventIndex]->{'planphases'};
+            my $from = undef;
+            my $to = parseTime($r_events->[$eventIndex]->{'time'},$StatsTime::TIME_SQL);
+            my $r_litpPhasesThisPlan = getPlanPhaseInfo($r_litpPlanPhases,$from,$to);
+            my $r_planPhaseEvents = getPlanPhaseEvents($r_planPhases,$r_litpPhasesThisPlan,0,1);
+            if ( $#{$r_planPhaseEvents} > -1 ) {
+                splice @{$r_events}, $eventIndex, 0, @{$r_planPhaseEvents};
+                if ( $DEBUG > 9 ) { print Dumper("addEventsFromLitpMetrics: after end add r_events",$r_events); }
+                $eventIndex += $#{$r_planPhaseEvents} + 1;
+            }
+
+            $eventIndex++;
+
+            writePlanTasks($r_planPhases, $r_litpPhasesThisPlan, $from, $to, $outdir);
+        }
+        else {
+            $eventIndex++;
+        }
+    }
+
+    if ( $DEBUG > 6 ) { print Dumper("addEventsFromLitpMetrics: r_events", $r_events); }
+}
+
+sub main() {
+    my ($logFile,$historyFile,$litpMetricsFile,$site,$outdir,$rhflag);
+    GetOptions(
+        "log=s" => \$logFile,
+        "history=s" => \$historyFile,
+        "metrics=s" => \$litpMetricsFile,
+        "site=s" => \$site,
+        "outdir=s" => \$outdir,
+        "rhflag=s" => \$rhflag,
+        "debug=s" => \$DEBUG
+        ) or die "Invalid args";
+
+    setStatsDB_Debug($DEBUG);
+    $Data::Dumper::Indent = 1;
+
+    my $r_history = parseHistory($historyFile);
+    my $r_events = undef;
+    if ( $rhflag eq 'RH6' ) {
+        $r_events = parseLog($logFile,$r_history,defined $litpMetricsFile);
+    } elsif ( $rhflag eq 'RH6toRH7' ) {
+        $r_events = parseRH6toRH7Log($logFile,$r_history,defined $litpMetricsFile);
+    }
+    if ( defined $litpMetricsFile ) {
+        addEventsFromLitpMetrics($r_events,$litpMetricsFile,$outdir);
+    }
+
+    if ( $#{$r_events} > -1 && defined $site) {
+        storeEvents($site,$r_events);
+    }
+}
+
+main();

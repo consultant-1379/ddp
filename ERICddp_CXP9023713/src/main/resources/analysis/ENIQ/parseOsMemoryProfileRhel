@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+######################################################################################################
+#  Description ----------parseOsMemoryProfileRhel-----------------------------------------------------
+#  This script parses the os memory profile log(os_rhel_memory_profile_yyyy-mm-dd.txt)
+#  generated on ENIQ STATS RHEL server and stores data to DB
+#  @author - Anu Antony (zantanu)
+#  usage parseOsMemoryProfileRhel --logfile ${PATH TO FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+######################################################################################################
+use strict;
+use warnings;
+use StatsDB;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use Data::Dumper;
+
+our $DEBUG = 0;
+our $dbh;
+our $date;
+our $siteId;
+our $serverId;
+our $osMemoryProfileTable="eniq_stats_os_memory_profile_Rhel";
+
+sub main {
+    my ($osMemoryLogFile, $site, $server);
+    my $result = GetOptions(
+        "logfile=s" => \$osMemoryLogFile,
+        "site=s"    => \$site,
+        "server=s"  => \$server,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+        );
+
+    (-r $osMemoryLogFile) or die "Cannot read log file $osMemoryLogFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG >= 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $r_parsedOsMemoryLogFile = parseOsMemoryLogFile($osMemoryLogFile);
+    if( $#{$r_parsedOsMemoryLogFile} > -1 ) {
+        my $bcpFile = createBcpFile($r_parsedOsMemoryLogFile);
+        removeOldData();
+        loadDb($bcpFile);
+        unlink($bcpFile);
+    }
+    $dbh->disconnect();
+    if($DEBUG >= 1) {
+        $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds):".$startTime."\n";
+        print "End Time (EPOCH milliseconds):".$endTime."\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseOsMemoryLogFile {
+    my $logFile = shift;
+    my @r_arrayOfHash = ();
+    my $timestamp;
+    open FILE, "<$logFile" or die "Can't open file to read $logFile\n";
+    while (my $line = <FILE>) {
+        if ($line =~ /^.* timestamp .*: (.*)$/) {
+            $timestamp = $1;
+        }
+        elsif($line =~ /^(MemTotal|MemFree|MemAvailable|Buffers|Cached|Active|Inactive|Dirty|Mapped|Slab|AnonPages|SwapTotal|SwapFree|KernelStack|VmallocTotal|VmallocUsed):\s+(\d+).*$/) {
+            my %r_hashOfElements = (
+                timeStamp    => "$timestamp",
+                metrics      => $1,
+                bytes        => $2,
+                );
+            push (@r_arrayOfHash, \%r_hashOfElements);
+        }
+    }
+    close FILE;
+    if ($DEBUG >= 2) { print Dumper ("Parsed Data", \@r_arrayOfHash); }
+    return (\@r_arrayOfHash);
+}
+
+sub createBcpFile {
+    my $parsedOsMemoryProfile = shift;
+    my $osMemoryProfileBcpFile = getBcpFileName("os_memory_profile");
+    open BCP, ">$osMemoryProfileBcpFile" or die "Cannot open $osMemoryProfileBcpFile";
+    foreach my $hashOfElements (@$parsedOsMemoryProfile) {
+        printf BCP "%s|%d|%d|%s|%d\n",
+            $hashOfElements->{'timeStamp'},
+            $siteId,
+            $serverId,
+            $hashOfElements->{'metrics'},
+            $hashOfElements->{'bytes'};
+    }
+    close BCP;
+    if ($DEBUG >= 3) {
+        print "Printing BCP File\n";
+        system ("/bin/cat $osMemoryProfileBcpFile");
+    }
+    return $osMemoryProfileBcpFile;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $osMemoryProfileTable WHERE siteId = $siteId AND serverId= $serverId AND timeStamp BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ($DEBUG >= 4) {
+        print "Sql statement for deleting old data.\n";
+        print "$deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $osMemoryProfileTable FIELDS TERMINATED BY \'|\'";
+    if ($DEBUG >= 5) {
+        print "Sql statement for loading data into the database.\n";
+        print "$loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

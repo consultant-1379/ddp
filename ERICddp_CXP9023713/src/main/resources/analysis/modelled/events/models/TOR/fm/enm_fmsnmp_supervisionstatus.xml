@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmsnmp_supervisionstatus">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="mssnmpfm"/>
+  </services>
+<!--SupervisionStatusChange {"SupervisionEvent":"SUPERVISION_ON_SWITCH","PrevStatus":"IDLE","SwitchSent":"NOT_SENT","Node":"LTE41dg2ERBS00109","RequestTime":1574527981435,"NewStatus":"IN_SERVICE","ResponseSent":"SENT_OK","_Thread":"Thread-84 (HornetQ-client-global-threads-2010106728)","ResponseDelay":21}-->
+  <events>
+      <event name="SupervisionStatusChange">
+        <metric source="host" target="serverid"/>
+        <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+        <metric source="SupervisionEvent" target="supervisionEvent"/>
+        <metric source="RequestTime" target="requestTime" scale="1000"/>
+        <metric source="PrevStatus" target="prevStatus"/>
+        <metric source="NewStatus" target="newStatus"/>
+        <metric source="ResponseSent" target="responseSent"/>
+        <metric source="ResponseDelay" target="responseDelay"/>
+        <metric source="SwitchSent" target="switchSent"/>
+      </event>
+  </events>
+</modelledevents>

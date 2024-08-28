@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use StatsTime;
+
+our $DEBUG = 0;
+
+
+our $FIND_START = 1;
+our $FIND_END = 2;
+our $FOUND_END = 3;
+
+sub readEvent {
+    my @eventLines = ();
+    my $line;
+    my $state = $FIND_START;
+    while ( $state != $FOUND_END && defined($line = <IN>) ) {
+        if ( $DEBUG > 9 ) { print "readEvent: state=$state line=$line"; }
+        if ( $line !~ /^$/) {
+	    if ( $state == $FIND_START ) {
+		$state = $FIND_END;
+	    }
+            chop $line;
+            push @eventLines, $line;
+        } elsif ( $state == $FIND_END ) {
+            $state = $FOUND_END;
+        }
+    }
+
+    my $result = undef;
+    if ( $#eventLines > -1 ) {
+        $result = \@eventLines;
+    }
+
+    if ( $DEBUG > 8 ) { print Dumper("readEvent: result", $result); }
+
+    return $result;
+}
+
+sub parseEvents($) {
+    my ($eventsFile) = @_;
+    open IN, $eventsFile or die "Failed to open $eventsFile";
+    my @events = ();
+    while ( my $r_event = readEvent() ) {
+        my $eventHeader = shift @{$r_event};
+        my ($timestamp, $delta) = $eventHeader =~
+            /^([\d\-:]+)\.\d+ ([\d\-]+)$/;
+        my $typeLine = shift @{$r_event};
+        if ( $typeLine =~ /^Attribute Changed/ ) {
+            my $bucketLine = shift @{$r_event};
+            if ( $bucketLine =~ /^\s+Bucket Name:: Live; Namespace::OSS_NE_FM_DEF; Type::FmFunction;.* FDN::NetworkElement=([^,]+),FmFunction/ ) {
+                my $ne = $1;
+                shift @{$r_event}; # Skip Attributes changed: line
+                my %parsedEvent = (
+                    'timestamp' => $timestamp,
+                    'ne' => $ne,
+                    'attr' => {}
+                    );
+                foreach my $attribLine ( @{$r_event} ) {
+                    my ($name,$value) = $attribLine =~ /^\s+Attribute name=(\S+); old value=[^;]+; new value=([^;]+);/;
+                    $parsedEvent{'attr'}->{$name} = $value;
+                }
+                if ( $DEBUG > 5 ) { print Dumper("parseEvents: parsedEvent",\%parsedEvent); }
+                push @events, \%parsedEvent;
+            }
+        }
+    }
+    close IN;
+
+    return \@events;
+}
+
+sub main {
+    my ($eventsFile,$outDir);
+    my $result = GetOptions (
+        "events=s" => \$eventsFile,
+        "outdir=s" => \$outDir,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_events = parseEvents($eventsFile);
+
+    my $nodeIndex = 1;
+    my %nodeMap = ();
+    my %seriesByState = ();
+    foreach my $r_event ( @{$r_events} ) {
+        my $currentServiceState = $r_event->{'attr'}->{'currentServiceState'};
+        if ( defined $currentServiceState ) {
+            my $nodeNumber = $nodeMap{$r_event->{'ne'}};
+            if ( ! defined $nodeNumber ) {
+                $nodeNumber = $nodeIndex;
+                $nodeMap{$r_event->{'ne'}} = $nodeIndex;
+                $nodeIndex++;
+            }
+
+	    if ( ! exists $seriesByState{$currentServiceState} ) {
+		$seriesByState{$currentServiceState} = [];
+	    }
+	    push @{$seriesByState{$currentServiceState}},
+		[
+		 parseTime($r_event->{'timestamp'}, $StatsTime::TIME_YYYYMDHMS) * 1000,
+		 $nodeNumber
+                ];
+	}
+    }
+
+    my $plotFile = $outDir . "/currentServiceState.json";
+    open OUTPUT, ">$plotFile" or die "Cannot open $plotFile";
+    my @outSeries = ();
+    while ( my ($currentServiceState,$r_events) = each %seriesByState ) {
+        print OUTPUT encode_json({ 'name' => $currentServiceState, 'data' => $r_events }), "\n";
+    }
+    close OUTPUT;
+
+    my @indexTable = ();
+    while ( my ($ne,$nodeNumber) = each %nodeMap ) {
+	push @indexTable, { 'ne' => $ne, 'index' => $nodeNumber };
+    }
+    my $tableFile = $outDir . "/index.json";
+    open OUTPUT, ">$tableFile" or die "Cannot open $tableFile";
+    print OUTPUT encode_json(\@indexTable);
+    close OUTPUT;
+    
+}
+
+main();

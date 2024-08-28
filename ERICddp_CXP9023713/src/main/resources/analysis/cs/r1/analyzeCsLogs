@@ -1,0 +1,110 @@
+#!/bin/sh
+
+PARSE_CS_STATUS=/data/work/monitor/parseCsStatus
+PARSE_CS_SESSION=/data/work/monitor/parseCsSession
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/../.."
+
+DASH_DATE=$1
+CS_LOG_DIR=$2
+OUTPUT_DIR=$3
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/tmp
+fi
+
+if [ -f ${CS_LOG_DIR}/CS.Region_CS.status -o -f ${CS_LOG_DIR}/CS.Region_CS.status.parsed ]; then
+    #
+    # Status Logs
+    #
+    if [ ! -f ${CS_LOG_DIR}/CS.Region_CS.status.parsed ]; then
+	STATUS_FILES=`find ${CS_LOG_DIR} -name 'CS.*.status'`
+	for STATUS_FILE in $STATUS_FILES; do
+	    BULK=""		
+	    head -1000 ${CS_LOG_DIR}/CS.${CS}.session | egrep "^cs\.time\.setbulk" > /dev/null
+	    if [ $? -eq 0 ]; then
+		BULK="-bulk"
+	    fi
+	    cat $STATUS_FILE | ${PARSE_CS_STATUS} ${BULK} > $STATUS_FILE.parsed
+        done
+    fi
+
+    CS_NAMES=""
+    PARSED_STATUS_FILES=`find ${CS_LOG_DIR} -name 'CS.*.status.parsed'`
+    for PARSED_STATUS_FILE in $PARSED_STATUS_FILES; do
+	CS_NAME=`echo ${PARSED_STATUS_FILE} | sed 's/^.*\/CS\.\(.*\)\.status\.parsed/\1/g'`
+	CS_NAMES="${CS_NAMES} ${CS_NAME}"
+	if [ -d ${OUTPUT_DIR}/${CS_NAME} ]; then
+	    rm -rf ${OUTPUT_DIR}/${CS_NAME}/*
+	else
+	    mkdir ${OUTPUT_DIR}/${CS_NAME}
+	fi
+	${ANALYSIS_BIN}/cs/r1/plotCsStatus ${PARSED_STATUS_FILE} ${OUTPUT_DIR}/${CS_NAME} ${DASH_DATE}
+	if [ $? -ne 0 ]; then
+	    echo "plotCsStatus failed for ${CS_NAME}, exiting"
+	    exit 1
+        fi
+
+    done
+
+    #
+    # Session Logs
+    #
+    if [ ! -f ${CS_LOG_DIR}/CS.Region_CS.session.countBySess -a ! ${CS_LOG_DIR}/CS.Region_CS.session.count ]; then
+	SESSION_FILES=`find ${CS_LOG_DIR} -name 'CS.*.session'`
+	for SESSION_FILE in $SESSION_FILES; do
+	   ${PARSE_CS_SESSION} $SESSION_FILE $SESSION_FILE.count
+        done
+    fi
+
+    #
+    # If we have the new output format from parseCsSession, then convert it 
+    # to old format
+    #
+    if [ -f ${CS_LOG_DIR}/CS.Region_CS.session.count ]; then
+	SESSION_COUNT_FILES=`find ${CS_LOG_DIR} -name 'CS.*.session.count'`
+	for SESSION_COUNT_FILE in ${SESSION_COUNT_FILES}; do
+	    CS_FILENAME=`echo ${SESSION_COUNT_FILE} | sed 's/\.count$//g'`	    
+	    ${ANALYSIS_BIN}/cs/r1/parseSessionCount ${CS_FILENAME}.count ${CS_FILENAME}.countByMin ${CS_FILENAME}.countBySess
+
+	    CS_NAME=`echo ${SESSION_COUNT_FILE} | sed 's/^.*\/CS\.\(.*\)\.session\.count/\1/g'`
+	    ${ANALYSIS_BIN}/cs/r1/plotSessionDelta -c ${CS_FILENAME}.count -s ${OUTPUT_DIR}/${CS_NAME}/create_by_sess.jpg
+        done
+    fi
+
+    if [ -f ${CS_LOG_DIR}/CS.Region_CS.session.countBySess ]; then	
+	COUNT_BY_SEC_FILES=`find ${CS_LOG_DIR} -name 'CS.*.session.countByMin'`
+	for COUNT_BY_SEC_FILE in $COUNT_BY_SEC_FILES; do
+	    CS_NAME=`echo ${COUNT_BY_SEC_FILE} | sed 's/^.*\/CS\.\(.*\)\.session\.countByMin/\1/g'`
+	    ${ANALYSIS_BIN}/cs/r1/plotCsSession ${COUNT_BY_SEC_FILE} ${OUTPUT_DIR}/${CS_NAME}
+	done
+	
+	COUNT_BY_SESS_FILES=`find ${CS_LOG_DIR} -name 'CS.*.session.countBySess'`
+	for COUNT_BY_SESS_FILE in $COUNT_BY_SESS_FILES; do
+	    CS_NAME=`echo ${COUNT_BY_SESS_FILE} | sed 's/^.*\/CS\.\(.*\)\.session\.countBySess/\1/g'`
+	    ${ANALYSIS_BIN}/cs/r1/formatCsCountBySess ${COUNT_BY_SESS_FILE} ${OUTPUT_DIR}/${CS_NAME}/countBySessTable.html
+	done
+    fi
+
+    if [ -f ${CS_LOG_DIR}/CS.Region_CS.session.error ]; then	
+	ERROR_FILES=`find ${CS_LOG_DIR} -name 'CS.*.session.error'`
+	for ERROR_FILE in $ERROR_FILES; do
+	    CS_NAME=`echo ${ERROR_FILE} | sed 's/^.*\/CS\.\(.*\)\.session\.error/\1/g'`
+	    NUM_ERRORS=`wc -l ${ERROR_FILE} | awk '{print $1}'`
+	    if [ ${NUM_ERRORS} -gt 0 ]; then
+		${ANALYSIS_BIN}/cs/r1/parseCsSessionErrors --error ${ERROR_FILE} --table ${OUTPUT_DIR}/${CS_NAME}/session_error_table.html
+	    fi
+	done
+    fi
+
+    if [ -r ${CS_LOG_DIR}/Region_CS.dbtool_F ] ; then
+	DBTOOLF_FILES=`find ${CS_LOG_DIR} -name '*.dbtool_F'`
+	for DBTOOLF_FILE in ${DBTOOLF_FILES}; do
+	    CS_NAME=`echo ${DBTOOLF_FILE} | sed 's/.*\/\([^\/]*\).dbtool_F/\1/g'`
+	    cp ${DBTOOLF_FILE} ${OUTPUT_DIR}/${CS_NAME}/dbtool_F.txt
+	done
+    fi
+
+fi

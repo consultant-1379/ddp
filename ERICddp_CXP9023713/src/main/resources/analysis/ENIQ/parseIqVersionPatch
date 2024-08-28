@@ -1,0 +1,83 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseIqVersionPatch -----------
+#       This script parses the sap iq version patch log
+#       and store data to DB.
+#       @author - Sunil Yadav (xsunyad)
+#       usage  parseIqVersionPatch --logfile <iq_version> --site <site> --date <YYYY-MM-DD>
+######################################################################
+
+use strict;
+use warnings;
+use Getopt::Long;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $dbh = "";
+our $logFile = "";
+our $table = "eniq_sap_iq_version_patch_details";
+our $date = "";
+
+sub main {
+    my $site;
+    GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s"    => \$site,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    my ($version, $patch) = parseData();
+    if ( defined $version and defined $patch ) {
+        removeOldData();
+        loadDb($version, $patch);
+    }
+    if( $DEBUG > 1 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData {
+    open FILE, "<$logFile" or die "Can't open file $logFile to read";
+    my ($version, $patch);
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( $line =~ /^VERSION::(.*)/ ) {
+            $version = $1;
+        }
+        if ( $line =~ /^ESD::(.*)/ ) {
+            $patch = $1;
+        }
+    }
+    close FILE;
+    return $version, $patch;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND date = '$date'";
+    if ( $DEBUG > 2 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my ($version, $patch) = @_;
+    my $loadSql = "INSERT INTO $table (date, siteid, version, patch) VALUES ('$date', $siteId, '$version', '$patch')";
+    if ( $DEBUG > 3 ) { print "SQL query for inserting data: $loadSql \n" };
+    dbDo($dbh,$loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

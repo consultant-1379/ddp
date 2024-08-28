@@ -1,0 +1,531 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" ylabel="Count">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_aim_lifecycle_instr">
+      <reference table="sites" condition="enm_aim_lifecycle_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_aim_lifecycle_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="sids"/>
+    <where>sites.name = '%s' AND servers.id IN ( %s )</where>
+  </query>
+
+  <graphs>
+    <graph name="nestingProcessTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="nestingProcessTime"/>
+      <column db="nestingProcessTime" label="nestingProcessTime"/>
+    </graph>
+    <graph name="totalReceivedIncidentsToNest" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalReceivedIncidentsToNest"/>
+      <column db="totalReceivedIncidentsToNest"/>
+    </graph>
+    <graph name="totalIncidentsCreated_Nesting" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsCreated_Nesting"/>
+      <column db="totalIncidentsCreated_Nesting"/>
+    </graph>
+    <graph name="totalIncidentsProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsProcessed"/>
+      <column db="totalIncidentsProcessed"/>
+    </graph>
+    <graph name="confidenceCalculationTimeInNesting" type="sb" ylabel="Count" forcelegend="true">
+      <title value="confidenceCalculationTimeInNesting"/>
+      <column db="confidenceCalculationTimeInNesting"/>
+    </graph>
+    <graph name="knowledgeBaseRestCallTimeInNesting" type="sb" ylabel="Count" forcelegend="true">
+      <title value="knowledgeBaseRestCallTimeInNesting"/>
+      <column db="knowledgeBaseRestCallTimeInNesting"/>
+    </graph>
+    <graph name="KBRestCallFailures" type="sb" ylabel="Count" forcelegend="true">
+      <title value="KBRestCallFailures"/>
+      <column db="KBRestCallFailures"/>
+    </graph>
+    <graph name="KBRestCalls" type="sb" ylabel="Count" forcelegend="true">
+      <title value="KBRestCalls"/>
+      <column db="KBRestCalls"/>
+    </graph>
+    <graph name="totalNestingFailures" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalNestingFailures"/>
+      <column db="totalNestingFailures"/>
+    </graph>
+    <graph name="totalIncidentsCreatedWithFMDataSource" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsCreatedWithFMDataSource"/>
+      <column db="totalIncidentsCreatedWithFMDataSource"/>
+    </graph>
+    <graph name="totalIncidentsCreatedWithPMDataSource" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsCreatedWithPMDataSource"/>
+      <column db="totalIncidentsCreatedWithPMDataSource"/>
+    </graph>
+    <graph name="totalIncidentsCreatedWithFMAndPMDataSource" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsCreatedWithFMAndPMDataSource"/>
+      <column db="totalIncidentsCreatedWithFMAndPMDataSource"/>
+    </graph>
+    <graph name="totalIncidentsChangedFromFMToFMAndPM" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsChangedFromFMToFMAndPM"/>
+      <column db="totalIncidentsChangedFromFMToFMAndPM"/>
+    </graph>
+    <graph name="totalIncidentsChangedFromPMToFMAndPM" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsChangedFromPMToFMAndPM"/>
+      <column db="totalIncidentsChangedFromPMToFMAndPM"/>
+    </graph>
+    <graph name="totalActiveIncidents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalActiveIncidents"/>
+      <column db="totalActiveIncidents"/>
+    </graph>
+    <graph name="totalInactiveIncidents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalInactiveIncidents"/>
+      <column db="totalInactiveIncidents"/>
+    </graph>
+    <graph name="totalClosedEventsReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalClosedEventsReceived"/>
+      <column db="totalClosedEventsReceived"/>
+    </graph>
+    <graph name="totalActiveIncidentsInCache" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalActiveIncidentsInCache"/>
+      <column db="totalActiveIncidentsInCache"/>
+    </graph>
+    <graph name="totalIncidentsSetToInactive" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsSetToInactive"/>
+      <column db="totalIncidentsSetToInactive"/>
+    </graph>
+    <graph name="currentIncidentTableSizeInMB" type="sb" ylabel="Count" forcelegend="true">
+      <title value="currentIncidentTableSizeInMB"/>
+      <column db="currentIncidentTableSizeInMB"/>
+    </graph>
+    <graph name="currentEventTableSizeInMB" type="sb" ylabel="Count" forcelegend="true">
+      <title value="currentEventTableSizeInMB"/>
+      <column db="currentEventTableSizeInMB"/>
+    </graph>
+    <graph name="singleDimensionKeysSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="singleDimensionKeysSize"/>
+      <column db="singleDimensionKeysSize"/>
+    </graph>
+    <graph name="combinedDimensionKeysSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="combinedDimensionKeysSize"/>
+      <column db="combinedDimensionKeysSize"/>
+    </graph>
+    <graph name="avgEventsInIncident" type="sb" ylabel="Count" forcelegend="true">
+      <title value="avgEventsInIncident"/>
+      <column db="avgEventsInIncident"/>
+    </graph>
+    <graph name="avgTimeIncidentIsOpen" type="sb" ylabel="millisec" forcelegend="true">
+      <title value="avgTimeIncidentIsOpen"/>
+      <column db="avgTimeIncidentIsOpen"/>
+    </graph>
+    <graph name="maxNetworkWideLoadKPIValueCacheSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="maxNetworkWideLoadKPIValueCacheSize"/>
+      <column db="maxNetworkWideLoadKPIValueCacheSize"/>
+    </graph>
+    <graph name="loadKpiSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="loadKpiSize"/>
+      <column db="loadKpiSize"/>
+    </graph>
+    <graph name="monitoringKpisSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="monitoringKpisSize"/>
+      <column db="monitoringKpisSize"/>
+    </graph>
+    <graph name="networkElementScopeSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="networkElementScopeSize"/>
+      <column db="networkElementScopeSize"/>
+    </graph>
+    <graph name="priorityRankScoresPerCellSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="priorityRankScoresPerCellSize"/>
+      <column db="priorityRankScoresPerCellSize"/>
+    </graph>
+    <graph name="utilizationCellKpiValuesSize" type="sb" ylabel="Count" forcelegend="true">
+      <title value="utilizationCellKpiValuesSize"/>
+      <column db="utilizationCellKpiValuesSize"/>
+    </graph>
+    <graph name="totalOfCellTopologyReads" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalOfCellTopologyReads"/>
+      <column db="totalOfCellTopologyReads"/>
+    </graph>
+    <graph name="totalTimeCreatingIncidents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeCreatingIncidents"/>
+      <column db="totalTimeCreatingIncidents"/>
+    </graph>
+    <graph name="totalTimeUpdatingIncidents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeUpdatingIncidents"/>
+      <column db="totalTimeUpdatingIncidents"/>
+    </graph>
+    <graph name="totalTimeDeletingIncidents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeDeletingIncidents"/>
+      <column db="totalTimeDeletingIncidents"/>
+    </graph>
+    <graph name="totalTimeFetchingIncidents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTimeFetchingIncidents"/>
+      <column db="totalTimeFetchingIncidents"/>
+    </graph>
+    <graph name="totalIncidentsCreated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsCreated"/>
+      <column db="totalIncidentsCreated"/>
+    </graph>
+    <graph name="totalIncidentsUpdated" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsUpdated"/>
+      <column db="totalIncidentsUpdated"/>
+    </graph>
+    <graph name="totalIncidentsDeleted" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsDeleted"/>
+      <column db="totalIncidentsDeleted"/>
+    </graph>
+    <graph name="totalIncidentsFetched" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsFetched"/>
+      <column db="totalIncidentsFetched"/>
+    </graph>
+    <graph name="totalFailedOperations" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalFailedOperations"/>
+      <column db="totalFailedOperations"/>
+    </graph>
+    <graph name="totalOperationsSkippedDueToWriteLock" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalOperationsSkippedDueToWriteLock"/>
+      <column db="totalOperationsSkippedDueToWriteLock"/>
+    </graph>
+    <graph name="totalIncidentsInAIM" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalIncidentsInAIM"/>
+      <column db="totalIncidentsInAIM"/>
+    </graph>
+    <graph name="percentageOfLTECellsTrained" type="sb" ylabel="Count" forcelegend="true">
+      <title value="percentageOfLTECellsTrained"/>
+      <column db="percentageOfLTECellsTrained"/>
+    </graph>
+    <graph name="percentageOfWCDMACellsTrained" type="sb" ylabel="Count" forcelegend="true">
+      <title value="percentageOfWCDMACellsTrained"/>
+      <column db="percentageOfWCDMACellsTrained"/>
+    </graph>
+    <graph name="percentageOfRNCsTrained" type="sb" ylabel="Count" forcelegend="true">
+      <title value="percentageOfRNCsTrained"/>
+      <column db="percentageOfRNCsTrained"/>
+    </graph>
+    <graph name="totalTroubleTicketsReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalTroubleTicketsReceived"/>
+      <column db="totalTroubleTicketsReceived"/>
+    </graph>
+    <graph name="totalWorkOrdersReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalWorkOrdersReceived"/>
+      <column db="totalWorkOrdersReceived"/>
+    </graph>
+    <graph name="totalOtherEnrichmentEventsReceived" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalOtherEnrichmentEventsReceived"/>
+      <column db="totalOtherEnrichmentEventsReceived"/>
+    </graph>
+    <graph name="totalCorrelationsBetweenIncidentAndTT" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCorrelationsBetweenIncidentAndTT"/>
+      <column db="totalCorrelationsBetweenIncidentAndTT"/>
+    </graph>
+    <graph name="totalCorrelationsBetweenIncidentAndWO" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCorrelationsBetweenIncidentAndWO"/>
+      <column db="totalCorrelationsBetweenIncidentAndWO"/>
+    </graph>
+    <graph name="totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents"/>
+      <column db="totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents"/>
+    </graph>
+    <graph name="totalEventsProcessed" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalEventsProcessed"/>
+      <column db="totalEventsProcessed"/>
+    </graph>
+    <graph name="eventProcessingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="eventProcessingTime"/>
+      <column db="eventProcessingTime"/>
+    </graph>
+    <graph name="totalBatchNotificationsSent" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalBatchNotificationsSent"/>
+      <column db="totalBatchNotificationsSent"/>
+    </graph>
+    <graph name="totalEventsSent" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalEventsSent"/>
+      <column db="totalEventsSent"/>
+    </graph>
+    <graph name="totalNotificationErrors" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalNotificationErrors"/>
+      <column db="totalNotificationErrors"/>
+    </graph>
+    <graph name="eventSendingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="eventSendingTime"/>
+      <column db="eventSendingTime"/>
+    </graph>
+    <graph name="totalSingleIncidentRequest" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalSingleIncidentRequest"/>
+      <column db="totalSingleIncidentRequest"/>
+    </graph>
+    <graph name="totalMultipleFiltersIncidentRequest" type="sb" ylabel="Count" forcelegend="true">
+      <title value="totalMultipleFiltersIncidentRequest"/>
+      <column db="totalMultipleFiltersIncidentRequest"/>
+    </graph>
+    <graph name="multipleFiltersIncidentSendingTime" type="sb" ylabel="Count" forcelegend="true">
+      <title value="multipleFiltersIncidentSendingTime"/>
+      <column db="multipleFiltersIncidentSendingTime"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="nestingProcessTime">
+      <member>nestingProcessTime</member>
+    </group>
+    <group name="totalReceivedIncidentsToNest">
+      <member>totalReceivedIncidentsToNest</member>
+    </group>
+    <group name="totalIncidentsCreated_Nesting">
+      <member>totalIncidentsCreated_Nesting</member>
+    </group>
+    <group name="totalIncidentsProcessed">
+      <member>totalIncidentsProcessed</member>
+    </group>
+    <group name="confidenceCalculationTimeInNesting">
+      <member>confidenceCalculationTimeInNesting</member>
+    </group>
+    <group name="knowledgeBaseRestCallTimeInNesting">
+      <member>knowledgeBaseRestCallTimeInNesting</member>
+    </group>
+    <group name="KBRestCallFailures">
+      <member>KBRestCallFailures</member>
+    </group>
+    <group name="KBRestCalls">
+      <member>KBRestCalls</member>
+    </group>
+    <group name="totalNestingFailures">
+      <member>totalNestingFailures</member>
+    </group>
+    <group name="totalIncidentsCreatedWithFMDataSource">
+      <member>totalIncidentsCreatedWithFMDataSource</member>
+    </group>
+    <group name="totalIncidentsCreatedWithPMDataSource">
+      <member>totalIncidentsCreatedWithPMDataSource</member>
+    </group>
+    <group name="totalIncidentsCreatedWithFMAndPMDataSource">
+      <member>totalIncidentsCreatedWithFMAndPMDataSource</member>
+    </group>
+    <group name="totalIncidentsChangedFromFMToFMAndPM">
+      <member>totalIncidentsChangedFromFMToFMAndPM</member>
+    </group>
+    <group name="totalIncidentsChangedFromPMToFMAndPM">
+      <member>totalIncidentsChangedFromPMToFMAndPM</member>
+    </group>
+    <group name="totalActiveIncidents">
+      <member>totalActiveIncidents</member>
+    </group>
+    <group name="totalInactiveIncidents">
+      <member>totalInactiveIncidents</member>
+    </group>
+    <group name="totalClosedEventsReceived">
+      <member>totalClosedEventsReceived</member>
+    </group>
+    <group name="totalActiveIncidentsInCache">
+      <member>totalActiveIncidentsInCache</member>
+    </group>
+    <group name="totalIncidentsSetToInactive">
+      <member>totalIncidentsSetToInactive</member>
+    </group>
+    <group name="currentIncidentTableSizeInMB">
+      <member>currentIncidentTableSizeInMB</member>
+    </group>
+    <group name="currentEventTableSizeInMB">
+      <member>currentEventTableSizeInMB</member>
+    </group>
+    <group name="singleDimensionKeysSize">
+      <member>singleDimensionKeysSize</member>
+    </group>
+    <group name="combinedDimensionKeysSize">
+      <member>combinedDimensionKeysSize</member>
+    </group>
+    <group name="avgEventsInIncident">
+      <member>avgEventsInIncident</member>
+    </group>
+    <group name="avgTimeIncidentIsOpen">
+      <member>avgTimeIncidentIsOpen</member>
+    </group>
+    <group name="maxNetworkWideLoadKPIValueCacheSize">
+      <member>maxNetworkWideLoadKPIValueCacheSize</member>
+    </group>
+    <group name="loadKpiSize">
+      <member>loadKpiSize</member>
+    </group>
+    <group name="monitoringKpisSize">
+      <member>monitoringKpisSize</member>
+    </group>
+    <group name="networkElementScopeSize">
+      <member>networkElementScopeSize</member>
+    </group>
+    <group name="priorityRankScoresPerCellSize">
+      <member>priorityRankScoresPerCellSize</member>
+    </group>
+    <group name="utilizationCellKpiValuesSize">
+      <member>utilizationCellKpiValuesSize</member>
+    </group>
+    <group name="totalOfCellTopologyReads">
+      <member>totalOfCellTopologyReads</member>
+    </group>
+    <group name="totalTimeCreatingIncidents">
+      <member>totalTimeCreatingIncidents</member>
+    </group>
+    <group name="totalTimeUpdatingIncidents">
+      <member>totalTimeUpdatingIncidents</member>
+    </group>
+    <group name="totalTimeDeletingIncidents">
+      <member>totalTimeDeletingIncidents</member>
+    </group>
+    <group name="totalTimeFetchingIncidents">
+      <member>totalTimeFetchingIncidents</member>
+    </group>
+    <group name="totalIncidentsCreated">
+      <member>totalIncidentsCreated</member>
+    </group>
+    <group name="totalIncidentsUpdated">
+      <member>totalIncidentsUpdated</member>
+    </group>
+    <group name="totalIncidentsDeleted">
+      <member>totalIncidentsDeleted</member>
+    </group>
+    <group name="totalIncidentsFetched">
+      <member>totalIncidentsFetched</member>
+    </group>
+    <group name="totalFailedOperations">
+      <member>totalFailedOperations</member>
+    </group>
+    <group name="totalOperationsSkippedDueToWriteLock">
+      <member>totalOperationsSkippedDueToWriteLock</member>
+    </group>
+    <group name="totalIncidentsInAIM">
+      <member>totalIncidentsInAIM</member>
+    </group>
+    <group name="all">
+      <member>nestingProcessTime</member>
+      <member>totalReceivedIncidentsToNest</member>
+      <member>totalIncidentsCreated_Nesting</member>
+      <member>totalIncidentsProcessed</member>
+      <member>confidenceCalculationTimeInNesting</member>
+      <member>knowledgeBaseRestCallTimeInNesting</member>
+      <member>KBRestCallFailures</member>
+      <member>KBRestCalls</member>
+      <member>totalNestingFailures</member>
+      <member>totalIncidentsCreatedWithFMDataSource</member>
+      <member>totalIncidentsCreatedWithPMDataSource</member>
+      <member>totalIncidentsCreatedWithFMAndPMDataSource</member>
+      <member>totalIncidentsChangedFromFMToFMAndPM</member>
+      <member>totalIncidentsChangedFromPMToFMAndPM</member>
+      <member>totalActiveIncidents</member>
+      <member>totalInactiveIncidents</member>
+      <member>totalClosedEventsReceived</member>
+      <member>totalActiveIncidentsInCache</member>
+      <member>totalIncidentsSetToInactive</member>
+      <member>currentIncidentTableSizeInMB</member>
+      <member>currentEventTableSizeInMB</member>
+      <member>singleDimensionKeysSize</member>
+      <member>combinedDimensionKeysSize</member>
+      <member>avgEventsInIncident</member>
+      <member>avgTimeIncidentIsOpen</member>
+      <member>maxNetworkWideLoadKPIValueCacheSize</member>
+      <member>loadKpiSize</member>
+      <member>monitoringKpisSize</member>
+      <member>networkElementScopeSize</member>
+      <member>priorityRankScoresPerCellSize</member>
+      <member>utilizationCellKpiValuesSize</member>
+      <member>totalOfCellTopologyReads</member>
+      <member>totalTimeCreatingIncidents</member>
+      <member>totalTimeUpdatingIncidents</member>
+      <member>totalTimeDeletingIncidents</member>
+      <member>totalTimeFetchingIncidents</member>
+      <member>totalIncidentsCreated</member>
+      <member>totalIncidentsUpdated</member>
+      <member>totalIncidentsDeleted</member>
+      <member>totalIncidentsFetched</member>
+      <member>totalFailedOperations</member>
+      <member>totalOperationsSkippedDueToWriteLock</member>
+      <member>totalIncidentsInAIM</member>
+    </group>
+    <group name="lcNonMain">
+      <member>nestingProcessTime</member>
+      <member>totalIncidentsCreated_Nesting</member>
+      <member>totalNestingFailures</member>
+      <member>totalIncidentsCreatedWithFMDataSource</member>
+      <member>totalIncidentsCreatedWithPMDataSource</member>
+      <member>totalIncidentsCreatedWithFMAndPMDataSource</member>
+      <member>totalIncidentsChangedFromFMToFMAndPM</member>
+      <member>totalIncidentsChangedFromPMToFMAndPM</member>
+      <member>totalActiveIncidents</member>
+      <member>totalInactiveIncidents</member>
+      <member>currentEventTableSizeInMB</member>
+      <member>combinedDimensionKeysSize</member>
+      <member>avgEventsInIncident</member>
+      <member>avgTimeIncidentIsOpen</member>
+    </group>
+    <group name="allMain">
+      <member>totalNestingFailures</member>
+      <member>nestingProcessTime</member>
+    </group>
+    <group name="training">
+      <member>percentageOfLTECellsTrained</member>
+      <member>percentageOfWCDMACellsTrained</member>
+      <member>percentageOfRNCsTrained</member>
+    </group>
+    <group name="totalTroubleTicketsReceived">
+      <member>totalTroubleTicketsReceived</member>
+    </group>
+    <group name="totalWorkOrdersReceived">
+      <member>totalWorkOrdersReceived</member>
+    </group>
+    <group name="totalOtherEnrichmentEventsReceived">
+      <member>totalOtherEnrichmentEventsReceived</member>
+    </group>
+    <group name="totalCorrelationsBetweenIncidentAndTT">
+      <member>totalCorrelationsBetweenIncidentAndTT</member>
+    </group>
+    <group name="totalCorrelationsBetweenIncidentAndWO">
+      <member>totalCorrelationsBetweenIncidentAndWO</member>
+    </group>
+    <group name="totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents">
+      <member>totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents</member>
+    </group>
+    <group name="allEev">
+      <member>totalTroubleTicketsReceived</member>
+      <member>totalWorkOrdersReceived</member>
+      <member>totalOtherEnrichmentEventsReceived</member>
+      <member>totalCorrelationsBetweenIncidentAndTT</member>
+      <member>totalCorrelationsBetweenIncidentAndWO</member>
+      <member>totalCorrelationsBetweenIncidentAndOtherEnrichmentEvents</member>
+    </group>
+    <group name="totalEventsProcessed">
+      <member>totalEventsProcessed</member>
+    </group>
+    <group name="eventProcessingTime">
+      <member>eventProcessingTime</member>
+    </group>
+    <group name="nbiProc">
+      <member>totalEventsProcessed</member>
+      <member>eventProcessingTime</member>
+    </group>
+    <group name="totalBatchNotificationsSent">
+      <member>totalBatchNotificationsSent</member>
+    </group>
+    <group name="totalEventsSent">
+      <member>totalEventsSent</member>
+    </group>
+    <group name="totalNotificationErrors">
+      <member>totalNotificationErrors</member>
+    </group>
+    <group name="eventSendingTime">
+      <member>eventSendingTime</member>
+    </group>
+    <group name="nbiPush">
+      <member>totalBatchNotificationsSent</member>
+      <member>totalEventsSent</member>
+      <member>totalNotificationErrors</member>
+      <member>eventSendingTime</member>
+    </group>
+    <group name="totalSingleIncidentRequest">
+      <member>totalSingleIncidentRequest</member>
+    </group>
+    <group name="totalMultipleFiltersIncidentRequest">
+      <member>totalMultipleFiltersIncidentRequest</member>
+    </group>
+    <group name="multipleFiltersIncidentSendingTime">
+      <member>multipleFiltersIncidentSendingTime</member>
+    </group>
+    <group name="nbiPull">
+      <member>totalSingleIncidentRequest</member>
+      <member>totalMultipleFiltersIncidentRequest</member>
+      <member>multipleFiltersIncidentSendingTime</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

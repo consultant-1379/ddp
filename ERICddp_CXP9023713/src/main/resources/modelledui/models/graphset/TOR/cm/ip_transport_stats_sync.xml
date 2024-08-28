@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="mscmip_sync_instr">
+      <reference table="sites" condition="mscmip_sync_instr.siteid = sites.id"/>
+      <reference table="servers" condition="mscmip_sync_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <where>sites.name = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="successfulSync" type="sb">
+      <title value="Successful Syncs"/>
+      <column db="dpsCounterForSuccessfulSync + fh6000dpsCounterForSuccessfulSync + fh6080dpsCounterForSuccessfulSync" label="Successful Syncs"/>
+    </graph>
+    <graph name="failureSync" type="sb">
+      <title value="Failed Syncs"/>
+      <column db="dpsNumberOfFailedSyncs + fh6000dpsNumberOfFailedSyncs + fh6080dpsNumberOfFailedSyncs" label="Failed Syncs"/>
+    </graph>
+    <graph name="managedObjects" type="sb">
+      <title value="Managed Objects Synchronized"/>
+      <column db="numberOfMosBeingSynced + fh6000numberOfMosBeingSynced + fh6080numberOfMosBeingSynced" label="Managed Objects Synchronized"/>
+    </graph>
+
+  </graphs>
+
+  <groups>
+    <group name="sync">
+      <member>successfulSync</member>
+      <member>failureSync</member>
+      <member>managedObjects</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

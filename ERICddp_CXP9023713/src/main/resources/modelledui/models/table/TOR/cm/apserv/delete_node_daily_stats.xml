@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_apserv_metrics">
+    <reference table="sites" condition="enm_apserv_metrics.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_apserv_metrics.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND useCaseType = 'DELETE_NODE' AND enm_apserv_metrics.view LIKE 'Metric' HAVING total_usecases > 0</where>
+
+  <column db="COUNT(*)" label="Total Number of Nodes Deleted" id="total_usecases" />
+  <column db="IFNULL( SUM(CASE WHEN status = 'failure' THEN 1 ELSE 0 END), 0)" label="Total Number of Nodes Failed the Deletion"/>
+  <column db="IFNULL(ROUND(SUM(CASE WHEN status = 'success' THEN executionTime ELSE NULL END) / SUM(CASE WHEN status = 'success' THEN totalNode ELSE NULL END), 3), 0)" label="Average Time to Delete per Node (Sec)"/>
+
+</modelledtable>

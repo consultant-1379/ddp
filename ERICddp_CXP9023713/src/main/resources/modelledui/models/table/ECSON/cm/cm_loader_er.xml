@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="ecson_cm_loader_er">
+  <reference table="sites" condition="ecson_cm_loader_er.siteid = sites.id"/>
+  <reference table="ne_types" condition="ecson_cm_loader_er.netypeid  = ne_types.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <where>sites.name = '%site%' AND ecson_cm_loader_er.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+ <groupby rollup="true">
+    <column db="ne_types.name"/>
+ </groupby>
+
+ <column db="ne_types.name" label="Node Names" id="nodeNames"/>
+ <column db="SUM(ecson_cm_loader_er.transformed_nodes)" label="Transformed Nodes"/>
+ <column db="SUM(ecson_cm_loader_er.skipped_nodes)" label="Skipped Nodes"/>
+ <column db="SUM(ecson_cm_loader_er.not_persisted_nodes)" label="Not Persisted Nodes"/>
+
+</modelledtable>

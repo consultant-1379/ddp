@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <table name="enm_shmmodeling_instr">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.itpf.modeling.modelservice:type=ModelServiceCache$">
+      <metric source="CacheMisses" target="cacheMisses" delta="true" filteridle="true"/>
+      <metric source="CacheRequests" target="cacheRequests" delta="true" filteridle="true"/>
+      <metric source="CacheSize" target="cacheSize"/>
+      <metric source="modelCount" target="modelCount"/>
+      <metric source="CacheDescriptionTexts" target="cacheDescriptionTexts"/>
+      <metric source="MaxIdleTimeInCache" target="maxIdleTimeInCache"/>
+      <metric source="MaxCacheSize" target="maxCacheSize"/>
+      <metric source="CacheEvictions" target="cacheEvictions" delta="true" filteridle="true"/>
+      <metric source="ReadWriteRatio" target="readWriteRatio" delta="true" filteridle="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

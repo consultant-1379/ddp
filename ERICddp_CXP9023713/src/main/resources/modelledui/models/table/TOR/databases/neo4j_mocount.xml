@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_neo4j_mocounts">
+    <reference table="sites" condition="enm_neo4j_mocounts.siteid = sites.id"/>
+    <reference table="model_names" condition="enm_neo4j_mocounts.namespaceid = model_names.id"/>
+    <reference table="mo_names" condition="enm_neo4j_mocounts.motypeid = mo_names.id"/>  
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_neo4j_mocounts.date = '%date%' </where>
+
+  <order columnid="live" direction="DESC"/>
+
+  <column db="CONCAT(enm_neo4j_mocounts.namespaceid,':',enm_neo4j_mocounts.motypeid)" label="id" visible="false" id="id"/>
+  <column db="model_names.name" label="Name Space"/>
+  <column db="mo_names.name" label="MO Type"/>
+  <column id="live" db="IF(enm_neo4j_mocounts.total &lt; enm_neo4j_mocounts.nonlive, 0, enm_neo4j_mocounts.total - enm_neo4j_mocounts.nonlive)" label="Live"/>
+  <column db="enm_neo4j_mocounts.nonlive" label="Non-Live"/>
+
+  <ctxmenu keycol="id" targettype="url" multiselect="true">
+    <item id="plotMonthMOs" label="Plot selected for last 31 days"/>
+    <urltarget arg="disableUI"/>
+  </ctxmenu>
+</modelledtable>

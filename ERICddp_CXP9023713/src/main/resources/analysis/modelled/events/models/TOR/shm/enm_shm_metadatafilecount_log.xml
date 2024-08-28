@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_shm_metadatafilecount_log">
+    <keycol name="netypeid" reftable="ne_types"/>
+  </table>
+
+  <services>
+    <service name="shmservice"/>
+  </services>
+
+  <aggregate>
+    <grouping>
+      <groupby name="nodeType"/>
+    </grouping>
+    <aggregations>
+      <aggregation name="count" type="sum"/>
+    </aggregations>
+  </aggregate>
+
+  <events>
+      <!-- SHM.IMPORT_NE_SOFTWARE_STORE_METADATA_INFORMATION {"metaDataFileCount":[{"count":2,"nodeType":"RNC"},{"count":1,"nodeType":"ERBS"}],"_Thread":"EJB async - 3"} -->
+      <event name="SHM.IMPORT_NE_SOFTWARE_STORE_METADATA_INFORMATION" explode_array="metaDataFileCount">
+        <metric source="nodeType" target="netypeid" />
+        <metric source="count" target="count"/>
+      </event>
+  </events>
+</modelledevents>

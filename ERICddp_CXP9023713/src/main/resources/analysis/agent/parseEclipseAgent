@@ -1,0 +1,255 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($file,$dashDate);
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "file=s" => \$file,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    # Validate the parameters passed
+    if ( ! $file ) {
+        printUsageAndExit("No feed file specified");
+    }
+    if ( ! $site ) {
+        printUsageAndExit("No site specified");
+    }
+    if ( ! $dashDate ) {
+        printUsageAndExit("No date specified");
+    }
+
+    # Get the siteid
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Parse the file
+    if ($DEBUG > 4) { print "Feed file: " . $file . "\n"; }
+    if (-e $file) {
+        processData($file, $dashDate, $siteid, \%dataForStorage);
+    } else {
+        print "WARNING: No eclipse agent data file - expected file " . $file . " does not exist.\n";
+    }
+
+    return 0;
+}
+
+sub processData() {
+    my ($file , $dashDate, $siteid) = @_;
+    my $dbh = connect_db();
+    my $cnt = 1;
+    my $r_dataRaw;
+    my $r_dataForStorage;
+    my %userNames;
+    my %serverIds;
+    my %appNames;
+    my %agentNames;
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+
+        # Eliminate duplicates and records for dates we are not concerned with and count the records
+        if ($line =~ /^\s*$/ || $line !~ /^$dashDate/) {
+            next LINE;
+        } else {
+            $r_dataRaw->{$line} = $cnt;
+            $cnt++;
+            next LINE;
+       }
+    }
+    close(DATA);
+
+    # Parse, order and structure the data
+    my $failParseCount = 0;
+    foreach my $record (sort(keys(%{$r_dataRaw}))) { 
+        my $index = $r_dataRaw->{$record};
+	my ($timeStr,$id,$otherInfo);
+        if ( $record =~/^([^;]+);([^;]+);(.*)/ ) {
+            ($timeStr,$id,$otherInfo) = ($1,$2,$3);
+            if ( $DEBUG > 8 ) { print "processData: timeStr=$timeStr id=$id, otherInfo=$otherInfo\n"; }
+
+            $timeStr =~ s/\.\d{3,3}//;
+            my $time = formatTime( parseTime($timeStr,$StatsTime::TIME_DDMMYY_HMS), $StatsTime::TIME_SQL);
+            
+            my ($userId,$processId,$hostname,$app,$timestamp) = $id =~ /^([^-]+)-(\d+)@([^@]+)@(.*)-(\d+)/;
+            if ( ! defined $userId ) { 
+                if ( $DEBUG > 0 ) { print "processData: failed to parse id $id\n"; }
+                next;
+            }
+            # CEX seems to have some padding which we'll strip
+            $app =~ s/\s+\\//;
+        
+            my $r_storRecord = {
+                'time' => $time,
+		'user' => $userId,
+		'processid' => $processId,
+		'hostname' => $hostname,
+		'application' => $app,
+		'time_stamp' => $timestamp
+	    };
+	    $r_dataForStorage->{$index} = $r_storRecord;
+	} else {
+	    if ( $DEBUG > 0 ) { print "processData: Failed to parse $record\n"; }
+	    $failParseCount++;
+	    next;
+	}
+
+	if ( $DEBUG > 8 ) { print Dumper("processData: record $index", $r_dataForStorage->{$index}); }
+	   
+        # Pull the users, hostnames, app names and agent names into hashes
+        # Use hashes rather than arrays with the strings as keys to a value of 1 to avoid duplication
+        $userNames{$r_dataForStorage->{$index}->{'user'}} = 1;
+        $serverIds{$r_dataForStorage->{$index}->{'hostname'}} = 1;
+        $appNames{$r_dataForStorage->{$index}->{'application'}} = 1;
+
+        # The remaining information varies depending on whether we are parsing a memory, threading or eclipse record
+        if ($otherInfo =~ /(eclipse)/) {
+            $r_dataForStorage->{$index}->{'rectype'} = $1;
+            ($r_dataForStorage->{$index}->{'agent_name'}, $r_dataForStorage->{$index}->{'event_type'}) = $otherInfo =~ /(\S+);([A-Z]+)/;
+            $agentNames{$r_dataForStorage->{$index}->{'agent_name'}} = 1;
+            push(@{$r_dataForStorage->{'eclipse'}->{'order'}}, $index);
+        } elsif ($otherInfo =~ /(Memory)/) {
+            $r_dataForStorage->{$index}->{'rectype'} = lc($1);
+            $otherInfo =~ /:type=Memory;HeapMemoryUsage=committed=([0-9]+)&init=([0-9]+)&max=([0-9]+)&used=([0-9]+)/;
+            ($r_dataForStorage->{$index}->{'hp_committed'}, $r_dataForStorage->{$index}->{'hp_init'}, $r_dataForStorage->{$index}->{'hp_max'}, $r_dataForStorage->{$index}->{'hp_used'}) = (int(($1/(1024*1024))+0.5), int(($2/(1024*1024))+0.5), int(($3/(1024*1024))+0.5), int(($4/(1024*1024))+0.5));
+            push(@{$r_dataForStorage->{'memory'}->{'order'}}, $index);
+        } elsif ($otherInfo =~ /(Threading)/) {
+            $r_dataForStorage->{$index}->{'rectype'} = lc($1);
+            ($r_dataForStorage->{$index}->{'threadcount'}) = $otherInfo =~ /:type=Threading;ThreadCount=([0-9]+)/;
+            push(@{$r_dataForStorage->{'threading'}->{'order'}}, $index);
+        }
+
+	if ( $DEBUG > 8 ) { print Dumper("processData: r_dataForStorage $index", $r_dataForStorage->{$index}); }
+    }
+    if ( $failParseCount > 0 ) {
+	print "WARN: Failed to parse $failParseCount of " . ($cnt-1). " records\n";
+    }
+
+    # Add the specific fields and their order into the dataset
+    $r_dataForStorage->{'eclipse'}->{'fields'} = ['event_type'];
+    $r_dataForStorage->{'memory'}->{'fields'} = ['hp_committed', 'hp_init', 'hp_max', 'hp_used'];
+    $r_dataForStorage->{'threading'}->{'fields'} = ['threadcount'];
+
+    # Get the ids for the hostnames from the servers table
+    foreach my $hostname (keys(%serverIds)) {
+        $serverIds{$hostname} = getServerId($dbh,$siteid,$hostname);
+    }
+
+    # getIdMap the users, app names and agent names, and add the server ids found above also
+    my $r_idMaps = {
+        'agent_user_names' => getIdMap($dbh, "agent_user_names", "id", "name", [keys(%userNames)]),
+        'serverids' => \%serverIds,
+        'agent_app_names' => getIdMap($dbh, "agent_app_names", "id", "name", [keys(%appNames)]),
+        'agent_names' => getIdMap($dbh, "agent_names", "id", "name", [keys(%agentNames)])
+    };
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    if ($DEBUG > 7) { print Dumper $r_dataForStorage; }
+
+    # If there is data to store, store it
+    if ($cnt > 0) {
+        storeDataset($sqlDate, $siteid, $r_dataForStorage, $r_idMaps);
+    }
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $r_dataForStorage, $r_idMaps) = @_;
+    my $dbh = connect_db();
+
+    foreach my $dataset ('eclipse', 'memory', 'threading') {
+        # If there's no data, go onto the next dataset
+        if (!(defined($r_dataForStorage->{$dataset}->{'order'}->[0]))) {
+            next;
+        }
+    
+        # Set the table name & BULK_INSERT files
+        my $table = "agent_" . $dataset . "_stats";
+        my $tmpDir = "/tmp";
+        if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+        my $bcpFile = $tmpDir . "/" . $table . "." . $siteid . "." . $$ . ".bcp";
+
+        # Write the BULK_INSERT file
+        if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+        open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+        foreach my $index (@{$r_dataForStorage->{$dataset}->{'order'}}) {
+            ###
+            # Build up the bulk insert statement:
+            #     - Add the common fields.
+            #     - Add the dataset specific fields.
+            #     - Write to the bcp file.
+            ###
+            # Common fields
+            my $bulkInsertRecord = $r_dataForStorage->{$index}->{'time'} . "|" . $siteid . "|" . $r_idMaps->{'agent_user_names'}->{$r_dataForStorage->{$index}->{'user'}} . "|" . $r_dataForStorage->{$index}->{'processid'} . "|" . $r_idMaps->{'serverids'}->{$r_dataForStorage->{$index}->{'hostname'}} . "|" . $r_idMaps->{'agent_app_names'}->{$r_dataForStorage->{$index}->{'application'}} . "|" . $r_dataForStorage->{$index}->{'time_stamp'};
+            # For eclipse records, add the agent name id
+            if ($dataset eq 'eclipse') {
+                $bulkInsertRecord .= "|" . $r_idMaps->{'agent_names'}->{$r_dataForStorage->{$index}->{'agent_name'}};
+            }
+            # Specific fields
+            foreach my $field (@{$r_dataForStorage->{$dataset}->{'fields'}}) {
+                $bulkInsertRecord .= "|" . $r_dataForStorage->{$index}->{$field};
+            }
+            # BULK_INSERT record
+            print BULK_INSERT $bulkInsertRecord . "\n";
+        }
+        close BULK_INSERT;
+
+        # Set up the DELETE statement for re-runnability
+        my $rerunDelete = "DELETE FROM $table WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid;
+
+        if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+        # Run the DELETE
+        dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun with statement " . $rerunDelete . "\n";
+
+        # Run the INSERT into the table
+        my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE " . $table . " FIELDS TERMINATED BY '|'";
+        dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into " . $table . " with statement " . $sqlInsert . "\n";;
+
+    }
+    $dbh->disconnect;
+    return 0;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseEclipseAgent --file <file> --site <sitename> --date dd-mm-yy \n";
+
+    exit 1;
+}
+

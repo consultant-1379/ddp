@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  type="sb"
+  timespan="day"
+  forcelegend="true"
+  ylabel="Count"
+>
+  <title value="%s">
+    <param name="hostname"/>
+  </title>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_aim_lifecycle_instr">
+        <reference table="sites" condition="enm_aim_lifecycle_instr.siteid = sites.id"/>
+        <reference table="servers" condition="enm_aim_lifecycle_instr.serverid = servers.id"/>
+      </dbtables>
+      <param name="site"/>
+      <param name="hostname"/>
+      <where>sites.name = '%s' AND servers.hostname = '%s'</where>
+      <column db="totalActiveIncidentsWithFMDataSource" label="FM Data Source"/>
+      <column db="totalActiveIncidentsWithPMDataSource" label="PM Data Source"/>
+      <column db="totalActiveIncidentsWithFMAndPMDataSource" label="FM And PM Data Source"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

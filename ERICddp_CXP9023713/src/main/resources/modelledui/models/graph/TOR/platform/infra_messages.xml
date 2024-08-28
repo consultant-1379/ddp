@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ ylabel="Count"
+ forcelegend="true"
+>
+  <title value="Messages Added"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="enm_jmsqueue">
+        <reference table="sites" condition="enm_jmsqueue.siteid = sites.id"/>
+        <reference table="servers" condition="enm_jmsqueue.serverid = servers.id"/>
+        <reference table="enm_jmsqueue_names" condition="enm_jmsqueue.queueid = enm_jmsqueue_names.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND enm_jmsqueue_names.name = 'ComEcimMdbNotificationListener_0'</where>
+      <column db="enm_jmsqueue.messagesAdded" label="ComEcimMdbNotificationListener_0"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

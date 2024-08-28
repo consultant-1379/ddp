@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+>
+ <title value="File Parser Count"/>
+ <queries>
+  <query timecol="time" multiseries="servers.hostname">
+   <dbtables main="ecson_event_data_collector">
+    <reference table="sites" condition="ecson_event_data_collector.siteid = sites.id"/>
+    <reference table="servers" condition="ecson_event_data_collector.serverid = servers.id"/>
+   </dbtables>
+   <param name="site"/>
+   <where>sites.name = '%s' </where>
+   <column db="ecson_event_data_collector.pm_parser_files" label="File Parser Count"/>
+  </query>
+ </queries>
+ <size width="650" height="400"/>
+</modelledgraph>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmx_monitor" timecol="startTime">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid" />
+  </table>
+
+  <services>
+    <service name="fmx" />
+    <service name="fmx-engine" />
+  </services>
+
+  <hooks module="TOR::FMX">
+    <hook>preprocess</hook>
+  </hooks>
+
+  <events>
+    <!-- fmx_monitor
+    {"alarmsCreatedCount":0,"alarmsDeletedCount":0,"contextsCreatedCount":0,"contextsDeletedCount":0,"deltaAlarmsCreatedCount":0,"deltaAlarmsDeletedCount":0,"deltaContextsCreatedCount":0,"deltaContextsDeletedCount":0} -->
+    <event name="fmx_monitor">
+      <metric source="host" target="serverid" />
+      <metric source="deltaAlarmsCreatedCount" target="alarmCreated" filteridle="true" />
+      <metric source="deltaAlarmsDeletedCount" target="alarmDeleted" filteridle="true" />
+      <metric source="activeAlarms" target="activeAlarms" filteridle="true"/>
+      <metric source="deltaContextsCreatedCount" target="RuleContextCreated" filteridle="true" />
+      <metric source="deltaContextsDeletedCount" target="RuleContextDeleted" filteridle="true" />
+      <metric source="activeRuleContext" target="activeRuleContext" filteridle="true"/>
+    </event>
+  </events>
+</modelledevents>

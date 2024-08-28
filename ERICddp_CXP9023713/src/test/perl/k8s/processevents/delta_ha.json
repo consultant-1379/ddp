@@ -1,0 +1,369 @@
+{
+    "podstatus": {},
+    "helm": [],
+    "events": [
+        {
+            "count": 1,
+            "eventTime": null,
+            "firstTimestamp": "2021-05-19T23:24:42Z",
+            "involvedObject": {
+                "apiVersion": "v1",
+                "fieldPath": "spec.containers{cmevents}",
+                "kind": "Pod",
+                "name": "cmevents-6c5b8cc9db-9d9xx",
+                "namespace": "enm420",
+                "resourceVersion": "8942628",
+                "uid": "fdf50930-2f1b-4d0a-a4c6-404899a440bd"
+            },
+            "lastTimestamp": "2021-05-19T23:24:42Z",
+            "message": "Container cmevents failed startup probe, will be restarted",
+            "metadata": {
+                "creationTimestamp": "2021-05-19T23:24:42Z",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:uid": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:type": {}
+                        },
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "time": "2021-05-19T23:24:42Z"
+                    }
+                ],
+                "name": "cmevents-6c5b8cc9db-9d9xx.16809b5b5f68c220",
+                "namespace": "enm420",
+                "resourceVersion": "8955585",
+                "selfLink": "/api/v1/namespaces/enm420/events/cmevents-6c5b8cc9db-9d9xx.16809b5b5f68c220",
+                "uid": "fefefee5-09ba-40d3-99ef-fe7b57e56436"
+            },
+            "reason": "Killing",
+            "reportingComponent": "",
+            "reportingInstance": "",
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5917"
+            },
+            "type": "Normal"
+        },
+        {
+            "count": 3,
+            "eventTime": null,
+            "firstTimestamp": "2021-05-19T23:22:12Z",
+            "involvedObject": {
+                "apiVersion": "v1",
+                "fieldPath": "spec.containers{cmevents}",
+                "kind": "Pod",
+                "name": "cmevents-6c5b8cc9db-v8cbs",
+                "namespace": "enm420",
+                "resourceVersion": "8942587",
+                "uid": "12e1050a-d89b-4440-9ed6-bace0a37a81e"
+            },
+            "lastTimestamp": "2021-05-19T23:23:14Z",
+            "message": "Startup probe failed: ",
+            "metadata": {
+                "creationTimestamp": "2021-05-19T23:22:20Z",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:uid": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:type": {}
+                        },
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "time": "2021-05-19T23:22:20Z"
+                    }
+                ],
+                "name": "cmevents-6c5b8cc9db-v8cbs.16809b3877212c38",
+                "namespace": "enm420",
+                "resourceVersion": "8954010",
+                "selfLink": "/api/v1/namespaces/enm420/events/cmevents-6c5b8cc9db-v8cbs.16809b3877212c38",
+                "uid": "8150655e-bb50-469c-84db-a0172603dcba"
+            },
+            "reason": "Unhealthy",
+            "reportingComponent": "",
+            "reportingInstance": "",
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5933"
+            },
+            "type": "Warning"
+        },
+        {
+            "count": 1,
+            "eventTime": null,
+            "firstTimestamp": "2021-05-19T23:24:18Z",
+            "involvedObject": {
+                "apiVersion": "v1",
+                "fieldPath": "spec.containers{comecimpolicy}",
+                "kind": "Pod",
+                "name": "comecimpolicy-bc5d878dd-dxjl5",
+                "namespace": "enm420",
+                "resourceVersion": "8941909",
+                "uid": "8f1a0699-a34f-4bb6-b29f-f1b380ac79d3"
+            },
+            "lastTimestamp": "2021-05-19T23:24:18Z",
+            "message": "Readiness probe failed: ",
+            "metadata": {
+                "creationTimestamp": "2021-05-19T23:24:18Z",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:uid": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:type": {}
+                        },
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "time": "2021-05-19T23:24:18Z"
+                    }
+                ],
+                "name": "comecimpolicy-bc5d878dd-dxjl5.16809b55d9cd148c",
+                "namespace": "enm420",
+                "resourceVersion": "8954921",
+                "selfLink": "/api/v1/namespaces/enm420/events/comecimpolicy-bc5d878dd-dxjl5.16809b55d9cd148c",
+                "uid": "f80218ed-6fa3-4674-b5f9-b2fccc464fe8"
+            },
+            "reason": "Unhealthy",
+            "reportingComponent": "",
+            "reportingInstance": "",
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5930"
+            },
+            "type": "Warning"
+        },
+        {
+            "count": 1,
+            "eventTime": null,
+            "firstTimestamp": "2021-05-19T23:56:03Z",
+            "involvedObject": {
+                "apiVersion": "v1",
+                "fieldPath": "spec.containers{accesscontrol}",
+                "kind": "Pod",
+                "name": "accesscontrol-5d8f646479-gdtkb",
+                "namespace": "enm420",
+                "resourceVersion": "8943186",
+                "uid": "6ed2fe65-c686-4d0a-9f7d-261c902231a9"
+            },
+            "lastTimestamp": "2021-05-19T23:56:03Z",
+            "message": "Liveness probe errored: rpc error: code = Unknown desc = container not running (f323f4d0abffb0619eb850b898ef41805f9b3843eb085dc314bf3207543a962f)",
+            "metadata": {
+                "creationTimestamp": "2021-05-19T23:56:03Z",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:uid": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:type": {}
+                        },
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "time": "2021-05-19T23:56:03Z"
+                    }
+                ],
+                "name": "accesscontrol-5d8f646479-gdtkb.16809d114e8ff014",
+                "namespace": "enm420",
+                "resourceVersion": "8968035",
+                "selfLink": "/api/v1/namespaces/enm420/events/accesscontrol-5d8f646479-gdtkb.16809d114e8ff014",
+                "uid": "64dc1c29-5524-4db4-8f97-aebefb835d53"
+            },
+            "reason": "Unhealthy",
+            "reportingComponent": "",
+            "reportingInstance": "",
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb6366"
+            },
+            "type": "Warning"
+        },
+        {
+            "count": 1,
+            "eventTime": null,
+            "firstTimestamp": "2021-05-20T08:24:07Z",
+            "involvedObject": {
+                "apiVersion": "v1",
+                "fieldPath": "spec.containers{sps-httpd}",
+                "kind": "Pod",
+                "name": "sps-5d47bf95fb-49db9",
+                "namespace": "enm420",
+                "resourceVersion": "9121442",
+                "uid": "b2a83c14-b7a0-4067-9821-a3ffbf06474e"
+            },
+            "lastTimestamp": "2021-05-20T08:24:07Z",
+            "message": "Back-off restarting failed container",
+            "metadata": {
+                "creationTimestamp": "2021-05-20T08:24:07Z",
+                "managedFields": [
+                    {
+                        "apiVersion": "v1",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {
+                                "f:apiVersion": {},
+                                "f:fieldPath": {},
+                                "f:kind": {},
+                                "f:name": {},
+                                "f:namespace": {},
+                                "f:resourceVersion": {},
+                                "f:uid": {}
+                            },
+                            "f:lastTimestamp": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:type": {}
+                        },
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "time": "2021-05-20T08:24:07Z"
+                    }
+                ],
+                "name": "sps-5d47bf95fb-49db9.1680b8cae28e7136",
+                "namespace": "enm420",
+                "resourceVersion": "9125546",
+                "selfLink": "/api/v1/namespaces/enm420/events/sps-5d47bf95fb-49db9.1680b8cae28e7136",
+                "uid": "ef7cd325-ad9c-4e65-b50e-cd29b3298b73"
+            },
+            "reason": "BackOff",
+            "reportingComponent": "",
+            "reportingInstance": "",
+            "source": {
+                "component": "kubelet",
+                "host": "ieatrcxb5916"
+            },
+            "type": "Warning"
+        },
+        {
+            "metadata": {
+                "name": "itservices-0-b5dd558c-xc7s8.1768def03f145038",
+                "namespace": "enm400",
+                "uid": "ecb11f1f-393a-4486-97c2-da696a2b89b2",
+                "resourceVersion": "67613895",
+                "creationTimestamp": "2023-06-15T15:33:03Z",
+                "managedFields": [
+                    {
+                        "manager": "kubelet",
+                        "operation": "Update",
+                        "apiVersion": "v1",
+                        "time": "2023-06-15T15:33:03Z",
+                        "fieldsType": "FieldsV1",
+                        "fieldsV1": {
+                            "f:count": {},
+                            "f:firstTimestamp": {},
+                            "f:involvedObject": {},
+                            "f:lastTimestamp": {},
+                            "f:message": {},
+                            "f:reason": {},
+                            "f:source": {
+                                "f:component": {},
+                                "f:host": {}
+                            },
+                            "f:type": {}
+                        }
+                    }
+                ]
+            },
+            "involvedObject": {
+                "kind": "Pod",
+                "namespace": "enm400",
+                "name": "itservices-0-b5dd558c-xc7s8",
+                "uid": "15b02627-bf65-4a61-87a8-a19671f42b3a",
+                "apiVersion": "v1",
+                "resourceVersion": "63367579",
+                "fieldPath": "spec.containers{itservices}"
+            },
+            "reason": "Unhealthy",
+            "message": "(combined from similar events): Readiness probe errored: rpc error: code = Unknown desc = failed to exec in container: failed to start exec \"b8a725957e6a9747e457c7f05a125b95985cd3e9588e1d6d3e9f855ea094d264\": OCI runtime exec failed: exec failed: unable to start container process: error executing setns process: exit status 1: unknown",
+            "source": {
+                "component": "kubelet",
+                "host": "ieatbmx7879-worker-7"
+            },
+            "firstTimestamp": "2023-06-15T15:33:03Z",
+            "lastTimestamp": "2023-06-19T17:49:04Z",
+            "count": 11793,
+            "type": "Warning",
+            "eventTime": null,
+            "reportingComponent": "",
+            "reportingInstance": ""
+        }
+    ]
+}

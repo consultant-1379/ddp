@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mscm"/>
+  </services>
+
+  <table name="enm_mscmnotification_logs">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+     <metricgroup name="^%1%-com.ericsson.oss.mediation.cpp.notificationhandling.handlers.instrumentation.notification-receiver-handler-code-handler:type=NotificationStatsInstrumentation$">
+       <metric source="receivedNotificationsCount" target="totalnotificationsreceived" delta="true" filteridle="true"/>
+       <metric source="processedNotificationsCount" target="totalnotificationsprocessed" delta="true" filteridle="true"/>
+       <metric source="discardedEntriesCount" target="totalnotificationsdiscarded"/>
+       <metric source="evictedEntriesCount" target="evictions"/>
+       <metric source="largeCacheMaxEntriesCount" target="largeNodeCacheMax"/>
+       <metric source="smallCacheMaxEntriesCount" target="cachesizemax"/>
+       <metric source="notificationLeadAvgTime" target="leadtimeavg"/>
+       <metric source="notificationLeadMaxTime" target="leadtimemax"/>
+       <metric source="validationHandlerMaxTime" target="validationhandlertimemax"/>
+       <metric source="validationHandlerAvgTime" target="validationhandlertimeavg"/>
+       <metric source="writeHandlerMaxTime" target="writehandlertimemax"/>
+       <metric source="writeHandlerAvgTime" target="writehandlertimeavg"/>
+     </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

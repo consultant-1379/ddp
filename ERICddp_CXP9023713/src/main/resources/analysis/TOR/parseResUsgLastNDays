@@ -1,0 +1,219 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseResUsgLastNDays
+# Author  : Maheedhar Reddy Rachamalla (xmahrac)
+# Purpose : The purpose of this script is to generate consolidated analysis (at 15-min
+#           intervals) of resource usage statistics for the last 'N' days
+# Usage   : ${ANALYSIS_BIN}/TOR/parseResUsgLastNDays --site ${SITE} --date ${SQL_DATE} \
+#           --analysisOut ${ANALYSIS_OUTPUT}/resource_usage
+#=====================================================================
+
+# IMPORTANT ALERT: This script uses Perl interpreter threads to parallelize the data parsing
+# from the resource usage files of the last 'N' days. But these interpreter threads are not
+# lightweight. For instance, each new thread will hold the copies of all the variables up to
+# the point of new thread instantiation, unless they are explicitly shared. So please keep
+# an eye on the memory usage of this script if one is making new modifications to this code.
+# I would strongly suggest not to add any new functionality/code under this script unless one
+# knows exactly what he/she is doing. If you are not sure then it's better to put your code
+# in a new and separate thread-free script.
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+use JSON;
+use DateTime;
+
+use threads;
+use threads::shared;
+
+our $DEBUG = 0;
+our $LAST_N_DAYS = 31;
+our $CONCURR_THREADS = 8;
+our $NAS_ARCHIVE_DIR = '/nas/archive';
+
+sub getTopTenVMs($) {
+    my ($vmTotals) = @_;
+
+    my $counter = 0;
+    my %topTenVMs = ();
+    foreach my $server (sort { $vmTotals->{$b} <=> $vmTotals->{$a} || $a cmp $b } keys %{$vmTotals} ) {
+        $topTenVMs{$server} = $vmTotals->{$server};
+        if ( ++$counter == 10 ) {
+            last;
+        }
+    }
+    return \%topTenVMs;
+}
+
+sub getGivenDayAnalysis {
+    my ($topTenVMs, $dateDir, $prefix, $site, $date, $analysisOut) = @_;
+
+    my ($analysisDir, $resUsgDir) = ($analysisOut =~ /^(.*)\/\d{6}\/(.*)\/?$/);
+    my ($yyyy) = ($date =~ /(\d{4})-\d{2}-\d{2}/);
+
+    my %resUsgStats = ();
+    my %resUsgStatsOthers = ();
+    foreach my $server (keys %{$topTenVMs}) {
+        $resUsgStats{$server} = [];
+    }
+    $resUsgStats{'Other'} = [];
+
+    my $dateDirPath = $analysisDir . '/' . $dateDir . '/' . $resUsgDir;
+    my $nasDateDirPath = $NAS_ARCHIVE_DIR . '/' . $yyyy . '/tor/' . $site . '/analysis/' .
+                         $dateDir . '/' . $resUsgDir;
+
+    my $vmAllStatsFilePath = '';
+    if ( -f $dateDirPath . '/'. $prefix . '_stats_all.json' ) {
+        $vmAllStatsFilePath = $dateDirPath . '/'. $prefix . '_stats_all.json';
+    }
+    elsif ( -f $nasDateDirPath . '/'. $prefix . '_stats_all.json' ) {
+        $vmAllStatsFilePath = $nasDateDirPath . '/'. $prefix . '_stats_all.json';
+    }
+    else {
+        return \%resUsgStats;
+    }
+
+    open (DAILYALLJSON, "$vmAllStatsFilePath");
+    while (<DAILYALLJSON>) {
+        chomp (my $serverStatsJson = $_);
+        my $serverStats = decode_json($serverStatsJson);
+        my $host = (keys %{$serverStats})[0];
+        my %host15MinMaxs = ();
+        foreach my $epoch ( keys %{$serverStats->{$host}} ) {
+            my $epoch15Min = int( ($epoch/1000) / (15 * 60) ) * (15 * 60) * 1000;
+            if ( ! defined $host15MinMaxs{$epoch15Min} ) {
+                $host15MinMaxs{$epoch15Min} = $serverStats->{$host}->{$epoch};
+            }
+            elsif ( defined $host15MinMaxs{$epoch15Min} && $host15MinMaxs{$epoch15Min} < $serverStats->{$host}->{$epoch} ) {
+                $host15MinMaxs{$epoch15Min} = $serverStats->{$host}->{$epoch};
+            }
+        }
+
+        if ( exists $topTenVMs->{$host} ) {
+            foreach my $epoch15Min (sort {$a <=> $b} keys %host15MinMaxs) {
+                push (@{$resUsgStats{$host}}, [$epoch15Min + 0, $host15MinMaxs{$epoch15Min} + 0]);
+            }
+        }
+        else {
+            foreach my $epoch15Min (keys %host15MinMaxs) {
+                $resUsgStatsOthers{$epoch15Min} += $host15MinMaxs{$epoch15Min};
+            }
+        }
+    }
+    close DAILYALLJSON;
+
+    foreach my $epoch15Min (sort {$a <=> $b} keys %resUsgStatsOthers) {
+        push (@{$resUsgStats{'Other'}}, [$epoch15Min + 0, $resUsgStatsOthers{$epoch15Min} + 0]);
+    }
+
+    return \%resUsgStats;
+}
+
+sub getLastNDayAnalysis($$$$) {
+    my ($prefix, $site, $date, $analysisOut) = @_;
+
+    # Get the dates of last 'n' days
+    my @lastNDateDirs = ();
+    my %currDate = ();
+    @currDate{qw[year month day]} = split(/-/, $date);
+    my $currDate = DateTime->new(%currDate);
+    for ( 1..$LAST_N_DAYS ) {
+        my $yyyymmdd = $currDate->ymd;
+        my ($yy, $mm, $dd) = ($yyyymmdd =~ /\d{2}(\d{2})-(\d{2})-(\d{2})/);
+        unshift (@lastNDateDirs, $dd . $mm . $yy);
+        $currDate->subtract(days => 1);
+    }
+
+    # Get the top 10 VMs in terms of usage for the given resource for the last 'n' days
+    my %vmTotals = ();
+    my ($analysisDir, $resUsgDir) = ($analysisOut =~ /^(.*)\/\d{6}\/(.*)\/?$/);
+    my ($yyyy) = ($date =~ /(\d{4})-\d{2}-\d{2}/);
+    foreach my $dateDir (@lastNDateDirs) {
+        my $dateDirPath = $analysisDir . '/' . $dateDir . '/' . $resUsgDir;
+        my $nasDateDirPath = $NAS_ARCHIVE_DIR . '/' . $yyyy . '/tor/' . $site . '/analysis/' .
+                             $dateDir . '/' . $resUsgDir;
+
+        my $vmTotalsFilePath = '';
+        if ( -f $dateDirPath . '/'. $prefix . '_totals_all.json' ) {
+            $vmTotalsFilePath = $dateDirPath . '/'. $prefix . '_totals_all.json';
+        }
+        elsif ( -f $nasDateDirPath . '/'. $prefix . '_totals_all.json' ) {
+            $vmTotalsFilePath = $nasDateDirPath . '/'. $prefix . '_totals_all.json';
+        }
+        else {
+            next;
+        }
+
+        open (TOTALS, "$vmTotalsFilePath");
+        chomp (my $totalsJson = <TOTALS>);
+        close TOTALS;
+        my $vmDailyTotals = decode_json($totalsJson);
+        foreach my $host (keys %{$vmDailyTotals}) {
+            $vmTotals{$host} += $vmDailyTotals->{$host};
+        }
+    }
+    my $topTenVMs = getTopTenVMs(\%vmTotals);
+
+    # Get the maximum resource usage statistics for each 15-min interval
+    my %resUsgStats = ();
+    my %resUsgStatsOthers = ();
+    foreach my $server (keys %{$topTenVMs}) {
+        $resUsgStats{$server} = { 'name' => $server, 'data' => [] };
+    }
+    $resUsgStats{'Other'} = { 'name' => 'Other', 'data' => [] };
+
+    my @thrds = ();
+    my $iterCount = 0;
+    foreach my $dateDir (@lastNDateDirs) {
+        $iterCount++;
+        my $thr = threads->new('getGivenDayAnalysis', $topTenVMs, $dateDir, $prefix, $site, $date, $analysisOut);
+        push (@thrds, $thr);
+
+        if ( scalar @thrds >= $CONCURR_THREADS || $iterCount >= scalar @lastNDateDirs ) {
+            foreach my $thr (@thrds) {
+                my $childResUsgStats = $thr->join();
+                foreach my $server (keys %{$childResUsgStats}) {
+                    push (@{$resUsgStats{$server}->{'data'}}, @{$childResUsgStats->{$server}});
+                }
+            }
+            @thrds = ();
+        }
+    }
+
+    my $lastNDaysOutputFile = $analysisOut . '/' . $prefix . '_analysis_last_' . $LAST_N_DAYS . '.json';
+    open (JSON, ">$lastNDaysOutputFile");
+    print JSON "[\n";
+    foreach my $server (sort { $topTenVMs->{$b} <=> $topTenVMs->{$a} || $a cmp $b } keys %{$topTenVMs}) {
+        print JSON encode_json($resUsgStats{$server}) . ",\n";
+    }
+    print JSON encode_json($resUsgStats{'Other'}) . "\n";
+    print JSON "]\n";
+    close JSON;
+}
+
+sub main {
+    my ($site, $date, $analysisOut);
+
+    my $result = GetOptions (
+        "site=s"        => \$site,
+        "date=s"        => \$date,
+        "analysisOut=s" => \$analysisOut,
+        "debug=s"       => \$DEBUG
+    );
+
+    die "Invalid args"  if ($result != 1);
+
+    if ( ! -d $analysisOut ) {
+        mkdir $analysisOut;
+    }
+
+    my @prefixes = qw(vm_iops vm_cpu_usage vm_cpu_steal vm_mem_usage vm_nic_usage_rx vm_nic_usage_tx);
+    foreach my $prefix (@prefixes) {
+        getLastNDayAnalysis($prefix, $site, $date, $analysisOut);
+    }
+}
+
+main();

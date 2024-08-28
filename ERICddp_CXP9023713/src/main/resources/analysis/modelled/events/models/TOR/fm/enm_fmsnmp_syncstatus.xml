@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_fmsnmp_syncstatus">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+      <service name="mssnmpfm"/>
+  </services>
+<!-- SyncStatusChange {"SyncEvent":"SYNCHRONIZATION_STARTED","AutoSync":true,"NumOfAlarms":0,"_Thread":"Thread-218 (HornetQ-client-global-threads-2010106728)","Node":"K10MTAS17A008"} -->
+  <events>
+      <event name="SyncStatusChange">
+        <metric source="host" target="serverid"/>
+        <metric source="Node" target="neid" filtervalue="^[^=,]+$"/>
+        <metric source="SyncEvent" target="syncEvent"/>
+        <metric source="AutoSync" target="autoSync"/>
+        <metric source="NumOfAlarms" target="numOfAlarms"/>
+        <metric source="Elapsed" target="elapsedTime"/>
+      </event>
+  </events>
+</modelledevents>

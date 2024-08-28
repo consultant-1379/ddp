@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="k8s_helm_update">
+    <reference table="sites" condition="k8s_helm_update.siteid = sites.id"/>
+  </dbtables>
+  <param name="site"/>
+  <param name="date"/>
+  <where>k8s_helm_update.end BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND sites.name = '%site%'</where>
+  <column db="CONCAT(k8s_helm_update.name,'-',UNIX_TIMESTAMP(k8s_helm_update.end))" label="id" id="id" visible="false"/>
+  <column db="k8s_helm_update.start" label="Start" formatter="ddpFormatTime"/>
+  <column db="k8s_helm_update.end" label="End" formatter="ddpFormatTime"/>
+  <column db="TIMEDIFF(k8s_helm_update.end, k8s_helm_update.start)" label="Duration"/>
+  <column db="k8s_helm_update.name" label="Name"/>
+  <column db="k8s_helm_update.operation" label="Operation"/>
+  <column db="k8s_helm_update.toVersion" label="Version"/>
+  <column db="k8s_helm_update.fromVersion" label="From"/>
+  <ctxmenu keycol="id" targettype="url" multiselect="false">
+    <item id="details" label="Details"/>
+    <item id="warnings" label="Warning Events"/>
+    <urltarget arg="show"/>
+  </ctxmenu>
+</modelledtable>

@@ -1,0 +1,145 @@
+#!/usr/bin/env perl
+
+#================================
+# Libraries
+#================================
+use warnings;
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+my $DEBUG=0;
+
+main();
+exit 0;
+
+sub main {
+    # Declare variables
+    my ($file,$dashDate,$site);
+    my (@rttfiStats);
+
+    # Get input parameters
+    my $result = GetOptions(
+        "file=s" => \$file,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # 1. Parse Log File
+    @rttfiStats=parseRttfiData($file);
+    
+    # 2. Store Data to MYSQL
+    if( $#rttfiStats > 0 ) {
+        sqlImportRttfiData($dbh,$siteid,$sqlDate,@rttfiStats);
+    }
+    else {
+        print "No RTTFI Stat Operations found";
+    }
+}
+
+########################################
+# SUBROUTINES
+########################################
+# This subroutine parses the RTTFI file and returns an array of values
+sub parseRttfiData {
+    # Read input params
+    my ($file) = @_;
+
+    # Declare variables
+    my (@lines,@myStats,@MO);
+    my ($line,$op,$starttime,$endtime,$onrm_mo,$flag,$duration,$startdate,$enddate,$startepoch,$endepoch);
+
+    # Initialize variables
+    $flag = 0;
+
+    # Slurp file contents to array
+    open(FILE, "<$file");
+    @lines=<FILE>;
+    close(FILE);
+
+    # Extract relevant lines
+    foreach $line (@lines) {
+        next unless $line =~ /startRTTFI|startRttfiWithExport|stopRTTFI|getRTTFIValuesforRNC/;
+
+        chomp($line);
+        if($line =~ /startRTTFI|startRttfiWithExport/) { 
+            ($startdate,$starttime,$op,$startepoch,$onrm_mo) = $line =~ /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}).*RttfiManager#(\w+)\:.*Time:(\d+).*RNC Name:(.*)/;
+            if ( $DEBUG > 9 ) { print "startepoch: $startepoch\n"; }
+            $flag = 1;
+        } elsif (($flag==1)&&($line =~ /getRTTFIValuesforRNC.*$onrm_mo/)) {
+            ($enddate,$endtime, $endepoch) = $line =~ /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}).*Time:(\d+)\,.*RNC Name\:$onrm_mo\,RttfiTime/;
+            if ( $DEBUG > 9 ) { print "endepoch: $endepoch\n"; }
+            $duration = sprintf("%.3f",($endepoch-$startepoch)/1000);
+
+            # Write values to Array of Hashes
+            push @myStats, { "date" => $startdate, "start" => $starttime, "end" => $endtime, "op" => $op, "onrm_mo" => $onrm_mo, "duration" => $duration };
+            $flag = 0;
+        }
+    }
+
+    # Return array of hashes
+    return @myStats;
+}
+
+# This subroutine imports the RTTFI data into the database
+sub sqlImportRttfiData {
+    # Get input params
+    my ($dbh,$siteid,$sqlDate,@importData) = @_;
+
+    # Declare variables
+    my ($href,$line,$bcpfile,$mydate);
+    my (@arr);
+
+    # Initialize variables
+    $bcpfile="/var/tmp/bcpfile_rttfi.$$";
+
+    # Get array of MO names
+    if( $DEBUG > 9 ) { print "3. Get ID Map Time(START): ".localtime()."\n"; }
+    foreach $href ( @importData ) {
+         push @arr, $href->{'onrm_mo'};
+    }
+
+    # Retrieve MOIDs for each MO name
+    my $onrm_moid=getIdMap($dbh, "onrm_mo_details", "id", "name", \@arr);
+
+    # Write BCP file
+    open BCPFILE, ">$bcpfile";
+    foreach $href ( @importData ) {
+        print BCPFILE "$siteid\@$href->{'date'} $href->{'start'}\@$href->{'date'} $href->{'end'}\@$href->{'op'}\@$onrm_moid->{$href->{'onrm_mo'}}\@$href->{'duration'}\n";
+        if ( -z $href->{'date'} ) { $mydate = $href->{'date'}; }
+    }
+    close BCPFILE;
+    if( $DEBUG > 9) { print "3. Get ID Map Time(END): ".localtime()."\n"; }
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM rttfi_ops WHERE starttime BETWEEN '" . $mydate . " 00:00:00' AND '" . $mydate . " 23:59:59' AND siteid = " . $siteid;
+    if ($DEBUG > 9 ) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data rttfi_ops for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpfile\' INTO TABLE rttfi_ops FIELDS TERMINATED BY '\@'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into " . "onrm_node_list" . " with statement " . $sqlInsert . "\n";;
+    $dbh->disconnect;
+
+    # Remove BCP File
+    `rm -f $bcpfile`;
+}

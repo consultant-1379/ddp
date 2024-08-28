@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ ylabel="Seconds"
+ timespan="day"
+ useragg="false"
+>
+  <presetagg type="AVG" interval="Daily" />
+  <title value="Processing Duration"/>
+  <queries>
+    <query timecol="beginproc">
+      <dbtables main="ddpadmin.ddp_makestats"/>
+
+      <where>ddpadmin.ddp_makestats.endproc IS NOT NULL</where>
+      <column db="TIME_TO_SEC( TIMEDIFF( ddpadmin.ddp_makestats.endproc, ddpadmin.ddp_makestats.beginproc ) )" label="Duration"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day">
+
+  <query timecol="time">
+    <dbtables main="eniq_data_layer_sap_iq">
+      <reference table="sites" condition="eniq_data_layer_sap_iq.siteid = sites.id"/>
+      <reference table="servers" condition="eniq_data_layer_sap_iq.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="hostname"/>
+    <where>sites.name = '%s' AND servers.hostname = '%s'</where>
+  </query>
+
+  <graphs>
+    <graph name="main_db_usage_percentage" type="tsc" ylabel="%">
+      <title value="MainDB Usage(%)"/>
+      <column db="mainDbUsagePercentage" label="MainDB Usage(%)"/>
+    </graph>
+    <graph name="sysmain_db_usage_percentage" type="tsc" ylabel="%">
+      <title value="SysMainDB Usage(%)"/>
+      <column db="sysmainDbUsagePercentage" label="SysMainDB Usage(%)"/>
+    </graph>
+    <graph name="temp_db_usage_percentage" type="tsc" ylabel="%">
+      <title value="TempDB Usage(%)"/>
+      <column db="tempDbUsagePercentage" label="TempDB Usage(%)"/>
+    </graph>
+    <graph name="main_cache_hit_rate_in_percentage" type="tsc" ylabel="%">
+      <title value="Main Cache Hit Rate(%)"/>
+      <column db="mainCacheHitRateInPercentage" label="Main Cache Hit Rate(%)"/>
+    </graph>
+    <graph name="temp_cache_hit_rate_in_percentage" type="tsc" ylabel="%">
+      <title value="Temp Cache Hit Rate(%)"/>
+      <column db="tempCacheHitRateInPercentage" label="Temp Cache Hit Rate(%)"/>
+    </graph>
+    <graph name="main_cache_in_use_percentage" type="tsc" ylabel="%">
+      <title value="Main Cache In Use(%)"/>
+      <column db="mainCacheInUsePercentage" label="Main Cache In Use(%)"/>
+    </graph>
+    <graph name="temp_cache_in_use_percentage" type="tsc" ylabel="%">
+      <title value="Temp Cache In Use(%)"/>
+      <column db="tempCacheInUsePercentage" label="Temp Cache In Use(%)"/>
+    </graph>
+    <graph name="cache_used_in_percentage" type="tsc" ylabel="%">
+      <title value="Catalogue Cache In Use(%)"/>
+      <column db="cacheUsedInPercentage" label="Catalogue Cache In Use(%)"/>
+    </graph>
+    <graph name="active_connections" type="tsc" ylabel="Count">
+      <title value = "Active Connections"/>
+      <column db="activeConnections" label="Active Connections"/>
+    </graph>
+    <graph name="total_connections" type="tsc" ylabel="Count">
+      <title value = "Total Connections"/>
+      <column db="totalConnections" label="Total Connections"/>
+    </graph>
+    <graph name="large_memory_percentage" type="tsc" ylabel="%">
+      <title value = "Large Memory(%)"/>
+      <column db="largeMemoryFlexiblePercentage" label="Flexible"/>
+      <column db="largeMemoryInflexiblePercentage" label="Inflexible"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="temp_db_graphs">
+      <member>temp_db_usage_percentage</member>
+    </group>
+    <group name="main_sysmain_db_graphs">
+      <member>main_db_usage_percentage</member>
+      <member>sysmain_db_usage_percentage</member>
+    </group>
+    <group name="cache_stats_graphs">
+      <member>main_cache_hit_rate_in_percentage</member>
+      <member>temp_cache_hit_rate_in_percentage</member>
+      <member>main_cache_in_use_percentage</member>
+      <member>temp_cache_in_use_percentage</member>
+      <member>cache_used_in_percentage</member>
+    </group>
+    <group name="user_stats_graphs">
+      <member>active_connections</member>
+      <member>total_connections</member>
+    </group>
+    <group name="large_memory_stats_graphs">
+      <member>large_memory_percentage</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

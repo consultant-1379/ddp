@@ -1,0 +1,172 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $FIND_DATE = 0;
+our $FIND_DATA = 1;
+our $FIND_VERSION = 2;
+
+main();
+
+sub main
+{
+    my ($input,$date,$site,$server);
+    my $result = GetOptions(
+			    "input=s"  => \$input,
+			    "site=s"   => \$site,
+                "server=s" => \$server,
+			    "debug=s"  => \$DEBUG,
+			    ); 
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG); 
+
+    my $r_stats = parseInput($input);
+    if ( $#{$r_stats} > -1 ) {
+	store($site,$server,$r_stats);
+    }
+}
+
+sub store
+{
+    my($site,$server,$r_stats) = @_;
+
+    my $dbh = connect_db();
+    
+    my $siteId = getSiteId($dbh,$site);
+    my $serverId = getServerId($dbh,$siteId,$server);
+    my $fileName = makeBcp($serverId,$r_stats);
+    
+    my $from = $r_stats->[0]->[0];
+    my $to = $r_stats->[$#{$r_stats}]->[0];
+    dbDo($dbh, "DELETE FROM iq_monitor_summary WHERE serverid = $serverId AND time BETWEEN '$from' AND '$to'");
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$fileName' INTO TABLE iq_monitor_summary");
+
+    $dbh->disconnect();
+}
+
+sub makeBcp
+{
+    my($serverId,$r_rows) = @_;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) 
+    {
+	$tmpDir = $ENV{'TMP_DIR'};
+    }
+    
+    my $fileName = $tmpDir . "/iq_monitor_summary.bcp";
+    open BCP, ">$fileName" or die "Cannot open $fileName";
+    foreach my $r_row ( @{$r_rows} )
+    {
+	printf BCP "%s\t%d", $r_row->[0], $serverId;
+	for ( my $i = 1; $i <= $#{$r_row}; $i++ )
+	{
+	    printf BCP "\t%s", $r_row->[$i];
+	}
+	print BCP "\n";
+    }
+    close BCP;
+    
+    return $fileName;
+}
+
+sub parseInput
+{
+    my ($input) = @_;
+
+    open INPUT, $input or die "Cannot open $input";
+
+    my ($date,$hour,$min,$sec);
+
+
+    my @stats = ();
+    my $firstLine = 1;
+    my $version = "";
+    my $state = $FIND_VERSION;
+    while ( my $line = <INPUT> )
+    {
+	if ( $DEBUG > 9 ) { printf("parseInput: state=%s time=%02d:%02d:%02d line=%s",$state,$hour,$min,$sec,$line); }
+
+	if ( $state == $FIND_VERSION &&
+	     $line =~ /^\s+Version (\S+)/ ) {
+	    $version = $1;
+	    $state = $FIND_DATE;
+	} elsif ( $state == $FIND_DATE &&  
+		  $line =~ /^\s+(\d{4,4}-\d{2,2}-\d{2,2}) (\d{2,2}):(\d{2,2}):(\d{2,2})$/ ) {
+	    my ($newdate,$newhour,$newmin,$newsec) = ($1,$2,$3,$4);
+	    if ( $DEBUG > 5 ) { printf ("parseInput: update ts to %s %s:%s:%s from %s %02d:%02d:%02d\n", $newdate,$newhour,$newmin,$newsec, $date,$hour,$min,$sec); }
+	    <INPUT>; <INPUT>; # Skip two header lines
+	    ($date,$hour,$min,$sec) = ($newdate,$newhour,$newmin,$newsec);
+	    
+	    $state = $FIND_DATA;
+	}
+	elsif ( $state == $FIND_DATA )
+	{
+	    if ( $line =~ /^\s+\d+\s+/ )
+	    {
+		chop $line;
+		my @fields = split(/\s+|\//, $line);
+		
+		if ( $firstLine )
+		{
+		    if ( $DEBUG > 3 ) { print "parseInput: Discarding first line\n"; }
+		    $firstLine = 0;
+		    if ( $version eq "3.2" || $version eq "3.3" ) { 
+			# Sybase IQ 15 seems to have an older version of the Performance Monitor
+			# This seems to output two lines after the first header
+			if ( $DEBUG > 3 ) { print "parseInput: Discarding second line\n"; }
+			<INPUT>;
+		    }
+		}
+		else
+		{
+		    $fields[0] = sprintf("%s %02d:%02d:%02d", $date, $hour, $min, $sec);
+		    if ( $DEBUG > 7 ) { print Dumper("parseInput: fields", \@fields); }
+		    
+		    # When there are zero finds set the hit rate to 100 instead of zero
+		    # Main
+		    if ( $fields[2] == 0 )
+		    {
+			if ( $DEBUG > 6 ) { print "parseInput: main zero finds updating hr = 100.0\n"; }
+			$fields[3] = '100.0';
+		    }
+		    # Temp
+		    if ( $fields[10] == 0 )
+		    {
+			if ( $DEBUG > 6 ) { print "parseInput: temp zero finds updating hr = 100.0\n"; }
+			$fields[11] = '100.0';
+		    }
+
+		    
+		    push @stats, \@fields;
+		}
+
+		$min++;
+		if ( $min >= 60 )
+		{
+		    $min = 0;
+		    $hour++;
+		}
+		if ( $DEBUG > 5 ) { printf("parseInput: stepping time on to %02d:%02d:%02d\n", $hour,$min,$sec); }
+	    }
+	    else 
+	    {
+		$state = $FIND_DATE;
+	    }
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 5 ) { print Dumper("parseInput: stats", \@stats ); }
+
+    return \@stats;
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <dbtables main="postgres_checkpoints_bufferwrites">
+  <reference table="sites" condition="postgres_checkpoints_bufferwrites.siteid = sites.id"/>
+  <reference table="servers" condition="postgres_checkpoints_bufferwrites.serverid  = servers.id"/>
+ </dbtables>
+
+ <param name="site"/>
+ <param name="date"/>
+ <param name="serverid"/>
+ <where>sites.name = '%site%' AND postgres_checkpoints_bufferwrites.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND postgres_checkpoints_bufferwrites.serverid IN (%serverid%)</where>
+
+ <groupby rollup="true">
+    <column db="servers.hostname"/>
+ </groupby>
+
+ <column db="servers.hostname" label="Servers" id="serverNames"/>
+ <column db="SUM(postgres_checkpoints_bufferwrites.checkpointsTimed)" label="Schedule"/>
+ <column db="SUM(postgres_checkpoints_bufferwrites.checkpointsRequest)" label="Requests"/>
+ <column db="SUM(postgres_checkpoints_bufferwrites.checkpointsBuffer)" label="Buffer"/>
+ <column db="SUM(postgres_checkpoints_bufferwrites.bufferClean)" label="Background Writer Buffers"/>
+ <column db="SUM(postgres_checkpoints_bufferwrites.bufferBackend)" label="Backend Buffers"/>
+
+</modelledtable>

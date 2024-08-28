@@ -1,0 +1,175 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsTime;
+
+our $DEBUG = 0;
+
+sub parseLog($$) {
+    my ($fileName,$date) = @_;
+
+    if ( $DEBUG > 3 ) { print "parseLog: fileName=$fileName\n"; }
+
+    my %stats = ();
+    open INPUT, $fileName or die "Cannot open $fileName: $!";
+    my $inToday = 0;
+    while ( my $line = <INPUT> ) {
+	if ( $DEBUG > 9 ) { print "parseLog: inToday=$inToday line $. $line"; }
+	if ( $line =~ /^TS=(.*)/ ) {
+	    my $timestamp = $1;
+	    if ( $DEBUG > 5 ) { print "parseLog: timestamp=$timestamp\n"; }
+	    if ( $timestamp =~ /^$date/ ) {
+		$inToday = 1;
+	    } else {
+		$inToday = 0;
+	    }
+	} else {
+	    if ( $inToday ) {
+		if ( $line =~ /^(objectCreated|objectDeleted|AVC):([^:]+):([^:]+):([^:]+):(\d+)/ ) {
+		    my ($op,$nodeType,$moType,$attribute,$count) = ($1,$2,$3,$4,$5);
+		    if ( $DEBUG > 5 ) { print "parseLog: op=$op,nodeType=$nodeType,moType=$moType,attribute=$attribute,count=$count\n"; }
+		    if ( ! defined $stats{$nodeType}->{$op}->{$moType}->{$attribute} ) {			
+			$stats{$nodeType}->{$op}->{$moType}->{$attribute} = $count;
+		    } else {
+			$stats{$nodeType}->{$op}->{$moType}->{$attribute} += $count;
+		    }
+		} 
+	    }
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseLog: stats", \%stats); }
+
+    return \%stats;	    
+}
+
+sub storeData($$$) {
+    my ($site,$date,$r_statsByInst) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my %nmaMcNames = ();
+
+    my %allMo = ();
+    my %allAttrib = ();
+    foreach my $nmaInstId ( keys %{$r_statsByInst} ) {
+	my $nmaName = "nma";
+	if ( $nmaInstId > 0 ) {
+	    $nmaName .= $nmaInstId;
+	}
+	$nmaMcNames{$nmaInstId} = $nmaName;
+
+	my $r_instStats = $r_statsByInst->{$nmaInstId}->{'stats'};
+
+	foreach my $nodeType ( keys %{$r_instStats} ) {	    
+	    foreach my $eventType ( keys %{$r_instStats->{$nodeType}} ) {
+		foreach my $moType ( keys %{$r_instStats->{$nodeType}->{$eventType}} ) {
+		    $allMo{$moType}++;
+		    if ( $eventType eq 'AVC' ) {
+			foreach my $attrib ( keys %{$r_instStats->{$nodeType}->{$eventType}->{$moType}} ) {
+			    $allAttrib{$attrib}++;
+			}
+		    }
+		}
+	    }
+	}
+    }
+    if ( $DEBUG > 3 ) { print Dumper("storeData: nmaMcNames", \%nmaMcNames); }
+
+    my @allMoList = keys %allMo;
+    my $r_MoIdMap = getIdMap($dbh, "mo_names", "id", "name", \@allMoList );
+
+    my @allAttribList = keys %allAttrib;
+    push @allAttribList, 'NA';
+    my $r_AttribIdMap = getIdMap($dbh, "nead_attrib_names", "id", "name", \@allAttribList );
+
+    my @mcList = values %nmaMcNames;
+    my $r_mcIdMap = getIdMap( $dbh, "mc_names", "id", "name", \@mcList);
+
+    my %eventTypeMap = (
+	'AVC' => 'AVC',
+	'objectCreated' => 'CREATE',
+	'objectDeleted' => 'DELETE'
+	);
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = "$tmpDir/nma_notifrec.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName\n";    
+    foreach my $nmaInstId ( keys %{$r_statsByInst} ) {
+	my $nmaMcId = $r_mcIdMap->{$nmaMcNames{$nmaInstId}};
+	my $r_instStats = $r_statsByInst->{$nmaInstId}->{'stats'};
+	foreach my $nodeType ( keys %{$r_instStats} ) {	    
+	    foreach my $eventType ( keys %{$r_instStats->{$nodeType}} ) {
+		foreach my $moType ( keys %{$r_instStats->{$nodeType}->{$eventType}} ) {
+		    foreach my $attrib ( keys %{$r_instStats->{$nodeType}->{$eventType}->{$moType}} ) {
+			my @fields = ( $siteId, $date, $nmaMcId, 
+				       $eventTypeMap{$eventType}, $nodeType, 
+				       $r_MoIdMap->{$moType}, $r_AttribIdMap->{$attrib}, 
+				       $r_instStats->{$nodeType}->{$eventType}->{$moType}->{$attrib} );
+			print BCP join("\t", @fields), "\n";
+		    }
+		}
+	    }
+	}
+    }
+    close BCP;
+    
+    dbDo($dbh, "DELETE FROM nma_notifrec WHERE siteid = $siteId AND date = '$date'")
+	or die "Failed to delete old data";
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE nma_notifrec (siteid,date,mcid,eventtype,nodetype,moid,attribid,count)")
+	or die "Failed to load new data";
+
+    $dbh->disconnect();
+}
+	
+
+    
+sub main() {
+    my ($nmaDir,$site,$date);
+    my $result = GetOptions(
+        "nmadir=s" => \$nmaDir,
+        "site=s" => \$site,
+	"date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    setStatsDB_Debug($DEBUG);
+
+    my %statsByInst = ();
+    opendir(my $dh, $nmaDir) || die "can't opendir $nmaDir: $!";    
+    while ( my $file = readdir($dh) ) {
+	if ( $file =~ /^NotificationReceived.nma(\d*)$/ ) {
+	    my $instNumber = $1;
+	    if ( $instNumber eq "") {
+		$instNumber = 0;
+	    }
+	    if ( $DEBUG > 3 ) { print "main: file = $file, instNumber=$instNumber\n"; }
+	    $statsByInst{$instNumber} = { 'file' => $nmaDir . "/" . $file };
+	}
+    }
+    closedir($dh);
+
+    foreach my $instNumber ( keys %statsByInst ) {
+	$statsByInst{$instNumber}->{'stats'} = parseLog($statsByInst{$instNumber}->{'file'},$date);
+    }
+    
+    if ( $DEBUG > 7 ) {	print Dumper("main: statsByInst", %statsByInst); }
+
+    if ( defined $site ) {
+	storeData($site,$date,\%statsByInst);
+    }
+}
+
+main();

@@ -1,0 +1,1208 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our $NOT_STARTED = 0;
+our $STARTED = 1;
+
+our %monthMap = 
+    (
+     Jan => 1,
+     Feb => 2,
+     Mar => 3,
+     Apr => 4,
+     May => 5,
+     Jul => 7,
+     Jun => 6,
+     Aug => 8,
+     Sep => 9,
+     Oct => 10,
+     Nov => 11,
+     Dec => 12
+     );
+
+our %dateCache = ();
+
+main();
+
+#
+# Inputs
+#  dbperf:    output from sdm readPerfLog
+#  perf:      output from sdm perf
+#  stattimer: output from sdm StatTimerSave
+#  parser:    output from getSdmParserStats
+#
+# Outputs
+#  proctable: HTML file containing tables of info about Stored Procedures, info from UTRAN_DB_PERFLOG
+#  loadtable: HTML file containing table of stats about dispatcher performance, info from StatTimerSave
+#  data:      txt file containing data for gnuplot
+#  plotdir:   directory where to write plot files for the Plot Applet
+sub main
+{
+    my ($dbPerfLog,$perfLog,$parserLog,$statTimerLog,
+	$date,$site,
+	$procTable,$loadTable,$dataFile,$plotDir);
+    my $result = GetOptions(
+			    "dbperf=s" => \$dbPerfLog,
+			    "date=s"  => \$date,
+			    "perf=s"  => \$perfLog,
+			    "parser=s" => \$parserLog,
+			    "stattimer=s" => \$statTimerLog,
+			    "site=s"  => \$site,
+			    "data=s"  => \$dataFile,
+			    "proctable=s" => \$procTable,
+			    "loadtable=s" => \$loadTable,
+			    "plotdir=s" => \$plotDir,
+			    "debug=s" => \$DEBUG,
+			    ); 
+    ($result == 1) or die "Invalid args";
+
+    # totals structure
+    # Note: The 'time' field is added by calcTotalTimes
+    # OpType (Loading,Aggregation,Deletion) 
+    # case Loading:
+    #   $procedureName => count, rows, duration
+    # case Aggregation
+    #   $procedureName => count, rows, duration
+    #   'time' => total number of secs where this op has been active
+    # case Deletion
+    #   'table'->{$tableName}->[$resId] = totalRows
+    #   'proc'->{$procedureName} => rows, duration
+    #   'time' => total number of secs where this op has been active
+    #
+    my %totals = ();
+
+    my $r_AggDelay = [];     # Max aggregation delay per rop
+    my $r_AggCompleted = []; # Aggregations completed by rop
+
+    my $r_DelProcRunning = [];  # Num of del Procs running
+
+    if ( $dbPerfLog )
+    {
+	readDbPerfLog($dbPerfLog,$date,\%totals, $r_AggDelay,$r_AggCompleted,$r_DelProcRunning);
+    }
+
+    if ( $procTable )
+    {
+	writeSpTables($procTable, \%totals);
+    }
+
+
+    my ($r_results, $r_statTimer, $r_ParserTotals);
+
+    if ( $perfLog )
+    {
+	$r_results = readPerfLog($perfLog);
+    }
+
+    if ( $statTimerLog )
+    {
+	$r_statTimer = parseStatTimer($statTimerLog,$date);
+	if ( $loadTable )
+	{
+	    analyseStatTime($r_statTimer,$loadTable);
+	}
+    }
+
+    if ( $parserLog )
+    {
+	$r_ParserTotals = getParserStats($parserLog);
+    }
+
+
+
+    if ( $dataFile  )
+    {
+	# $date,$site,,$r_ParserTotals
+	writePlotData($r_results, $r_statTimer, $r_AggDelay, $r_AggCompleted, $r_DelProcRunning,
+		      $date,
+		      $dataFile, $plotDir);
+    }
+
+    calcTotalTimes($r_AggDelay, $r_DelProcRunning, $r_results, $r_statTimer, \%totals);
+
+    if ( $site )
+    {
+	storeResults(\%totals, $r_ParserTotals, $date, $site );
+    }
+}
+
+sub analyseStatTime
+{
+    my ($r_stats,$loadTable) = @_;
+
+    my %statsByTable = ();
+    foreach my $r_currDispatcherStats ( @{$r_stats} )
+    {
+	foreach my $r_currItrStats ( @{$r_currDispatcherStats} )
+	{
+	    my $maxTime = 0;
+	    my $maxTable;
+	    foreach my $table ( keys %{$r_currItrStats->{'table'}} )
+	    {
+		if ( $r_currItrStats->{'table'}->{$table}->{'main'}->{'execInMs'} > $maxTime )
+		{
+		    $maxTable = $table;
+		}
+
+		$statsByTable{$table}->{'cat'} += int ( ($r_currItrStats->{'table'}->{$table}->{'cat'}->{'execInMs'}/1000) + 0.5 );
+		$statsByTable{$table}->{'bcp'} += int ( ($r_currItrStats->{'table'}->{$table}->{'bcp'}->{'execInMs'}/1000) + 0.5 );
+		$statsByTable{$table}->{'ldp'} += int ( ($r_currItrStats->{'table'}->{$table}->{'ldp'}->{'execInMs'}/1000) + 0.5 );
+		$statsByTable{$table}->{'count'}++;
+	    }
+	}
+    }
+
+
+    open(TABLE, ">", $loadTable) or die "Cannot open $loadTable";
+    print TABLE "<table border> <tr> <th>Table</th> <th>Number of Loads</th> <th>Total cat time(sec)</th> <th>Total BCP time (sec)</th> <th>Total ldp time (sec)</th> </tr>\n";
+    foreach my $table ( keys %statsByTable )
+    {
+	printf TABLE "<tr> <td>%s</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>%d</td>\n",
+	    $table, 
+	    $statsByTable{$table}->{'count'}, 
+	    $statsByTable{$table}->{'cat'},
+	    $statsByTable{$table}->{'bcp'},
+	    $statsByTable{$table}->{'ldp'};
+	
+    }
+    print TABLE "</table>\n";
+    close TABLE;
+}
+
+sub parseStatTimer
+{
+    my ($statTimerLog) = @_;
+
+    my @stats = ();
+    open( LOG, $statTimerLog ) or die "Cannot open $statTimerLog";
+
+    my @currIds = ( 0, 0 );
+    while ( my $line = <LOG> )
+    {
+	my @fields = split /;/, $line;
+
+	if ( $DEBUG > 9 ) { print Dumper("parseStatTimer fields", \@fields); }
+
+	if ( $fields[0] eq "" )
+	{
+	    shift @fields;
+	    pop @fields;
+	}
+	else
+	{
+	    for ( my $i = 0; $i <= $#fields; $i++ )
+	    {
+		$fields[$i] =~ s/^\s+//;
+		$fields[$i] =~ s/\s+$//;
+	    }
+	}
+
+	my $id = $fields[0];
+	if ( $id != $currIds[0] )
+	{
+	    $currIds[0] = $id;
+	    push @stats, [];
+	}
+	my $r_currDispatcherStats = $stats[$#stats];
+
+	my $id2 = $fields[1];
+	if ( $id2 != $currIds[1] )
+	{
+	    push @{$r_currDispatcherStats}, {};
+	    $currIds[1] = $id2;
+	}
+	my $r_currItrStats = $r_currDispatcherStats->[$#{$r_currDispatcherStats}];
+	
+	my $idStr = $fields[2];
+
+	if ( $fields[4] !~ /NULL/ )
+	{
+	    my $startTime = parseSybaseDateTime($fields[3],1);
+	    my $stopTime = parseSybaseDateTime($fields[4],1);
+	    
+	    my $execInMs = $fields[5];
+	    
+	    if ( $idStr =~ /^performLoad - RowsInSLI=(\d+)/ )	   
+	    {
+		my $rowsInSli = $1;
+		$r_currItrStats->{'performLoad'} = {
+		    'execInMs' => $execInMs,
+		    'start'    => $startTime,
+		    'end'      => $stopTime,
+		    'rows'     => $rowsInSli
+		    };
+
+		if ( $DEBUG > 4 ) { print Dumper("parseStatTimer: performLoad r_currItrStats\n", $r_currItrStats->{'performLoad'}); }
+
+	    }
+	    elsif ( $idStr =~ /^(\S+) - (\S+) - (\S+)$/ )
+	    {
+		$r_currItrStats->{'table'}->{$3}->{$2} = {
+		    'execInMs' => $execInMs,
+		    'start'    => $startTime,
+		    'end'      => $stopTime
+		    };
+	    }
+	    else
+	    {
+		if ( $DEBUG > 5 ) { print "parseStatTimer startTime=$startTime id=$id id2=$id2 execInMs=$execInMs idStr=$idStr\n"; }
+	    }
+	}
+    }
+    close LOG;
+
+    if ( $DEBUG > 3 ) { print Dumper("parseStatTimer: stats", \@stats); }
+
+    return \@stats;
+}
+
+    
+sub getParserStats
+{
+    my ($statsFile,$date) = @_;
+
+    my %totals = ();
+    open( PARSER_STAT, $statsFile ) or die "Cannot open $statsFile";
+    
+    my $hasTimes = 0;
+    if ( <PARSER_STAT> =~ /time_parse/ )
+    {
+	$hasTimes = 1;
+    }
+    
+    while ( my $line = <PARSER_STAT> )
+    {
+	my @fields = split / /, $line;
+
+	if ( $fields[0] =~ /^$date/ )
+	{
+	    $totals{'TotalXmlParseBuildCount'} += $fields[1];
+	    $totals{'written_files'} += $fields[2];
+	    $totals{'written_data'} += int ($fields[3]/1024);
+	    
+	    if ( $hasTimes )
+	    {
+		$totals{'time_parse'} += $fields[12];
+		$totals{'time_map'} += $fields[13];
+		$totals{'time_write'} += $fields[14];
+		$totals{'time_bat'} += $fields[15];
+	    }
+	}
+    }
+    close PARSER_STAT;
+
+    if ( $DEBUG > 4 ) { print Dumper("getParserStats: totals: ", \%totals ); }
+
+    return \%totals;
+}
+
+sub writePlotData
+{
+    my ($r_results, $r_statTimer, $r_AggDelay, $r_AggCompleted, $r_DelProcRunning, 
+	$date,
+	$dataFile, $plotDir) = @_;
+
+
+    open DATA, ">$dataFile" or die "Cannot write to dataFile $dataFile";
+    
+    #
+    # Loading
+    # 
+    print DATA "$date:00:00:00 0 0\n";
+    if ( $r_results )
+    {
+	foreach my $r_LoadStat ( @{$r_results->{'load'}} )
+	{
+	    printf DATA "%s %d %d\n", centerTime($r_LoadStat->{'time'}, $r_LoadStat->{'duration'}), $r_LoadStat->{'rows'}, $r_LoadStat->{'duration'};
+	}
+    }
+    else
+    {
+	if ( $plotDir )
+	{
+	    open ( PLOT_LOAD, ">", $plotDir . "/load.txt" );
+	    print PLOT_LOAD "tb\n";
+	}
+
+	foreach my $r_currDispatcherStats ( @{$r_statTimer} )
+	{
+	    foreach my $r_currItrStats ( @{$r_currDispatcherStats} )
+	    {
+		if ($DEBUG > 5 ) { print Dumper("writePlotData: r_currDispatcherStats performLoad", $r_currItrStats->{'performLoad'}); }
+		
+		if ( $r_currItrStats->{'performLoad'} )
+		{
+		    my $duration = int ( ($r_currItrStats->{'performLoad'}->{'execInMs'} / 1000) + 0.5);
+		    my $centerTime = int ( (($r_currItrStats->{'performLoad'}->{'end'} + $r_currItrStats->{'performLoad'}->{'start'}) / 2) + 0.5);
+		    printf DATA "%s %d %d\n", timeToStr($centerTime), $r_currItrStats->{'performLoad'}->{'rows'}, $duration;
+		    
+		    if ( $plotDir )
+		    {
+			printf PLOT_LOAD "%s %d %d\n", timeToStr($r_currItrStats->{'performLoad'}->{'start'}), 
+			$r_currItrStats->{'performLoad'}->{'rows'}, 
+			$r_currItrStats->{'performLoad'}->{'execInMs'};
+		    }		 
+		}   
+	    }
+	}
+
+	if ( $plotDir )
+	{
+	    print PLOT_LOAD "\nplot;tbl;Loading;Time;Number of Nodes\n";
+	    close PLOT_LOAD;
+	}
+    }
+    print DATA "\n\n";
+
+    
+    #
+    # Deletion
+    #
+    print DATA "00:00:00 0\n";
+    
+    for ( my $i = 0; $i < (24 * 60 * 60); $i++ )
+    {
+	my $timeStr = secToTime($i);
+	
+	my @runningDelProcs = keys %{$r_DelProcRunning->[$i]};
+	printf DATA "%s %d\n", $timeStr, ($#runningDelProcs + 1);
+    }
+    print DATA "\n\n";
+    
+    #
+    # Aggregation Delay
+    #
+    if ( $plotDir )
+    {
+	open ( PLOT_DELAY, ">", $plotDir . "/aggdelay.txt" );
+	print PLOT_DELAY "tsc;second;Quarterly;Hourly;Daily;Weekly;Monthly\n";
+    }
+
+    my @units = ( 15, 60, (24*60), (7*24*60), (7*24*60) );
+    print DATA "00:00:00 0 0 0 0 0\n";
+    my $lastCntrStr = "";
+    my $lastTime = 0;
+    for ( my $i = 0; $i < (24 * 60 * 60); $i++ )
+    {
+	my $timeStr = secToTime($i);
+		    
+	my $cntrStr = "";
+	for ( my $resId = 0; $resId <= $#units; $resId++ ) 
+	{
+	    my $cntVal = int($r_AggDelay->[$resId]->[$i] / ($units[$resId] * 60) );
+	    $cntrStr = $cntrStr . " " . $cntVal;		
+	}
+	
+	printf DATA "%s%s\n", $timeStr, $cntrStr;
+
+	if ( $plotDir )
+	{
+	    if ( $cntrStr ne $lastCntrStr )
+	    {
+		if ( ($lastTime != ($i - 1)) && ($lastCntrStr ne "") )
+		{
+		    printf PLOT_DELAY "%s:%s%s\n", $date, secToTime($i-1), $lastCntrStr;
+		}
+
+		printf PLOT_DELAY "%s:%s%s\n", $date, $timeStr, $cntrStr;
+
+		$lastCntrStr = $cntrStr;
+		$lastTime = $i;
+	    }	    
+	}
+    }
+    print DATA "\n\n";
+
+    if ( $plotDir )
+    {
+	printf PLOT_DELAY "\nplot;tsc;Aggregation Delay;Time;Delay\n";
+	close PLOT_DELAY;
+	
+	open (PLOT_PERF, ">", $plotDir . "/aggperf.txt");
+	print PLOT_PERF "tsc;second;Quarterly;Hourly;Daily;Weekly;Monthly\n";
+    }
+
+    #
+    # Aggregation Completed
+    #    
+    print DATA "00:00:00 0 0 0 0 0\n";
+    $lastCntrStr = "";
+    $lastTime = 0;
+    for ( my $i = 0; $i < (24 * 60 * 60); $i++ )
+    {
+	my $timeStr = secToTime($i);
+	    
+	my $cntrStr = "";
+	for ( my $resId = $#units; $resId >= 0; $resId-- ) 
+	{	
+	    $cntrStr = sprintf " %d%s", $r_AggCompleted->[$resId]->[$i], $cntrStr;
+	}
+	    
+	printf DATA "%s%s\n", $timeStr, $cntrStr;
+
+	if ( $plotDir )
+	{
+	    if ( $cntrStr ne $lastCntrStr )
+	    {
+		if ( ($lastTime != ($i - 1)) && ($lastCntrStr ne "") )
+		{
+		    printf PLOT_PERF "%s:%s%s\n", $date, secToTime($i-1), $lastCntrStr;
+		}
+
+		printf PLOT_PERF "%s:%s%s\n", $date, $timeStr, $cntrStr;
+
+		$lastCntrStr = $cntrStr;
+		$lastTime = $i;
+	    }	    
+	}
+    }
+    
+    close DATA;
+    
+    if ( $plotDir )
+    {
+	printf PLOT_PERF "\nplot;tsc;Aggregations Performed;Time;Aggregation Completed\n";
+	close PLOT_PERF;
+    }
+}
+
+
+
+sub storeResults
+{
+    my ( $r_totals, $r_ParserTotals, $date,$site ) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+ 
+    my $siteId = getSiteId($dbh,$site);
+    if ( $siteId == -1 ) 
+    {
+	print "ERROR: Could not find siteid for $site\n";
+	return;
+    }
+
+    if ( $r_totals )
+    {
+	$dbh->do("DELETE FROM sdmu_perf WHERE siteid = $siteId AND date = \'" . $date . "\'");
+	
+	my $sql = sprintf("INSERT INTO sdmu_perf (date,siteid,time_load,time_agg,time_del) VALUES (\'%s\', %d, %d, %d, %d)", 
+			  $date, $siteId, 
+			  $r_totals->{'Loading'}->{'time'},
+			  $r_totals->{'Aggregation'}->{'time'}, 
+			  $r_totals->{'Deletion'}->{'time'} 
+			  );
+	if ( $DEBUG > 2 ) { print "storeResults: $sql\n"; }
+	$dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+    }
+
+    if ( $r_ParserTotals )
+    {
+	$dbh->do("DELETE FROM sdmu_parser WHERE siteid = $siteId AND date = \'" . $date . "\'");
+
+	my $sql = sprintf("INSERT INTO sdmu_parser (date,siteid,xmlfiles,bcpfiles,bcpvolume,time_parse,time_map,time_write,time_bat) VALUES (\'%s\', %d, %d, %d, %d, %d, %d, %d, %d)", 
+			  $date, $siteId, 
+			  $r_ParserTotals->{'TotalXmlParseBuildCount'},
+			  $r_ParserTotals->{'written_files'},
+			  $r_ParserTotals->{'written_data'},
+			  $r_ParserTotals->{'time_parse'},
+			  $r_ParserTotals->{'time_map'},
+			  $r_ParserTotals->{'time_write'},
+			  $r_ParserTotals->{'time_bat'}
+			  );
+	if ( $DEBUG > 2 ) { print "storeResults: $sql\n"; }
+	$dbh->do($sql) or die "Failed to insert sample " . $dbh->errstr;
+    }
+	
+    $dbh->disconnect;
+}
+
+sub writeSpTables
+{
+    my ($outputFile,$r_totals) = @_;
+
+    open PROC_INFO, ">$outputFile" or die "Cannot write to $outputFile";
+    foreach my $jobType ( keys %{$r_totals} )
+    {
+	print PROC_INFO "<H2>$jobType</H2>\n";
+	if ( $jobType eq "Aggregation" )
+	{
+	    foreach my $resId ( sort keys %{$r_totals->{$jobType}} )
+	    {
+		print PROC_INFO "<H3>Res $resId</H3>\n";
+		printTable($r_totals->{$jobType}->{$resId});
+	    }
+	}
+	elsif ( $jobType eq "Loading" ) 
+	{
+	    printTable($r_totals->{$jobType});
+	}
+	elsif ( $jobType eq "Deletion" )
+	{
+	    print PROC_INFO "<H3>Deletion by Stored Procedure</H3>\n";
+	    printTable($r_totals->{$jobType}->{'proc'});
+	    
+	    print PROC_INFO "<H3>Deletion by Table</H3>\n";
+	    print PROC_INFO "<table border>\n";
+	    print PROC_INFO " <tr> <th>Table</th> <th>Res 0 Rows</th> <th>Res 1 Rows</th> <th>Res 2 Rows</th> <th>Res 3 Rows</th> <th>Res 4 Rows</th> </tr>\n";
+	    foreach my $tableName ( sort keys %{$r_totals->{$jobType}->{'table'}} )
+	    {
+		printf PROC_INFO " <tr> <td>%s</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>%d</td> <td>%d</td> </tr>\n", 
+		$tableName, 
+		$r_totals->{$jobType}->{'table'}->{$tableName}->{0},
+		$r_totals->{$jobType}->{'table'}->{$tableName}->{1},
+		$r_totals->{$jobType}->{'table'}->{$tableName}->{2},
+		$r_totals->{$jobType}->{'table'}->{$tableName}->{3},
+		$r_totals->{$jobType}->{'table'}->{$tableName}->{4};
+	    }
+	    print PROC_INFO "</table>\n";
+	    
+	}
+    }
+    close PROC_INFO;
+}	    
+    
+
+sub printTable
+{
+    my ($r_data) = @_;
+
+    print PROC_INFO "<table border>\n";
+    print PROC_INFO " <tr> <th>Procedure</th> <th>Number of Executions</th> <th>Rows</th> <th>Duration</th> </tr>\n";
+    foreach my $procName ( sort keys %{$r_data} )
+    {
+	printf PROC_INFO " <tr> <td>%s</td> <td>%d</td> <td>%d</td> <td>%d</td> </tr>\n", $procName, $r_data->{$procName}->{'count'}, $r_data->{$procName}->{'rows'}, $r_data->{$procName}->{'duration'};
+    }
+    print PROC_INFO "</table>\n";
+}
+
+sub readPerfLog
+{
+    my ($inputFile) = @_;
+
+    open INPUT, $inputFile or die "Failed to open $inputFile";
+    my $sectionName = "";
+
+    my @delete = ();
+    my @load = ();
+    my @agg = ();
+
+    while ( my $line = <INPUT> )
+    {
+	if ( $line =~ /^\*\*\* (\S+) \*\*\*/ )
+	{
+	    $sectionName = $1;
+	    <INPUT> ; <INPUT>; 
+	}
+	elsif ( $sectionName eq "Loading" )
+	{
+	    #performLoad - RowsInSLI=4020          Jun 24 2005 12:00AM          726
+	    if ( $line =~ /^ performLoad - RowsInSLI=(\d+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d+)/ )
+	    {
+ 		my ($rows, $month, $day, $year, $time, $duration) = ($1, $2, $3, $4, $5, $6); 
+		my $timeStr = formatTime($year,$month,$day,$time);
+		my $r_Stat = {
+		    'rows'     => $rows,
+		    'time'     => $timeStr,
+		    'duration' => $duration
+		    };
+		push @load, $r_Stat;
+	    }
+	}
+	elsif ( $sectionName eq "Aggregation" )
+	{
+	    #44218        Oct 25 2005 12:00AM        Oct 26 2005  1:48AM        Oct 26 2005  2:05PM 
+	    if ( $line =~ /^\s+(\d+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\S+)/ )
+	    {
+ 		my ($duration, $month, $day, $year, $time,$smonth, $sday, $syear, $stime) = ($1, $2, $3, $4, $5, $6, $7, $8, $9); 
+		my $ropTimeStr = formatTime($year,$month,$day,$time);
+		my $startTimeStr = formatTime($syear,$smonth,$sday,$stime);
+		my $r_Stat = {
+		    'time'     => $startTimeStr,
+		    'duration' => $duration,
+		    'rop'      => $ropTimeStr
+		    };
+		push @agg, $r_Stat;
+	    }
+	}
+	elsif ( $sectionName eq "Deletion" )
+	{
+	    if ( $line =~ /^ (\S+)\s+(\d+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\S+)/ )
+	    {
+ 		my ($proc, $duration, $month, $day, $year, $time) = ($1, $2, $3, $4, $5, $6); 
+		my $timeStr = formatTime($year,$month,$day,$time);
+		my $r_Stat = {
+		    'time'     => $timeStr,
+		    'duration' => $duration,
+		    'proc'     => $proc
+		    };
+		push @delete, $r_Stat;
+	    }
+	}
+    }
+    close INPUT;
+
+    if ( $DEBUG > 4 ) 
+    { 
+ 	print Dumper( "readLog: load" , \@load );
+ 	print Dumper( "readLog: agg" , \@agg );
+ 	print Dumper( "readLog: delete" , \@delete );
+    }
+
+    my $r_results = {
+	'load'   => \@load,
+	'delete' => \@delete,
+	'agg'    => \@agg
+	};
+    return $r_results;
+}
+
+
+sub dbPerfLogAgg
+{
+    my ($procedureName, $resId, $ropTime, $procTime, $duration, $procRows, 
+	$today, 
+	$r_totals, $r_AggDelay, $r_AggCompletedInMin  ) = @_;
+    
+    $r_totals->{'Aggregation'}->{$resId}->{$procedureName}->{'count'}++;
+    $r_totals->{'Aggregation'}->{$resId}->{$procedureName}->{'rows'} += $procRows;
+    $r_totals->{'Aggregation'}->{$resId}->{$procedureName}->{'duration'} += $duration;
+
+    # For each second where this sp was running, check if the "delay" is the
+    # bigger then the current value and if so update it.
+    # Delay is the difference between the ROP time (Start_Time) and
+    # the startProcessing time
+    my $rop = parseSybaseDateTime($ropTime,0);
+    my $aggTime = $procTime;
+    while ( $aggTime <= ($procTime + $duration) )
+    {
+	if ( $aggTime > $today )
+	{
+	    my $secondIndex = ($aggTime - $today);
+	    if ( $DEBUG > 6 ) { print "readDbPerfLog found aggregation for today secondIndex = $secondIndex\n"; }
+
+	    my $delay = $procTime - $rop;
+	    if ( $delay > $r_AggDelay->[$resId]->[$secondIndex] )
+	    {
+		if ( $DEBUG > 5 ) { print "readDbPerfLog: setting aggInMin for secondIndex $secondIndex for resId $resId to $delay\n"; }
+		$r_AggDelay->[$resId]->[$secondIndex] = $delay;
+	    }
+	}
+	$aggTime++;
+    }
+        
+    if ( $DEBUG > 9 ) { print "dbPerfLogAgg: procTime=$procTime, duration=$duration, today=$today\n"; }
+
+    my $secondIndex = ($procTime + $duration) - $today;
+    $r_AggCompletedInMin->[$resId]->[$secondIndex]++;
+}
+
+#
+# For _sub sp, store number of rows deleted per table per res
+# i.e. $r_totals->{'Deletion'}->{'table'}->{$tableName}->{$resId} += $procRows;
+#
+# For "parent" sp, store rows, execution count, duration 
+#  also, foreach second that the sp is active, add it to that
+#  $r_DelProcRunning
+#
+sub dbPerfLogDel
+{
+    my ($procedureName, $resId, $ropTime, $procTime, $duration, $procRows, $tableName,
+	$today,
+	$r_DeletesByStartTime, $r_totals, $r_DelProcRunning ) = @_;
+    
+    if ( $procedureName =~ /_sub/ )
+    {
+	$r_totals->{'Deletion'}->{'table'}->{$tableName}->{$resId} += $procRows;
+    }
+    else
+    {
+	# Some of the procedures delete mulitple tables, so only
+	# count executions where this is a new rop
+	if (  $r_DeletesByStartTime->{$procedureName} ne $ropTime )
+	{
+	    $r_DeletesByStartTime->{$procedureName} = $ropTime;			
+	    $r_totals->{'Deletion'}->{'proc'}->{$procedureName}->{'count'}++;
+	}
+
+	$r_totals->{'Deletion'}->{'proc'}->{$procedureName}->{'rows'} += $procRows;
+	$r_totals->{'Deletion'}->{'proc'}->{$procedureName}->{'duration'} += $duration;
+
+
+	my $delTime = $procTime;
+	while ( $delTime <= ($procTime + $duration) )
+	{
+	    if ( $delTime > $today )
+	    {
+		my $secondIndex = $delTime - $today;	    
+		$r_DelProcRunning->[$secondIndex]->{$procedureName} = 1;
+	    }
+	    $delTime ++;
+	}
+    }
+
+
+}
+
+sub readDbPerfLog
+{
+    my ($dbPerfLog,$date,$r_totals,$r_AggDelay,$r_AggCompleted,$r_DelProcRunning) = @_;
+
+    # Calculate midnight
+    my ($year,$month,$day) = $date =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})/;    
+    my $today = timelocal(0,0,0,$day,$month-1,$year - 1900);
+
+    for ( my $resId = 0; $resId < 4; $resId++ )
+    {
+	my $r_delay = [];
+	my $r_completed = [];
+	for ( my $i = 0; $i < (60*60*24); $i++ )
+	{
+	    push @{$r_delay}, 0;
+	    push @{$r_completed}, 0;
+	}
+	push @{$r_AggDelay}, $r_delay;
+	push @{$r_AggCompleted}, $r_completed;
+    }
+
+    for ( my $i = 0; $i < (60*60*24); $i++ )
+    {
+	push @{$r_DelProcRunning}, {};	
+    }
+
+
+    open DB_PERF_LOG, $dbPerfLog or die "Could not open dbPerfLog $dbPerfLog\n";
+
+    my $startProcHasSSMM = 0;
+    my $header = <DB_PERF_LOG>;
+    if ( $header =~ /startProcessingSSMMM/ )
+    {
+	$startProcHasSSMM = 1;
+    }
+    
+    my $hasSep = 0;
+    if ( $header =~ /;/ )
+    {
+	$hasSep = 1;
+    }
+
+    <DB_PERF_LOG>; # Skip ---- line
+    my $lineNum = 2;
+
+    
+    # See dbPerfLogDel for purpose
+    my %deletesByStart_Time = ();
+
+    while ( my $line = <DB_PERF_LOG> )
+    {
+	$lineNum++;
+	if ( $DEBUG > 8 ) { print "readDbPerfLog: lineNum=$lineNum line=$line"; }
+
+	my ($procedureName, $rncId, $resId, $ropTime, $procTimeStr, $duration, $procRows, $tableName );
+	my ($dummy1,$dummy2);
+	if ( $hasSep )
+	{
+	    ($dummy1,$procedureName, $rncId, $resId, $ropTime, $procTimeStr, $duration, $procRows, $tableName,$dummy2 ) =
+		split /;/, $line;
+	}
+	else
+	{
+	    ($procedureName, $rncId, $resId, $ropTime, $procTimeStr, $duration, $procRows, $tableName ) =	    
+		$line =~ /^ (\S+)\s+(\S+)\s+(\S+)\s+(.*)\s+(\S+\s+\d+\s+\d+\s+\S+)\s+(\d+)\s+(\S+)\s+(\S+)\s+$/;
+	    $ropTime =~ s/ *$//;
+	}
+
+	if ( $procedureName )
+	{
+	    if ( $DEBUG > 8 ) { print "readDbPerfLog: procedureName, rncId, resId, ropTime, procTimeStr, duration, procRows, tableName = $procedureName, $rncId, $resId, $ropTime, $procTimeStr, $duration, $procRows, $tableName\n"; }
+	    
+	    my $procTime = parseSybaseDateTime($procTimeStr,$startProcHasSSMM);
+	    
+	    if ( $procedureName =~ /^ld/ )
+	    {
+		$r_totals->{'Loading'}->{$procedureName}->{'count'}++;
+		$r_totals->{'Loading'}->{$procedureName}->{'rows'} += $procRows;
+		$r_totals->{'Loading'}->{$procedureName}->{'duration'} += $duration;
+	    }
+	    elsif ( $procedureName =~ /Agg/ )
+	    {
+		dbPerfLogAgg( $procedureName, $resId, $ropTime, $procTime, $duration, $procRows, 
+			      $today,
+			      $r_totals, $r_AggDelay, $r_AggCompleted );
+	    }
+	    elsif ( $procedureName =~ /Del/ )
+	    {
+		dbPerfLogDel( $procedureName, $resId, $ropTime, $procTime, $duration, $procRows, $tableName,
+			      $today,
+			      \%deletesByStart_Time, $r_totals, $r_DelProcRunning );
+	    }
+	}
+	else
+	{
+	    if ( $line !~ /UTRAN_DB_PERFLOG - complete/ )
+	    {
+		print "Failed to parse $line";
+	    }
+	}
+    }
+    close DB_PERF_LOG;
+
+    if ( $DEBUG > 2 ) { print Dumper("readDbPerfLog: data", $r_totals ); }
+    if ( $DEBUG > 2 ) { print Dumper("readDbPerfLog: aggInMin", $r_AggDelay ); }
+    if ( $DEBUG > 2 ) { print Dumper("readDbPerfLog: aggCompInMin", $r_AggCompleted ); }
+
+    if ( $DEBUG > 2 ) { print Dumper("readDbPerfLog: delProcRunning", $r_DelProcRunning ); }
+    
+}
+
+sub calcTotalTimes
+{
+    my ($r_AggDelay, $r_DelProcRunning, $r_results, $r_statTimer, $r_totals) = @_;
+
+    $r_totals->{'Loading'}->{'time'} = 0;
+    $r_totals->{'Deletion'}->{'time'} = 0;
+    $r_totals->{'Aggregation'}->{'time'} = 0;
+
+    for ( my $i = 0; $i <= (60*60*24); $i++ )
+    {
+	my @runningDelProcs = keys %{$r_DelProcRunning->[$i]};
+	if ( $#runningDelProcs > -1 )
+	{
+	    $r_totals->{'Deletion'}->{'time'}++;
+	}
+
+	my $aggActive = 0;
+	for ( my $resId = 0; ($resId <= 4) && (!$aggActive) ; $resId++ )
+	{
+	    # $r_AggDelay->[$resId]->[$secondIndex]
+	    if ( $r_AggDelay->[$resId]->[$i] > 0 )
+	    {
+		$aggActive = 1;
+	    }
+	}
+	if ( $aggActive )
+	{
+	    $r_totals->{'Aggregation'}->{'time'}++;
+	}
+    }
+
+    if ( $r_results )
+    {
+	foreach my $r_LoadStat ( @{$r_results->{'load'}} )
+	{
+	    $r_totals->{'Loading'}->{'time'} += $r_LoadStat->{'duration'};
+	}
+    }
+    elsif ( $r_statTimer )
+    {
+	foreach my $r_currDispatcherStats ( @{$r_statTimer} )
+	{
+	    foreach my $r_currItrStats ( @{$r_currDispatcherStats} )
+	    {
+		$r_totals->{'Loading'}->{'time'} += 
+		    int ( ($r_currItrStats->{'performLoad'}->{'execInMs'} / 1000) + 0.5);
+	    }
+	}
+    }
+	
+	
+    if ( $DEBUG > 0 ) 
+    { 
+	foreach my $op ( 'Loading', 'Aggregation', 'Deletion' )
+	{
+	    printf "calcTotalTimes: %s %d\n", $op, $r_totals->{$op}->{'time'};
+	}
+    }
+}
+
+
+    
+
+# sub readDispatchLog
+# {
+#     my ($inputFile) = @_;
+
+#     my @scriptRuns = ();
+
+#     my $currPid = 0;
+#     my $currStart = "";
+
+#     open INPUT, $inputFile or die "Failed to open $inputFile";
+#     while ( my $line = <INPUT> )
+#     {
+# 	if ( $DEBUG > 7 ) { print "readDispatchLog: currPid=$currPid line=$line" };
+
+# 	if ( $line =~ /^(\S+) (\S+) --> PID (\d+)\s+(\S+) sdm_mainscript/ )
+# 	{
+# 	    my $date = $1;
+# 	    my $time = $2;
+# 	    my $pid = $3;
+# 	    my $job = $4;
+
+# 	    if ( $DEBUG > 6 ) { print "readDispatchLog: date=$date time=$time pid=$pid job=$job\n" };
+
+# 	    my ($month,$day,$year) = $date =~ /^(\d+)\/(\d+)\/(\d+)/;
+# 	    my ($hour,$min,$sec) = $time =~ /^(\d+):(\d+):(\d+)/;
+# 	    my $theTime = timelocal($sec,$min,$hour,$day,$month-1,$year + 100);
+
+# 	    if ( $job eq "enter" )
+# 	    {
+# 		<INPUT>; <INPUT>;
+# 		if ( <INPUT> !~ /^Too many mainscripts/ )
+# 		{
+# 		    $currPid = $pid;
+
+# 		    my ($month,$day,$year) = $date =~ /^(\d+)\/(\d+)\/(\d+)/;
+# 		    my ($hour,$min,$sec) = $time =~ /^(\d+):(\d+):(\d+)/;
+# 		    $currStart = $theTime;
+# 		}
+# 	    }
+# 	    elsif ( $job eq "done" )
+# 	    {
+# 		if ( $pid == $currPid )
+# 		{
+# 		    my $r_Run = {
+# 			'start' => $currStart,
+# 			'end'   => $theTime
+# 			};
+# 		    push @scriptRuns, $r_Run;
+
+# 		    $currStart = 0;
+# 		    $currPid = 0;
+# 		}
+# 	    }
+# 	}
+#     }
+#     close INPUT;
+
+#     if ( $DEBUG > 4 ) { print Dumper("readDispatchLog: scriptRuns", \@scriptRuns ); }
+
+# }
+
+
+# sub readDeleteLog
+# {
+#     my ($inputFile) = @_;
+
+#     my $state = $NOT_STARTED;
+
+#     my %runningScripts = ();
+#     my %scriptRuns = ();
+#     my %overLappingSripts = ();
+#     open INPUT, $inputFile or die "Failed to open $inputFile";
+#     while ( my $line = <INPUT> )
+#     {
+# 	if ( $DEBUG > 7 ) { print "readDeleteLog: state=$state: line=$line" };
+
+# 	if ( $line =~ /^<?-+>?/ )
+# 	{
+# 	    my ($exited,$entered,$script,$job,$time) = $line =~ 
+# 		/^(<?)-+(>?) (\S+) - ([^ \.]+)[ \.]+(.*)/;
+# 	    if ( $DEBUG > 6 ) { print "readDeleteLog: entered=$entered, exited=$exited, script=$script job=$job time=$time\n"; }
+# 	    #my $time = parseTime($timeStr);
+
+# 	    if ( $job eq "STARTED" )
+# 	    {
+# 		if ( exists $runningScripts{$script} )
+# 		{
+# 		    if ( <INPUT> =~ /^Too many delete scripts/ )
+# 		    {
+# 			if ( ! exists $overLappingSripts{$script} )
+# 			{
+# 			    $overLappingSripts{$script} = [];
+# 			}
+# 			push @{$overLappingSripts{$script}}, $time;
+# 		    }
+# 		}
+# 		else
+# 		{
+# 		    $runningScripts{$script} = $time;
+# 		}
+# 	    }
+# 	    elsif ( $job eq "ENDED" )
+# 	    {
+# 		if ( exists $runningScripts{$script} )
+# 		{
+# 		    if ( ! exists $scriptRuns{$script} )
+# 		    {
+# 			$scriptRuns{$script} = [];
+# 		    }
+# 		    my $r_RunData = {
+# 			'start' => $runningScripts{$script},
+# 			'end'   => $time
+# 			};
+# 		    push @{$scriptRuns{$script}}, $r_RunData;
+
+# 		    delete $runningScripts{$script};
+# 		}
+# 		else
+# 		{
+# 		    if ( $DEBUG > 1 ) { print "readDeleteLog: finish without start script=$script time=$time\n"; }
+# 		}
+# 	    }
+# 	}
+#     }
+#     close INPUT;
+
+#     if ( $DEBUG > 4 ) 
+#     { 
+# 	print Dumper( "readDeleteLog: scriptRuns" , \%scriptRuns );
+# 	print Dumper( "readDeleteLog: overLappingSripts" , \%overLappingSripts );
+#     }
+
+# }
+
+sub timeToStr
+{
+    my ($timeVal) = @_;
+    my @timeFields = localtime($timeVal);
+
+    my $timeStr =  sprintf("%04d-%02d-%02d:%02d:%02d:%02d",
+			   $timeFields[5] + 1900, $timeFields[4] + 1, $timeFields[3],
+			   $timeFields[2], $timeFields[1], $timeFields[0]);
+
+    if ( $DEBUG > 9 ) { print Dumper("timeToStr timeVal=$timeVal timeStr=$timeStr timeFields", \@timeFields); }
+
+    return $timeStr;
+}
+
+sub formatTime
+{
+    my ($year,$month,$day,$time) = @_;
+
+    my ($hour,$min,$ampm) = $time =~ /^(\d+):(\d+)(\S+)/;
+    if ( $DEBUG > 9 ) { print "formatTime: hour=$hour min=$min ampm=$ampm\n"; }
+
+    if ( $ampm eq "PM" )
+    {
+	if ( $hour != 12 ) 
+	{
+	    $hour += 12;
+	}
+    }
+    elsif ( $hour == 12 )
+    {
+	$hour = 0;
+    }
+    
+
+    if ( $DEBUG > 9 ) { print "formatTime: hour24=$hour \n"; }
+
+    my $timeStr = sprintf("%04d-%02d-%02d:%02d:%02d", $year, $monthMap{$month}, $day, $hour, $min );
+    return $timeStr;
+}
+
+sub centerTime
+{
+    my ($timeStr, $duration) = @_;
+
+    my ($year,$month,$day,$hour,$min) = $timeStr =~ /^(\d+)-(\d+)-(\d+):(\d+):(\d+)$/;
+    my $time = timelocal(0,$min,$hour,$day,$month-1,$year - 1900);
+    my $cenTime = $time + int ($duration/2);
+
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($cenTime);
+    return sprintf("%04d-%02d-%02d:%02d:%02d:%02d", $year + 1900, $mon + 1, $mday, $hour, $min, $sec);
+}
+
+sub parseSybaseDateTime
+{
+    my ($dateTimeStr, $hasSSMM) = @_;
+
+    if ( $DEBUG > 9 ) { print "parseSybaseDateTime: dateTimeStr=$dateTimeStr hasSSMM=$hasSSMM\n"; } 
+    if ( $dateTimeStr eq "NULL" )
+    {
+	return 0;
+    }
+
+    my ($month,$day,$year,$hour,$min,$sec,$ampm);
+    if ( $hasSSMM )
+    {
+	($month,$day,$year,$hour,$min,$sec,$ampm) = $dateTimeStr =~
+	    /^(\S+)\s+(\d+)\s+(\d+)\s+(\d+):(\d+):(\d+):\d+(\S+)$/;
+	#$sec = 0;    
+    }
+    else
+    {
+	($month,$day,$year,$hour,$min,$ampm) = $dateTimeStr =~
+	    /^(\S+)\s+(\d+)\s+(\d+)\s+(\d+):(\d+)(\S+)$/;
+	$sec = 0;
+    }
+    
+
+    if ( $DEBUG > 9 ) { print "parseSybaseDateTime: $month,$day,$year,$hour,$min,$sec,$ampm\n"; } 
+
+    if ( $month )
+    {
+	my $monthNum = $monthMap{$month};
+	if ( $ampm eq "PM" )
+	{
+	    if ( $hour != 12 ) 
+	    {
+		$hour += 12;
+	    }
+	}
+	elsif ( $hour == 12 )
+	{
+	    $hour = 0;
+	}
+
+	if ( $DEBUG > 9 ) { print "parseSybaseDateTime: month=$monthNum hour=$hour\n"; } 
+
+	my $midnightStr = sprintf("%d-%d-%d", $year, $monthNum, $day);
+	my $midnight = $dateCache{$midnightStr};
+	if ( ! $midnight )
+	{
+	    $midnight = timelocal(0,0,0,$day,$monthNum-1,$year - 1900);
+	    $dateCache{$midnightStr} = $midnight;
+	}
+
+	return ($midnight + (($hour * 3600) + ($min * 60) + $sec));
+    }
+    else
+    {
+	print "parseSybaseDateTime: failed to parse \"$dateTimeStr\"\n";
+	return -1;
+    }
+}
+
+sub by_number {
+    if ($a < $b) {
+        return -1;
+    } elsif ($a == $b) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+sub formatHHMM
+{
+    my ($sec) = @_;
+    my $hours = int ($sec / 3600);
+    my $mins  = int ( ($sec % 3600) / 60 );
+
+    #qprint "sec = $sec, hours=$hours, mins=$mins\n";
+    return sprintf("%02d:%02d", $hours, $mins );
+}
+
+sub secToTime
+{
+    my ($i) = @_;
+
+    my $hour = int ( $i / 3600 );
+    my $min  = int ( ($i % 3600) / 60 );
+    my $sec  = $i % 60;
+
+    return sprintf("%02d:%02d:%02d", $hour, $min, $sec);
+}

@@ -1,0 +1,91 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use Time::Local;
+use StatsTime;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+sub main {
+    my ($indir,$site,$date);
+    my $result = GetOptions (
+        "dir=s" => \$indir,
+        "site=s" => \$site,	
+	"date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+    ($result == 1) or die "Invalid args";
+
+    print "test\n";
+    opendir INDIR, $indir or die "Cannot open $indir";
+    my @files = readdir(INDIR);
+    close INDIR;
+    if ( $DEBUG > 2 ) { print Dumper("main: files", \@files); }
+    
+    my @serverLogFiles = ();
+    foreach my $file ( @files ) { 
+	if ( $DEBUG > 3 ) { print "main file: $file\n"; }
+	if ( $file =~ /^server_access_log/ ) {
+	    push @serverLogFiles, $indir . "/" . $file;
+	}
+    }
+    my @sortedLogFiles = sort @serverLogFiles;
+    if ( $DEBUG > 1 ) { print Dumper("main: sortedLogFiles", \@sortedLogFiles); }
+
+    my $r_events = parseLogs(\@sortedLogFiles);
+}
+
+sub parseLogs() {
+    my ($r_logs) = @_;
+
+    my @events = ();
+    open OUT, ">/tmp/out.txt";
+    foreach my $logFile ( @{$r_logs} ) {
+	if ( $DEBUG > 1 ) { print "parseLogs: processing $logFile\n"; }
+	open INPUT, $logFile or die "Cannot open $logFile";
+	while ( my $line = <INPUT> ) {
+	    my ($host,$user,$time,$tzOffset,$reqMethod,$url,$type,$result,$size,$duration) = $line =~ 
+		/^"(\S+)" "(\S+)" "(\S+) (\S+)" "(\S+) (\S+) (\S+)" (\d+) (\d+) "(\d+)"/;
+	    if ( $DEBUG > 8 ) { print "parseLogs: $host,$user,$time,$tzOffset,$reqMethod,$url,$type,$result,$size,$duration\n"; }
+	    if ( defined $host ) {
+		if ( $url !~ /png$|gif$|css$|js$/ ) {
+		    if ( $url =~ /^([^\?]+)\?(.+)/ ) {
+			my ( $page, $argStr ) = ($1,$2);
+			my @args = split('&',$argStr);
+			if ( $DEBUG > 8 ) { print Dumper("parseLogs: args", \@args); }
+			for ( my $i = 0; $i <= $#args; $i++ ) {
+			    my ( $name, $value ) = $args[$i] =~ /^(^[^=]+)=(.+)/;
+			    if ( $DEBUG > 9 ) { print "parseLogs: name=$name, value=$value\n"; }
+			    if ( ($name eq 'imsi') ||
+				 ($name eq 'node') ) {
+				$args[$i] = $name . "=[REPLACED]";
+			    }
+			}
+			$url = $page . "?" . join('&',@args);
+		    }
+		    if ( $DEBUG > 7 ) { print "parseLogs: Storing $time $duration $url\n"; }
+		    my $r_event = {
+			'url' => $url,
+			'time' => $time,
+			'duration' => $duration
+		    };
+		    push @events, $r_event;
+		    printf OUT "%s %d %s\n", $time, $duration, $url;
+		}
+	    }
+	}
+	close INPUT;
+    }
+		
+    close OUT;
+    return \@events;
+}
+   
+main();

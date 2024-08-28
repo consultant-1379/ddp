@@ -1,0 +1,40 @@
+
+/* nav id is a div used to hold the menu in the right place on the page */
+
+#nav {
+}
+
+#menu, #menu ul { /* All menu elements (lists) */
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    line-height: 1.5;
+    font-size: 1em;
+}
+
+#menu a {
+    text-decoration: none;
+    padding-left: 0.2em;
+    padding-right: 0.2em;
+}
+
+#menu a:hover {
+    font-weight: bold;
+    color: #ccc;
+    background-color: #2222ff;
+    text-decoration: none;
+    padding-left: 0.2em;
+    padding-right: 0.2em;
+}
+
+#menu li {
+    float: left;
+    padding-left: 1em;
+    padding-right: 1em;
+    width: 18em;
+    background-color: #ccc;
+    margin: 1px;
+    border: 1px solid gray;
+    text-align: center;
+}
+

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_nhc_profiles_requests">
+    <keycol name="siteid" reftable="sites"/>
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="shmservice"/>
+  </services>
+
+  <events>
+    <event name="NHC.PROFILES_EXPORT">
+      <metric source="host" target="serverid"/>
+      <metric source="ExecutionTime" target="executionTime"/>
+      <property name="type" xsi:type="fixedproperty" value="EXPORT"/>
+    </event>
+    <event name="NHC.PROFILES_IMPORT">
+      <metric source="host" target="serverid"/>
+      <metric source="ExecutionTime" target="executionTime"/>
+      <property name="type" xsi:type="fixedproperty" value="IMPORT"/>
+    </event>
+  </events>
+</modelledevents>

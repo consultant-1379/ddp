@@ -1,0 +1,228 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use StatsTime;
+use DBI;
+
+our $DEBUG = 0;
+our $MAX_OP = 5000000;
+main();
+
+sub main{
+    my ($inputFile,$site,$server,$prefix);
+    my $result = GetOptions(
+    "input=s" => \$inputFile,
+    "site=s" => \$site,
+    "server=s" => \$server,
+    "prefix=s" => \$prefix,
+    "debug=s" => \$DEBUG,
+    );
+    ($result == 1) or die "Invalid args";
+
+    my $r_data = readData($inputFile,$prefix);
+    $r_data = filterIdle($r_data);
+    if ( $#{$r_data} > -1 ) {
+        storeData($site,$server,$r_data);
+    }
+}
+
+sub filterIdle($) {
+    my ($r_data) = @_;
+
+    # Get total IO for each volume
+    my %totalIO = ();
+    foreach my $r_sample ( @{$r_data} ) {
+        while ( my ($vol,$r_stats) = each %{$r_sample->{'vol'}} ) {
+            my $iops = $r_stats->[0] + $r_stats->[1];
+            my $total = $totalIO{$vol};
+            if ( defined $total ) {
+                $totalIO{$vol} = $total + $iops;
+            } else {
+                $totalIO{$vol} = $iops;
+            }
+        }
+    }
+    if ( $DEBUG > 6 ) { print Dumper("filterIdle: totalIO", \%totalIO); }
+
+    # Get idle volume from totals
+    foreach my $vol ( keys %totalIO ) {
+        if ( $totalIO{$vol}  > 0 ) {
+            delete $totalIO{$vol};
+        }
+    }
+    my @idleVols = keys %totalIO;
+    if ( $DEBUG > 5 ) { print Dumper("filterIdle: idleVols", \@idleVols); }
+
+    # Remove any idle volume
+    foreach my $r_sample ( @{$r_data} ) {
+        foreach my $vol ( @idleVols ) {
+            delete $r_sample->{'vol'}->{$vol};
+        }
+    }
+
+    return $r_data;
+}
+
+sub stripPool($$) {
+    my ($volName, $r_poolMap) = @_;
+
+    foreach my $pool ( keys %{$r_poolMap} ) {
+        if ( $volName =~ /^$pool(.*)/ ) {
+            my $remainder = $1;
+            my $result = sprintf("[%s]%s", $r_poolMap->{$pool}, $remainder);
+            if ( $DEBUG > 7 ) { print "stripPool $volName => $result\n"; }
+            return $result;
+        } elsif ( $volName  =~ /^(SNAP\d?-)$pool(-.*)/) {
+            my ($snap,$remainder) = ($1,$2);
+            my $result = sprintf("%s[%s]%s", $snap, $r_poolMap->{$pool}, $remainder);
+            if ( $DEBUG > 7 ) { print "stripPool $volName => $result\n"; }
+            return $result;
+        }
+    }
+
+    if ( $DEBUG > 7 ) { print "stripPool volName=$volName\n"; }
+
+    return $volName;
+}
+
+sub readData{
+    my ($inputFile,$prefix) = @_;
+
+    my %poolMap = ();
+    my $prefixCount = 0;
+    if ( defined $prefix && $prefix ne '' ) {
+        foreach my $pool ( sort {$b cmp $a} split(/,/, $prefix) ) {
+            my $prefix = "PREFIX";
+            if ( $prefixCount > 0 ) {
+                $prefix .= $prefixCount;
+            }
+            $poolMap{$pool} = $prefix;
+            $prefixCount++;
+        }
+    }
+    if ( $DEBUG > 2 ) { print Dumper("readData: poolMap", \%poolMap); }
+
+    open DATA, $inputFile or die "Cannot open $inputFile";
+    my @data = ();
+    my $r_CurrData;
+
+    while ( my $line = <DATA> ) {
+        if ( $line =~/^$/ ) {
+            my $timestampLine = <DATA>;
+            # Newer formats have the hostname as the first field in the line
+            my ( $day, $monthName, $date, $time, $year );
+            if ( $timestampLine =~ /^\S+\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d{2,2}:\d{2,2}:\d{2,2})\s+(\d{4,4})$/ ||
+                 $timestampLine =~ /^(\S+)\s+(\S+)\s+(\d+)\s+(\d{2,2}:\d{2,2}:\d{2,2})\s+(\d{4,4})$/ ) {
+                my ( $day, $monthName, $date, $time, $year ) = ( $1, $2, $3, $4, $5 );
+                my $unixDate = sprintf("%s %d %s XXX %d", $monthName, $date, $time, $year);
+                my $timestamp = parseTime( $unixDate, $StatsTime::UNIX_DATE );
+
+                $r_CurrData = {
+                    'time' => $timestamp,
+                        'vol'  => {}
+                };
+                push @data, $r_CurrData;
+            } else {
+                print "WARN: Could not part timestamp line $timestampLine";
+            }
+        } elsif ( $line =~ /^vol / ) {
+            chop $line;
+            my @fields = split (' ', $line );
+            my $size = @fields;
+
+            if ( $size == 8 ) {
+                if ( $DEBUG > 7 ) { print Dumper("readData: fields", \@fields); };
+                shift @fields;
+                my $volName = shift @fields;
+                $volName = stripPool($volName, \%poolMap);
+                $r_CurrData->{'vol'}->{$volName} = \@fields;
+            }
+        }
+    }
+    close DATA;
+
+    if ( $DEBUG > 5 ) { print Dumper("readData: data", \@data ); }
+    return \@data;
+}
+
+sub writeBcp{
+    my ($serverId,$r_volMap,$r_data) = @_;
+
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $bcpFileName = $tmpDir . "/vxstat.$serverId.bcp";
+
+    open BCP, ">$bcpFileName" or die "Failed to open $bcpFileName";
+
+    for ( my $sampleIndex = 1; $sampleIndex <= $#{$r_data} ; $sampleIndex++ ) {
+        my $r_sample = $r_data->[$sampleIndex];
+        my $timeDelta = $r_sample->{'time'} -
+            $r_data->[$sampleIndex-1]->{'time'};
+        if ( $timeDelta <= 0 ) {
+            next;
+        }
+
+        my @sampleLines = ();
+        my $dataValid = 1;
+        my $timestamp = formatTime($r_sample->{'time'}, $StatsTime::TIME_SQL);
+        foreach my $vol ( keys %{$r_sample->{'vol'}} ) {
+            my $r_stat = $r_sample->{'vol'}->{$vol};
+            if ( $r_stat->[0] > $MAX_OP || $r_stat->[1] > $MAX_OP ) {
+                $dataValid = 0;
+            } else {
+                for ( my $si = 0; $si < 4; $si++ ) {
+                    $r_stat->[$si] = int ( ($r_stat->[$si] / $timeDelta) + 0.5);
+                }
+                push @sampleLines, sprintf("%s\t%d\t%d\t%s\n",
+                                           $timestamp, $serverId, $r_volMap->{$vol},
+                                           join("\t", @{$r_stat}) );
+            }
+        }
+        if ( $dataValid ) {
+            print BCP @sampleLines;
+        }
+    }
+    close BCP;
+
+    return $bcpFileName;
+}
+
+sub storeData{
+    my ($site,$server,$r_data) = @_;
+
+    if ( $DEBUG > 0 ) { setStatsDB_Debug($DEBUG); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    ($serverId > -1 ) or die "Failed to get serverId for $server";
+
+    my %volNames = ();
+    foreach my $r_sample ( @{$r_data} ) {
+    foreach my $volName ( keys %{$r_sample->{'vol'}} ) {
+        if ( $volName =~ /^rootckpt_/ ) {
+        delete $r_sample->{'vol'}->{$volName};
+        } else {
+        $volNames{$volName}++;
+        }
+    }
+    }
+    my @volList = keys %volNames;
+    my $r_volMap = getIdMap($dbh,"volumes","id","name",\@volList);
+
+    my $bcpFileName = writeBcp($serverId,$r_volMap,$r_data);
+    dbDo($dbh, sprintf("DELETE FROM vxstat WHERE serverid = $serverId AND time BETWEEN '%s' AND '%s'",
+               formatTime( $r_data->[0]->{'time'}, $StatsTime::TIME_SQL ),
+               formatTime( $r_data->[$#{$r_data}]->{'time'}, $StatsTime::TIME_SQL ))
+    );
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE vxstat (time,serverid,volid,rop,wop,rblk,wblk,rtime,wtime)");
+
+    $dbh->disconnect;
+}

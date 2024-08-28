@@ -1,0 +1,8 @@
+{
+    "description": "Simple Test",
+    "dump_files": [ "simple.json" ],
+    "bcp_files": [ "simple.bcp" ],
+    "model_dir": "simple",
+    "statsdb": "simple.json",
+    "date": "2022-11-28"
+}

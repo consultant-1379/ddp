@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ ylabel="Number of Queries Triggered"
+>
+  <presetagg type="COUNT" interval="Per Minute"/>
+  <title value="Queries Triggered"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_netan_pme_details">
+        <reference table="sites" condition="eniq_netan_pme_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND queryId IN (SELECT DISTINCT queryId FROM eniq_netan_pme_details WHERE sites.name = '%site%' AND time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' GROUP BY fetchId) AND queryId IS NOT NULL </where>
+      <column db="eniq_netan_pme_details.queryId" label="Number of Queries Triggered"/>
+    </query>
+  </queries>
+  <size width="540" height="240"/>
+</modelledgraph>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_shm_lrf_logs">
+  </table>
+
+  <services>
+      <service name="shmservice"/>
+      <service name="consshm"/>
+  </services>
+
+  <events>
+      <!-- LICENSEINVENTORY.NODE_LRF_COMPLETED {\"totalTimeTaken\":\"180\",\"noOfQuantityUpdates\":1,\"noOfNodes\":\"1\",\"_Thread\":\"EJB async - 18\",\"fileSize\":0,\"status\":\"COMPLETED\"}"],"timestamp":["2019-04-30T08:04:03.306+01:00"]}-->
+      <event name="LICENSEINVENTORY.NODE_LRF_COMPLETED">
+        <metric source="noOfNodes" target="noOfNodes"/>
+        <metric source="noOfQuantityUpdates" target="noOfQuantityUpdates"/>
+        <metric source="totalTimeTaken" target="totalTimeTaken"/>
+        <metric source="fileSize" target="fileSize"/>
+        <metric source="status" target="status"/>
+      </event>
+  </events>
+</modelledevents>
+

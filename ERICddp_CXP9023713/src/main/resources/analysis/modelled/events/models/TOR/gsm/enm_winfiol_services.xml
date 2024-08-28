@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+
+  <table name="enm_winfiol_services">
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="winfiol"/>
+  </services>
+
+  <events>
+      <!-- winfiol_services {\"Service\":\"wfserver\", \"Connections\":0, \"Disconnections\":0, \"Failed connections\":0, \"Commands\":0} -->
+      <event name="winfiol_services">
+        <metric source="host" target="serverid"/>
+        <metric source="Service" target="service"/>
+        <metric source="Connections" target="connections"/>
+        <metric source="Disconnections" target="disconnections"/>
+        <metric source="Failed connections" target="failedconnections"/>
+        <metric source="Commands" target="commands"/>
+        <metric source="OpenConnections" target="openconnections"/>
+      </event>
+  </events>
+
+</modelledevents>

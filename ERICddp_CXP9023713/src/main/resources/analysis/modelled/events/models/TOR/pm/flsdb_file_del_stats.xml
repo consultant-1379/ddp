@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_flsdb_file_del_stats">
+    <keycol name="datatypeid" reftable="enm_pmic_datatypes"/>
+  </table>
+
+  <services>
+    <service name="fls"/>
+  </services>
+
+  <events>
+    <!-- FLSDB_FILE_DELETION_STATISTICS {"EXPIRED_ROWS_TO_BE_DELETED":10,"EXPIRED_ROWS_QUERY_TIME_IN_MS":10,"ACTUAL_ROWS_DELETED":10,"DATATYPE":"PM_STATISTICAL","ROWS_DELETION_TIME_IN_MS":28} -->
+    <event name="FLSDB_FILE_DELETION_STATISTICS">
+      <metric source="DATATYPE" target="datatypeid"/>
+      <metric source="EXPIRED_ROWS_TO_BE_DELETED" target="expiredRowsToBeDeleted"/>
+      <metric source="ACTUAL_ROWS_DELETED" target="actualRowsDeleted"/>
+      <metric source="ROWS_DELETION_TIME_IN_MS" target="rowsDeletionTime"/>
+      <property name="filter" xsi:type="fixedproperty" value="PFD"/>
+    </event>
+    <!-- OVERLOAD_PROTECTION_FLS_DB_DELETION_STATISTICS {"EXPIRED_ROWS_TO_BE_DELETED":10,"EXPIRED_ROWS_QUERY_TIME_IN_MS":10,"ACTUAL_ROWS_DELETED":10,"DATATYPE":"PM_STATISTICAL","ROWS_DELETION_TIME_IN_MS":28} -->
+    <event name="OVERLOAD_PROTECTION_FLS_DB_DELETION_STATISTICS">
+      <metric source="DATATYPE" target="datatypeid"/>
+      <metric source="EXPIRED_ROWS_TO_BE_DELETED" target="expiredRowsToBeDeleted"/>
+      <metric source="ACTUAL_ROWS_DELETED" target="actualRowsDeleted"/>
+      <metric source="ROWS_DELETION_TIME_IN_MS" target="rowsDeletionTime"/>
+      <property name="filter" xsi:type="fixedproperty" value="OPFD"/>
+    </event>
+  </events>
+</modelledevents>

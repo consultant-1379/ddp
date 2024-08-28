@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="cmservice"/>
+  </services>
+
+  <table name="enm_cm_crud_nbi">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.presentation.cmnbirest.ejb.instrumentation.cm-nbi-rest:type=InstrumentationBean$">
+      <metric source="getBaseOnlyCount" target="getBaseOnlyCount" delta="true" filteridle="true"/>
+      <metric source="getBaseOnlyAsyncResponses" target="getBaseOnlyAsyncResponses"/>
+      <metric source="getBaseOnlyTotalAvgTime" target="getBaseOnlyTotalAvgTime"/>
+      <metric source="getBaseOnlyTotalMaxTime" target="getBaseOnlyTotalMaxTime"/>
+      <metric source="getBaseOtherAllCount" target="getBaseOtherAllCount" delta="true" filteridle="true"/>
+      <metric source="getBaseOtherAllAsyncResponses" target="getBaseOtherAllAsyncResponses"/>
+      <metric source="getBaseOtherAllTotalAvgTime" target="getBaseOtherAllTotalAvgTime"/>
+      <metric source="getBaseOtherAllTotalMaxTime" target="getBaseOtherAllTotalMaxTime"/>
+      <metric source="deleteCount" target="deleteCount" delta="true" filteridle="true"/>
+      <metric source="deleteAsyncResponses" target="deleteAsyncResponses"/>
+      <metric source="deleteTotalAvgTime" target="deleteTotalAvgTime"/>
+      <metric source="deleteTotalMaxTime" target="deleteTotalMaxTime"/>
+      <metric source="patch3gppJPatchCount" target="patch3gppJPatchCount" delta="true" filteridle="true"/>
+      <metric source="patch3gppJPatchAsyncResponses" target="patch3gppJPatchAsyncResponses"/>
+      <metric source="patch3gppJPatchTotalAvgTime" target="patch3gppJPatchTotalAvgTime"/>
+      <metric source="patch3gppJPatchTotalMaxTime" target="patch3gppJPatchTotalMaxTime"/>
+      <metric source="patchJPatchCount" target="patchJPatchCount" delta="true" filteridle="true"/>
+      <metric source="patchJPatchAsyncResponses" target="patchJPatchAsyncResponses"/>
+      <metric source="patchJPatchTotalAvgTime" target="patchJPatchTotalAvgTime"/>
+      <metric source="patchJPatchTotalMaxTime" target="patchJPatchTotalMaxTime"/>
+      <metric source="postCount" target="postCount" delta="true" filteridle="true"/>
+      <metric source="postAsyncResponses" target="postAsyncResponses"/>
+      <metric source="postTotalAvgTime" target="postTotalAvgTime"/>
+      <metric source="postTotalMaxTime" target="postTotalMaxTime"/>
+      <metric source="putCreateCount" target="putCreateCount" delta="true" filteridle="true"/>
+      <metric source="putCreateAsyncResponses" target="putCreateAsyncResponses"/>
+      <metric source="putCreateTotalAvgTime" target="putCreateTotalAvgTime"/>
+      <metric source="putCreateTotalMaxTime" target="putCreateTotalMaxTime"/>
+      <metric source="putModifyCount" target="putModifyCount" delta="true" filteridle="true"/>
+      <metric source="putModifyAsyncResponses" target="putModifyAsyncResponses"/>
+      <metric source="putModifyTotalAvgTime" target="putModifyTotalAvgTime"/>
+      <metric source="putModifyTotalMaxTime" target="putModifyTotalMaxTime"/>
+    </metricgroup>
+    <metricgroup name="^%1%-com.ericsson.oss.services.cmnbicrud.ejb.instrumentation.cm-nbi-crud:type=InstrumentationBean$">
+      <metric source="getBaseOnlyExecAvgTime" target="getBaseOnlyExecAvgTime"/>
+      <metric source="getBaseOnlyExecMaxTime" target="getBaseOnlyExecMaxTime"/>
+      <metric source="getBaseOtherAllExecAvgTime" target="getBaseOtherAllExecAvgTime"/>
+      <metric source="getBaseOtherAllExecMaxTime" target="getBaseOtherAllExecMaxTime"/>
+      <metric source="deleteExecAvgTime" target="deleteExecAvgTime"/>
+      <metric source="deleteExecMaxTime" target="deleteExecMaxTime"/>
+      <metric source="patch3gppJPatchExecAvgTime" target="patch3gppJPatchExecAvgTime"/>
+      <metric source="patch3gppJPatchExecMaxTime" target="patch3gppJPatchExecMaxTime"/>
+      <metric source="patchJPatchExecAvgTime" target="patchJPatchExecAvgTime"/>
+      <metric source="patchJPatchExecMaxTime" target="patchJPatchExecMaxTime"/>
+      <metric source="postExecAvgTime" target="postExecAvgTime"/>
+      <metric source="postExecMaxTime" target="postExecMaxTime"/>
+      <metric source="putCreateExecAvgTime" target="putCreateExecAvgTime"/>
+      <metric source="putCreateExecMaxTime" target="putCreateExecMaxTime"/>
+      <metric source="putModifyExecAvgTime" target="putModifyExecAvgTime"/>
+      <metric source="putModifyExecMaxTime" target="putModifyExecMaxTime"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

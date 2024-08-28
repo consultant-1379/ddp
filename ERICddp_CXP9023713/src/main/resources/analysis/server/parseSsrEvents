@@ -1,0 +1,66 @@
+#!/usr/bin/env perl
+
+use Time::Local;
+use Getopt::Long;
+use strict;
+
+my $DEBUG=0;
+my ($ssrEventFile,$output);
+my $result = GetOptions(
+			"events=s"  => \$ssrEventFile,
+			"output=s" => \$output,
+			"debug" => \$DEBUG
+		     );
+
+( $result == 1 ) or die("Invalid Args");
+( -r $ssrEventFile ) or die("Could not read from ssr Event File\n");
+$output or die("No output specified");
+
+open SSR, "$ssrEventFile" or die "Could not open ssr Event File";
+open OUTPUT, ">$output" or die "Could not open output file $output";
+
+my ($day,$month,$year,$hour,$min,$sec);
+while ( my $line = <SSR> )
+{    
+    if ( $line =~ /^\d/ )
+    {
+	($day,$month,$year,$hour,$min,$sec) = $line =~ 
+	    /^(\d{2,2})-(\d{2,2})-(\d{2,2}):(\d{2,2}):(\d{2,2}):(\d{2,2})/;	    
+    }
+    elsif ( $line =~ /^\s+additionalInformation:/ )
+    {
+	my ($addInfo) = $line =~ 
+	    /^\s+additionalInformation: \"(.*)\"$/;
+
+	if ( $month == 0 || $day == 0 || $year == 0 )
+	{
+	    next;
+	}
+	my $time = timelocal($sec, $min, $hour, $day, $month - 1, $year + 100);
+	my ($oldState, $newState, $mc,$reason);
+
+	if ( $addInfo =~ /^Operational state from \S+ to \S+ for ManagedComponent\S+=\S+/ )
+	{
+	    if ( $DEBUG ) { print "$addInfo\n"; }
+
+            if ( $addInfo =~ /Reason: / )
+            {
+	       $_ = $addInfo;
+	       ($oldState, $newState, $mc,$reason) = 
+		   $addInfo =~ /^Operational state from (\S+) to (\S+) for ManagedComponent\S+=(\S+)\\nReason: (.*)$/;
+            }
+            else
+            {
+               ($oldState, $newState, $mc) = 
+		   $addInfo =~ /^Operational state from (\S+) to (\S+) for ManagedComponent\S+=(\S+)$/;
+               $reason = "NA";
+            }
+	}
+
+	if ( $DEBUG ) { print "$mc $oldState $newState\n"; }
+
+	printf OUTPUT "%s::%s::%s::%s::%s\n", $time, $mc, $oldState, $newState,$reason;
+    }
+}
+close SSR;
+close OUTPUT;

@@ -1,0 +1,233 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $site;
+our $DEBUG = 0;
+
+main();
+exit 0;
+
+sub main {
+    my ($file,$dashDate);
+    my %dataForStorage;
+
+    my $result = GetOptions(
+        "file=s" => \$file,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    # Validate the parameters passed
+    if ( ! $file ) {
+        printUsageAndExit("No feed file specified");
+    }
+    if ( ! $site ) {
+        printUsageAndExit("No site specified");
+    }
+    if ( ! $dashDate ) {
+        printUsageAndExit("No date specified");
+    }
+
+    my $dbh = connect_db();
+    my $siteid = getSiteId($dbh, $site);
+
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Parse the file
+    if ($DEBUG > 4) { print "Feed file: " . $file . "\n"; }
+
+    if (-e $file) {
+        processData($file, $sqlDate, $siteid, \%dataForStorage);
+    } else {
+        print "WARNING: No node list data file - expected file " . $file . " does not exist.\n";
+    }
+
+    return 0;
+}
+
+sub processData() {
+    my ($file , $sqlDate, $siteid, $r_dataForStorage) = @_;
+    my $dbh = connect_db();
+    my @moDetails;
+    my @meTypes;
+    my @nodeVer;
+    my @sourceTypes;
+    my @ioTypes;
+    my $r_datasetForStorage;
+    my $neName;
+    my $cnt = 0;
+
+    if ($DEBUG > 4) { print "processData called with " . $file . "...\n"; }
+
+    open DATA, $file or die "Could not open data file: $!";
+    LINE: while (my $line = <DATA>) {
+        chomp($line);
+        if($DEBUG > 4) { print $line . "\n"; }
+
+        if ($line =~ /^$/ || $line =~ /^MO\@managedElementType\@nodeVersion\@connectionStatus\@sourceType\@ipAddress\@nodeSecurityState\@ioType$/) {
+            next LINE;
+        } else {
+            my ($MO, $managedElementType, $nodeVersion, $connectionStatus, $sourceType, $ipAddress, $nodeSecurityState, $ioType) = split (/\@/, $line);
+
+            # If there are no MO details, skip the record
+            if ($MO =~ /^$/) {
+                next LINE;
+            }
+
+	    # Strip trailing spaces
+	    $sourceType =~ s/\s+$//;
+
+            $r_dataForStorage->{$MO}->{'date'} = $sqlDate;
+            $r_dataForStorage->{$MO}->{'siteid'} = $siteid;
+            $r_dataForStorage->{$MO}->{'mo'} = $MO;
+            $r_dataForStorage->{$MO}->{'me_type'} = $managedElementType;
+            $r_dataForStorage->{$MO}->{'node_ver'} = $nodeVersion;
+            $r_dataForStorage->{$MO}->{'connection_status'} = $connectionStatus;
+            $r_dataForStorage->{$MO}->{'source_type'} = $sourceType;
+            $r_dataForStorage->{$MO}->{'ip_address'} = $ipAddress;
+            $r_dataForStorage->{$MO}->{'security_state'} = $nodeSecurityState;
+            $r_dataForStorage->{$MO}->{'io_type'} = $ioType;
+
+            if ($MO ne '') {
+                push(@moDetails, $MO);
+            }
+            if ($managedElementType ne '') {
+                push(@meTypes, $managedElementType);
+            }
+            if ($nodeVersion ne '') {
+                push(@nodeVer, $nodeVersion);
+            }
+            if ($sourceType ne '') {
+                push(@sourceTypes, $sourceType);
+            }
+            if ($ioType ne '') {
+                push(@ioTypes, $ioType);
+            }
+            $cnt++
+        }
+    }
+    close(DATA);
+
+    # Now get the ids for the data values for storage
+    my $r_moDetails = getIdMap($dbh, "onrm_mo_details", "id", "name", \@moDetails);
+    my $r_meTypes = getIdMap($dbh, "me_types", "id", "name", \@meTypes);
+    my $r_nodeVer = getIdMap($dbh, "node_ver", "id", "name", \@nodeVer);
+    my $r_sourceTypes = getIdMap($dbh, "onrm_source_types", "id", "name", \@sourceTypes);
+    my $r_ioTypes = getIdMap($dbh, "onrm_io_types", "id", "name", \@ioTypes);
+
+    if ($DEBUG > 7) { print Dumper $r_dataForStorage; }
+
+    # If there is data to store, store it
+    if ($cnt > 0) {
+        storeDataset($sqlDate, $siteid, $r_dataForStorage, $r_moDetails, $r_meTypes, $r_nodeVer, $r_sourceTypes, $r_ioTypes);
+    }
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $r_datasetForStorage, $r_moDetails, $r_meTypes, $r_nodeVer, $r_sourceTypes, $r_ioTypes) = @_;
+    my $dbh = connect_db();
+
+    # BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+    my $bcpFile = $tmpDir . "/onrm_node_list." . $sqlDate . "." . $site . "." . $$ . ".bcp";
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $mo (sort(keys(%$r_datasetForStorage))) {
+         # Build up the bulk insert record. First the date, siteid & MO details id
+         my $bcpRecord = $sqlDate . "@" . $siteid . "@" . $r_moDetails->{$mo} . "@";
+
+         # me_typeid
+         if (!defined($r_meTypes->{$r_datasetForStorage->{$mo}->{'me_type'}}) || ($r_meTypes->{$r_datasetForStorage->{$mo}->{'me_type'}} eq '')) {
+             $bcpRecord .= '\\N' . "@";
+         } else {
+             $bcpRecord .= $r_meTypes->{$r_datasetForStorage->{$mo}->{'me_type'}} . "@";
+         }
+         # node_verid
+         if (!defined($r_nodeVer->{$r_datasetForStorage->{$mo}->{'node_ver'}}) || ($r_nodeVer->{$r_datasetForStorage->{$mo}->{'node_ver'}} eq '')) {
+             $bcpRecord .= '\\N' . "@";
+         } else {
+             $bcpRecord .= $r_nodeVer->{$r_datasetForStorage->{$mo}->{'node_ver'}} . "@";
+         }
+         # connection_status
+         if (!defined($r_datasetForStorage->{$mo}->{'connection_status'}) || ($r_datasetForStorage->{$mo}->{'connection_status'} eq '')) {
+             $bcpRecord .= '\\N' . "@";
+         } else {
+             $bcpRecord .= $r_datasetForStorage->{$mo}->{'connection_status'} . "@";
+         }
+         # source_typeid
+         if (!defined($r_sourceTypes->{$r_datasetForStorage->{$mo}->{'source_type'}}) || ($r_sourceTypes->{$r_datasetForStorage->{$mo}->{'source_type'}} eq '')) {
+             $bcpRecord .= '\\N' . "@";
+         } else {
+             $bcpRecord .= $r_sourceTypes->{$r_datasetForStorage->{$mo}->{'source_type'}} . "@";
+         }
+         # ip_address
+         if (!defined($r_datasetForStorage->{$mo}->{'ip_address'}) || ($r_datasetForStorage->{$mo}->{'ip_address'} eq '')) {
+             $bcpRecord .= '\\N' . "@";
+         } else {
+             $bcpRecord .= $r_datasetForStorage->{$mo}->{'ip_address'} . "@";
+         }
+         # security_state
+         if (!defined($r_datasetForStorage->{$mo}->{'security_state'}) || ($r_datasetForStorage->{$mo}->{'security_state'} eq '')) {
+             $bcpRecord .= '\\N' . "@";
+         } else {
+             $bcpRecord .= $r_datasetForStorage->{$mo}->{'security_state'} . "@";
+         }
+         # io_type
+         if (!defined($r_ioTypes->{$r_datasetForStorage->{$mo}->{'io_type'}}) || ($r_ioTypes->{$r_datasetForStorage->{$mo}->{'io_type'}} eq '')) {
+             $bcpRecord .= '0' . "\n";
+         } else {
+             $bcpRecord .= $r_ioTypes->{$r_datasetForStorage->{$mo}->{'io_type'}} . "\n";
+         }
+
+         print BULK_INSERT $bcpRecord;
+    }
+    close BULK_INSERT;
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM onrm_node_list WHERE date = '" . $sqlDate . "' AND siteid = " . $siteid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data onrm_node_list for rerun with statement " . $rerunDelete . "\n";
+
+    # Run the INSERT into the table
+    my $sqlInsert = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE onrm_node_list FIELDS TERMINATED BY '\@'";
+    dbDo($dbh, $sqlInsert) or die "ERROR: Failed to insert data into " . "onrm_node_list" . " with statement " . $sqlInsert . "\n";;
+    $dbh->disconnect;
+
+    return 0;
+}
+
+sub printUsageAndExit() {
+    my ($errMsg) = @_;
+
+    print "$errMsg\n";
+    print "Usage: parseNodeList --file <file> --site <sitename> --date dd-mm-yy \n";
+
+    exit 1;
+}
+

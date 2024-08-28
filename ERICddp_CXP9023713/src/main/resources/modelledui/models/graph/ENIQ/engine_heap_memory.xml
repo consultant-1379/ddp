@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Usage (Mb)"
+>
+  <title value="Engine Heap Usage"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_engine_heap_memory">
+        <reference table="sites" condition="eniq_engine_heap_memory.siteId = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="eniq_engine_heap_memory.memoryUsage" label="Usage (Mb)"/>
+    </query>
+  </queries>
+  <size width="640" height="240"/>
+</modelledgraph>

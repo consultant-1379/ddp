@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr namespace="^(\S+)-Instrumentation@e2e_\S+">
+  <services>
+    <service name="mscmapg"/>
+  </services>
+
+  <table name="enm_shm_axe_inventory">
+    <keycol name="serverid" reftable="servers"/>
+  </table>
+
+  <metricgroups>
+    <metricgroup name="^%1%-com.ericsson.oss.mediation.shm.axe.inventory.instrumentation.axe-shm-inventory-mediation-handlers:type=AxeInventorySyncInstrumentationBean$">
+      <metric source="totalNoOfMediationInvocations" target="totalNoOfMediationInvocations" delta="true"/>
+      <metric source="totalTimeTakenToReceiveInventoryResponse" target="totalTimeTakenToReceiveInventoryResponse" delta="true"/>
+      <metric source="totalTimeTakenToParsePersistSwInventory" target="totalTimeTakenToParsePersistSwInventory" delta="true"/>
+      <metric source="totalSwInventoryRequests" target="totalSwInventoryRequests" delta="true"/>
+      <metric source="totalTimeTakenToParsePersistHwInventory" target="totalTimeTakenToParsePersistHwInventory" delta="true"/>
+      <metric source="totalHwInventoryRequests" target="totalHwInventoryRequests" delta="true"/>
+      <metric source="totalTimeTakenToParsePersistLicenseInventory" target="totalTimeTakenToParsePersistLicenseInventory" delta="true"/>
+      <metric source="totalLicenseInventoryRequests" target="totalLicenseInventoryRequests" delta="true"/>
+      <metric source="totalTimeTakenToParsePersistBackupInventory" target="totalTimeTakenToParsePersistBackupInventory" delta="true"/>
+      <metric source="totalBackupInventoryRequests" target="totalBackupInventoryRequests" delta="true"/>
+      <metric source="totalTimeTakenForInventorySync" target="totalTimeTakenForInventorySync" delta="true"/>
+      <metric source="totalSynchronizedNodes" target="synchronizedNodes" delta="true"/>
+      <metric source="totalUnsynchronizedNodes" target="unSynchronizedNodes" delta="true"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

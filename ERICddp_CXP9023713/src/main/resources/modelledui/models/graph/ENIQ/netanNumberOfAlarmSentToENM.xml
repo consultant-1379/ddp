@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Number Of Alarms"
+>
+  <presetagg type="SUM" interval="Per Minute"/>
+  <title value="Number of Alarms Sent to ENM per Node Type"/>
+  <queries>
+    <query timecol="eniq_netan_pma_details.time" multiseries="ne_types.name">
+      <dbtables main="eniq_netan_pma_details">
+        <reference table="sites" condition="eniq_netan_pma_details.siteid = sites.id"/>
+        <reference table="ne_types" condition="eniq_netan_pma_details.nodeTypeId = ne_types.id" />
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s' AND ne_types.name != '' AND ne_types.name IS NOT NULL </where>
+      <column db="rowCountToENM * mfENM" label="Number of Alarms Sent to ENM"/>
+    </query>
+  </queries>
+  <size width="540" height="240"/>
+</modelledgraph>

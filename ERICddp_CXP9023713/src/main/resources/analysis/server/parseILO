@@ -1,0 +1,90 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use JSON;
+
+use StatsDB;
+use StatsCommon;
+
+our $DEBUG = 0;
+
+
+sub parseData($) {
+    my ($filePath) = @_;
+
+    my $json_text = do {
+        open(my $json_fh, "<:encoding(UTF-8)", $filePath)
+            or die("Can't open \$filename\": $!\n");
+        local $/;
+        <$json_fh>
+    };
+
+    my $r_json = decode_json($json_text);
+    my @ilos = ();
+    foreach my $r_ilo ( @{$r_json} ) {
+        if ( $DEBUG > 9 ) { print Dumper("parseData: r_ilo", $r_ilo); }
+        my %ilo = ( 'name' => $r_ilo->{'_name'} );
+        if ( defined $r_ilo->{'Oem'}->{'Hp'}->{'PowerRegulatorMode'} ) {
+            $ilo{'power_reg'} = $r_ilo->{'Oem'}->{'Hp'}->{'PowerRegulatorMode'};
+        } elsif ( defined $r_ilo->{'Oem'}->{'Hpe'}->{'PowerRegulatorMode'} ) {
+            $ilo{'power_reg'} = $r_ilo->{'Oem'}->{'Hpe'}->{'PowerRegulatorMode'};
+        } else {
+            $ilo{'power_reg'} = "UNKNOWN";
+        }
+        if ( defined $r_ilo->{'Status'}->{'Health'} ) {
+            $ilo{'health'} = $r_ilo->{'Status'}->{'Health'};
+        } else {
+            $ilo{'health'} = "UNKNOWN";
+        }
+        push @ilos, \%ilo;
+    }
+
+    if ( $DEBUG > 5 ) { print Dumper("parseData: ilOs", \@ilos); }
+    return \@ilos;
+}
+
+
+sub store($$$) {
+    my ($site,$date,$r_ilos) = @_;
+
+    my $dbh = connect_db();
+    setStatsDB_Debug($DEBUG);
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+
+    dbDo( $dbh, sprintf("DELETE FROM enm_ilo_logs WHERE siteid = %d AND  date = '%s'",$siteId, $date))
+        or die "Failed to remove old data from 'enm_ilo_logs' table";
+
+    my $sqlTemplate = "INSERT INTO enm_ilo_logs (siteid, date, blade, sys_health_status, blade_power_setting) VALUES (%d,'%s','%s','%s','%s')";
+    foreach my $r_ilo ( @{$r_ilos} ) {
+        dbDo( $dbh, sprintf($sqlTemplate, $siteId, $date, $r_ilo->{'name'}, $r_ilo->{'health'}, $r_ilo->{'power_reg'}))
+            or die "Failed to load row";
+    }
+
+    $dbh->disconnect();
+}
+
+sub main() {
+    my ($site, $date, $dataFile);
+    my $result = GetOptions(
+        "site=s"    => \$site,
+        "data=s"     => \$dataFile,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+    );
+    ($result == 1) or die "Invalid options";
+    setStatsDB_Debug($DEBUG);
+
+    my $r_ilos = parseData($dataFile);
+    if ( $#{$r_ilos} > -1 ) {
+        store($site, $date, $r_ilos);
+    }
+}
+
+main();
+

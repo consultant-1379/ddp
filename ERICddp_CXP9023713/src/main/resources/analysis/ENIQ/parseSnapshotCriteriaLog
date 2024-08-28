@@ -1,0 +1,76 @@
+#!/usr/bin/perl
+######################################################################
+#       Description --------- parseSnapshotCriteriaLog -----------
+#       This script is generic script to parse snapshot criteria log
+#       store the Pass/Fail status to DB.
+#       @author - Vinod Sharma (xvinosh)
+#       usage  parseSnapshotCriteriaLog --logfile <snapshot_criteria_status_[date stamp].txt> --site <site>
+#                --server <server's hostname> --date <YYYY-MM-DD>
+######################################################################
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $DEBUG = 0;
+our $siteId = "";
+our $serverId = "";
+our $dbh = "";
+our $logFile = "";
+our $table = "eniq_zfs_snapshot_criteria_test_status";
+our $date = "";
+
+sub main {
+    my ( $site, $server );
+    GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s"    => \$site,
+        "server=s"  => \$server,
+        "date=s"    => \$date,
+        "debug=s"   => \$DEBUG
+        );
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if($DEBUG > 1){
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh,$site);
+    $serverId = getServerId($dbh,$siteId,$server);
+    my $snapshotCriteriaTestStatus = parseData();
+    removeOldData();
+    loadDb($snapshotCriteriaTestStatus);
+    if( $DEBUG > 1 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+    $dbh->disconnect();
+}
+
+sub parseData {
+    my $status = `cat $logFile`;
+    chomp($status);
+    return $status;
+}
+
+sub removeOldData {
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND serverid = $serverId AND date = '$date'";
+    if ( $DEBUG > 2 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh,$deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $snapshotCriteriaStatus = shift;
+    my $sth = "INSERT INTO $table (date,siteid,serverid,status) VALUES ('$date',$siteId,$serverId,'$snapshotCriteriaStatus')";
+    if ( $DEBUG > 3 ) { print "SQL query for inserting data: $sth \n" };
+    dbDo($dbh,$sth) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+main();

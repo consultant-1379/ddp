@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_ncm_mef_service_lcm">
+    <reference table="sites" condition="enm_ncm_mef_service_lcm.siteid = sites.id"/>
+    <reference table="servers" condition="enm_ncm_mef_service_lcm.serverid = servers.id"/>
+    <reference table="enm_ne" condition="enm_ne.id = enm_ncm_mef_service_lcm.neid"/>
+    <reference table="enm_ncmcompliance" condition="enm_ncmcompliance.id = enm_ncm_mef_service_lcm.ncmComplianceID"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_ncm_mef_service_lcm.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="time - INTERVAL ROUND(duration/1000) SECOND" label="Start Time" formatter="ddpFormatTime"/>
+  <column db="servers.hostname" label="Instance"/>
+  <column db="enm_ne.name" label="Network Element"/>
+  <column db="duration" label="Duration(msec)"/>
+  <column db="ncmNodeId" label="NcmNodeId"/>
+  <column db="jobId" label="JobId"/>
+  <column db="operation" label="Operation"/>
+  <column db="affectedEntity" label="AffectedEntity"/>
+  <column db="info" label="Info"/>
+  <column db="enm_ncmcompliance.name" label="NcmCompliance"/>
+  <column db="status" label="Status"/>
+
+</modelledtable>

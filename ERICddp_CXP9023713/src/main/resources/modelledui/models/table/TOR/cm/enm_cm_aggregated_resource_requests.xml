@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_resource_requests">
+    <reference table="sites" condition="enm_cm_resource_requests.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_resource_requests.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_resource_requests.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby>
+    <column db="enm_cm_resource_requests.requestResource"/>
+    <column db="enm_cm_resource_requests.requestTechnologyType"/>
+  </groupby>
+
+  <column db="requestResource" label="Request Resource"/>
+  <column db="requestTechnologyType" label="Request Technology Type"/>
+  <column db="AVG(requestSize)" label="Average Request Size"/>
+  <column db="IFNULL(COUNT(CASE WHEN responseStatus = 'COMPLETED' THEN requestResource ELSE NULL END),0)" label="COMPLETED"/>
+  <column db="IFNULL(COUNT(CASE WHEN responseStatus = 'FAILED' THEN requestResource ELSE NULL END),0)" label="FAILED"/>
+  <column db="AVG(responseSize)" label="Average Response Size"/>
+  <column db="SEC_TO_TIME(ROUND(AVG(executionTime)/1000))" label="Average Execution Time(HH:MM:SS)"/>
+  <column db="ROUND(AVG(responseSize)/ROUND(AVG(executionTime)/1000) * 60, 2)" label="Average Processing Rate"/>
+</modelledtable>

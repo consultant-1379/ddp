@@ -1,0 +1,31 @@
+#!/bin/bash
+
+MAX_TIME=3600
+if [ ! -z "$1" ] ; then
+    MAX_TIME=$1
+fi
+
+log() {
+    MSG=$1
+    TIMESTAMP=$(date)
+    echo "${TIMESTAMP} ${MSG}"
+}
+
+REPL_LIST=$(ls /etc/my_repl_*.cnf)
+for REPL in ${REPL_LIST} ; do
+    REPL_INST=$(echo ${REPL} | sed 's/.*my_repl_//' | sed 's/\.cnf$//')
+    if [ -r /repl/repl_${REPL_INST}/var/mysql_rep.sock ] ; then
+        mysql --defaults-file=${REPL} --batch --skip-column-names INFORMATION_SCHEMA -e "SELECT ID, USER, TIME, STATE, INFO FROM PROCESSLIST WHERE USER != 'system user' AND COMMAND IN ('Query','Execute') AND TIME >= ${MAX_TIME}" > /tmp/longqueries.txt
+        if [ $? -eq 0 ] && [ -s /tmp/longqueries.txt ] ; then
+            log "Found hanging queries for ${REPL_INST}"
+            cat /tmp/longqueries.txt
+
+            while read LINE ; do
+                ID=$(echo ${LINE} | awk '{print $1}')
+                log "Killing ${ID}"
+                mysql --defaults-file=${REPL} -e "kill ${ID}"
+            done < /tmp/longqueries.txt
+        fi
+    fi
+done
+

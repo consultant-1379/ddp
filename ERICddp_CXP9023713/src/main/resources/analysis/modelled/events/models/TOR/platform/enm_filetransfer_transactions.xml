@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_filetransfer_connections">
+    <keycol name="siteid" reftable="sites"/>
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="smrsservice"/>
+    <service name="filetransferservice"/>
+    <service name="consfiletransferaccountserv"/>
+  </services>
+
+  <events>
+    <!--FILETRANSFER.TRANSFER_CONNECTIONS {"CONNECTION_TYPE":"FTP", "USECASE":"PM", "NO_OF_SESSIONS":6, "SUCCESS_SESSIONS_COUNT":6, "READ":0, "WRITE":1}-->
+    <event name="FILETRANSFER.TRANSFER_CONNECTIONS">
+      <metric source="host" target="serverid"/>
+      <metric source="CONNECTION_TYPE" target="connectionType"/>
+      <metric source="NO_OF_SESSIONS" target="numOfSessions"/>
+      <metric source="READ" target="readSize"/>
+      <metric source="WRITE" target="writeSize"/>
+      <metric source="USECASE" target="usecase"/>
+      <metric source="SUCCESS_SESSIONS_COUNT" target="successSessionCount"/>
+    </event>
+  </events>
+</modelledevents>

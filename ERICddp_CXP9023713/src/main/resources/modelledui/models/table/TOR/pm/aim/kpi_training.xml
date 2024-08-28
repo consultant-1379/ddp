@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_aim_kpi_training_status">
+    <reference table="sites" condition="enm_aim_kpi_training_status.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="maxtime"/>
+  <where>sites.name = '%site%' AND enm_aim_kpi_training_status.time = '%maxtime%' AND enm_aim_kpi_training_status.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' </where>
+
+  <groupby>
+    <column db="enm_aim_kpi_training_status.kpiname"/>
+  </groupby>
+
+  <column db="kpiname" label="KPI" id="kpiId"/>
+  <column db="celltraining" label="Measurement Objects Training Completed"/>
+  <column db="overtraining" label="Overall Training Progress"/>
+
+  <ctxmenu keycol="kpiId" targettype="url">
+    <item id="kpiGraphs" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="bis_report_list">
+    <reference table="sites" condition="bis_report_list.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+
+  <where>sites.name = '%site%' AND bis_report_list.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+  <groupby>
+    <column db="bis_report_list.reportName"/>
+  </groupby>
+
+  <column db="bis_report_list.reportName" label="Report Name"/>
+  <column db="IFNULL(MAX(bis_report_list.reportLastupatedTime), 'NA')" label="Last Updated Time"/>
+  <column db="IF(MAX(bis_report_list.reportLastRunTime) = '0000-00-00 00:00:00', '- - -', MAX(bis_report_list.reportLastRunTime))" label="Last Run Time"/>
+</modelledtable>

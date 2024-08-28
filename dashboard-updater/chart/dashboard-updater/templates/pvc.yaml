@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dashboards
+spec:
+  storageClassName: unity-nfs
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi

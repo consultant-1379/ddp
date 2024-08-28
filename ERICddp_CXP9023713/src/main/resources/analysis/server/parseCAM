@@ -1,0 +1,181 @@
+#!/usr/bin/env perl
+
+use strict;
+use Getopt::Long;
+use Data::Dumper;
+use XML::Simple;
+
+our $DEBUG = 0;
+
+main();
+
+sub main
+{
+    my ($inputDir,$tableFile);
+    my $result = GetOptions(
+	"dir=s" => \$inputDir,
+	"table=s" => \$tableFile,
+	"debug=s" => \$DEBUG
+	); 
+    ($result == 1) or die "Invalid args";		
+
+    my @arrays = ();
+
+    opendir(DIR, $inputDir) || die "can't opendir $inputDir: $!";
+    my @allFiles = readdir(DIR);
+    closedir DIR;
+    foreach my $file ( @allFiles ) {
+	if ( $file =~ /(\S+).txt$/ ) {
+	    my $arrayName = $1;
+	    my $r_array = processArray($inputDir,$arrayName);
+	    if ( defined $r_array ) {
+		push @arrays, $r_array;
+	    }
+	}
+    }
+
+    printTable(\@arrays,$tableFile);
+}
+
+sub printTable
+{
+    my ($r_Arrays,$tableFile) = @_;
+
+    open TABLE, ">$tableFile" or die "Cannot open $tableFile";
+    print TABLE "<table border=1>\n";
+    print TABLE " <tr> <th>Name</th> <th>Array Type</th> <th>Firmware</th> <th>Num Ctrl</th> <th>Write Cache Active</th> <th>Cache Size</th> <th>Disk Speed</th> <th>Disk Size</th> <th>Volumes (Size/Condition)</th><tr>\n";
+
+    foreach my $r_Array ( @{$r_Arrays} )
+    {
+	if ( $DEBUG > 5 ) { print Dumper("printTable: r_Array", $r_Array); }
+	my $volStr = "";
+	foreach my $r_vol ( @{$r_Array->{'volume'}} ) {
+	    if ( $volStr ne "" ) {
+		$volStr .= ", ";
+	    }
+	    $volStr = $volStr . $r_vol->{'size'} . "/" . $r_vol->{'condition'};
+	}
+
+	my $numCtrl = 0;
+	foreach my $r_ctrl ( @{$r_Array->{'controller'}} ) {
+	    if ( $DEBUG > 5 ) { printf "printTable: ctrl status \"%s\"\nq", $r_ctrl->{'status'}; }
+	    if ( $r_ctrl->{'status'} ne "Removed" ) {
+		$numCtrl++;
+	    }
+	}
+
+	my $line = sprintf " <tr> <td>%s</td> <td>%s</td> <td>%s</td> <td>%d</td> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> <td>%s</td> </tr>\n",
+	$r_Array->{'name'}, $r_Array->{'type'}, $r_Array->{'firmware_version'}, 
+	$numCtrl,
+	$r_Array->{'volume'}->[0]->{'writecacheactive'}, 
+	$r_Array->{'controller'}->[0]->{'cachesize'}, 
+	$r_Array->{'disk'}->[0]->{'speed'},
+	$r_Array->{'disk'}->[0]->{'size'},
+	$volStr;
+	printf TABLE $line;
+    }
+    print TABLE "</table>\n";
+}
+
+sub processArray
+{
+    my ($inputDir, $array) =@_;
+
+    my $config = eval { XMLin($inputDir . "/" . $array . ".xml") };
+    if ( $@ ) {
+	print "WARN: Failed to parse XML for $array: $@";
+	return undef;
+    }
+
+    if ( $DEBUG > 7 ) { print Dumper("readFile: config", $config->{'raidsystem'}); }
+    
+    my %array = ();
+    $array{'firmware_version'} = $config->{'raidsystem'}->{'firmware_version'};
+    $array{'name'} = $config->{'raidsystem'}->{'name'};
+    $array{'type'} = $config->{'raidsystem'}->{'model'};
+
+    my $txtFile = $inputDir . "/" . $array . ".txt";    
+    open TXT, $txtFile or die "Cannot open disk file $txtFile";
+    my $section = "";
+    while ( my $line = <TXT> ) {
+	if ( $DEBUG > 9 ) { print "processArray: section=\"$section\" txt line=$line"; }
+
+	if ( $line =~ /^BEGIN (\S+)/ ) {
+	    $section = $1;
+	    if ( $DEBUG > 5 ) { print "processArray: begin section $section\n"; }
+	    $array{$section} = [];
+	} elsif ( $line =~ /^END / ) {
+	    if ( $DEBUG > 5 ) { print "processArray: end section $section\n"; }
+	    $section = "";
+	} else {
+	    if ( $section eq "controller" ) {
+		if ( $line =~ /^Controller:\s+(\S+)/ ) {
+		    my $cntrlName = $1;
+		    if ( $DEBUG > 5 ) { print "processArray: found ctrl $cntrlName\n"; }
+		    my $r_ctrl = {
+			'name' => $cntrlName
+		    };
+		    push @{$array{$section}}, $r_ctrl;
+		} elsif (  $line =~ /Cache Memory Size:\s+(\S+)/ ) {
+		    my $cacheSize = $1;
+		    if ( $DEBUG > 5 ) { print "processArray: cacheSize=$cacheSize\n"; }
+		    $array{$section}->[$#{$array{$section}}]->{'cachesize'} = $cacheSize;
+		} elsif ( $line =~ /^\s+Status:\s+(\S+)/ ) {
+		    my $status = $1;
+		    if ( $DEBUG > 5 ) { print "processArray: status=$status\n"; }
+		    $array{$section}->[$#{$array{$section}}]->{'status'} = $status;
+		}
+	    } elsif ( $section eq "disk" ) {
+		if ( $line =~ /^Tray: 85    Disk: (\S+)/ ) {
+		    my $r_disk = {
+			'name' => $1
+		    };
+		    push @{$array{$section}}, $r_disk;
+		} elsif ( $line =~ /Capacity:\s+(.*)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'size'} = $1;
+		} elsif ( $line =~ /  Speed.*\s(\d+)$/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'speed'} = $1;
+		} elsif ( $line =~ /Type:\s+(\S+)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'type'} = $1;
+		}
+	    } elsif ( $section eq "volume" ) {
+		if ( $line =~ /^Volume: (\S+)/ ) {
+		    my $r_vol = {
+			'name' => $1
+		    };
+		    push @{$array{$section}}, $r_vol;
+		} elsif ( $line =~ /WWN:\s+(\S+)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'wwn'} = $1;
+		} elsif ( $line =~ /Write Cache Active:\s+(\S+)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'writecacheactive'} = $1;
+		} elsif ( $line =~ /^\s+Size:\s+(.*)/ ) {
+		    my $sizeStr = $1;
+		    my ($value,$unit) = $sizeStr =~ /^([\d\.]+)\s+(\S+)/;
+		    
+		    $array{$section}->[$#{$array{$section}}]->{'size'} = sprintf("%.02f%s", $value,$unit);
+		} elsif ( $line =~ /^\s+Condition:\s+(\S+)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'condition'} = $1;
+		} 
+	    } elsif ( $section eq "vdisk" ) { 
+		if ( $line =~ /^Virtual Disk: (\S+)/ ) {
+		    my $r_vdisk = {
+			'name' => $1
+		    };
+		    push @{$array{$section}}, $r_vdisk;
+		} elsif ( $line =~ /^\s+Status:\s+(\S+)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'status'} = $1;
+		} elsif ( $line =~ /^\s+Number of Disks:\s+(\d+)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'numdisks'} = $1;
+		} elsif ( $line =~ /^\s+Total Capacity:\s+(.*)/ ) {
+		    $array{$section}->[$#{$array{$section}}]->{'size'} = $1;
+		}
+	    }
+	}
+    }
+    close TXT;
+
+    if ( $DEBUG > 5 ) { print Dumper("processArray", \%array); }
+
+    return \%array;
+}
+     

@@ -1,0 +1,1499 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Time::Local;
+use Getopt::Long;
+use Data::Dumper;
+use DBI;
+use StatsDB;
+use StatsTime;
+use StatsCommon;
+
+our $DEBUG=0;
+
+our $NOT_STARTED = 0;
+our $STARTED = 1;
+
+our %monthMap =
+  (
+   'Jan' => 1,
+   'Feb' => 2,
+   'Mar' => 3,
+   'Apr' => 4,
+   'May' => 5,
+   'Jul' => 7,
+   'Jun' => 6,
+   'Aug' => 8,
+   'Sep' => 9,
+   'Oct' => 10,
+   'Nov' => 11,
+   'Dec' => 12
+  );
+
+our %SCHEME_MAP =
+  (
+   'NetworkElement' => 'ne',
+   'Plan' => 'pca',
+   'System' => 'system'
+  );
+
+our %NEAD_INSTR_MAP = (
+                       'ttotal' => 'TAP',
+                       'tread' => 'TRP',
+                       'tfinalact' => 'UP',
+                       'tnecommit' => 'CMT',
+                       'tnemibtl' => 'CNEMIBTL',
+                       'tnesync' => 'SAT',
+                       'tx2prox' => 'X2PC',
+                       'tnode' => 'NA',
+                       'tcs' => 'MA',
+                       'tother' => 'OTHER',
+                       'nMoCreated' => 'moCreated',
+                       'nMoDeleted' => 'moDeleted',
+                       'nMoModified' => 'moModified',
+                       'nProxCreated' => 'proxCreated',
+                       'nProxDeleted' => 'proxDeleted'
+                      );
+
+our %activations = ();
+our %activityIdToJobId = ();
+our @activationTimes = ();
+
+sub writeActivityPlot($$$) {
+  my ( $r_Imports, $r_Activations, $actPlotFile ) = @_;
+  return;
+
+  open OUTPUT, ">$actPlotFile" or die "Cannot open $actPlotFile";
+  print OUTPUT "tt;sec;Imports;Activations\n";
+
+  my ($startTime,$endTime);
+  my @activationTimes = ();
+  if ( $#{$r_Activations} > -1 ) {
+    my @times = ();
+    foreach my $r_activity ( @{$r_Activations} ) {
+      if ( $r_activity->{'start'} ne '' &&
+           $r_activity->{'end'} ne '' ) {
+        my $r_act = {
+                     'start' => parseTime($r_activity->{'start'}, $TIME_YYYYMD_HMS ),
+                     'end'   => parseTime($r_activity->{'end'}, $TIME_YYYYMD_HMS ),
+                    };
+        push @times, $r_act;
+      }
+
+    }
+
+    @activationTimes = sort {$a->{'start'} <=> $b->{'start'}} @times;
+    $startTime = $activationTimes[0]->{'start'};
+    $endTime = $activationTimes[$#activationTimes]->{'end'};
+
+    if ( $DEBUG > 3 ) {
+      print "writeActivityPlot: activations startTime=$startTime endTime=$endTime\n";
+    }
+  }
+
+  my @importTimes = ();
+  if ( $#{$r_Imports} > -1 ) {
+    my @times =();
+
+    foreach my $r_Import ( @{$r_Imports} ) {
+      my $startTimeInSec = parseTime( $r_Import->{'start'}, $StatsTime::TIME_YYYYMDHMS );
+
+      my @baseFields = localtime($r_Import->{'basetime'});
+      my $baseMidNight  = timelocal( 0, 0, 0, $baseFields[3], $baseFields[4], $baseFields[5] );
+      my $endTimeInSec = $r_Import->{'endtime'} + $baseMidNight;
+
+      my $r_ImpTime = {
+                       'start' => $startTimeInSec,
+                       'end' => $endTimeInSec
+                      };
+      push @times, $r_ImpTime;
+    }
+
+    @importTimes = sort {$a->{'start'} <=> $b->{'start'}} @times;
+
+    if ( ( ! $startTime ) ||
+         $importTimes[0]->{'start'} < $startTime ) {
+      $startTime = $importTimes[0]->{'start'};
+    }
+    if ( ( ! $endTime ) ||
+         $importTimes[$#importTimes]->{'end'} > $endTime ) {
+      $endTime = $importTimes[$#importTimes]->{'end'};
+    }
+
+    if ( $DEBUG > 3 ) {
+      print "writeActivityPlot: imports startTime=$startTime endTime=$endTime\n";
+    }
+  }
+
+  # Dumbest/simplest way to do this. Foreach second between min time and max time
+  # examine each activity and see if it was active in that second
+
+  my ($lastImportCount, $lastActCount ) = ( 0 , 0 );
+  for ( my $theTime = $startTime; $theTime <= $endTime; $theTime++ ) {
+    my ($importCount,$actCount) = (0 , 0);
+
+    foreach my $r_activity ( @importTimes ) {
+      if ( $theTime >= $r_activity->{'start'} && $theTime <= $r_activity->{'end'} ) {
+        $importCount++;
+      }
+    }
+
+    foreach my $r_activity ( @activationTimes ) {
+      if ( exists $r_activity->{'start'} && exists $r_activity->{'end'} ) {
+        if ( $theTime >= $r_activity->{'start'} && $theTime <= $r_activity->{'end'} ) {
+          $actCount++;
+        }
+      }
+    }
+
+    if ( ($importCount + $actCount) > 0 ) {
+      print OUTPUT formatTime( $theTime, $StatsTime::TIME_YYYYMDHMS ) . " " . $importCount . " " . $actCount . "\n";
+      $lastImportCount = $importCount;
+      $lastActCount = $actCount;
+    }
+  }
+
+  print OUTPUT "\nplot;sb;Total Ongoing Count for Import and Activations;Time;Count\n";
+  close OUTPUT;
+}
+
+sub getActivation($$$) {
+  my ($date,$time,$pa) = @_;
+
+  my $theTime = parseTime( $date . " " . $time, $TIME_YYYYMD_HMS );
+  if ( $DEBUG > 7 ) {
+    print "getActivation: pa=$pa time=$time, theTime=$theTime\n";
+  }
+  foreach my $r_act ( @activationTimes ) {
+    if ( $DEBUG > 10 ) {
+      print Dumper("getActivation: checking r_act", $r_act);
+    }
+
+    if ( $pa eq $r_act->{'pa'} &&
+         $theTime >= $r_act->{'start'} && $theTime <= $r_act->{'end'} ) {
+      return $r_act->{'id'};
+    }
+  }
+
+  return undef;
+}
+
+sub extractStartEndTime() {
+  my @actTimes = ();
+  foreach my $jobId ( keys %activations ) {
+    if ( $DEBUG > 8 ) {
+      print Dumper("extractStartEndTime: processing", $activations{$jobId});
+    }
+
+    if ( $activations{$jobId}->{'start'} ne '' &&
+         $activations{$jobId}->{'end'} ne '' ) {
+      my $r_act = {
+                   'start' => parseTime($activations{$jobId}->{'start'}, $TIME_YYYYMD_HMS ),
+                   'end'   => parseTime($activations{$jobId}->{'end'}, $TIME_YYYYMD_HMS ),
+                   'id'    => $jobId,
+                   'pa'    => $activations{$jobId}->{'pa'}
+                  };
+      push @actTimes, $r_act;
+    } else {
+      print "WARN: Missing start/end time for $jobId\n";
+    }
+  }
+
+  @activationTimes = sort {$a->{'start'} <=> $b->{'start'}} @actTimes;
+
+  if ( $DEBUG > 4 ) {
+    print Dumper("extractStartEndTime activationTimes", \@activationTimes);
+  }
+}
+
+sub parseAM($$$$) {
+  my ($date,$time,$event,$addInfo) = @_;
+  if ( $DEBUG > 7 ) {
+    print "parseAM: time=$time event=$event addInfo=$addInfo\n";
+  }
+
+  my ($jobId, $jobName, $jobType, $jobOwner, $info) = $addInfo =~
+    /Job ID : (\d+) Job Name : (.*) Job Type : (.*) Job Owner : (\S+) ?(.*)$/;
+  if ( ! defined $info ) {
+    if ( $DEBUG > 7 ) {
+      print "parseAM: Failed to parse $time addInfo=$addInfo\n";
+    }
+    return;
+  }
+
+  if ($DEBUG > 6) {
+    print "parseAM: $time jobType=$jobType ; info: $info\n";
+  }
+  if ( $jobType eq "Activate Planned Configuration") {
+    my ($paName) = $jobName =~ /^Activate Planned Configuration : (.*)$/;
+    if ( (! exists $activations{$jobId}) && ($event ne "COM.ERICSSON.NMS.CIF.AM.JOB_REMOVED") ) {
+      if ($DEBUG > 5) {
+        print "parseAM: adding new activation for $jobId - PA: $paName\n";
+      }
+      $activations{$jobId} = {
+                              'start' => "",
+                              'end'   => "",
+                              'pa'    => $paName,
+                              'actid' => "",
+                              'result'=> ""
+                             };
+    }
+
+    if ($event eq "COM.ERICSSON.NMS.CIF.AM.NEW_ACTIVITY_IN_JOB") {
+      my ($actId) = $info =~ /^Activity ID : (\d+).*$/;
+      if ($DEBUG > 5) {
+        print "parseAM: Job $jobId: setting actid = $actId\n";
+      }
+      $activations{$jobId}{'actid'} = $actId;
+      $activityIdToJobId{$actId} = $jobId;
+    } elsif ($event eq "COM.ERICSSON.NMS.CIF.AM.NEW_STATUS_JOB" ) {
+      my ($status) = $info =~ /^New.* status : (\S+)$/;
+      my ($paName) = $jobName =~ /^Activate Planned Configuration : (.*)$/;
+      if ($status eq "Started") {
+        if ($DEBUG > 5) {
+          print "parseAM: Job $jobId: setting start = " . $date . " " . $time . "\n";
+        }
+        $activations{$jobId}{'start'} = $date . " " . $time;
+      } elsif ($status eq "Completed" || $status eq "Failed" || $status eq "Terminated") {
+        if ($DEBUG > 5) {
+          print "parseAM: Job $jobId: setting end = " . $date . " " . $time . "\n";
+        }
+        $activations{$jobId}{'end'} = $date . " " . $time;
+      }
+    }
+  }
+}
+
+sub parsePCA($$$$$$) {
+  my ($date,$time,$cmd,$result,$actId,$addInfo) = @_;
+
+  if ( $DEBUG > 7 ) {
+    print "parsePCA: time=$time cmd=$cmd result=$result actId=$actId addInfo=$addInfo\n";
+  }
+
+  # if ( $addInfo =~ /^"Instrumentation for activation of plan (\S+)/ ) {
+  #   if ( $DEBUG > 8 ) { print "parsePCA: addInfo=$addInfo\n"; }
+
+  #   my $paName = $1;
+  #   my ($numActions)     = $addInfo =~ /numActions=([\d-]+)/;
+  #   my ($timeTotal)      = $addInfo =~ /\s+TOTAL_TIME=(\d+)/;
+  #   my ($timeAlgo)       = $addInfo =~ /\s+ALGO=(\d+)/;
+  #   my ($timeReadAction) = $addInfo =~ /\s+READ_ACTIONS=([\d-]+)/;
+  #   my ($timeUnPlan)     = $addInfo =~ /\s+UNPLAN=(\d+)/;
+
+  #   my $r_Inst = {
+  #       'timestamp' => $date . " " . $time,
+  #       'pa' => $paName,
+  #       'numActions' => $numActions,
+  #       'timeTotal' => $timeTotal,
+  #       'timeAlgo' => $timeAlgo,
+  #       'timeReadAction' => $timeReadAction,
+  #       'timeUnPlan' => $timeUnPlan,
+  #       'proaction' => []
+  #   };
+  #   if ( $DEBUG > 7 ) { print Dumper("r_Inst", $r_Inst); }
+  #   push @{$r_pcaInstrumentation}, $r_Inst;
+
+  #   if ( $DEBUG > 5 ) { print "parsePCA: paName=$paName numActions=$numActions timeTotal=$timeTotal\n"; }
+
+  #   my ($processActions,$txCommits, $jmsTimes) = $addInfo =~ /PROCESS_ACTIONS TIME BREAKDOWN: (.*)TxCommits: (\S+)\s+JmsSendTimes: (.*)/;
+  #   if ( $DEBUG > 5 ) { print "parsePCA: processActions=$processActions\n"; }
+
+  #   ($r_Inst->{'numTxCommits'},$r_Inst->{'timeTxCommits'}) = $txCommits =~ /^num=(\d+),totalTime=(\d+)/;
+  #   ($r_Inst->{'numJmsSend'},$r_Inst->{'timeJmsSend'}) = $jmsTimes =~ /^num=(\d+),totalTime=(\d+)/;
+
+  #   my @processActionsParts = split /:/, $processActions;
+  #   if ( $DEBUG > 5 ) { print Dumper("parsePCA: processActionsParts", \@processActionsParts); }
+  #   while ( $#processActionsParts >= 2 ) {
+  #       my $moType = shift @processActionsParts;
+  #       my $actionType = shift @processActionsParts;
+  #       my $processActionStats = shift @processActionsParts;
+  #       if ( $DEBUG > 6 ) { print "parsePCA: processActionStats=\"$processActionStats\"\n"; }
+  #       if ( $processActionStats =~ /(.*) ([^\)]+)$/ ) {
+  #     my ($thisProcessActionStats, $nextMoType) = ($1,$2);
+  #     if ( $DEBUG > 5 ) { print "parsePCA: nextMoType=$nextMoType\n"; }
+  #     unshift @processActionsParts, $nextMoType;
+  #     $processActionStats = $thisProcessActionStats;
+  #       }
+
+  #       my @proStats = split /\s+/, $processActionStats;
+  #       shift @proStats; # dump empty first entry
+  #       if ( $DEBUG > 5 ) { print Dumper("parsePCA: moType=$moType actionType=$actionType proStats", \@proStats); }
+  #       my $r_proAction = {
+  #     'motype' => $moType,
+  #     'actiontype' => $actionType,
+  #     'stats' => {}
+  #       };
+  #       push @{$r_Inst->{'proaction'}}, $r_proAction;
+
+  #       foreach my $stat ( @proStats ) {
+  #     my ($name,$num,$totalTime,$maxTime) = $stat =~ /^([^\(]+)\(num=(\d+),totalTime=(\d+),avg=\d+,max=(\d+)/;
+  #     $r_proAction->{'stats'}->{$name} = {
+  #         'num' => $num,
+  #         'totalTime' => $totalTime,
+  #         'maxTime' => $maxTime
+  #     };
+  #       }
+
+  #   }
+  if ($cmd eq 'ACTIVATE_PLANNED_CONFIGURATION' && $addInfo =~ /Activation Scheme: (\w+)/) {
+    my $scheme = $1;
+    my $realActId = $activityIdToJobId{$actId};
+    if ( exists $activations{$realActId} ) {
+      $activations{$realActId}{'result'} = $result;
+      $activations{$realActId}{'type'} = $SCHEME_MAP{$scheme};
+    } else {
+      print "WARN: No activation with id actId=$actId realActId=$realActId found $addInfo";
+    }
+  } elsif ($cmd eq 'ACTIVATE_PLANNED_CONFIGURATION' && $addInfo =~ /Activation Type=(\w+)/) {
+    # WP00615: Added logic to parse lvlog for PCA after 12.2.4 following lvlog updates [2012-02-27 eronkeo]
+    my $scheme = $1;
+    my $realActId = $activityIdToJobId{$actId};
+    if ($DEBUG > 5) {
+      print "parsePCA: scheme=$scheme realActId="; if ( defined $realActId ) { print "$realActId\n"; } else { print "undef\n"; }
+    }
+    if ( (defined $realActId) && exists $activations{$realActId} ) {
+      $activations{$realActId}{'result'} = $result;
+      $activations{$realActId}{'type'} = $SCHEME_MAP{$scheme};
+
+      # Seems to be a bug in some version of PCA where the activation times are on 12hour format (but without the AM/PM)
+      # So if there's a large delta between the event type
+      my ($pcaEndTimeStr) = $addInfo =~ /End Time=\"([\d\-]+ [\d:]+)\.\d+\"/;
+      my $pcaStartTime = parseTime( $pcaEndTimeStr, $StatsTime::TIME_YYYYMD_HMS );
+      my $lvLogTime = parseTime( "$date $time", $StatsTime::TIME_YYYYMD_HMS );
+      if ( abs( $lvLogTime - $pcaStartTime ) > 3600 ) {
+        if ( $DEBUG > 0 ) {
+          print "WARN: Ignoring PCA times, pcaEndTimeStr=$pcaEndTimeStr time=$time\n";
+        }
+      } else {
+        ($activations{$realActId}{'start'})    = $addInfo =~ /Start Time=\"([\d\-]+ [\d:]+)\.\d+\"/;
+        $activations{$realActId}{'end'}        = $pcaEndTimeStr;
+      }
+      ($activations{$realActId}{'duration'}) = $addInfo =~ /Duration=(\d+) ms/;
+
+      if ( $addInfo =~ / Number of MOs\/Actions=(\d+)/ ) {
+        $activations{$realActId}{'mocount'} = $1;
+      }
+
+      if ( $addInfo =~ /PlanMetrics:: (.*)/ ) {
+        # TT : Total time taken for Plan Activation
+        # TRPT: Time to read and pack activation parameters .
+        # AAT: Activation Algorithm Time.  [ AAT  is inclusive of  TTCS + TRPT + TRRM + TACS, ie  approx. AAT = TTCS + TRPT + TRRM + TACS  ]
+        # TTCS: Total time in CS activate call .
+        # TRRM: Time to read root MOs from Plan.
+        # PQT : PCA job en-queue time.
+        # RSH: Report and set Activation History
+        # TACS : Time taken with ACS [ Tbac handling ]
+        # CCT : Time to stop Consistency Check call .
+        # TAM: Time taken by AM.
+        my $metricStr = $1;
+        my %metrics = ();
+        foreach my $field ( 'TT', 'TRPT', 'AAT', 'TTCS', 'TRRM', 'PQT', 'RSH', 'TACS', 'CCT', 'TAM' ) {
+          if ( $metricStr =~ /$field\s+\((\d+)\)/ ) {
+            $metrics{$field} = $1;
+          }
+        }
+        $activations{$realActId}{'pca_metrics'} = \%metrics;
+      }
+      if ( $DEBUG > 5 ) {
+        print Dumper("parsePCA: r_activations", $activations{$realActId});
+      }
+    } else {
+      my $realActIdStr = $realActId;
+      if ( ! defined $realActIdStr ) {
+        $realActIdStr="undef";
+      }
+      print "WARN: No activation with id actId=$actId realActId=$realActIdStr found\n";
+    }
+  } elsif ( $addInfo =~  /\"Plan Name= (\S+) (MO Name:|Name: )([^\"]+)/ ||
+            $addInfo =~ /\"Plan Name= (\S+)\. Commit Type =\S+ (MO Name:|Name: )([^\"]+)/ ) {
+    my ($planName, $seperator, $info) = ($1,$2,$3);
+
+    my $activationId = getActivation($date,$time,$planName);
+    if ( defined $activationId ) {
+      if ( ! exists $activations{$activationId}{'content'} ) {
+        $activations{$activationId}{'content'} = [];
+        $activations{$activationId}{'type'} = 'pca';
+      }
+
+      my @infoParts = split ( /$seperator/, $info );
+      if ( $DEBUG > 5 ) {
+        print Dumper("parsePCA: planName=$planName info=$info infoParts", \@infoParts);
+      }
+
+      foreach my $infoPart ( @infoParts ) {
+        my ( $fdn, $op ) = $infoPart =~ /(\S+) Value:? ([A-Z ]+)/;
+        if ( $DEBUG > 4 ) {
+          print "parsePCA: planName=$planName fdn=$fdn, op=$op\n";
+        }
+        my @change = ( $fdn, $op );
+        push @{$activations{$activationId}{'content'}}, \@change;
+      }
+    } else {
+      if ( $DEBUG > 0 ) {
+        print "parsePCA: WARN: Unable to determine activationId for $addInfo\n";
+      }
+      ;
+    }
+  }
+}
+
+sub parseNead($$$) {
+  my ($date,$time,$addInfo) = @_;
+
+  if ( $DEBUG > 7 ) {
+    print "parseNead: time=$time, addInfo=$addInfo\n";
+  }
+
+  if ( $addInfo =~ /^Plan Name = (\S+) ?Name: (.*)/ ) {
+    my ($planName, $info) = ($1,$2);
+
+    my $activationId = getActivation($date,$time,$planName);
+    if ( defined $activationId ) {
+      if ( ! exists $activations{$activationId}{'content'} ) {
+        $activations{$activationId}{'content'} = [];
+        $activations{$activationId}{'type'} = 'system';
+      }
+
+      my @infoParts = split ( / Name: /, $info );
+      foreach my $infoPart ( @infoParts ) {
+        my ( $fdn, $op ) = $infoPart =~ /(\S+) Value: ([A-Z]+)/;
+        if ( $DEBUG > 4 ) {
+          print "parseNead: planName=$planName fdn=$fdn, op=$op\n";
+        }
+        # Ignore "SUCCESS" ops
+        if ( $op ne "SUCCESS" ) {
+          my @change = ( $fdn, $op );
+          push @{$activations{$activationId}{'content'}}, \@change;
+        }
+      }
+    } else {
+      print "WARN: Unable to determine activationId for $time $addInfo\n";
+    }
+  } elsif ( $addInfo =~ /^Planned Area Metrics, MibName\(([^\)]+)\) Plan Name\(([^\)]+)\) (.*)/ ) {
+    my ($mibName,$planName,$statsStr) = ($1,$2,$3);
+
+    my $activationId = getActivation($date,$time,$planName);
+    if ( defined $activationId ) {
+      #AM(NORNAL_ACTIVATION_MODE) TAP(12070) TRP(1186) NR(0) TUP(10877) RAP(479) TSM(6) CDMCPDP(0,0,171,0,0) CDMPT(0,0,677) AM(0) SMDL(0) MCL(0) MML(0) GMT(151) SMT(6) CNEMIBTL(9498) UP(1173) CMT(78) SAT(0) X2PC(0) LOG(44) TT(2) TWT(0) RBK(13) TxRl(0) NA(9350) MA(0) OTHER (91)
+      # Fix OTHER
+      $statsStr =~ s/OTHER /OTHER/;
+      my @statsParts = split(" ",$statsStr);
+
+      # TAP (overall NEAD activate time for that MIB)
+      # TRP (time taken by NEAD to read the plan)
+      # CDMCPDP (Mos created, deleted, modified, proxies created, proxies deleted)
+      # CNEMIBTL (Time taken to create all mos on the node, synch attributes to plan and commit to plan)
+      # UP (Time taken to do the finalizeActivate)
+      # CMT (Time taken to commit changes on the nodes)
+      # SAT (Time taked to synch node attributes to the planned area)
+      # X2PC (Time taked to create X2 proxies on the node)
+      # NA (Time spent towards the node)
+      # MA (Time spent towards the CS)
+      # OTHER (everything else)
+      my @simpleStatsList = ( 'TAP', 'TRP', 'CNEMIBTL', 'UP', 'CMT', 'SAT', 'X2PC', 'NA', 'MA', 'OTHER' );
+      my %simpleStatsMap = (); foreach my $simpleStat ( @simpleStatsList ) { $simpleStatsMap{$simpleStat} = 1; };
+      my %neadStats = ( 'ne' => $mibName );
+      foreach my $statsPart ( @statsParts ) {
+        if ( $statsPart =~ /([A-Z0-9]+)\(([^\)]+)\)$/ ) {
+          my ($name,$value) = ($1,$2);
+          if ( exists $simpleStatsMap{$name} ) {
+            $neadStats{$name} = $value;
+          } elsif ( $name eq 'CDMCPDP' ) {
+            my ($created,$deleted,$modified,$proxCreated,$proxDeleted) = split(",",$value);
+            $neadStats{'moCreated'} = $created;
+            $neadStats{'moDeleted'} = $deleted;
+            $neadStats{'moModified'} = $modified;
+            $neadStats{'proxCreated'} = $proxCreated;
+            $neadStats{'proxDeleted'} = $proxDeleted;
+          }
+        }
+      }
+      if ( $DEBUG > 5 ) {
+        print Dumper("parseNead: neadStats", \%neadStats);
+      }
+
+      if ( ! exists $activations{$activationId}{'nead_stats'} ) {
+        $activations{$activationId}{'nead_stats'} = [];
+      }
+      push @{$activations{$activationId}{'nead_stats'}}, \%neadStats;
+    } else {
+      print "WARN: Unable to determine activationId for $time $planName\n";
+    }
+
+  }
+
+}
+
+sub parseLvLog($) {
+  my ($lvLog) = @_;
+
+  open LV_LOG, $lvLog or die "Cannot open command log $lvLog";
+  while ( my $line = <LV_LOG> ) {
+    if ( $DEBUG > 9 ) {
+      print "parseLvLog: $. line=$line";
+    }
+    my ($date, $time, $logType, $mc, $rest) = $line =~
+      /^(\S+) (\S+) (\S+) \"([^\"]*)\" (.*)/;
+    if ( ! defined $mc ) {
+      next;
+    }
+    if ( $DEBUG > 8 ) {
+      print "parseLvLog: date=$date time=$time logType=$logType mc=$mc\n";
+    }
+    if ( ($logType ne 'SYSTEM' && $logType ne 'COMMAND') ) {
+      next;
+    }
+
+    my ( $resource, $userId, $cmd, $actId, $type, $severity, $oldState, $newState, $addInfo) = $rest =~
+      /^( |\S+) \"(.*)\" \"(.*)\" \"(.*)\" \"(.*)\" (\S+) \"(.*)\" \"(.*)\" \"(.*)\"$/;
+    if ( ! defined $cmd ) {
+      if ( $DEBUG > 5 ) {
+        print "parseLvLog: Failed to parse rest=\"$rest\"\n";
+      }
+      next;
+    }
+
+    if ($DEBUG > 8) {
+      print "parseLvLog: cmd=$cmd newState=$newState actId=$actId addInfo=$addInfo\n";
+    }
+    if ( $mc eq 'wran_pca' ) {
+      parsePCA($date,$time,$cmd,$newState,$actId,$addInfo);
+    } elsif ( $mc eq 'cms_nead_seg' ) {
+      parseNead($date,$time,$addInfo);
+    } elsif ( $mc eq 'ActivityManager' ) {
+      parseAM($date,$time,$type,$addInfo);
+    }
+  }
+  close LV_LOG;
+}
+
+sub parseLogs($$$$) {
+  my ($sysLog, $cmdLog, $lvLog, $r_activations) = @_;
+
+  my %activations = ();
+  my %actIdToJobId = ();
+  my @pcaInstrumentation = ();
+
+  parseSystemLog($sysLog,\%activations,\%actIdToJobId,\@pcaInstrumentation);
+
+  if ( $DEBUG > 4 ) {
+    print Dumper("pcaInstrumentation", \@pcaInstrumentation);
+  }
+
+  foreach my $r_Instr ( @pcaInstrumentation ) {
+    my ($date,$time) = split / /, $r_Instr->{'timestamp'};
+    my $activationId = getActivation($date,$time,$r_Instr->{'pa'});
+    if ( defined $activationId ) {
+      $activations{$activationId}->{'pca_instr'} = $r_Instr;
+    } else {
+      print "WARNING: Could not find activiation id for PCA Instr $date $time $r_Instr->{'pa'}\n";
+    }
+  }
+
+  parseCmdLog($cmdLog,\%activations,\%actIdToJobId);
+
+  ###
+  # Fill in any gaps if possible from the lvlog.log file, if it exists
+  # According to PCA & CMS, there are mappings from "Old" (pre 11.1) to "New" (11.1 & onwards), but
+  # with different formatting, record numbers etc., written to the lvlog.log rather than the cmd.log:
+  #
+  # Pre 11.1 cmd log               11.1 on lv log
+  # ===========================    ==============
+  # 'wran_pca_process'          => 'wran_pca'
+  # 'cms_nead_seg_corba_server' => 'cms_nead_seg'
+  # 'cms_snad_reg_corba_server' => 'cms_snad_reg'
+  #
+  # Below is a hack to fill in as many gaps as possible for the moment, until proper, formalised
+  # logging is provided by PCA via CR 322/109 18-FCP 103 8147/13 [following D1 TRs HO10092 & HO12315]
+  # [BG 2011-05-19]
+  ###
+  # if ( -e $lvLog ) {
+  #   parseLvLog($lvLog,\%activations,\%actIdToJobId,$r_ActTimes);
+  # }
+
+  # foreach my $val (values %activations) {
+  #     push @{$r_activations}, $val;
+  # }
+
+  if ( $DEBUG > 5 ) {
+    print Dumper("parseLogs: r_activations", $r_activations);
+  }
+}
+
+
+sub getImportId($$$$) {
+  my ( $dbh, $siteId, $r_Import, $r_storedValues ) = @_;
+
+  my $importId;
+
+  if ( $DEBUG > 9 ) {
+    print Dumper("getImportId r_Import", $r_Import);
+  }
+
+  my ($startYear,$startMonth,$startDay,$startHour,$startMin,$startSec) = $r_Import->{'start'} =~
+    /^(\d+)-(\d+)-(\d+):(\d+):(\d+):(\d+)/;
+
+  my @fileParts = split /\//, $r_Import->{'file'};
+
+  my @resultsCols = keys %{$r_storedValues};
+  my $resultsColsStr = join( ",", @resultsCols);
+
+  my $sql =
+    sprintf("SELECT id,%s FROM pa_import WHERE siteid = %d AND start = '%04d-%02d-%02d %02d:%02d:%02d' AND pa = '%s' AND file = '%s'",
+            $resultsColsStr,
+            $siteId,
+            $startYear, $startMonth, $startDay, $startHour, $startMin, $startSec,
+            $r_Import->{'plannedarea'},
+            $fileParts[$#fileParts]
+           );
+  if ( $DEBUG > 3 ) {
+    print "getImportId: sql = \"$sql\"\n";
+  }
+
+  my $sth = $dbh->prepare($sql) or die "Couldn't prepare statement: " . $dbh->errstr;
+  $sth->execute() or die "Couldn't execute statement: " . $sth->errstr;
+  my $numFound = $sth->rows;
+  if (  $numFound > 0 ) {
+    # Import already exists
+    my $r_row = $sth->fetchrow_hashref();
+    if ( $DEBUG > 3 ) {
+      print Dumper("getImportId r_row", $r_row);
+    }
+
+    $importId = $r_row->{'id'};
+    foreach my $storedCol ( keys %{$r_storedValues} ) {
+      $r_storedValues->{$storedCol} = $r_row->{$storedCol};
+    }
+
+    # Fix for bug where we didn't do the above check and so ended up with mutiple rows for the
+    # same import
+    if ( $numFound > 1 ) {
+      print "WARN: Fould multiple ($numFound) rows for import at $r_Import->{'start'} into $fileParts[$#fileParts], removing duplicates\n";
+      while ( my @row = $sth->fetchrow_array() ) {
+        my $badImportId = $row[0];
+        dbDo($dbh, "DELETE FROM pa_import_details WHERE importid = $badImportId") or die "Failed to remove duplicate";
+        dbDo($dbh, "DELETE FROM pa_import WHERE id = $badImportId") or die "Failed to remove duplicate";
+      }
+    }
+  } else {
+    dbDo($dbh, sprintf("INSERT INTO pa_import (siteid,start,pa,file) VALUES ( %d, \'%04d-%02d-%02d %02d:%02d:%02d', \'%s', \'%s' )",
+                       $siteId,
+                       $startYear, $startMonth, $startDay, $startHour, $startMin, $startSec,
+                       $r_Import->{'plannedarea'},
+                       $fileParts[$#fileParts])
+        );
+    $importId = $dbh->last_insert_id(undef,undef,"pa_import","id");
+  }
+  $sth->finish();
+
+  return $importId;
+}
+
+sub updateImportResult($$$$) {
+  my ( $dbh, $importId, $r_Import, $r_storedValues ) = @_;
+
+  my @setCols = ();
+  foreach my $col ( keys %{$r_storedValues} ) {
+    my $currValue = undef;
+    if ( $col eq "error" ) {
+      # If the import didn't have an imported completed message &&
+      # it didn't have an error message
+      if ( $r_Import->{'result'} == 0 &&
+           ((! defined $r_Import->{'error'}) || ($r_Import->{'error'} eq "")) ) {
+        # Tag Import as incomplete
+        $currValue = 'Import incomplete';
+      } else {
+        $currValue = $r_Import->{'error'};
+      }
+    } elsif ( $col eq 'end' ) {
+      if ( exists $r_Import->{'endtime'} ) {
+        my @baseFields = localtime($r_Import->{'basetime'});
+        my $baseMidNight  = timelocal( 0, 0, 0, $baseFields[3], $baseFields[4], $baseFields[5] );
+        my $endTimeInSec = $r_Import->{'endtime'} + $baseMidNight;
+        $currValue = getSqlDateTime($endTimeInSec);
+      }
+    } elsif ( $col eq 'numMo' ) {
+      $currValue = $r_Import->{'mocount'};
+    } else {
+      $currValue = $r_Import->{$col};
+    }
+
+
+    if ( $DEBUG > 5 ) {
+      my $printCurVal = $currValue; if ( ! defined $printCurVal ) { $printCurVal = "undef"; }
+      my $printStorVal = $r_storedValues->{$col}; if ( ! defined $printStorVal ) { $printStorVal = "undef"; }
+      print "updateImportResult: col=$col currValue=$printStorVal storedVal=" . $printStorVal . "\n";
+    }
+
+    if ( defined $currValue || defined $r_storedValues->{$col} ) {
+      if ( defined $currValue ) {
+        if ( (! defined $r_storedValues->{$col}) || ( $currValue ne $r_storedValues->{$col}) ) {
+          push @setCols, $col . " = " . $dbh->quote($currValue);
+        }
+      } else {
+        # $currValue is undefined and dbValue is defined so we need to set the dbValue to NULL
+        push @setCols, $col . " = NULL ";
+      }
+    }
+  }
+  if ( $#setCols > -1 ) {
+    dbDo($dbh, "UPDATE pa_import SET " . join(",",@setCols) . " WHERE id = $importId") or
+      die "Failed to update import $importId";
+  }
+}
+
+sub getActivationId($$$$) {
+  my ( $dbh, $siteId, $r_Activation, $r_storedValues ) = @_;
+
+  my $actId;
+
+  if ( $DEBUG > 9 ) {
+    print Dumper("getActivationId r_Activation", $r_Activation);
+  }
+
+  my @resultsCols = keys %{$r_storedValues};
+  my $resultsColsStr = join( ",", @resultsCols);
+
+  my $r_rows = dbSelectAllHash($dbh,sprintf("SELECT id,%s FROM pa_activation WHERE siteid = %d AND start = '%s' AND pa = '%s'",
+                                            $resultsColsStr,
+                                            $siteId,
+                                            $r_Activation->{'start'},
+                                            $r_Activation->{'pa'})
+                              );
+  if ( $#{$r_rows} > -1 ) {
+    # Activation already exists
+    if ( $DEBUG > 3 ) {
+      print Dumper("getImportId r_rows", $r_rows);
+    }
+
+    $actId = $r_rows->[0]->{'id'};
+    foreach my $storedCol ( keys %{$r_storedValues} ) {
+      $r_storedValues->{$storedCol} = $r_rows->[0]->{$storedCol};
+    }
+  } else {
+    dbDo($dbh,
+         sprintf("INSERT INTO pa_activation (siteid,start,pa) VALUES ( %d, \'%s', \'%s' )",
+                 $siteId, $r_Activation->{'start'}, $r_Activation->{'pa'} ) );
+    $actId = $dbh->last_insert_id(undef,undef,"pa_activation","id");
+  }
+
+  return $actId;
+}
+
+sub updateActivationResult($$$$) {
+  my ( $dbh, $actId, $r_Activation, $r_storedValues ) = @_;
+
+  my @setCols = ();
+
+  foreach my $col ( keys %{$r_storedValues} ) {
+    my $currValue = undef;
+    # WP00615: Added logic to check if mocount var already defined [2012-02-27 eronkeo]
+    if ( ( $col eq "mocount" ) && (! defined $r_Activation->{'mocount'} ) ) {
+      if ( exists $r_Activation->{'content'} ) {
+        my %fdnMap = ();
+        foreach my $r_change ( @{$r_Activation->{'content'}} ) {
+          $fdnMap{$r_change->[0]}++;
+        }
+        my @fdnList = keys %fdnMap;
+        $currValue = sprintf("%d", ($#fdnList + 1));
+      }
+    } else {
+      $currValue = $r_Activation->{$col};
+    }
+
+    if ( $DEBUG > 5 ) {
+      my $printStoredValue = "undef";
+      if ( defined $r_storedValues->{$col} ) {
+        $printStoredValue = $r_storedValues->{$col};
+      }
+      my $printCurrVal = "undef";
+      if ( defined $currValue ) {
+        $printCurrVal = $currValue;
+      }
+      print "updateActionResult: col=$col currValue=$printCurrVal storedVal=$printStoredValue\n";
+    }
+
+    if ( defined $currValue ) {
+      if ( (! defined $r_storedValues->{$col}) || ( $currValue ne $r_storedValues->{$col}) ) {
+        push @setCols, $col . " = " . $dbh->quote($currValue);
+      }
+    }
+  }
+
+  if ( $#setCols > -1 ) {
+    dbDo($dbh, "UPDATE pa_activation SET " . join(",",@setCols) . " WHERE id = $actId") or
+      die "Failed to update import $actId";
+  }
+}
+
+sub storeStats($$$) {
+  my ($site,$r_imports,$r_activations) = @_;
+
+  if ( $DEBUG > 0 ) {
+    setStatsDB_Debug($DEBUG);
+  }
+  my $dbh = connect_db();
+  my $siteId = getSiteId($dbh,$site);
+  ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+  if ( $#{$r_imports} > -1 ) {
+    my %moCounts = ();
+    foreach my $r_Import ( @{$r_imports} ) {
+      # Build up list all all MO types
+      foreach my $r_Stats ( @{$r_Import->{'data'}} ) {
+        foreach my $moType ( keys %{$r_Stats} ) {
+          $moCounts{$moType}++;
+        }
+      }
+    }
+    my @moList = keys %moCounts;
+    my $r_idMap = getIdMap($dbh,"mo_names", "id", "name", \@moList );
+
+    foreach my $r_Import ( @{$r_imports} ) {
+      if ( $DEBUG > 4 ) {
+        print "storeStats: Processing Import " . $r_Import->{'start'} . " " . $r_Import->{'file'} . "\n";
+      }
+
+      my %storedValues =
+        (
+         'end' => undef,
+         'numMo' => undef,
+         'error' => undef
+        );
+
+      my $importId = getImportId($dbh, $siteId, $r_Import, \%storedValues);
+      updateImportResult($dbh,$importId,$r_Import, \%storedValues);
+
+      dbDo( $dbh, "DELETE FROM pa_import_details WHERE importid = $importId");
+      my %opByMo = ();
+      foreach my $r_Stats ( @{$r_Import->{'data'}} ) {
+        foreach my $moType ( keys %{$r_Stats} ) {
+          foreach my $modifier ( keys %{$r_Stats->{$moType}} ) {
+            $opByMo{$moType}->[$modifier] += $r_Stats->{$moType}->{$modifier};
+          }
+        }
+      }
+
+      foreach my $moType ( sort keys %opByMo ) {
+        my @opCounts = ( 0, 0, 0 );
+        for ( my $opType = 0; $opType <= 2; $opType++ ) {
+          if ( defined $opByMo{$moType}->[$opType] ) {
+            $opCounts[$opType] = $opByMo{$moType}->[$opType];
+          }
+        }
+        dbDo( $dbh,
+              sprintf("INSERT INTO pa_import_details ( importid, moid, created, deleted, updated ) VALUES ( %d, %d, %d, %d, %d)",
+                      $importId, $r_idMap->{$moType},
+                      $opCounts[0], $opCounts[1], $opCounts[2]) );
+      }
+    }
+  } else {
+    if ( $DEBUG > 0 ) {
+      print "storeStats: No imports\n";
+    }
+  }
+
+  #
+  # PA Activations
+  #
+  my $r_MoIdMap = getIdMap($dbh,"mo_names", "id", "name", [] );
+  my $r_NeIdMap = loadNeMap($dbh,$siteId);
+
+  foreach my $r_Activation ( @{$r_activations} ) {
+    if ( $DEBUG > 4 ) {
+      print Dumper("storeStats: r_Activation", $r_Activation);
+    }
+    # don't handle activations which haven't started
+    next if $r_Activation->{'start'} eq "";
+
+    my %storedValues =
+      (
+       'end' => undef,
+       'mocount' => undef,
+       'result' => undef,
+       'type' => undef
+      );
+
+    my $actId = getActivationId($dbh, $siteId, $r_Activation, \%storedValues);
+    if ( exists $r_Activation->{'end'} ) {
+      $r_Activation->{'end'} =~ s/\./:/;
+    }
+    updateActivationResult($dbh,$actId,$r_Activation, \%storedValues);
+
+    if ( exists $r_Activation->{'content'} ) {
+      storePcaActivitionContent($dbh,$actId,$r_Activation,$r_MoIdMap);
+    }
+
+    if ( exists $r_Activation->{'type'} && $r_Activation->{'type'} eq 'pca' && exists $r_Activation->{'pca_instr'} ) {
+      storePcaInstr($dbh,$actId,$r_Activation,$r_MoIdMap);
+    }
+
+    if ( exists $r_Activation->{'nead_stats'} ) {
+      storeNeadInstr($dbh,$actId,$r_Activation,$r_NeIdMap);
+    }
+  }
+
+  $dbh->disconnect;
+}
+
+sub loadNeMap
+  {
+    my ($dbh,$siteId) = @_;
+
+    my $r_AllNe = readNe($dbh,$siteId);
+    my %neMap = ();
+    foreach my $r_NeRow ( @{$r_AllNe} ) {
+      my $shortName = $r_NeRow->{'name'};
+
+      # if the rns.name is the same as the ne.type then we know we have an entry on a level 1 Subnetwork.
+      if ( $r_NeRow->{'rns'} ne  $r_NeRow->{'type'}) {
+        $shortName = $r_NeRow->{'rns'} . "," . $shortName;
+      }
+      $neMap{$shortName} = $r_NeRow->{'neid'};
+    }
+
+    if ( $DEBUG > 1 ) {
+      print Dumper("loadNeMap: neMap", \%neMap);
+    }
+    return \%neMap;
+  }
+
+sub storeNeadInstr($$$$) {
+  my ($dbh,$actId,$r_Activation,$r_neMap) = @_;
+
+  my @dbCols = keys %NEAD_INSTR_MAP;
+  my $insertSql = "INSERT INTO pa_activation_nead (actid,neid," . join(",",@dbCols) . ") VALUES ($actId,";
+
+  dbDo($dbh, "DELETE FROM pa_activation_nead WHERE actid = $actId")
+    or die "Failed to remove old data";
+  foreach my $r_neadActStats ( @{$r_Activation->{'nead_stats'}} ) {
+    my $neId = $r_neMap->{getShortNode($r_neadActStats->{'ne'})};
+    if ( defined $neId ) {
+      my @values = ($neId);
+      foreach my $dbCol ( @dbCols ) {
+        if ( exists $r_neadActStats->{$NEAD_INSTR_MAP{$dbCol}} ) {
+          push @values, $r_neadActStats->{$NEAD_INSTR_MAP{$dbCol}};
+        } else {
+          push @values, '\N';
+        }
+      }
+      dbDo($dbh,$insertSql . join(",",@values) . ")")
+        or die "Failed to insert row";
+    }
+  }
+}
+
+sub storePcaInstr($$$$) {
+  my ($dbh,$actId,$r_Activation,$r_idMap) = @_;
+  dbDo($dbh, "DELETE FROM pa_activation_pca WHERE actid = $actId")
+    or die "Failed to remove $actId from pa_activation_pca";
+  dbDo($dbh, sprintf("INSERT INTO pa_activation_pca (actId,numActions,tTotal,tAlgo,tReadActions,tUnPlan,numTxCommit,tTxCommit,numJmsSend,tJmsSend) VALUES (%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)",
+                     $actId,
+                     $r_Activation->{'pca_instr'}->{'numActions'},
+                     $r_Activation->{'pca_instr'}->{'timeTotal'} / 1000,
+                     $r_Activation->{'pca_instr'}->{'timeAlgo'} / 1000,
+                     $r_Activation->{'pca_instr'}->{'timeReadAction'} / 1000,
+                     $r_Activation->{'pca_instr'}->{'timeUnPlan'} / 1000,
+                     $r_Activation->{'pca_instr'}->{'numTxCommits'},
+                     int ( ($r_Activation->{'pca_instr'}->{'timeTxCommits'} / 1000) + 0.5),
+                     $r_Activation->{'pca_instr'}->{'numJmsSend'},
+                     $r_Activation->{'pca_instr'}->{'timeJmsSend'} / 1000)
+
+      )
+    or die "Failed to INSERT $actId into pa_activation_pca";
+
+
+  dbDo($dbh, "DELETE FROM pa_activation_pca_actions WHERE actid = $actId")
+    or die "Failed to remove $actId from pa_activation_pca_actions";
+
+  foreach my $r_proAction ( @{$r_Activation->{'pca_instr'}->{'proaction'}} ) {
+    my @colNames = ();
+    my @colValues = ();
+    foreach my $col ( 'TOTAL', 'FINDMO', 'CSCALL', 'GETPLAN' ) {
+      push @colNames, "t" . $col;
+      push @colValues, int( ($r_proAction->{'stats'}->{$col}->{'totalTime'} / 1000) + 0.5 );
+      push @colNames, "n" . $col;
+      push @colValues, $r_proAction->{'stats'}->{$col}->{'num'};
+    }
+
+    dbDo($dbh, sprintf("INSERT INTO pa_activation_pca_actions (actId,action,moid,%s) VALUES (%d,'%s',%d,%s)",
+                       join(",", @colNames),
+                       $actId,
+                       $r_proAction->{'actiontype'},
+                       $r_idMap->{$r_proAction->{'motype'}},
+                       join(",",@colValues)))
+      or die "Failed to INSERT $actId into pa_activation_pca_actions";
+  }
+}
+
+sub storePcaActivitionContent($$$$) {
+  my ($dbh,$actId,$r_Activation,$r_idMap) = @_;
+
+  dbDo($dbh, "DELETE FROM pa_activation_content WHERE actid = $actId");
+
+  my %moTypes = ();
+  foreach my $r_change ( @{$r_Activation->{'content'}} ) {
+    my ($moType) = $r_change->[0] =~ /,([^,=]+)=[^,=]+$/;
+    $moTypes{$moType}->{$r_change->[1]}++;
+  }
+
+  foreach my $moType ( keys %moTypes ) {
+    my @counts = ();
+    foreach my $action ( "CREATED", "DELETED", "CHANGED" ) {
+      if ( exists $moTypes{$moType}->{$action} ) {
+        push @counts, $moTypes{$moType}->{$action};
+      } else {
+        push @counts, 0;
+      }
+    }
+    dbDo($dbh, sprintf("INSERT INTO pa_activation_content (actid,moid,created,deleted,updated) VALUES (%d,%d,%s)",
+                       $actId, $r_idMap->{$moType}, join(",", @counts)) )
+      or die "Failed to insert into pa_activation_content";
+  }
+}
+
+sub writeTables($$) {
+  my ( $r_imports, $tableDir ) = @_;
+
+  foreach my $r_Import ( @{$r_imports} ) {
+    if ( $DEBUG > 10 ) {
+      print Dumper("writeTables r_Import", $r_Import);
+    }
+
+    my %opByMo = ();
+
+    foreach my $r_Stats ( @{$r_Import->{'data'}} ) {
+      foreach my $moType ( keys %{$r_Stats} ) {
+        foreach my $modifier ( keys %{$r_Stats->{$moType}} ) {
+          $opByMo{$moType}->[$modifier] += $r_Stats->{$moType}->{$modifier};
+        }
+      }
+    }
+
+    my ($startTs) = $r_Import->{'start'} =~ /^\d{4,4}-\d{2,2}-\d{2,2}:(\d{2,2}:\d{2,2})/;
+
+    my $tableFile = $tableDir . "/opcounts_" . $startTs . ".html";
+
+    if ( $DEBUG > 5 ) {
+      print Dumper("writeTables tableFile=$tableFile opByMo", \%opByMo);
+    }
+
+    open TABLE, ">$tableFile" or die "Cannot write to $tableFile";
+    print TABLE "<table border> <tr> <th>MO Type</th> <th># Create</th> <th># Delete</th> <th># Update</th> </tr>\n";
+    foreach my $moType ( sort keys %opByMo ) {
+      my @countByOp = ( 0, 0, 0 );
+      for ( my $op = 0; $op <= 2; $op++ ) {
+        if ( defined $opByMo{$moType}->[$op] ) {
+          $countByOp[$op] = $opByMo{$moType}->[$op];
+        }
+      }
+      printf TABLE " <tr> <td>%s</td> <td>%d</td> <td>%d</td> <td>%d</td> </tr>\n",
+        $moType, $countByOp[0], $countByOp[1], $countByOp[2];
+    }
+    printf TABLE "</table>\n";
+    close TABLE;
+  }
+}
+
+
+sub readPerfData($$) {
+  my ( $perfDataFile, $r_imports ) = @_;
+
+  open PERF_DATA, $perfDataFile or die "Cannot open $perfDataFile";
+
+  my $lastTimeMin = -1;
+  my $state = $NOT_STARTED;
+  while ( my $line = <PERF_DATA> ) {
+    chop $line;
+    my @fields = split /@/, $line;
+
+    if ( $fields[0] eq "START" ) {
+      if ($state == $STARTED) {
+        $r_imports->[$#{$r_imports}]->{'endtime'} = $lastTimeMin;
+        $r_imports->[$#{$r_imports}]->{'error'} = "Unknown";
+        $state = $NOT_STARTED;
+      }
+
+      # START@2005-02-02T00:00:04Z@ /var/opt/ericsson/nms_umts_wran_bcg/files/import/UTRAN_TOPOLOGY.xml@SubNetwork=ONRM_RootMo_R
+      my ( $year, $month, $day, $hour, $min, $sec ) = $fields[1] =~ /^(\d{4,4})-(\d{2,2})-(\d{2,2})T(\d{2,2}):(\d{2,2}):(\d{2,2})/;
+      my $r_Import = {
+                      'start' => (sprintf "%04d-%02d-%02d:%02d:%02d:%02d", $year, $month, $day, $hour, $min, $sec),
+                      'file'  => $fields[2],
+                      'plannedarea'  => $fields[3],
+                      'basetime' => timelocal($sec, $min, $hour, $day, $month - 1, $year - 1900),
+                      'data'  => []
+                     };
+      if ( $r_Import->{'file'} =~ /^(\S+)\. Activity ID:\s+(\d+)\. User: (\S+)/ ) {
+        my ($file,$actId,$userId) = ($1,$2,$3);
+        $r_Import->{'file'} = $file;
+        $r_Import->{'actId'} = $actId;
+        $r_Import->{'userId'} = $userId;
+      }
+
+      push @{$r_Import->{'data'}}, {};
+      push @{$r_imports}, $r_Import;
+
+      $lastTimeMin = ($hour * 60) + $min;
+
+      $state = $STARTED;
+    } elsif ( ($state == $STARTED) && ($fields[0] eq "EVENT") ) {
+      my ($hour,$min,$sec) = split(/:/, $fields[1]);
+      my $timeInMin = ($hour * 60) + $min;
+      if ( $timeInMin < $lastTimeMin ) {
+        $timeInMin += (24 * 60);
+      }
+
+      my $moType = $fields[2];
+      $moType =~ s/^vsData//;
+
+      my $modifier = $fields[3];
+
+      my $r_data = $r_imports->[$#{$r_imports}]->{'data'};
+
+      my $r_stats;
+      if ( $timeInMin == $lastTimeMin ) {
+        $r_stats = $r_data->[$#{$r_data}];
+      } else {
+        while ( $lastTimeMin < $timeInMin ) {
+          $r_stats = {};
+          if ( $DEBUG > 5 ) {
+            print "Creating new stats $fields[1] $fields[2] lastTimeMin = $lastTimeMin, timeInMin = $timeInMin\n";
+          }
+          push @{$r_data}, $r_stats;
+          $lastTimeMin++;
+        }
+      }
+
+      $r_stats->{$moType}->{$modifier}++;
+    } elsif ( ($state == $STARTED) && ($fields[0] eq "END") ) {
+      my ($hour,$min,$sec) = split (/:/, $fields[1]);
+
+      my $timeInMin = ($hour * 60) + $min;
+      if ( $timeInMin < $lastTimeMin ) {
+        $timeInMin += (24 * 60);
+      }
+
+      $r_imports->[$#{$r_imports}]->{'endtime'} = ($timeInMin*60) + $sec;
+      $r_imports->[$#{$r_imports}]->{'result'} = $fields[2];
+      if ( $fields[2] == 1 ) {
+        $r_imports->[$#{$r_imports}]->{'mocount'} = $fields[3];
+      } else {
+        $r_imports->[$#{$r_imports}]->{'error'} = $fields[3];
+        #$r_imports->[$#{$r_imports}]->{'mocount'} = 0; # make sure we set this to something
+      }
+
+      $state = $NOT_STARTED;
+    }
+  }
+  close PERF_DATA;
+
+  if ( $DEBUG > 4 ) {
+    print Dumper("imports", $r_imports);
+  }
+}
+
+
+sub writePlotData($$) {
+  my ( $plotFile, $r_imports ) = @_;
+
+  my %modifierMap = ();
+  $modifierMap{'0'} = "Create";
+  $modifierMap{'1'} = "Delete";
+  $modifierMap{'2'} = "Update";
+
+  open PLOT, ">$plotFile" or die "Cannot write to $plotFile\n";
+  my @opLists = ();
+  foreach my $r_Import ( @{$r_imports} ) {
+    my $offset = 0;
+    my $r_RawData = $r_Import->{'data'};
+    my $r_AggData = [];
+    my $r_SortedOps = aggregateData($r_RawData,$r_AggData,8);
+
+    foreach my $r_Stats ( @{$r_AggData} ) {
+      my $timeInSec = ($offset * 60) + $r_Import->{'basetime'};
+
+      if ( $DEBUG > 5 ) {
+        print "timeInSec = $timeInSec\n";
+      }
+
+      my @timeFields = localtime($timeInSec);
+      my $timeStr = sprintf("%02d-%02d-%02d:%02d:%02d" , $timeFields[5] - 100, $timeFields[4] + 1, $timeFields[3], $timeFields[2], $timeFields[1]);
+      print PLOT $timeStr;
+
+      my $total = 0;
+      my $buff = "";
+      for ( my $i = 0; $i <= $#{$r_SortedOps} ; $i++ ) {
+        $total += $r_Stats->[$i];
+        $buff = " " . $total . $buff;
+      }
+      print PLOT $buff, "\n";
+
+      $offset++;
+    }
+
+    print PLOT "\n\n";
+
+    my @opList = ();
+    foreach my $op ( @{$r_SortedOps} ) {
+
+      if ( $op eq 'Other' ) {
+        push @opList, 'Other';
+      } else {
+        my ($modifier,$moType) = split (/:/, $op);
+        push @opList, $modifierMap{$modifier} . " " . $moType;
+      }
+    }
+    push @opLists, \@opList;
+  }
+
+  close PLOT;
+
+  return \@opLists;
+}
+
+sub aggregateData($$$) {
+  my ($r_Data, $r_AggData, $maxCount) = @_;
+
+  my %opCounts = ();
+  foreach my $r_Stats ( @{$r_Data} ) {
+    foreach my $moType ( keys %{$r_Stats} ) {
+      foreach my $modifier ( keys %{$r_Stats->{$moType}} ) {
+        $opCounts{$modifier . ":" . $moType}++;
+      }
+    }
+  }
+  if ( $DEBUG > 6 ) {
+    print Dumper("aggregateData opCounts", \%opCounts);
+  }
+
+  my $r_sortedKeys = getKeysSortedByValue(\%opCounts);
+  if ( $DEBUG > 6 ) {
+    print Dumper("aggregateData r_sortedkeys", $r_sortedKeys);
+  }
+
+  if ( $#{$r_sortedKeys} < $maxCount ) {
+    $maxCount = $#{$r_sortedKeys} + 2;
+  }
+
+  my %indexMap = ();
+  for ( my $i = 0; $i < ($maxCount-1); $i++ ) {
+    $indexMap{$r_sortedKeys->[$i]} = $i;
+  }
+  if ( $DEBUG > 2 ) {
+    print Dumper("aggregateData indexMap", \%indexMap );
+  }
+
+  my %aggOpCounts = ();
+  foreach my $r_Stats ( @{$r_Data} ) {
+    my $r_AggSample = [];
+    push @{$r_AggData}, $r_AggSample;
+
+    foreach my $moType ( keys %{$r_Stats} ) {
+      foreach my $modifier ( keys %{$r_Stats->{$moType}} ) {
+        my $op = $modifier . ":" . $moType;
+
+        if ( $DEBUG > 6 ) {
+          printf "aggregateData op=$op exists=%d\n", (exists $indexMap{$op});
+        }
+
+        if ( exists $indexMap{$op} ) {
+          $r_AggSample->[$indexMap{$op}]++;
+        } else {
+          $op = "Other";
+          $r_AggSample->[$maxCount-1]++;
+        }
+
+        $aggOpCounts{$op}++;
+      }
+    }
+  }
+
+  my $r_resultKeys = getKeysSortedByValue(\%aggOpCounts);
+
+  if ( $DEBUG > 4 ) {
+    print Dumper("aggregateData aggData", $r_AggData);
+  }
+  if ( $DEBUG > 4 ) {
+    print Dumper("aggregateData resultKeys", $r_resultKeys);
+  }
+
+  return $r_resultKeys;
+}
+
+sub by_number
+  {
+    return $b <=> $a;
+  }
+
+sub getKeysSortedByValue
+  {
+    my ( $r_Hash ) = @_;
+
+    my $counter = 0;
+    my %reverseHash = ();
+    foreach my $key ( keys %{$r_Hash} ) {
+      my $reverseKey = sprintf "%d%04d", $r_Hash->{$key}, $counter;
+      $reverseHash{$reverseKey} = $key;
+      $counter++;
+    }
+
+    my $r_Result = [];
+    foreach my $reverseKey ( sort by_number keys %reverseHash ) {
+      $r_Result->[$#{$r_Result} + 1] = $reverseHash{$reverseKey};
+    }
+
+    return $r_Result;
+  }
+
+
+sub getSqlDateTime($) {
+  my ($dt) = @_;
+
+  my @timeFields = localtime($dt);
+  # 1998-12-31 23:59:59
+  my $dtStr = sprintf("%04d-%02d-%02d %02d:%02d:%02d" , $timeFields[5] + 1900, ,$timeFields[4] + 1, $timeFields[3], $timeFields[2], $timeFields[1], $timeFields[0]);
+
+  return $dtStr;
+}
+
+sub parseJavaDate($) {
+  my ($inDate) = @_;
+
+  my ($month, $date, $time, $year) = $inDate =~ /^\S+ (\S+) (\d+) (\S+) \S+ (\d+)/o;
+
+  my $monthNum = $monthMap{$month};
+
+  my $dtStr = sprintf("%04d-%02d-%02d %s" , $year, $monthNum, $date, $time);
+
+  if ( $DEBUG > 5 ) {
+    print "parseJavaDate inDate=$inDate month=$month monthNum=$monthNum date=$date dtStr=$dtStr\n";
+  }
+
+  return $dtStr;
+}
+
+
+sub main() {
+  my ($perfDataFile,$lvLogDir,$tableDir,$plotFile,$site,$date,$actPlotFile);
+  my $result = GetOptions("impres=s"  => \$perfDataFile,
+                          "lvlogdir=s" => \$lvLogDir,
+                          "plotdata=s" => \$plotFile,
+                          "tabledir=s"  => \$tableDir,
+                          "site=s" => \$site,
+                          "actplot=s" => \$actPlotFile,
+                          "debug=n" => \$DEBUG,
+                         );
+
+  #
+  # Array of hashmaps
+  # {
+  #  start
+  #  file
+  #  plannedarea
+  #  basetime
+  #  data array/ element per min per min of
+  #   [
+  #     {
+  #       mo => op => count
+  #     }
+  #   ]
+  #
+  #  endtime
+  #  error
+  #
+  #
+  my @imports = ();
+  if ( $perfDataFile ) {
+    readPerfData( $perfDataFile, \@imports );
+  }
+
+  if ( $tableDir ) {
+    writeTables( \@imports, $tableDir );
+  }
+
+  if ( $plotFile ) {
+    my $r_opLists = writePlotData( $plotFile, \@imports );
+    my $resultStr = "IMPORTS," . ($#imports+1);
+    for ( my $i = 0; $i <= $#imports; $i++ ) {
+      my $opStr = "";
+      foreach my $op ( @{$r_opLists->[$i]} ) {
+        $opStr .= ";" . $op;
+      }
+      $resultStr .= "," . $imports[$i]->{'start'} . $opStr;
+    }
+
+    print $resultStr, "\n";
+  }
+
+  # Array of hashmaps
+  # (
+  #   content:
+  #     ( Array of Array
+  #        ( FDN, Operation )
+  #     )
+  #   actid: Activity Id
+  #   end: end time
+  #   pa: Planned Area Name
+  #   type: activation type ( system, pca, ne )
+  #   start: start time
+  #   result: ( SUCCESS, FAILED )
+  # For type == pca we also have pca_instr which is a hash
+  #      numActions:
+  #      timeUnPlan:
+  #      timestamp:
+  #      timeReadAction
+  #      timeAlgo
+  #      timeTotal
+  #      proaction Array of hash
+  #       motype
+  #       action
+  #       stats Hash key is stat type (FINDMO,TOTAL,CSCALL,GETPLAN)
+  #         maxTime
+  #         num
+  #         totalTime
+  # )
+
+  # Prior to 12.2, PCA didn't log the start time of an activation
+  # So the ActivityManager log entries to get the start/end times
+  my $amLog = $lvLogDir . "/ActivityManager";
+  if ( -r $amLog ) {
+    parseLvLog($amLog);
+  }
+  if ( $DEBUG > 3 ) {
+    print Dumper("main: activations after ActivityManager", \%activations);
+  }
+
+  my $pcaLog = $lvLogDir . "/wran_pca";
+  if ( -r $pcaLog ) {
+    parseLvLog($pcaLog);
+  }
+  if ( $DEBUG > 3 ) {
+    print Dumper("main: activations after pca", \%activations);
+  }
+
+  my $neadLog = $lvLogDir . "/cms_nead_seg";
+  if ( -r $neadLog ) {
+    # In order to map NEAD events to
+    # the correct activation, we need the
+    # start time,end time & plan name for all activations
+    extractStartEndTime();
+    parseLvLog($neadLog);
+  }
+  if ( $DEBUG > 3 ) {
+    print Dumper("main: activations after nead", \%activations);
+  }
+
+  if ( defined $site ) {
+    my @activationData = values %activations;
+    storeStats( $site, \@imports, \@activationData );
+  }
+
+  if ( defined $actPlotFile ) {
+    writeActivityPlot( \@imports, \%activations, $actPlotFile );
+  }
+}
+
+main();

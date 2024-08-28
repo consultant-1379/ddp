@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="tsc"
+ timespan="day"
+ ylabel="Number of Custom KPI"
+>
+  <title value="Custom KPI"/>
+  <queries>
+    <query timecol="time">
+      <dbtables main="eniq_netan_custom_kpi_details">
+        <reference table="sites" condition="eniq_netan_custom_kpi_details.siteid = sites.id"/>
+      </dbtables>
+      <param name="site"/>
+      <where>sites.name = '%s'</where>
+      <column db="eniq_netan_custom_kpi_details.NumberOfCustomKPI" label="Number of Custom KPI"/>
+    </query>
+  </queries>
+  <size width="540" height="240"/>
+</modelledgraph>

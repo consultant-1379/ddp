@@ -1,0 +1,48 @@
+#!/bin/bash
+
+LOG_FILE=/data/ddp/log/backup.log
+LOCK_DIR=/tmp/bkup-lock
+
+log() {
+    MY_MSG="$1"
+    DATE=$(date)
+    echo "${DATE} ${MY_MSG}" >> ${LOG_FILE}
+}
+
+log "INFO: Stream $STREAM_NUMBER ending"
+
+if [ ! -d ${LOCK_DIR} ] ; then
+    log "ERROR: Stream $STREAM_NUMBER ${LOCK_DIR} is missing"
+    exit 1
+fi
+
+while [ ! -r ${LOCK_DIR}/ready ] ; do
+    log "INFO: Stream $STREAM_NUMBER waiting for ready file"
+    sleep 1
+done
+      
+GOT_END_LOCK=0
+while [ ${GOT_END_LOCK} -eq 0 ] ; do    
+    mkdir ${LOCK_DIR}/end_lock
+    if [ $? -eq 0 ] ; then
+	log "INFO: Stream $STREAM_NUMBER got end lock"	
+	GOT_END_LOCK=1
+    else
+	sleep 1
+    fi
+done
+
+rm -f ${LOCK_DIR}/stream_${STREAM_NUMBER}
+
+NUM_REMAINING_STREAMS=$(find ${LOCK_DIR} -name 'stream_*' | wc -l | awk '{print $0}')
+log "INFO: Stream ${STREAM_NUMBER} NUM_REMAINING_STREAMS=${NUM_REMAINING_STREAMS}"
+
+if [ ${NUM_REMAINING_STREAMS} -eq 0 ] ; then
+    log "INFO: Stream ${STREAM_NUMBER} removing snapshot"
+    /data/ddp/current/server_setup/snapdbfs -a delete -s bkup >> ${LOG_FILE} 2>&1
+    rm -rf ${LOCK_DIR}
+else
+    log "INFO: Stream ${STREAM_NUMBER} is not the last stream, releasing end_lock"
+    rm -rf ${LOCK_DIR}/end_lock
+fi
+

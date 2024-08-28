@@ -1,0 +1,82 @@
+#! /usr/bin/env perl
+
+#=====================================================================
+# Script  : parseSutLogs
+# Author  : Sourav Pujara (xoupuj)
+# Purpose : The purpose of this script is to parse the sut log files
+#           and store them under database.
+# Usage   : ${ANALYSIS_BIN}/TOR/parseSutLogs --logFile
+#           ${logFile} --server ${server} --site ${site} -- date ${date}
+#=====================================================================
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use StatsDB;
+use DBI;
+use EnmCluster;
+use Data::Dumper;
+our $DEBUG = 0;
+
+
+sub main() {
+
+    my ( $logFile, $site, $date,$server);
+    my $result = GetOptions(
+        "logFile=s" => \$logFile,
+        "date=s"   => \$date,
+        "site=s"   => \$site,
+        "server=s" => \$server,
+        "debug=s"  => \$DEBUG
+    );
+
+    ( $result == 1 ) or die "Invalid args";
+    if ($DEBUG > 5) { print Dumper("main: fileDataset", $logFile); }
+    parseLogs($logFile,$site,$date,$server);
+}
+
+sub parseLogs($$$$) {
+    my $logFile = shift;
+    my $site = shift;
+    my $date = shift;
+    my $server = shift;
+    my %dumpStats = ();
+    my $tmpDir = '/data/tmp';
+    if (exists $ENV{'TMP_DIR'}) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+    my $dbServerMap = enmClustHostSrv($site, $date, "DB");
+    my $serverId = $dbServerMap->{$server};
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    ( $siteId != -1 ) or die "Failed to get siteid for $site";
+    my $bcpFileName = "$tmpDir/sutlogs.bcp";
+    open BCP, ">$bcpFileName" or die "Cannot open $bcpFileName";
+    open (LOG, $logFile) or die "Failed to open the file $logFile";
+
+    while (my $logLine = <LOG>) {
+        if ($DEBUG > 9) { print "parseLogs: Logline=$logLine"; }
+        #e.x. [INFO] [java] 2016-11-27 16:31:23 [SUT] INFO SchemaDefineTask:88 - Update of the schema on Versant DB took 23 min, 1 sec, 890 ms
+        if ($logLine =~ /([\d+]{4}-[\d+]{2}-[\d+]{2})\s([\d]{2}:[\d]{2}:[\d]{2})\s\[SUT.*Versant schema upgrade took (\d+)\smin,\s(\d+)\ssec,\s(\d+)\sms/) {
+            my $timestamp = $1 . ' ' . $2 ;
+            my $duration = $3 . ":" . $4 . ":" . $5;
+
+            print BCP "$timestamp\t$siteId\t$serverId\t$duration\n";
+         }
+    }
+    close LOG;
+    close BCP;
+
+    dbDo( $dbh, "DELETE FROM enm_sutlogs WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59' AND serverid='$serverId'"
+            ) or die "Failed to delete from enm_sutlogs".$dbh->errstr."\n";
+
+    dbDo( $dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE enm_sutlogs" )
+       or die "Failed to load new data from '$bcpFileName' file to enm_sutlogs table";
+    $dbh->disconnect();
+    unlink $bcpFileName;
+
+}
+main();
+
+

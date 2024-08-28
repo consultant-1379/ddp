@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraphset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" timespan="day" forcelegend="true">
+
+  <query timecol="time" multiseries="servers.hostname">
+    <dbtables main="enm_ecim_notif_supervision_instr">
+      <reference table="sites" condition="enm_ecim_notif_supervision_instr.siteid = sites.id"/>
+      <reference table="servers" condition="enm_ecim_notif_supervision_instr.serverid = servers.id"/>
+    </dbtables>
+    <param name="site"/>
+    <param name="serverids"/>
+    <where>sites.name = '%s' AND servers.id IN (%s)</where>
+  </query>
+
+  <graphs>
+    <graph name="createNotificationsCount" type="tsc" ylabel="count">
+      <title value="Successful Create"/>
+      <column db="createNotificationsCount" label="Successful Create"/>
+    </graph>
+    <graph name="deleteNotificationsCount" type="tsc" ylabel="count">
+      <title value="Successful Delete"/>
+      <column db="deleteNotificationsCount" label="Successful Delete"/>
+    </graph>
+    <graph name="updateNotificationsCount" type="tsc" ylabel="count">
+      <title value="Successful Update"/>
+      <column db="updateNotificationsCount" label="Successful Update"/>
+    </graph>
+    <graph name="failedCreateNotificationsCount" type="tsc" ylabel="count">
+      <title value="Failed Create"/>
+      <column db="failedCreateNotificationsCount" label="Failed Create"/>
+    </graph>
+    <graph name="failedDeleteNotificationsCount" type="tsc" ylabel="count">
+      <title value="Failed Delete"/>
+      <column db="failedDeleteNotificationsCount" label="Failed Delete"/>
+    </graph>
+    <graph name="failedUpdateNotificationsCount" type="tsc" ylabel="count">
+      <title value="Failed Update"/>
+      <column db="failedUpdateNotificationsCount" label="Failed Update"/>
+    </graph>
+  </graphs>
+
+  <groups>
+    <group name="notifSuper">
+      <member>createNotificationsCount</member>
+      <member>deleteNotificationsCount</member>
+      <member>updateNotificationsCount</member>
+      <member>failedCreateNotificationsCount</member>
+      <member>failedDeleteNotificationsCount</member>
+      <member>failedUpdateNotificationsCount</member>
+    </group>
+    <group name="create">
+      <member>createNotificationsCount</member>
+      <member>failedCreateNotificationsCount</member>
+    </group>
+    <group name="update">
+      <member>updateNotificationsCount</member>
+      <member>failedUpdateNotificationsCount</member>
+    </group>
+    <group name="delete">
+      <member>deleteNotificationsCount</member>
+      <member>failedDeleteNotificationsCount</member>
+    </group>
+  </groups>
+
+</modelledgraphset>

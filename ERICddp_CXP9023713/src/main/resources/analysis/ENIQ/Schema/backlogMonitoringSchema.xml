@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<instr>
+    <createdBy>Soumya Mondal</createdBy>
+    <DbTable>backlog_monitoring_stats</DbTable>
+    <MetricSet>
+       <metric>total_backlog</metric>
+       <metric>files_in_backlog</metric>
+       <metric>files_in_process</metric>
+       <metric>processing_time</metric>
+       <metric>file_size</metric>
+    </MetricSet>
+</instr>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents>
+  <table name="enm_cm_snmp_sync_failures" timecol="time">
+    <keycol name="neid" reftable="enm_ne" reffiltercol="siteid"/>
+    <keycol name="serverid" reftable="servers" refnamecol="hostname" reffiltercol="siteid"/>
+  </table>
+
+  <services>
+    <service name="mssnmpcm"/>
+  </services>
+
+  <events>
+    <!-- SNMP_SYNC_FAILURES {\"SNMP_NOT_ASSESSED_MO_TYPES\":[\"L2VlanConnection\",\"L2VlanEndPoint\",\"NetworkInstance\",\"RLTProtectionGroup\",\"RLTProtectionGroups\"],\"_Thread\":\"Thread-28 (HornetQ-client-global-threads-1725998533)\",\"NetworkElement\":\"CORE81ML6693-001\"}-->
+    <event name="SNMP_SYNC_FAILURES">
+      <metric source="host" target="serverid"/>
+      <metric source="SNMP_NOT_ASSESSED_MO_TYPES" target="snmpNotAssessedMoType" convert="tostring"/>
+      <metric source="NetworkElement" target="neid" filtervalue="^[^=,]+$"/>
+    </event>
+  </events>
+</modelledevents>

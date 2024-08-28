@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_site_energy_visualization_instr">
+    <reference table="sites" condition="enm_cm_site_energy_visualization_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_site_energy_visualization_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_site_energy_visualization_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(numberOfSuccessfulRequestsEF)" label="Number of Successful Requests"/>
+  <column db="SUM(numberOfFailedRequestsEF)" label="Number of Failed Requests"/>
+  <column db="SUM(totalResponseSizeInKbEF)" label="Average Response Size Of Requests (KB)"/>
+  <column db="SUM(totalResponseTimePerRequestEF)" label="Average Response Time Of Requests (ms)"/>
+  <column db="SUM(numberOfEnergyElementsReadPerRequest)" label="Average Number of Read Energy Element MOs"/>
+  <column db="SUM(numberOfNodeConnectionPerRequest)" label="Average Number of Node Connections"/>
+
+</modelledtable>

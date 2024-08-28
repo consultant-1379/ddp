@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="active_techpack_details">
+    <reference table="sites" condition="active_techpack_details.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND active_techpack_details.time = '%date%'  </where>
+  <column db="active_techpack_details.techpack_name" label="Tech pack name"/>
+  <column db="active_techpack_details.product_number" label="Product number"/>
+  <column db="active_techpack_details.r_state" label="R-state"/>
+  <column db="active_techpack_details.type" label="Type"/>
+  <column db="active_techpack_details.status" label="Status"/>
+  <column db="active_techpack_details.dwh_creation_date" label="DWH creation date"/>
+
+</modelledtable>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_cm_site_energy_visualization_instr">
+    <reference table="sites" condition="enm_cm_site_energy_visualization_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_cm_site_energy_visualization_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_cm_site_energy_visualization_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance"/>
+  <column db="SUM(numberOfSuccessfulRequestsUS)" label="Number of Successful Requests"/>
+  <column db="SUM(numberOfFailedRequestsUS)" label="Number of Failed Requests"/>
+  <column db="SUM(totalResponseSizeInKbUS)" label="Average Response Size Of Requests (KB)"/>
+  <column db="SUM(totalResponseTimePerRequestUS)" label="Average Response Time For Requests"/>
+  <column db="SUM(numberOfSuccessfulUpdates)" label="Number of Successful Updates"/>
+  <column db="SUM(numberOfFailedUpdates)" label="Number of Failed Updates"/>
+  <column db="SUM(totalResponseTimePerUpdate)" label="Average Response Time For Updates (ms)"/>
+  <column db="SUM(numberOfDbConnections)" label="Number of DB Connections"/>
+  <column db="SUM(numberOfDbReadOperationsUS)" label="Number of DB Read Operations"/>
+  <column db="SUM(numberOfDbWriteOperationsUS)" label="Number of DB Write Operations"/>
+  <column db="SUM(numberOfDbDeleteOperationsUS)" label="Number of DB Delete Operations"/>
+  <column db="SUM(totalTimeTakenForHouseKeepingUS)" label="Average Time Take For House Keeping (ms)"/>
+</modelledtable>

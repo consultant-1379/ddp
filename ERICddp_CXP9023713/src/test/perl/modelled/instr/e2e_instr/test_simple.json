@@ -1,0 +1,10 @@
+{
+    "description": "Simple Test",
+    "data_file": "simple.txt",
+    "bcp_files": [ "simple.bcp" ],
+    "model_dir": "simple",
+    "cfg_dir": "simple",
+    "service": "simpleserv",
+    "statsdb": "simple.json",
+    "date": "2023-03-05"
+}

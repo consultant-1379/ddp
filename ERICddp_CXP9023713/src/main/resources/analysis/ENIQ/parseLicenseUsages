@@ -1,0 +1,97 @@
+#!/usr/bin/env perl
+
+######################################################################################################################
+# Description --------- parseLicenseUsages --------------------
+# This script parses License usage logs and stores usages to DB with date and site information type for DDP
+# @author - NIRAJ MHATRE (zmhanir)
+# usage parseLicenseUsages --logfile=${LOG_FILE} --site ${SITE} --server ${SERVER} --date ${SQL_DATE}
+######################################################################################################################
+
+use strict;
+use warnings;
+use DBI;
+use StatsTime;
+use Getopt::Long;
+use StatsDB;
+use Data::Dumper;
+
+our $DEBUG = 0;
+
+sub main() {
+    my ($dbh, $site, $siteId, $server, $serverId, $logFile, $date);
+    my $result = GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG
+    );
+
+    ( -r $logFile ) or die "Cannot read log file $logFile";
+
+    $dbh = connect_db();
+    $siteId = getSiteId($dbh, $site);
+    $serverId = getServerId($dbh, $siteId, $server);
+    my $r_usageParsedData = parseData($logFile);
+    my $bcpFile = createBcpFile($r_usageParsedData, $siteId, $serverId);
+    my $table = "eniq_ocs_license_usage_details";
+    removeOldData($dbh, $table, $siteId, $serverId, $date);
+    loadDb($dbh, $bcpFile, $table);
+    $dbh->disconnect();
+}
+
+sub parseData($) {
+    my ($logFile) = @_;
+    my @usageArrayData = ();
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+
+    while ( my $line = <FILE> ) {
+        chomp($line);
+        if ( $line =~ /^"(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2}:\d{2})"\s+"(\d+)"\s+"(\d+)"$/ ) {
+            my %r_usageData = (
+                dateTime => "$1 $2",
+                total => $3,
+                usage => $4
+            );
+            push(@usageArrayData, \%r_usageData);
+        }
+    }
+    close FILE;
+    return (\@usageArrayData);
+}
+
+sub createBcpFile($$$) {
+    my ($r_parsed_data, $siteId, $serverId) = @_;
+    my $licenseUsageBcpFile = getBcpFileName("lic_usage_details");
+    open BCP, ">$licenseUsageBcpFile" or die "Cannot open BCPFile $licenseUsageBcpFile";
+    foreach my $data_element ( @$r_parsed_data ) {
+        printf BCP "%s|%d|%d|%d|%d\n",
+            $data_element->{'dateTime'},
+            $siteId,
+            $serverId,
+            $data_element->{'total'},
+            $data_element->{'usage'};
+    }
+    close BCP;
+    return $licenseUsageBcpFile;
+}
+
+sub loadDb($$$) {
+    my ($dbh, $bcpFile, $table) = @_;
+    my $loadSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY \'|\'";
+    if ( $DEBUG > 1 ) {
+        print "Sql statement for loading data into the database.\n $loadSql\n";
+    }
+    dbDo($dbh, $loadSql) or die "Failed to load Data".$dbh->errstr."\n";
+}
+
+sub removeOldData($$$$$) {
+    my ($dbh, $table, $siteId, $serverId, $date) = @_;
+    my $deleteSql = "DELETE FROM $table WHERE siteId = $siteId AND serverId = $serverId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    if ( $DEBUG > 2 ) {
+        print "Sql statement for deleting old data.\n $deleteSql\n";
+    }
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+main();

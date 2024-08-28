@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_dps_neo4j_client_connection_pool">
+    <reference table="sites" condition="enm_dps_neo4j_client_connection_pool.siteId = sites.id"/>
+    <reference table="enm_servicegroup_instances" condition="enm_dps_neo4j_client_connection_pool.serverid = enm_servicegroup_instances.serverid AND enm_servicegroup_instances.siteid = enm_dps_neo4j_client_connection_pool.siteId"/>
+    <reference table="enm_servicegroup_names" condition="enm_servicegroup_names.id = enm_servicegroup_instances.serviceid"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND enm_dps_neo4j_client_connection_pool.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59' AND enm_servicegroup_instances.date = '%date%'</where>
+
+  <groupby>
+    <column db="enm_servicegroup_names.name"/>
+  </groupby>
+
+  <column db="enm_servicegroup_names.name" label="Service Group" id="sg"/>
+  <column db="SUM(acquiredCount)" label="Acquired Count"/>
+  <column db="SUM(acquiringCount)" label="Acquiring Count"/>
+  <column db="SUM(closedCount)" label="Closed Count"/>
+  <column db="SUM(createdCount)" label="Created Count"/>
+  <column db="SUM(failedToCreateCount)" label="Failed To Create Count"/>
+  <column db="SUM(idleCount)" label="Idle Count"/>
+  <column db="SUM(inUseCount)" label="In Use Count"/>
+  <column db="SUM(timedOutToAcquireCount)" label="Timed Out To Acquire Count"/>
+  <column db="SUM(totalAcquisitionTime)" label="Total Acquisition Time(MS)"/>
+  <column db="SUM(totalConnectionTime)" label="Total Connection Time(MS)"/>
+  <column db="SUM(totalInUseCount)" label="Total In Use Count"/>
+  <column db="SUM(totalInUseTime)" label="Total In Use Time(MS)"/>
+
+  <ctxmenu keycol="sg" targettype="url" multiselect="false">
+    <item id="plot" label="Plot"/>
+    <urltarget arg="dpsNeoCon"/>
+  </ctxmenu>
+
+</modelledtable>

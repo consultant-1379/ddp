@@ -1,0 +1,221 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Getopt::Long;
+use Data::Dumper;
+
+use DBI;
+use StatsDB;
+use StatsCommon;
+use StatsTime;
+use PerlIO::gzip;
+our %allDataTypes = ();
+our %allNeTypes = ();
+our %allNeIds = ();
+our $DEBUG=0;
+
+sub parseLog($$) {
+    my ($logFile,$r_results) = @_;
+
+    open INPUT, "<:gzip", "$logFile" or die "Cannot open $logFile: $!";
+    while ( my $line = <INPUT> ) {
+        if ( $DEBUG > 9 ) {
+            print "parseLog: line=$line\n";
+        }
+        chop $line;
+        my @parts = split('\|',$line);
+        if ( $DEBUG > 8 ) { print Dumper("parseLog: parts", \@parts); }
+        if ( $#parts < 9 ) {
+            print "WARNING: Invalid line $line\n";
+            next;
+        }
+
+        # Consider only RadioNode, ERBS and RBS Nodes
+        if ( $parts[2] !~ /RadioNode|ERBS|RBS/ ) {
+            if ( $DEBUG > 9 ) {
+                print "WARNING: Omiting Invalid data type $line\n";
+            }
+            next;
+        }
+
+        $allNeIds{$parts[1]} = 1;
+        $allNeTypes{$parts[2]} = 1;
+        $allDataTypes{$parts[3]} = 1;
+
+        my $r_txfr = {
+            'ne' => $parts[1],
+            'node_type' => $parts[2],
+            'data_type' => $parts[3],
+            'radio_unit' => $parts[4],
+            'rf_port' => $parts[5],
+            'file_size' => $parts[6],
+            'collection_time' => $parts[8]
+        };
+
+        if ( $DEBUG > 8 ) { print Dumper("parseLog: r_txfr",$r_txfr); }
+        push @{$r_results}, $r_txfr;
+    }
+    close INPUT;
+}
+
+sub store($$) {
+    my ($site,$allTxFr) = @_;
+
+    my @allNeTypesList = keys %allNeTypes;
+    my @allDataTypesList = keys %allDataTypes;
+    my @allNeIdsList = keys %allNeIds;
+
+    my ($minTime,$maxTime);
+    foreach my $r_txfr ( @{$allTxFr} ) {
+        my $time = $r_txfr->{'collection_time'};
+        if ( ! defined $minTime || $time < $minTime ) {
+            $minTime = $time;
+        }
+        if ( ! defined $maxTime || $time > $maxTime ) {
+            $maxTime = $time;
+        }
+    }
+
+    if ( $DEBUG > 3 ) { print Dumper("store: allNeTypesList", \@allNeTypesList); }
+    if ( $DEBUG > 3 ) { print Dumper("store: allDataTypesList", \@allDataTypesList); }
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+
+    my $r_nodeTypeMap = getIdMap($dbh,"ne_types", "id", "name", \@allNeTypesList );
+    my $r_dataTypeMap = getIdMap($dbh,"enm_pmic_datatypes", "id", "name", \@allDataTypesList );
+    my $r_neIdMap = getIdMap($dbh, "enm_ne", "id", "name", \@allNeIdsList, $siteId, "siteid");
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+
+    if ( ! defined $minTime || ! defined $maxTime ) {
+        print "WARNING: Missing min/max\n";
+        next;
+    }
+
+    dbDo($dbh, sprintf("DELETE FROM enm_pmic_rop_ulsa WHERE siteid = %d AND fcs BETWEEN '%s' AND '%s'",
+         $siteId, formatSiteTime($minTime, $StatsTime::TIME_SQL), formatSiteTime($maxTime, $StatsTime::TIME_SQL)				)) or die "Failed to remove old data";
+
+    my $bcpFile = $tmpDir . "/enm_pmic_rop_ulsa";
+    open OUTPUT, ">$bcpFile" or die "Cannot open $bcpFile";
+    foreach my $r_txfr ( @{$allTxFr} ) {
+        if ( $DEBUG > 7 ) { print Dumper("store: r_txfr",$r_txfr); }
+        my $fcs = formatSiteTime($r_txfr->{'collection_time'},$StatsTime::TIME_SQL);
+        my @row = (
+            $siteId,
+            $fcs,
+            $r_neIdMap->{$r_txfr->{'ne'}},
+            $r_nodeTypeMap->{$r_txfr->{'node_type'}},
+            $r_dataTypeMap->{$r_txfr->{'data_type'}},
+            $r_txfr->{'radio_unit'},
+            $r_txfr->{'rf_port'},
+            $r_txfr->{'file_size'}
+        );
+        print OUTPUT join("\t",@row), "\n";
+    }
+    close OUTPUT;
+
+    dbDo($dbh, "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE enm_pmic_rop_ulsa (siteid,fcs,neid,netypeid,datatypeid,radiounit,rfport,filesize)"
+    ) or die "Failed to load $bcpFile";
+
+    $dbh->disconnect();
+    unlink($bcpFile);
+}
+
+sub main() {
+    my ($ulsaDir,$incrFile,$site);
+    my $result = GetOptions("dir=s"  => \$ulsaDir,
+                            "site=s" => \$site,
+                            "incr=s" => \$incrFile,
+                            "debug=s" => \$DEBUG
+                        );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+    setStatsTime_Debug($DEBUG);
+
+    my @ulsaFiles = ();
+    opendir(my $dh, $ulsaDir) || die "can't opendir ulsa dir: $!";
+    while ( my $file = readdir($dh) ) {
+        if ( $DEBUG > 4 ) { print "main: checking file $file\n"; }
+        if ( $file =~ /^ulsa.log.(\d+).gz$/ ) {
+            push @ulsaFiles, { 'index' => $1, 'file' => $ulsaDir . "/" . $file };
+        }
+    }
+    closedir $dh;
+
+    # If there's no files then nothing more to do
+    if ( ! @ulsaFiles ) {
+        return 0;
+    }
+
+    @ulsaFiles = sort { $a->{'index'} <=> $b->{'index'} } @ulsaFiles;
+    if ( $DEBUG > 3 ) { print Dumper("main: ulsaFiles", \@ulsaFiles); }
+
+    my %incrData = ();
+    if ( defined $incrFile && -r $incrFile ) {
+        my $dumperOutput;
+        do {
+            local $/ = undef;
+            open my $fh, "<", $incrFile or die "could not open $incrFile: $!";
+            $dumperOutput = <$fh>;
+            close $fh;
+        };
+        my $VAR1;
+        eval($dumperOutput);
+        if ( exists $VAR1->{'fccLast'} ) {
+            %incrData = %{$VAR1};
+        }
+        if ( $DEBUG > 3 ) { print Dumper("main: incrData", \%incrData); }
+    }
+
+    if ( exists $incrData{'last_processed'} ) {
+        while ( $#ulsaFiles > -1 && $ulsaFiles[0]->{'index'} <= $incrData{'last_processed'} ) {
+            if ( $DEBUG > 3 ) { print "main: discarding already processed file: " . $ulsaFiles[0]->{'file'} . "\n"; }
+            shift @ulsaFiles;
+        }
+    }
+
+    print "Parsing ULSA Log\n";
+    #
+    # r_allTxfr is an array of hash, one per file transfer where the hash contains
+    #    'ne'
+    #    'node_rype'
+    #    'data_type'
+    #    'file_size'
+    #    'radio_unit'
+    #    'rf_port'
+    #    'collection_time'
+    my @allTxFr = ();
+    foreach my $r_ulsaFile ( @ulsaFiles ) {
+        print "Processing $r_ulsaFile->{'file'}\n";
+        parseLog($r_ulsaFile->{'file'},\@allTxFr);
+    }
+    $incrData{'last_processed'} = $ulsaFiles[$#ulsaFiles]->{'index'};
+
+    if ( $#allTxFr == -1 ) {
+        print "INFO: No data found\n";
+        exit 1;
+    }
+
+    print "Sorting\n";
+    @allTxFr = sort { $a->{'collection_time'} <=> $b->{'collection_time'} } @allTxFr;
+
+    if ( $#allTxFr > -1 && defined $site ) {
+        store($site,\@allTxFr);
+    }
+
+    if ( defined $incrFile ) {
+        my $incrDataStr = Dumper(\%incrData);
+        open INC, ">$incrFile";
+        print INC $incrDataStr;
+        close INC;
+    }
+}
+
+main();
+

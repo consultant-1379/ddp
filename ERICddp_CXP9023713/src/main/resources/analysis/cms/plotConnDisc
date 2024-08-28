@@ -1,0 +1,19 @@
+#!/bin/sh
+
+#set -xv
+
+cd `dirname $0`
+ANALYSIS_BIN=`pwd`
+ANALYSIS_BIN="${ANALYSIS_BIN}/.."
+
+EVENTS_FILE=$1
+TABLE=$2
+OSS=$3
+PLOT=$4
+
+if [ -z "${TMP_DIR}" ] ; then
+    TMP_DIR=/data/tmp
+fi
+
+${ANALYSIS_BIN}/cms/getConnDisc --events ${EVENTS_FILE} --table ${TABLE} --oss ${OSS} --plot ${PLOT}
+

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledinstr
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    namespace="^(\S+)-Instrumentation@e2e_\S+">
+
+  <services>
+    <service name="comecimpolicy"/>
+    <service name="pmicrouterpolicy"/>
+    <service name="conscommonmed"/>
+    <service name="medcore"/>
+  </services>
+
+  <table name="enm_routerpolicy">
+    <keycol name="serverid" reftable="servers"/>
+    <keycol name="policyid" reftable="enm_routerpolicy_names"/>
+  </table>
+
+  <metricgroups>
+    <multi>policyid</multi>
+
+    <metricgroup name="^%1%-com.ericsson.oss.mediation\..*\.([^\.]+):type=selectMediationService\(interface java.util.List_interface java.util.Map_class com.ericsson.oss.mediation.sdk.event.MediationTaskRequest\)$">
+      <metric source="methodInvocations" target="n_selectms" delta="true"/>
+      <metric source="executionTimeTotalMillis" target="t_selectms" delta="true" filteridle="true"/>
+      <property name="policyid" xsi:type="nameproperty" index="1"/>
+    </metricgroup>
+  </metricgroups>
+
+</modelledinstr>

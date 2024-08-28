@@ -1,0 +1,352 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Getopt::Long;
+use strict;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use Instr;
+use StatsTime;
+
+our $site;
+our $DEBUG = 0;
+our $maxCntSigned = 2147483647;
+our $maxCntUnsigned = 4294967295;
+
+main();
+exit 0;
+
+sub main {
+    my ($instrCfg,$instrData,$dashDate);
+    my $instrDatasets = "CEx-tasks,CEx-NSD-pm,CEx-NSD-fm,ActiveMQ-cexbroker";
+    my $result = GetOptions(
+        "cfg=s" => \$instrCfg,
+        "datasets=s" => \$instrDatasets,
+        "data=s" => \$instrData,
+        "site=s" => \$site,
+        "date=s" => \$dashDate,
+        "debug=s" => \$DEBUG
+    );
+
+    my $dbh = connect_db();
+    setInstr_Debug($DEBUG);
+    my $siteid = getSiteId($dbh, $site);
+    ($siteid > -1 ) or die "Failed to get siteid for $site";
+
+    # YY-MM-DD date format - will use some others further down
+    if ( $dashDate !~ /[0-9][0-9]\-[0-9][0-9]\-[0-9][0-9]/ ) {
+        die ("Invalid date format provided");
+    }
+
+    # Create MySQL format date (CCYY-MM-DD) & LDAP format date (DDYYMM)
+    my ($dd,$mm,$yy) = split(/\-/, $dashDate);
+    my $sqlDate = "20" . $yy . "\-" . $mm . "\-" . $dd;
+
+    # Map each Instr dataset to a table
+    my %dbTableMap;
+    my @datasets = split(/\,/, $instrDatasets);
+    foreach my $dataset (@datasets) {
+        $dbTableMap{$dataset} = lc($dataset) . "_stats";
+        $dbTableMap{$dataset} =~ s/\-/\_/g;
+    }
+
+    my $r_idMap = getIdMap($dbh, "jmx_names", "id", "name", \@datasets);
+    if ($DEBUG > 4) { print Dumper $r_idMap; }
+
+    # Map of the field names in the instr input data to the corresponding field names in statsdb
+    # We have a mapping for each dataset table: cex_tasks_stats, cex_nsd_pm_stats, cex_nsd_fm_stats
+    my %dbFieldMap;
+
+    # cex_tasks_stats
+    $dbFieldMap{'cex_tasks_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'cex_tasks_stats'}->{'FinishedTasks.length'} = 'finished_tasks_length';
+    $dbFieldMap{'cex_tasks_stats'}->{'RequestedTasks.length'} = 'requested_tasks_length';
+    $dbFieldMap{'cex_tasks_stats'}->{'RunningTasks.length'} = 'running_tasks_length';
+
+    # cex_nsd_pm_stats
+    $dbFieldMap{'cex_nsd_pm_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'cex_nsd_pm_stats'}->{'CellRequests'} = 'cell_requests';
+    $dbFieldMap{'cex_nsd_pm_stats'}->{'ClusterRequests'} = 'cluster_requests';
+    $dbFieldMap{'cex_nsd_pm_stats'}->{'KPISendChunk'} = 'kpi_send_chunk';
+    $dbFieldMap{'cex_nsd_pm_stats'}->{'RbsRequests'} = 'rbs_requests';
+    $dbFieldMap{'cex_nsd_pm_stats'}->{'RncRequests'} = 'rnc_requests';
+
+    # cex_nsd_fm_stats
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'AckAlarms'} = 'ack_alarms';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'AlarmListRebuild'} = 'alarm_list_rebuild';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'ClearedAlarms'} = 'cleared_alarms';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'DeleteAlarms'} = 'delete_alarms';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'NewAlarms'} = 'new_alarms';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'OtherAlarms'} = 'other_alarms';
+    $dbFieldMap{'cex_nsd_fm_stats'}->{'TotalAlarms'} = 'total_alarms';
+    
+    # activemq_cexbroker
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'timestamp'} = 'time';
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'TemporaryQueues.length'} = 'temporary_queues';
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'Topics.length'} = 'topics';
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'TotalConsumerCount'} = 'total_consumer_count';
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'TotalDequeueCount'} = 'total_dequeue_count';
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'TotalEnqueueCount'} = 'total_enqueue_count';
+    $dbFieldMap{'activemq_cexbroker_stats'}->{'TotalMessageCount'} = 'total_message_count';
+
+    if ($DEBUG > 4) { print Dumper %dbFieldMap; }
+
+    # Gather up the metrics defined above and retrieve their ids into a map, updating the
+    # jmx_metric_names table in the process
+    my @metrics;
+    foreach my $name (keys(%dbTableMap)) {
+        foreach my $metric (keys(%{$dbFieldMap{$dbTableMap{$name}}})) {
+            push(@metrics,$metric);
+        }
+    }
+    my $r_metricidMap = getIdMap($dbh, "jmx_metric_names", "id", "name", \@metrics);
+
+    # Add metric types and retrieve the (currently manually specified) fields whose values are calculated
+    # as increments
+    updateMetricTypes(\%dbTableMap, \%dbFieldMap, $r_idMap, $r_metricidMap);
+    my $r_delMetricTypes = dbSelectAllHash($dbh, "SELECT n.name AS 'dataset', m.name AS 'metric' FROM jmx_metric_types t, jmx_names n, jmx_metric_names m WHERE t.nameid = n.id AND t.metricid = m.id AND t.type = 'DELTA'");
+
+    if ($DEBUG > 4) { print Dumper $r_delMetricTypes; }
+
+    my $r_data = parseData($instrCfg, $instrData);
+    # In older versions of instr, 2 of the fields are missing. In this case, don't continue with the processing
+    if ($instrDatasets =~ m/ActiveMQ\-cexbroker/ ) {
+        CHK_3PP: foreach my $recordRef (@{$r_data->{'ActiveMQ-cexbroker'}}) {
+            if (!defined($recordRef->{'TotalEnqueueCount'}) || !defined($recordRef->{'TotalMessageCount'})) {
+                print "WARNING: Fields missing from ActiveMQ-cexbroker data - removing dataset.\n";
+                delete $r_data->{'ActiveMQ-cexbroker'};
+                last CHK_3PP;
+            }
+        }
+    }
+
+    if ($DEBUG > 7) {
+        print "Dumper parsed dataset:\n";
+        print Dumper($r_data);
+    }
+
+    # For each dataset, find the appropriate table, build up the bulk insert file and write the data to statsdb
+    foreach my $dataset (@datasets) {
+        my $nameid = $r_idMap->{$dataset};
+        my $table = $dbTableMap{$dataset};
+        my $reqDeltaCalcs = 0;
+        my @deltaMetrics;
+        # Check for datasets which include metrics that are to be calculated as incremented values rather than absolutes
+        DEL_CHK: foreach my $r_record (@{$r_delMetricTypes}) {
+                 if ($r_record->{'dataset'} eq $dataset) {
+                     $reqDeltaCalcs = 1;
+                     push(@deltaMetrics, $r_record->{'metric'});
+                 }
+        }
+        parseDataForBcp($sqlDate, $siteid, $nameid, $dataset, $table, \%dbFieldMap, $r_data, $reqDeltaCalcs, \@deltaMetrics);
+    }
+}
+
+sub updateMetricTypes() {
+    my ($r_dbTableMap, $r_dbFieldMap, $r_idMap, $r_metricidMap) = @_;
+    my $dbh = connect_db();
+
+    my %deltaCounters = (
+	 'CEx-NSD-fm' => [ 'OtherAlarms','ClearedAlarms', 'DeleteAlarms', 'TotalAlarms', 'AckAlarms', 'NewAlarms' ],
+	 'CEx-NSD-pm' => [ 'CellRequests', 'ClusterRequests', 'RbsRequests', 'RncRequests' ],
+	 'ActiveMQ-cexbroker' => [ 'TotalDequeueCount', 'TotalEnqueueCount' ]
+	);
+
+    foreach my $jmxName ( keys %{$r_dbTableMap} ) {
+	my %isDelta = ();
+	if ( exists $deltaCounters{$jmxName} ) {
+	    foreach my $metricName ( @{$deltaCounters{$jmxName}} ) {
+		$isDelta{$metricName} = 1;
+	    }
+	}
+
+	# Get the known jmx metric types for this jmx name
+	my $r_knownMT = dbSelectAllHash($dbh, "SELECT id, metricid, type FROM jmx_metric_types WHERE nameid = " . $r_idMap->{$jmxName});
+	my %knownMT = ();
+	foreach my $r_row ( @{$r_knownMT} ) {
+	    $knownMT{$r_row->{'metricid'}} = {
+		'id' => $r_row->{'id'},
+		'type' => $r_row->{'type'}
+	    };
+	}
+
+	my @instrMetricNames = keys %{ $r_dbFieldMap->{$r_dbTableMap->{$jmxName}} };
+	foreach my $metricName ( @instrMetricNames ) {
+	    my $correctType = 'ABSOLUTE';
+	    if ( $isDelta{$metricName} ) {
+		$correctType = 'DELTA';
+	    }
+
+	    my $r_mt = $knownMT{$r_metricidMap->{$metricName}};
+	    if ( $r_mt ) {
+		# If the metric type already exists, check that it has the correct type
+		if ( $r_mt->{'type'} ne $correctType ) {
+		    print "INFO updating type for $jmxName $metricName to $correctType\n";
+		    dbDo($dbh, sprintf("UPDATE jmx_metric_types SET type = '%s' WHERE id = %d", $correctType, $r_mt->{'id'})) or
+			die "Failed to update type for $jmxName $metricName to $correctType";
+		}
+	    } else {
+		print "INFO: inserting $jmxName $metricName with type  $correctType\n";
+		dbDo($dbh, sprintf("INSERT INTO jmx_metric_types (nameid,metricid,type) VALUES (%d,%d,'%s')", 
+				   $r_idMap->{$jmxName}, $r_metricidMap->{$metricName}, $correctType))
+		    or die "Failed to insert type for $jmxName $metricName with type  $correctType";
+	    }
+	}
+    }
+}
+
+sub parseDataForBcp() {
+    my ($sqlDate, $siteid, $nameid, $dataset, $table, $r_dbFieldMap, $r_data, $reqDeltaCalcs, $r_deltaMetrics) = @_;
+    my %dataForStorage;
+    my $cnt = 0;
+    my $previousRecordRef;
+    PARSE_RECORDS: foreach my $recordRef (@{$r_data->{$dataset}}) {
+        my $timestamp = instr2mysqlTime($recordRef->{'timestamp'});
+        if ($reqDeltaCalcs == 1) {
+            if ($timestamp =~ m/$sqlDate.*/) {
+                if ($cnt == 0) {
+                    $previousRecordRef = $recordRef;
+                    $cnt++;
+                    next PARSE_RECORDS;
+                } else {
+                    foreach my $instrField (keys(%{$r_dbFieldMap->{$table}})) {
+                        my $field = $r_dbFieldMap->{$table}->{$instrField};
+
+                        if ($DEBUG > 9) { print $table . " : " . $instrField . " : " . $field . "\n"; }
+    
+                        if (exists($recordRef->{$instrField}) && lc($recordRef->{$instrField}) ne 'undef' && lc($recordRef->{$instrField}) ne '') {
+                            unless ($field eq 'time') {
+                                if (grep {$_ eq $instrField} @$r_deltaMetrics) {
+                                    my $delta = $recordRef->{$instrField} - $previousRecordRef->{$instrField};
+                                    if ($delta < 0) {
+                                        if ($previousRecordRef->{$instrField} < $maxCntSigned) {
+                                            if ($recordRef->{$instrField} > 0) {
+                                                $delta = $maxCntSigned - $previousRecordRef->{$instrField} + $recordRef->{$instrField};
+                                            } else {
+                                                $delta = 2*$maxCntSigned - $previousRecordRef->{$instrField} + $recordRef->{$instrField};
+                                            }
+                                        } else {
+                                            if ($recordRef->{$instrField} > 0) {
+                                                $delta = $maxCntUnsigned - $previousRecordRef->{$instrField} + $recordRef->{$instrField};
+                                            } else {
+                                                $delta = 2*$maxCntUnsigned - $previousRecordRef->{$instrField} + $recordRef->{$instrField};
+                                            }
+                                        }
+                                    }
+                                    $dataForStorage{$timestamp}->{$field} = $delta;
+                                } else {
+                                    $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField};
+                                }
+                            }
+                        } else {
+                            $dataForStorage{$timestamp}->{$field} = '\N'; # Set non-existant values to NULL ('\N')
+                        }
+                    }
+                    $previousRecordRef = $recordRef;
+                }
+            } else {
+                print $timestamp . " not included for this recordset.\n";
+            }
+        } else {
+            if ($timestamp =~ m/$sqlDate.*/) {
+                foreach my $instrField (keys(%{$r_dbFieldMap->{$table}})) {
+                    my $field = $r_dbFieldMap->{$table}->{$instrField};
+
+                    if ($DEBUG > 9) { print $table . " : " . $instrField . " : " . $field . "\n"; }
+    
+                    if (exists($recordRef->{$instrField}) && lc($recordRef->{$instrField}) ne 'undef' && lc($recordRef->{$instrField}) ne '') {
+                        $dataForStorage{$timestamp}->{$field} = $recordRef->{$instrField};
+                    } else {
+                        $dataForStorage{$timestamp}->{$field} = '\N'; # Set non-existant values to NULL ('\N')
+                    }
+                }
+            } else {
+                print $timestamp . " not included for this recordset.\n";
+            }
+        }
+        $cnt++;
+    }
+
+    # If we have calculated deltas above, then there will be one less record than for absolute metrics
+    if ($reqDeltaCalcs == 1 && $cnt != 0) { $cnt--; }
+
+    if ($DEBUG > 4) { print Dumper %dataForStorage; }
+
+    writeBcpFile($sqlDate, $siteid, $nameid, $r_dbFieldMap, \%dataForStorage, $table, \$cnt);
+
+    return 0;
+}
+
+sub writeBcpFile() {
+    my ($sqlDate, $siteid, $nameid, $r_dbFieldMap, $r_dataForStorage, $table, $r_cnt) = @_;
+
+    # initialise the BCP file
+    my $tmpDir = "/tmp";
+    if ( exists $ENV{"TMP_DIR"} ) { $tmpDir = $ENV{"TMP_DIR"}; }
+
+    # BCP file and record counter
+    my $bcpFile = $tmpDir . "/" . $table . ".bcp";
+
+    my $fieldCnt = keys(%{$r_dbFieldMap->{$table}});
+
+    # Set up the bulk insert file
+    if ($DEBUG > 4) { print "Writing to " . $bcpFile . "\n"; }
+    open BULK_INSERT, ">$bcpFile" or die "Could not open bulk insert file $bcpFile";
+
+    foreach my $timestamp (sort(keys(%$r_dataForStorage))) {
+        my $record = $timestamp . "," . $siteid . "," . $nameid . ",";
+        my $blankCnt = 1; # Count the blanks
+        foreach my $instrField (sort(keys(%{$r_dbFieldMap->{$table}}))) {
+            my $field = $r_dbFieldMap->{$table}->{$instrField};
+            if ($field ne 'time') {
+                if ($r_dataForStorage->{$timestamp}{$field} eq "\\N") { $blankCnt++; }
+                $record .= $r_dataForStorage->{$timestamp}{$field} . ",";
+            }
+        }
+
+        $record =~ s/\,$/\n/; # Remove the last comma and add a carriage return
+
+        $$r_cnt--; # Keep count to make sure all records are dealt with
+
+        if ($DEBUG > 4) { print $record; }
+
+        # Write the record to the file, eliminating records with no metrics
+        if ($blankCnt != $fieldCnt) {
+            print BULK_INSERT $record;
+        }
+    }
+
+    close BULK_INSERT;
+
+    if ($$r_cnt != 0) {
+        die "ERROR: Not all records have been processed.\n";
+    }
+
+    # Run the bulk insert
+    storeDataset($sqlDate, $siteid, $nameid, $table, $bcpFile);
+
+    return 0;
+}
+
+sub storeDataset() {
+    my ($sqlDate, $siteid, $nameid, $table, $bcpFile) = @_;
+    my $dbh = connect_db();
+
+    # Set up the DELETE statement for re-runnability
+    my $rerunDelete = "DELETE FROM " . $table . " WHERE time BETWEEN '" . $sqlDate . " 00:00:00' AND '" . $sqlDate . " 23:59:59' AND siteid = " . $siteid . " AND nameid = " . $nameid;
+
+    if ($DEBUG > 4) { print "DELETE SQL: " . $rerunDelete . "\n"; }
+
+    # Run the DELETE
+    dbDo($dbh, $rerunDelete) or die "ERROR: Failed to clear data from " . $table . " for rerun...\n";
+
+    # Run the bulk insert into the table
+    dbDo($dbh,"LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','");
+    $dbh->disconnect;
+
+    return 0;
+}
+

@@ -1,0 +1,152 @@
+#!/usr/bin/perl
+######################################################################
+#       Description ---------   parseBacklogMonitoringInstr -----------
+#       This script parses the engine- file for DDP
+#       and store data to Db
+#       @author - SOUMYA MONDAL (xmonsou)
+#       usage  parseBacklogMonitoringInstr --logfile ${LogFile} --schema ${SchemaFile} --site ${SITE} --date ${mysqldate}
+######################################################################
+use XML::Simple;
+use Data::Dumper;
+use Getopt::Long;
+use DBI;
+use Time::Local;
+use Time::HiRes qw(gettimeofday);
+use POSIX qw(strftime);
+use StatsDB;
+use strict;
+use warnings;
+
+our $DEBUG=0;
+
+########### FETCH SCHEMA ##################
+sub main {
+    my ($schemaConfigFile, $logFileLocation, $site, $bcpFile, $startTime, $endTime, $date);
+    my $metricDataHash = ();
+    my $dbh = connect_db();
+    my $result = GetOptions(
+    "logfile=s"  => \$logFileLocation,
+    "schema=s"  => \$schemaConfigFile,
+    "site=s" => \$site,
+    "debug=s" => \$DEBUG,
+    "date=s" => \$date
+    );
+    ( $result == 1 ) or die "Invalid options";
+    ( -r $schemaConfigFile ) or die "Cannot read schema file $schemaConfigFile";
+    ( -r $logFileLocation ) or die "Cannot read log file $logFileLocation";
+    my ($r_metricDataHash, $r_metricKeySet, $DbTable) = getMetricHash($schemaConfigFile, "MetricSet");
+    my $siteId = getSiteId($dbh, $site);
+########## Fill Hash with value against Keys #########
+    my ($r_stats, $interfaceList) = parseInput($logFileLocation, $r_metricDataHash, $bcpFile, $siteId, $date);
+    populateId("backlog_interface", "id", "backlog_intf", $interfaceList, $r_stats, $dbh);
+    removeOldData($siteId, $dbh, $date, $DbTable);
+    loadDb($r_stats, $dbh, $DbTable, $r_metricKeySet);
+    $dbh->disconnect();
+
+}
+########## SUB ROUTINES #################
+sub populateId($$$$$$) {
+    my ($table, $keyColumn, $nameColumn, $value, $metricSetCollection, $dbh) = @_;
+    my @value = ();
+    push @value, $value;
+    my $r_id_map = getIdMap($dbh, $table, $keyColumn, $nameColumn, $value);
+    my $metricSize = @$metricSetCollection;
+    for (my $i=0;$i<$metricSize;$i++) {
+        $metricSetCollection->[$i]->{interface} = $r_id_map->{$value->[$i]};
+    }
+}
+sub parseInput($$$$$) {
+    my ($logFile, $metricHash, $bcpFile, $siteId, $date) = @_;
+    my @metricSet = ();
+    my @interfaceList = ();
+    my $filteredLogFile = "/tmp/backlog_monitoring.txt";
+    # Filtering lines which contain Filelist created and Parsed: information in log file.
+    `egrep "Filelist created | Parsed:" $logFile | sort -t" " -k3  > $filteredLogFile`;
+    if ( -s $filteredLogFile ) {
+        open LOG, "<$filteredLogFile" or die "Can't open file to read $filteredLogFile\n";
+        while( my $line = <LOG>){
+        chomp($line);
+        my $metricHashObj = {};
+        if ( my ($time, $interfaceName, $fileInProcess, $fileInBacklog, $timeToProcess) = $line =~ /^\d*.\d\d (\d\d:\d\d:\d\d) \d* INFO performance.(.*).parser.* \: Filelist created (\d*) files \((\d*) files are not considered due to maximum files per run are exceeded\). (\d*) ms/) {
+            if ( $DEBUG > 2 ) {print $line;}
+            $metricHashObj->{timestamp} = $date." ".$time;
+            $metricHashObj->{site} = $siteId;
+            $metricHashObj->{interface} = $interfaceName;
+            $metricHashObj->{files_in_process} = $fileInProcess;
+            $metricHashObj->{total_backlog} = ($fileInProcess+$fileInBacklog);
+            $metricHashObj->{files_in_backlog} = $fileInBacklog;
+            $metricHashObj->{processing_time} = $timeToProcess;
+            $metricHashObj->{file_size} = 0;
+            my $pos = tell LOG;
+            my $nextLine = <LOG>;
+            if ( defined $nextLine and $nextLine =~ /^\d*.\d\d \d\d:\d\d:\d\d \d* INFO performance.\w*-\w*.parser.*: Parsed:.*files,\s+(\d+)Kb,.*$/) {
+                $metricHashObj->{file_size} = $1/1024;
+                push @interfaceList, $interfaceName;
+                push @metricSet, $metricHashObj;
+            }
+            else {
+               push @interfaceList, $interfaceName;
+               push @metricSet, $metricHashObj;
+               seek( LOG, $pos, 0 );
+            }
+        }
+    }
+    close LOG;
+    unlink($filteredLogFile);
+    if ( $DEBUG > 4 ) {print Dumper(@metricSet)};
+    return \@metricSet, \@interfaceList;
+    }
+}
+
+sub getMetricHash($$) {
+    my ($schemaFile, $FeatureName) = @_;
+    my @metricKeySet = ();
+    my $schema = XMLin($schemaFile);
+    my $DbTable = $schema->{"DbTable"};
+    my $metricList = $schema->{$FeatureName}->{metric};
+    my $i = 0;
+    my %metricListHash = ();
+    while(exists($metricList->[$i])) {
+        $metricListHash{$metricList->[$i]} = '';
+        push(@metricKeySet,$metricList->[$i]);
+        $i ++;
+    }
+    if ( $DEBUG > 5 ) {print Dumper(%metricListHash)};
+    my $r_metricKeySet = \@metricKeySet;
+    return \%metricListHash, $r_metricKeySet, $DbTable;
+}
+
+sub createBCP($$) {
+    my ($r_metricSet, $r_metricKeySet) = @_;
+    my $metricListHash = "";
+    my $bcpFile = getBcpFileName("backlog_monitoring");
+    open BCP, ">$bcpFile" or die "Cannot open BCPFile";
+    foreach my $metricHash (@{$r_metricSet}){
+        $metricListHash = $metricHash;
+        printf BCP "%s|%s|%s|",
+        $metricListHash->{timestamp},
+        $metricListHash->{site},
+        $metricListHash->{interface};
+        foreach my $key (@$r_metricKeySet) {
+            print BCP $metricListHash->{$key}."|";
+        }
+        print BCP "\n";
+    }
+    close BCP;
+    return $bcpFile;
+}
+
+sub removeOldData($$$$) {
+    my ($siteId, $dbh, $date, $DbTable) = @_;
+    my $deleteSql = "DELETE FROM $DbTable WHERE siteid = $siteId AND time BETWEEN '$date 00:00:00' AND '$date 23:59:59'";
+    dbDo($dbh, $deleteSql) or die "Failed to delete old Csl stat data" . $dbh->errstr . "\n";
+}
+
+sub loadDb($$$$) {
+    my ($r_stats, $dbh, $DbTable, $r_metricKeySet) = @_;
+    my $bcpFile = createBCP($r_stats, $r_metricKeySet);
+    my $sth = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $DbTable FIELDS TERMINATED BY \'|\'";
+    dbDo($dbh, $sth) or die "Failed to load Data" . $dbh->errstr . "\n";
+}
+
+main();

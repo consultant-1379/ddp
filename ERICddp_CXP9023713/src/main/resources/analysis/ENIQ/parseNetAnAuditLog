@@ -1,0 +1,137 @@
+#!/usr/bin/perl
+######################################################################
+# Script  : parseNetAnAuditLog
+# Author  : Siddharth Shah (xsiddsh)
+# Purpose : The purpose of this script is to parse NetanServer AuditLogYYYYMMDD.txt file.
+# Usage   : ${ANALYSIS_BIN}/ENIQ/parseNetAnAuditLog --logfile ${LOG_FILE} --site ${SITE}
+######################################################################
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+use StatsTime;
+
+our $DEBUG = 0;
+our $tmpDir = "/data/tmp";
+our $dbh = "";
+our $table = "netanserver_auditlog_details";
+our $epochFirstTime;
+our $epochLastTime;
+our $logFormatVersion = "";
+
+sub main {
+    my ($site, $logFile);
+    GetOptions(
+        "logfile=s" => \$logFile,
+        "site=s"    => \$site,
+        "debug=s"   => \$DEBUG
+    );
+
+   ( -r $logFile ) or die "Cannot read log file $logFile";
+    my $startTime = 0;
+    my $endTime = 0;
+    if ( $DEBUG > 0 ) {
+        $startTime = getCurrentTimeInMilliseconds();
+    }
+    if ( exists $ENV{"TMP_DIR"} ) {
+        $tmpDir = $ENV{"TMP_DIR"};
+    }
+    # If log format is not of 16B or of 17A, exit.
+    open FILE, "<$logFile" or die "Can't open file to read $logFile";
+    my  $headerLine = <FILE>;
+    close FILE;
+    if ( $headerLine =~ /^TimeStamp/ ) { $logFormatVersion = "16B"; }
+    elsif ( $headerLine =~ /^UTC TimeStamp/ ) { $logFormatVersion = "17A"; }
+    else { print "Log Format Not Supported\n"; exit 1; }
+    my $temporary_logfile = "${tmpDir}/tmp_AuditLog";
+    `egrep "Initiate Open Analysis|Open Analysis" $logFile > $temporary_logfile`;
+    my ($r_parsedData, $firstTimestamp, $lastTimestamp) = parseData($temporary_logfile);
+    $dbh = connect_db();
+    my $siteId = getSiteId($dbh, $site);
+    my $netanBcpFile = createBcpFile($r_parsedData, $siteId);
+    removeOldData($siteId, $firstTimestamp, $lastTimestamp);
+    loadDb($netanBcpFile);
+    if ( $DEBUG > 0 ) {
+        my $endTime = getCurrentTimeInMilliseconds();
+        print "Start Time (EPOCH milliseconds): ${startTime}\n";
+        print "End Time (EPOCH milliseconds): ${endTime}\n";
+        print "Execution Time in milliseconds:".($endTime-$startTime)."\n";
+    }
+}
+
+sub parseData {
+    my $logfile = shift;
+    my @r_parsedData = ();
+    open FILE, "<$logfile" or die "Can't open file to read $logfile";
+    while (my $line = <FILE>) {
+        my ($timeStamp, $userName, $operation, $analysisName, $status);
+        my $serviceId = "";
+        if ( $logFormatVersion eq "16B" ) {
+            ($timeStamp, $userName, $operation, $analysisName, $status) = $line =~ /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+\s+(\w+)\s+([\w+\s+]+)\s+.*\/(.*?)\s+(\w+)$/;
+        }
+        else {
+            ($timeStamp, $userName, $operation, $analysisName, $status, $serviceId) = $line =~ /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+\s+(\w+)\s+([\w+\s+]+)\s+.*\/(.*?)\s+(\w+)\s+(\S+)$/;
+        }
+        my $epochCurrentTime = parseTime( $timeStamp, $StatsTime::TIME_SQL );
+        if (( ! defined $epochFirstTime ) || ( $epochCurrentTime < $epochFirstTime )) {
+            $epochFirstTime = $epochCurrentTime;
+        }
+        if (( ! defined $epochLastTime ) || ( $epochCurrentTime > $epochLastTime )) {
+            $epochLastTime = $epochCurrentTime;
+        }
+        my %r_dataForLine = (
+                timeStamp    => "$timeStamp",
+                userName     => "$userName",
+                operation    => "$operation",
+                analysisName => "$analysisName",
+                status       => "$status",
+                serviceId    => "$serviceId"
+            );
+        push (@r_parsedData, \%r_dataForLine);
+    }
+    close FILE;
+    unlink($logfile);
+    if ( $DEBUG > 1 ) { print Dumper ("Parsed Data", \@r_parsedData); }
+    return (\@r_parsedData, $epochFirstTime, $epochLastTime);
+}
+
+sub createBcpFile {
+    my ($r_parsedData, $siteId) = @_;
+    my $bcpFile = "${tmpDir}/netanAudit.bcp";
+    open BCP, ">$bcpFile" or die "Cannot open $bcpFile";
+    foreach my $lineData ( @$r_parsedData ) {
+        printf BCP "%s,%d,%s,%s,%s,%s,%s\n",
+            $lineData->{timeStamp},
+            $siteId,
+            $lineData->{userName},
+            $lineData->{operation},
+            $lineData->{analysisName},
+            $lineData->{status},
+            $lineData->{serviceId};
+    }
+    close BCP;
+    if ( $DEBUG > 2 ) { system ("/usr/bin/cat $bcpFile\n"); }
+    return $bcpFile;
+}
+
+sub removeOldData {
+    my ($siteId, $firstTimestamp, $lastTimestamp) = @_;
+    $firstTimestamp = formatTime( $epochFirstTime, $StatsTime::TIME_SQL );
+    $lastTimestamp = formatTime( $epochLastTime, $StatsTime::TIME_SQL );
+    my $deleteSql = "DELETE FROM $table WHERE siteid = $siteId AND time BETWEEN '$firstTimestamp' AND '$lastTimestamp'";
+    if ( $DEBUG > 3 ) { print "SQL query for removal of old data: $deleteSql \n" };
+    dbDo($dbh, $deleteSql) or die "Failed to delete old data".$dbh->errstr."\n";
+}
+
+sub loadDb {
+    my $bcpFile = shift;
+    my $insertSql = "LOAD DATA LOCAL INFILE \'$bcpFile\' INTO TABLE $table FIELDS TERMINATED BY ','";
+    if ( $DEBUG > 4 ) { print "SQL query for inserting data: $insertSql \n" };
+    dbDo($dbh, $insertSql) or die "Failed to load Data".$dbh->errstr."\n";
+    $dbh->disconnect();
+    unlink($bcpFile);
+}
+
+main();

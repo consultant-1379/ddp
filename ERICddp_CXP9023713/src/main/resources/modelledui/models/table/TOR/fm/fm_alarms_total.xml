@@ -1,0 +1,32 @@
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="enm_mssnmpfm_instr">
+    <reference table="sites" condition="enm_mssnmpfm_instr.siteid = sites.id"/>
+    <reference table="servers" condition="enm_mssnmpfm_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <param name="serverIds"/>
+  <where>sites.name = '%site%' AND enm_mssnmpfm_instr.serverid IN (%serverIds%) AND enm_mssnmpfm_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance" id="srv"/>
+  <column db="SUM(alarmForwardedFailures)" label="Alarm Forwarded Failures"/>
+  <column db="SUM(alarmsForwarded)" label="Alarms Forwarded"/>
+  <column db="SUM(alarmsProcessingFailures)" label="Alarms Processing Failures"/>
+  <column db="SUM(alarmsProcessingNotSupported)" label="Alarms Processing Not Supported"/>
+  <column db="SUM(alarmsReceived)" label="Alarms Received"/>
+  <column db="SUM(alarmProcessingDiscarded)" label="Alarm Processing Discarded"/>
+  <column db="SUM(alarmProcessingInvalidRecordType)" label="Alarm Processing Invalid Record Type"/>
+  <column db="SUM(alarmProcessingLossOfTrap)" label="Alarm Processing Loss of Trap"/>
+  <column db="SUM(alarmProcessingPing)" label="Alarm Processing Ping"/>
+  <column db="SUM(alarmProcessingSuccess)" label="Alarm Processing Success"/>
+  <column db="SUM(multiEventProcessed)" label="Multi Event Processed"/>
+  <column db="SUM(multiEventReordered)" label="Multi Event Reordered"/>
+  <column db="SUM(multiEventFailed)" label="Multi Event Failed"/>
+  <column db="SUM(forwardedProcessedAlarmFailures)" label="Forwarded Processed Alarm Failures"/>
+
+</modelledtable>

@@ -1,0 +1,274 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Data::Dumper;
+use StatsDB;
+use DBI;
+
+our $DEBUG = 0;
+
+our @EMPTY_STAT = ( 0, 0, 0, 0, 0, 0, 0, 0 );
+
+our @READ_OPS = ( 'GETATTR', 'LOOKUP', 'ACCESS', 'READLINK', 'READ', 'READDIR',
+                  'READDIRPLUS', 'FSSTAT', 'FSINFO', 'PATHCONF' );
+our @WRITE_OPS = ( 'SETATTR', 'WRITE', 'CREATE', 'MKDIR', 'MKNOD', 'RENAME', 'LINK',
+                   'COMMIT' );
+
+our $IOPS_THRESHOLD = 5;
+
+sub parseNfsStat($) {
+    my ($nfsStatFile) = @_;
+    my @results = ();
+
+    open IN, $nfsStatFile or die "Cannot open $nfsStatFile";
+    while ( my $line = <IN> ) {
+        if ( $DEBUG > 9 ) { print "parseNfsStat: line=$line"; }
+        chop $line;
+        if ( $line =~ /^BEGIN (\S+) (\d+)/ ) {
+            my ($time,$interval) = ($1,$2);
+            push @results, { 'time' => $time, 'interval' => $interval, 'mnt' => {} };
+        } elsif ( $line ne 'END' ) {
+            my ($mnt,$bytesStr,$opstatsStr) = $line =~ /^(\S+) bytes,(\S+) (.*)/;
+            if ( ! defined $opstatsStr ) { print "Failed to parse $line"; next; }
+
+            if ( $DEBUG > 8 ) { print "parseNfsStat: mnt=$mnt bytesStr=$bytesStr opstatsStr=$opstatsStr\n"; }
+            my @bytes = split(",",$bytesStr);
+            $results[$#results]->{'mnt'}->{$mnt}->{'bytes'} = \@bytes;
+
+            my @opStats = split(" ", $opstatsStr);
+            my %byOp = ();
+            foreach my $opStat ( @opStats ) {
+                my @stats = split(",",$opStat);
+                my $op = shift @stats;
+                $byOp{$op} = \@stats;
+            }
+            $results[$#results]->{'mnt'}->{$mnt}->{'perop'} = \%byOp;
+        }
+    }
+    close IN;
+
+    if ( $DEBUG > 8 ) { print Dumper("parseNfsStat results", \@results); }
+    return \@results;
+}
+
+#
+# Create array of time samples
+#  Each sample is a hash
+#    time -> timestamp
+#    mnt  -> hash keyed by mntpnt
+#             value is a hash keys iops, blks, stime, wtime
+# Only mnt with non-zero value of iops are added to each time
+# sample, if there are no active mounts in the time sample
+# then mnt will be undef
+sub processStats($) {
+    my ($r_rawSamples) = @_;
+
+    my @processedSamples = ();
+    foreach my $r_rawSample ( @{$r_rawSamples} ) {
+        if ( $DEBUG > 8 ) { print Dumper("storeData: r_sample", $r_rawSample); }
+        my $r_processedSample = { 'time' => $r_rawSample->{'time'}, 'mnt' => undef };
+        push @processedSamples, $r_processedSample;
+        foreach my $mnt ( keys %{$r_rawSample->{'mnt'}} ) {
+            my $iops = 0;
+            my $blks = 0;
+            my $readblks = 0;
+            my $servTime = 0;
+            my $waitTime = 0;
+            foreach my $op ( 'READ', 'WRITE' ) {
+                my $r_opStats = $r_rawSample->{'mnt'}->{$mnt}->{'perop'}->{$op};
+                if ( defined $r_opStats ) {
+                    $iops += $r_opStats->[0];
+                    if ( $op eq 'READ' ) {
+                        $readblks += $r_rawSample->{'mnt'}->{$mnt}->{'bytes'}->[4] / 512;
+                        $blks += $r_rawSample->{'mnt'}->{$mnt}->{'bytes'}->[4] / 512;
+                    } else {
+                        $blks += $r_rawSample->{'mnt'}->{$mnt}->{'bytes'}->[5] / 512;
+                    }
+                    $servTime += $r_opStats->[6];
+                    $waitTime += $r_opStats->[5];
+                }
+            }
+
+            if ( $iops > 0 ) {
+                if ( ! defined $r_processedSample->{'mnt'} ) {
+                    $r_processedSample->{'mnt'} = {};
+                }
+
+                $r_processedSample->{'mnt'}->{$mnt} = {
+                    'iops' => $iops / $r_rawSample->{'interval'},
+                     'blks' => $blks / $r_rawSample->{'interval'},
+                    'readblks' => $readblks / $r_rawSample->{'interval'},
+                    'stime' => $servTime / $iops,
+                    'wtime' => $waitTime / $iops
+                };
+            }
+        }
+    }
+
+    # Calculate Peak iops value for each mnt
+    my %peakIOPs = ();
+    foreach my $r_processedSample ( @processedSamples ) {
+        if ( defined $r_processedSample->{'mnt'} ) {
+            while ( my ($mnt,$r_stats) = each %{$r_processedSample->{'mnt'}} ) {
+                if ( ! exists $peakIOPs{$mnt} ) {
+                    $peakIOPs{$mnt} = $r_stats->{'iops'};
+                } elsif ( $r_stats->{'iops'} > $peakIOPs{$mnt} ) {
+                    $peakIOPs{$mnt}  = $r_stats->{'iops'};
+                }
+            }
+        }
+    }
+    # Remove stats for any mnt whose peak iops value < $IOPS_THRESHOLD
+    if ( $DEBUG > 5 ) { print Dumper("processStats peakIOPs", \%peakIOPs); }
+    while ( my ($mnt,$iops) = each %peakIOPs ) {
+        if ( $iops < $IOPS_THRESHOLD ) {
+            if ( $DEBUG > 5 ) { print "processStats: removing $mnt\n"; }
+            foreach my $r_processedSample ( @processedSamples ) {
+                if ( defined $r_processedSample->{'mnt'} ) {
+                    delete $r_processedSample->{'mnt'}->{$mnt};
+                }
+            }
+        }
+    }
+    if ( $DEBUG > 8 ) { print Dumper("processStats processedSamples after iops check", \@processedSamples); }
+    # We may have removed all mnts from the $r_processedSample->{'mnt'}, if so
+    # set it to undef
+    foreach my $r_processedSample ( @processedSamples ) {
+        if ( defined $r_processedSample->{'mnt'} ) {
+            my $numEntries = scalar keys %{$r_processedSample->{'mnt'}};
+            if ( $DEBUG > 5 ) { print "processStats: time=" . $r_processedSample->{'time'} . ", numEntries=$numEntries\n"; }
+            if ( $numEntries == 0 ) {
+                $r_processedSample->{'mnt'} = undef;
+            }
+        }
+    }
+
+
+    if ( $DEBUG > 7 ) { print Dumper("processStats processedSamples", \@processedSamples); }
+    return \@processedSamples;
+}
+
+sub storeData($$$$) {
+    my ($site,$server,$date,$r_samples) = @_;
+
+    my $dbh = connect_db();
+    my $siteId = getSiteId($dbh,$site);
+    ($siteId > -1 ) or die "Failed to get siteid for $site";
+
+    my $serverId = getServerId( $dbh, $siteId, $server );
+    ($serverId > -1 ) or die "Failed to get serverId for $server";
+
+    my $tmpDir = "/data/tmp";
+    if ( exists $ENV{'TMP_DIR'} ) {
+        $tmpDir = $ENV{'TMP_DIR'};
+    }
+
+    my $bcpFileName = $tmpDir . "/nfsstat.$server.bcp";
+    open OUT, ">$bcpFileName" or die "Cannot open $bcpFileName";
+
+    my %mntMap = ();
+    foreach my $r_sample ( @{$r_samples} ) {
+        if ( defined $r_sample->{'mnt'} ) {
+            foreach my $mnt ( keys %{$r_sample->{'mnt'}} ) {
+                $mntMap{$mnt} = 1;
+            }
+        }
+    }
+
+    my @mntList = keys %mntMap;
+    my $r_diskMap = getIdMap($dbh, "disks", "id", "name", \@mntList, $serverId, "serverid" );
+
+    dbDo($dbh, "DELETE FROM nfs_mounts WHERE serverid = $serverId AND date = '$date'");
+    foreach my $mnt ( keys %mntMap ) {
+        my $diskId = $r_diskMap->{$mnt};
+        my $remoteip= '\N';
+        my ($nfsSrv,$directory) = $mnt =~ /^([^:]+):(.*)/;
+        if ( defined $nfsSrv ) {
+            $remoteip = $nfsSrv;
+        }
+        dbDo($dbh, "INSERT INTO nfs_mounts (date,serverid,mnt,diskid,remoteip) VALUES ('$date',$serverId,'$mnt',$diskId,'$remoteip')");
+    }
+
+    foreach my $r_sample ( @{$r_samples} ) {
+        if ( $DEBUG > 8 ) { print Dumper("storeData: r_sample", $r_sample); }
+
+        my $r_activeInThisSample = {};
+        if ( defined $r_sample->{'mnt'} ) {
+            while ( my ($mnt,$r_stats) = each %{$r_sample->{'mnt'}} ) {
+                my $diskId = $r_diskMap->{$mnt};
+
+                printf OUT "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%.1f\n",
+                $r_sample->{'time'}, $siteId, $serverId, $diskId, $r_stats->{'iops'},
+                $r_stats->{'blks'}, $r_stats->{'readblks'},
+                $r_stats->{'stime'}, $r_stats->{'wtime'};
+                $r_activeInThisSample->{$diskId} = 1;
+            }
+        }
+
+        # Print zero activity samples for any mnt that wasn't active
+        foreach my $mnt ( @mntList ) {
+            my $diskId = $r_diskMap->{$mnt};
+            if ( ! exists $r_activeInThisSample->{$diskId} ) {
+                printf OUT "%s\t%d\t%d\t%d\t0\t0\t0\t0\t0\n", $r_sample->{'time'}, $siteId, $serverId, $diskId;
+            }
+        }
+    }
+    close OUT;
+
+    my @diskIds = ();
+    foreach my $mnt ( @mntList ) {
+        my $diskId = $r_diskMap->{$mnt};
+        ( defined $diskId ) or die "Cannot map $mnt";
+        push @diskIds, $diskId;
+    }
+    dbDo($dbh,
+         sprintf("DELETE FROM hires_disk_stat WHERE time BETWEEN '%s 00:00:00' AND '%s 23:59:59' AND serverid = %d AND diskid IN ( %s )",
+                 $date, $date, $serverId, join(",", @diskIds)))
+        or die "Failed to delete old data";
+    dbDo($dbh, "LOAD DATA LOCAL INFILE '$bcpFileName' INTO TABLE hires_disk_stat (time,siteid,serverid,diskid,rws,blks,readblks,avserv,avwait)") or die "Failed to load data";
+
+    $dbh->disconnect;
+}
+
+
+sub main() {
+
+    my ($nfsStatFile,$site,$server,$date);
+    my $result = GetOptions(
+        "input=s" => \$nfsStatFile,
+        "site=s" => \$site,
+        "server=s" => \$server,
+        "date=s" => \$date,
+        "debug=s" => \$DEBUG,
+        );
+    ($result == 1) or die "Invalid args";
+    setStatsDB_Debug($DEBUG);
+
+
+    #
+    # r_timeSamples is an array of hashs, one entry per time sample
+    #  The hash has the following structure
+    #   time => sample time
+    #   interval => sample interval
+    #   mnt => hash of stats keyed per mount
+    # The stats hash has the following structure
+    #  bytes => bytes transfered stats
+    #  perop => hash keys by op name
+    # See https://utcc.utoronto.ca/~cks/space/blog/linux/NFSMountstatsIndex
+    my $r_timeSamples = parseNfsStat($nfsStatFile);
+    my $r_processedStats = processStats($r_timeSamples);
+    my $haveActiveMnts = 0;
+    foreach my $r_processedStat ( @{$r_processedStats} ) {
+        if ( defined $r_processedStat->{'mnt'} ) {
+            $haveActiveMnts = 1;
+        }
+    }
+    if ( $haveActiveMnts ) {
+        storeData($site,$server,$date,$r_processedStats);
+    }
+}
+
+main();

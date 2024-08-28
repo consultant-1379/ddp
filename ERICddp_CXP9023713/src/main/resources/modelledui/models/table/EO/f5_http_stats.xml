@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eo_f5_http_stats">
+    <reference table="sites" condition="eo_f5_http_stats.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eo_f5_http_stats.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <column db="SUM(numberReqs)" label="Total Requests"/>
+  <column db="SUM(postReqs)" label="POST Requests"/>
+  <column db="SUM(getReqs)" label="GET Requests"/>
+  <column db="SUM(resp_2xxCnt)" label="Responses 2xx"/>
+  <column db="SUM(resp_3xxCnt)" label="Responses 3xx"/>
+  <column db="SUM(resp_4xxCnt)" label="Responses 4xx"/>
+  <column db="SUM(resp_5xxCnt)" label="Responses 5xx"/>
+
+
+  <ctxmenu keycol="numberReqs" targettype="url" multiselect="true">
+    <item id="httpstats" label="Plot"/>
+    <urltarget arg="plot"/>
+  </ctxmenu>
+</modelledtable>

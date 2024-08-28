@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledevents xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <table name="enm_pm_orphan_file_del_stats"/>
+
+  <services>
+    <service name="fls"/>
+  </services>
+
+  <events>
+    <!-- ORPHAN_FILE_DELETION_STATISTICS {"Subscription_Type":"CelltraceSubscription","Time_Taken_To_Delete":208,"Deleted_Files_count":3} -->
+    <event name="ORPHAN_FILE_DELETION_STATISTICS">
+      <metric source="Subscription_Type" target="type"/>
+      <metric source="Deleted_Files_count" target="deletedFiles"/>
+      <metric source="Time_Taken_To_Delete" target="timeToDelete"/>
+      <property name="filter" xsi:type="fixedproperty" value="PFD"/>
+    </event>
+    <!-- OVERLOAD_EXPIRED_FILE_DELETION_STATISTICS {"Subscription_Type":"GpehSubscription","Time_Taken_To_Delete":1,"Deleted_Files_count":0} -->
+    <event name="OVERLOAD_EXPIRED_FILE_DELETION_STATISTICS">
+      <metric source="Subscription_Type" target="type"/>
+      <metric source="Deleted_Files_count" target="deletedFiles"/>
+      <metric source="Time_Taken_To_Delete" target="timeToDelete"/>
+      <property name="filter" xsi:type="fixedproperty" value="OPFD"/>
+    </event>
+  </events>
+</modelledevents>

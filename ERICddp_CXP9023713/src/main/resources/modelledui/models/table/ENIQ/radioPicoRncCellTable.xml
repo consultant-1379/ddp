@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="eniq_pico_rnc_cell_count_details">
+    <reference table="sites" condition="eniq_pico_rnc_cell_count_details.siteid = sites.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND eniq_pico_rnc_cell_count_details.date = '%date%'</where>
+  <order columnid="techno" direction="DESC"/>
+  <column db="eniq_pico_rnc_cell_count_details.technology" label="Technology" id="techno"/>
+  <column db="eniq_pico_rnc_cell_count_details.picoCellCount" label="Pico Cell Count "/>
+  <column db="eniq_pico_rnc_cell_count_details.rncCellCount" label="RNC Cell Count"/>
+  <column db="eniq_pico_rnc_cell_count_details.totalCellCount" label="Total Cell Count"/>
+
+</modelledtable>
+

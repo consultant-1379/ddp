@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledgraph
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ type="sb"
+ timespan="day"
+ forcelegend="true"
+ ylabel="Seconds"
+ >
+  <title value="Maintenance Time"/>
+  <queries>
+    <query timecol="startTime">
+      <dbtables main="ddpadmin.ddp_maintenance_times"/>
+      <where></where>
+      <column db="duration" label="Maintenance Time"/>
+    </query>
+  </queries>
+  <size width="640" height="320"/>
+</modelledgraph>

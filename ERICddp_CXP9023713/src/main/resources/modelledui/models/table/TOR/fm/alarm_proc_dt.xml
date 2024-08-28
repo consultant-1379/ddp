@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modelledtable xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dbtables main="fm_alarmprocessing_instr">
+    <reference table="sites" condition="fm_alarmprocessing_instr.siteid = sites.id"/>
+    <reference table="servers" condition="fm_alarmprocessing_instr.serverid = servers.id"/>
+  </dbtables>
+
+  <param name="site"/>
+  <param name="date"/>
+  <where>sites.name = '%site%' AND fm_alarmprocessing_instr.time BETWEEN '%date% 00:00:00' AND '%date% 23:59:59'</where>
+
+  <groupby rollup="true">
+    <column db="servers.hostname"/>
+  </groupby>
+
+  <column db="servers.hostname" label="Instance" id="srv"/>
+  <column db="SUM(minorAlarmsProcessedByAPSPerMinute)" label="Total Minor Alarms"/>
+  <column db="SUM(majorAlarmsProcessedByAPSPerMinute)" label="Total Major Alarms"/>
+  <column db="SUM(warningAlarmsProcessedByAPSPerMinute)" label="Total Warning Alarms"/>
+  <column db="SUM(indeterminateAlarmsProcessedByAPSPerMinute)" label="Total Indeterminate Alarms"/>
+  <column db="SUM(criticalAlarmsProcessedByAPSPerMinute)" label="Total Critical Alarms"/>
+  <column db="SUM(clearAlarmsProcessedByAPSPerMinute)" label="Total Clear Alarms"/>
+  <column db="SUM(alarmProcessedByAPSPerMinute)" label="Total Alarms Processed"/>
+  <column db="SUM(failedAlarmCountByAPSPerMinute)" label="Total Alarms Failed"/>
+  <column db="SUM(alarmCountReceivedByAPSPerMinute)" label="Total Alarms Received"/>
+  <column db="SUM(alarmRootNotApplicableProcessedByAPS)" label="Total Not Applicable Alarms Processed"/>
+  <column db="SUM(alarmRootPrimaryProcessedByAPS)" label="Total Primary Alarms Processed"/>
+  <column db="SUM(alarmRootSecondaryProcessedByAPS)" label="Total Secondary Alarms Processed"/>
+
+  <ctxmenu keycol="srv" targettype="url" multiselect="false">
+    <item id="severity" label="Plot Alarms processed by APS per Severity per Instance"/>
+    <item id="root" label="Plot Alarms processed by APS per Root Cause per Instance"/>
+    <urltarget arg="action"/>
+  </ctxmenu>
+
+</modelledtable>

@@ -1,0 +1,38 @@
+{
+    "desc": "Test a single cadvisor metric container_cpu_system_seconds_total",
+    "ts": {
+        "Labels": {
+            "pod": "thepod",
+            "container": "thecontainer",
+            "namespace": "thenamespace",
+            "__name__": "container_cpu_system_seconds_total"
+        },
+        "Values": [
+            1
+        ],
+        "Timestamps": [
+            10
+        ]
+    },
+    "instance_map": {
+        "thepod": {}
+    },
+    "expected": {
+        "thepod": {
+            "metrics": {
+                "cadvisor": {
+                    "thecontainer": {
+                        "container_cpu_system_seconds_total": {
+                            "values": [
+                                1
+                            ],
+                            "timestamps": [
+                                10
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
